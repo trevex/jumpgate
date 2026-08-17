@@ -30,6 +30,7 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 	unauth := connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	u, err := s.q.GetUserByEmail(ctx, req.Msg.Email)
 	if err != nil {
+		_, _ = auth.VerifyPassword(req.Msg.Password, auth.DummyHash) // constant-time: avoid user enumeration via timing
 		return nil, unauth
 	}
 	ok, err := auth.VerifyPassword(req.Msg.Password, u.PasswordHash)

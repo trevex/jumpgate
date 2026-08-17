@@ -34,6 +34,17 @@ func HashPassword(pw string) (string, error) {
 	), nil
 }
 
+// DummyHash is a precomputed argon2id hash used to run VerifyPassword against a
+// constant when a login email is unknown, so response timing does not reveal
+// whether an account exists.
+var DummyHash = func() string {
+	h, err := HashPassword("jumpgate-dummy-password-for-timing-safety")
+	if err != nil {
+		panic(err)
+	}
+	return h
+}()
+
 // VerifyPassword reports whether pw matches the encoded argon2id hash.
 func VerifyPassword(pw, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
