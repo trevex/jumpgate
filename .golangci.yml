@@ -1,0 +1,20 @@
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gosec
+  exclusions:
+    generated: lax
+    rules:
+      - path: 'control-plane/gen/'
+        linters: [revive, gosec, staticcheck]
+      - path: 'internal/db/gen/'
+        linters: [revive, gosec, staticcheck]
+formatters:
+  enable:
+    - gofmt
