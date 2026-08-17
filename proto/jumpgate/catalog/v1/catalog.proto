@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package jumpgate.catalog.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1;catalogv1";
+
+// CatalogService manages folders, assets, roles, and bindings (admin), and
+// exposes each caller's visible asset catalog (any authenticated user).
+service CatalogService {
+  rpc CreateFolder(CreateFolderRequest) returns (CreateFolderResponse) {}
+  rpc ListFolders(ListFoldersRequest) returns (ListFoldersResponse) {}
+  rpc CreateAsset(CreateAssetRequest) returns (CreateAssetResponse) {}
+  rpc ListAssetsByFolder(ListAssetsByFolderRequest) returns (ListAssetsByFolderResponse) {}
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {}
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {}
+  rpc CreateRoleBinding(CreateRoleBindingRequest) returns (CreateRoleBindingResponse) {}
+  rpc DeleteRoleBinding(DeleteRoleBindingRequest) returns (DeleteRoleBindingResponse) {}
+  rpc ListVisibleAssets(ListVisibleAssetsRequest) returns (ListVisibleAssetsResponse) {}
+  rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
+}
+
+message Folder { string id = 1; string name = 2; string parent_id = 3; }
+message Asset  { string id = 1; string folder_id = 2; string name = 3; }
+message Role   { string id = 1; string name = 2; string resource_type = 3; repeated string capabilities = 4; }
+
+message CreateFolderRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string parent_id = 2;
+}
+message CreateFolderResponse { Folder folder = 1; }
+
+message ListFoldersRequest { int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; string page_token = 2; }
+message ListFoldersResponse { repeated Folder folders = 1; string next_page_token = 2; }
+
+message CreateAssetRequest {
+  string folder_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+}
+message CreateAssetResponse { Asset asset = 1; }
+
+message ListAssetsByFolderRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListAssetsByFolderResponse { repeated Asset assets = 1; }
+
+message CreateRoleRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string resource_type = 2 [(buf.validate.field).string = {in: ["folder", "asset"]}];
+  repeated string capabilities = 3;
+}
+message CreateRoleResponse { Role role = 1; }
+
+message ListRolesRequest { int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; string page_token = 2; }
+message ListRolesResponse { repeated Role roles = 1; string next_page_token = 2; }
+
+message CreateRoleBindingRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  string kind    = 2 [(buf.validate.field).string = {in: ["standing", "requestable"]}];
+  string scope_folder_id  = 3;
+  string scope_asset_id   = 4;
+  string subject_user_id  = 5;
+  string subject_group_id = 6;
+}
+message CreateRoleBindingResponse { string id = 1; }
+
+message DeleteRoleBindingRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message DeleteRoleBindingResponse {}
+
+message VisibleAsset {
+  string id = 1;
+  string name = 2;
+  bool active = 3;
+  repeated string role_ids = 4;
+}
+message ListVisibleAssetsRequest {}
+message ListVisibleAssetsResponse { repeated VisibleAsset assets = 1; }
+
+message GetAssetAccessRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetAssetAccessResponse {
+  repeated string active_role_ids = 1;
+  repeated string requestable_role_ids = 2;
+}
