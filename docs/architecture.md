@@ -43,11 +43,11 @@ credential-injected, fully recorded, and auto-expiring.
 The single source of truth and the brain. Serves the REST API + embedded web UI.
 Modules (all ⬜ except the HTTP skeleton):
 
-- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
-- **Identity** 🟡 (M2b: local users/groups/nested memberships + password login/opaque tokens + admin guard; OIDC/SAML/SCIM later).
-- **Authorization** 🟡 (M2a: resolution implemented; REST catalog in M2b) — roll-our-own recursive-CTE `Authorizer` (OpenFGA is a future drop-in behind the seam); see [Access model](#access-model).
+- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService + CatalogService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
+- **Identity** 🟡 (M2b: local users/groups/nested memberships + password login/opaque tokens + admin guard; OIDC/SAML/SCIM later). Initial admin seeded via `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` on first startup.
+- **Authorization** ✅ (recursive-CTE Authorizer + catalog RPCs; OpenFGA remains a future drop-in behind the seam). See [Access model](#access-model).
 - **Role service** ⬜ — custom roles as capability bundles.
-- **Resource catalog** ⬜ — assets and folders with labels.
+- **Resource catalog** ✅ folders/assets/roles/role-bindings CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding.
 - **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
 - **JIT / approval engine** ⬜ — access requests, approvals, time-boxed grants, reaper.
 - **Audit log** ⬜ — hash-chained, tamper-evident.
