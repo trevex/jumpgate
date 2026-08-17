@@ -32,7 +32,8 @@ CREATE TABLE folders (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name       text NOT NULL,
     parent_id  uuid REFERENCES folders(id) ON DELETE CASCADE,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT no_self_parent CHECK (parent_id IS DISTINCT FROM id)
 );
 CREATE INDEX idx_folders_parent ON folders(parent_id);
 

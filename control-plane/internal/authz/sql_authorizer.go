@@ -32,7 +32,7 @@ WITH RECURSIVE user_groups(group_id) AS (
 ),
 folder_tree(root_id, folder_id) AS (
     SELECT id, id FROM folders
-  UNION ALL
+  UNION
     SELECT ft.root_id, f.id
     FROM folders f JOIN folder_tree ft ON f.parent_id = ft.folder_id
 ),

@@ -176,6 +176,74 @@ func TestCheckCapability(t *testing.T) {
 	}
 }
 
+func TestThreeLevelFolderInheritance(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grp, err := q.CreateGroup(ctx, "eng")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	gp, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "gp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "parent", ParentID: pgUUID(gp.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "child", ParentID: pgUUID(parent.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deepAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "deep", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", ResourceType: "asset", Capabilities: caps("read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// standing binding on the GRANDPARENT folder
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, Kind: "standing", ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(grp.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewSQLAuthorizer(pool)
+	if ok, err := a.Check(ctx, alice.ID, deepAsset.ID, "read"); err != nil || !ok {
+		t.Fatalf("Check(read, deepAsset via 3-level inheritance) = %v, %v; want true", ok, err)
+	}
+	vis, err := a.VisibleAssets(ctx, alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range vis {
+		if v.AssetID == deepAsset.ID {
+			found = true
+			if !v.Active {
+				t.Fatal("deepAsset should be active")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("deepAsset should be visible via 3-level folder inheritance")
+	}
+}
+
 func TestRolesOnAsset(t *testing.T) {
 	pool := newPool(t)
 	alice, pgprod, _, pgstaging, _, operatorRole, viewerRole := seed(t, pool)
