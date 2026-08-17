@@ -51,6 +51,8 @@
           buildInputs = [
             go.withDefaultTools
             pkgs.golangci-lint
+            pkgs.sqlc
+            pkgs.goose
             pkgs.rustup
             pkgs.cargo-nextest
             pkgs.cargo-watch
