@@ -5,7 +5,7 @@ members = ["gateway"]
 [workspace.package]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/nikvoss/jumpgate"
+repository = "https://github.com/trevex/jumpgate"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

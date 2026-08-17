@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/nikvoss/jumpgate/control-plane/internal/httpapi"
+	"github.com/trevex/jumpgate/control-plane/internal/httpapi"
 )
 
 func main() {
