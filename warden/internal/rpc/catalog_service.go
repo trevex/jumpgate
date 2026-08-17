@@ -252,12 +252,67 @@ func (s *CatalogServer) DeleteRoleBinding(ctx context.Context, req *connect.Requ
 	return connect.NewResponse(&catalogv1.DeleteRoleBindingResponse{}), nil
 }
 
-// ListVisibleAssets — implemented in Task 7.
-func (s *CatalogServer) ListVisibleAssets(_ context.Context, _ *connect.Request[catalogv1.ListVisibleAssetsRequest]) (*connect.Response[catalogv1.ListVisibleAssetsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// ListVisibleAssets returns the caller's visible assets (active or requestable).
+func (s *CatalogServer) ListVisibleAssets(ctx context.Context, _ *connect.Request[catalogv1.ListVisibleAssetsRequest]) (*connect.Response[catalogv1.ListVisibleAssetsResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	vis, err := s.authorizer.VisibleAssets(ctx, u.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &catalogv1.ListVisibleAssetsResponse{}
+	if len(vis) == 0 {
+		return connect.NewResponse(out), nil
+	}
+	ids := make([]uuid.UUID, 0, len(vis))
+	for _, v := range vis {
+		ids = append(ids, v.AssetID)
+	}
+	assets, err := s.q.ListAssetsByIDs(ctx, ids)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	nameByID := make(map[uuid.UUID]string, len(assets))
+	for _, a := range assets {
+		nameByID[a.ID] = a.Name
+	}
+	for _, v := range vis {
+		roleIDs := make([]string, 0, len(v.RoleIDs))
+		for _, r := range v.RoleIDs {
+			roleIDs = append(roleIDs, r.String())
+		}
+		out.Assets = append(out.Assets, &catalogv1.VisibleAsset{
+			Id: v.AssetID.String(), Name: nameByID[v.AssetID], Active: v.Active, RoleIds: roleIDs,
+		})
+	}
+	return connect.NewResponse(out), nil
 }
 
-// GetAssetAccess — implemented in Task 7.
-func (s *CatalogServer) GetAssetAccess(_ context.Context, _ *connect.Request[catalogv1.GetAssetAccessRequest]) (*connect.Response[catalogv1.GetAssetAccessResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// GetAssetAccess returns the caller's roles on one asset; NotFound if invisible.
+func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request[catalogv1.GetAssetAccessRequest]) (*connect.Response[catalogv1.GetAssetAccessResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	id, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+	}
+	roles, err := s.authorizer.RolesOnAsset(ctx, u.ID, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(roles.Active) == 0 && len(roles.Requestable) == 0 {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+	}
+	resp := &catalogv1.GetAssetAccessResponse{}
+	for _, r := range roles.Active {
+		resp.ActiveRoleIds = append(resp.ActiveRoleIds, r.String())
+	}
+	for _, r := range roles.Requestable {
+		resp.RequestableRoleIds = append(resp.RequestableRoleIds, r.String())
+	}
+	return connect.NewResponse(resp), nil
 }
