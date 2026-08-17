@@ -11,9 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 
-	"github.com/trevex/jumpgate/control-plane/internal/db/gen"
-	"github.com/trevex/jumpgate/control-plane/internal/db/migrate"
-	"github.com/trevex/jumpgate/control-plane/internal/testsupport"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
 func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }

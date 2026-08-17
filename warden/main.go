@@ -1,4 +1,4 @@
-// Command control-plane is the jumpgate control plane: identity, authorization,
+// Command warden is the jumpgate control plane: identity, authorization,
 // JIT/approvals, vault, audit, and the API. M2a wires config, DB migrations, a
 // connection pool, and graceful shutdown; it serves /healthz.
 package main
@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/trevex/jumpgate/control-plane/internal/config"
-	"github.com/trevex/jumpgate/control-plane/internal/db/migrate"
-	"github.com/trevex/jumpgate/control-plane/internal/httpapi"
-	"github.com/trevex/jumpgate/control-plane/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/config"
+	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/httpapi"
+	"github.com/trevex/jumpgate/warden/internal/pg"
 )
 
 func main() {
@@ -53,7 +53,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		slog.Info("control-plane listening", "addr", cfg.ListenAddr)
+		slog.Info("warden listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}

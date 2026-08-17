@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package jumpgate.health.v1;
 
-option go_package = "github.com/trevex/jumpgate/control-plane/gen/jumpgate/health/v1;healthv1";
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/health/v1;healthv1";
 
 // HealthService is a trivial service used to validate cross-language codegen
 // and service wiring. Real services are added in later milestones.

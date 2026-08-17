@@ -19,7 +19,7 @@ nix develop
 
 The devshell pins:
 
-- **Go** to the `control-plane/go.mod` minor's latest patch (via `go-overlay`).
+- **Go** to the `warden/go.mod` minor's latest patch (via `go-overlay`).
 - **Rust** to the channel in `rust-toolchain.toml` (stable), through `rustup`.
 - Codegen and infra tooling at the versions locked in `flake.lock`.
 
@@ -47,11 +47,11 @@ CI behavior are identical.
 ## Repository layout
 
 ```
-control-plane/      Go   — API, identity, authz, vault, JIT/approvals, audit, registry
+warden/             Go   — API, identity, authz, vault, JIT/approvals, audit, registry
 gateway/            Rust — session router / load balancer (only exposed component)
 workers/            Rust — per-protocol proxies (ssh-proxy, pg-proxy, …)   [planned]
 cli/                Go   — `jumpgate` CLI                                    [planned]
-web/                     — React + Vite SPA (embedded in control-plane)      [planned]
+web/                     — React + Vite SPA (embedded in warden)             [planned]
 proto/              Shared gRPC/protobuf contracts (buf)
 deploy/helm/        Helm chart + docker-compose                              [planned]
 docs/               This documentation
@@ -64,7 +64,7 @@ Makefile            Task entrypoints
 
 ## Module & package conventions
 
-- **Go module path:** `github.com/trevex/jumpgate/control-plane` (matches the repo
+- **Go module path:** `github.com/trevex/jumpgate/warden` (matches the repo
   URL). Additional Go modules (e.g. `cli`) are added to `go.work`.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
@@ -73,7 +73,7 @@ Makefile            Task entrypoints
 
 - Contracts live in `proto/` (buf module). Service/message naming follows buf's
   `STANDARD` lint (service names end in `Service`).
-- **Go stubs are committed** under `control-plane/gen/` so consumers build without a
+- **Go stubs are committed** under `warden/gen/` so consumers build without a
   codegen step; regenerate with `make gen` and commit the result (it must be
   deterministic — CI checks for drift).
 - **Rust** consumes protos via `tonic-build` in each crate's `build.rs` (output in
@@ -81,15 +81,15 @@ Makefile            Task entrypoints
 
 ## Data layer
 
-- **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `control-plane/internal/db/queries`, generate typed Go into `control-plane/internal/db/gen` with `sqlc generate` (config: `sqlc.yaml`). Generated code is committed.
-- **Migrations** are goose SQL files in `control-plane/internal/db/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`).
+- **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `warden/internal/db/queries`, generate typed Go into `warden/internal/db/gen` with `sqlc generate` (config: `sqlc.yaml`). Generated code is committed.
+- **Migrations** are goose SQL files in `warden/internal/db/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`).
 - **Authorization** goes through the `internal/authz` `Authorizer` seam; the current backend resolves access with recursive SQL CTEs over Postgres.
 - **Integration tests** boot an ephemeral Postgres via `internal/testsupport` (uses the devshell's `initdb`/`pg_ctl`, no Docker). They `t.Skip` when that tooling isn't on PATH, so run them inside `nix develop`.
 - Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`, `SHUTDOWN_TIMEOUT`.
 
 ## Testing
 
-- **Go:** standard `go test`; tests exercise real behavior (e.g. the control-plane
+- **Go:** standard `go test`; tests exercise real behavior (e.g. the warden
   health test drives an `httptest` server and decodes real JSON). Integration tests
   boot an ephemeral Postgres via `internal/testsupport` (initdb/pg_ctl, no Docker).
 - **Rust:** `cargo nextest`; axum handlers tested via `tower::ServiceExt::oneshot`.

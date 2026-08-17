@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/trevex/jumpgate/control-plane/internal/pg"
-	"github.com/trevex/jumpgate/control-plane/internal/testsupport"
+	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
 func TestNewPoolConnects(t *testing.T) {

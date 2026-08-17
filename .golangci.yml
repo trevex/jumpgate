@@ -11,7 +11,7 @@ linters:
   exclusions:
     generated: lax
     rules:
-      - path: 'control-plane/gen/'
+      - path: 'warden/gen/'
         linters: [revive, gosec, staticcheck]
       - path: 'internal/db/gen/'
         linters: [revive, gosec, staticcheck]
