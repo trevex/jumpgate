@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 func main() {
@@ -35,6 +36,12 @@ func run() error {
 		return err
 	}
 
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+		level = slog.LevelInfo
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
 	if err := migrate.Up(cfg.DatabaseURL); err != nil {
 		return err
 	}
@@ -45,9 +52,19 @@ func run() error {
 	}
 	defer pool.Close()
 
+	mux := http.NewServeMux()
+	mux.Handle("/", httpapi.NewRouter(pool))
+	if err := rpc.Register(mux, pool); err != nil {
+		return err
+	}
+
+	var protos http.Protocols
+	protos.SetHTTP1(true)
+	protos.SetUnencryptedHTTP2(true)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           httpapi.NewRouter(pool),
+		Handler:           mux,
+		Protocols:         &protos,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
