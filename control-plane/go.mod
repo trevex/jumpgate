@@ -3,6 +3,7 @@ module github.com/nikvoss/jumpgate/control-plane
 go 1.26
 
 require (
+	github.com/go-chi/chi/v5 v5.3.1
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
 )
