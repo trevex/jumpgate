@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -24,11 +25,21 @@ type Querier interface {
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
+	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
+	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
+	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
+	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
+	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
+	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
+	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 }
