@@ -1,0 +1,22 @@
+# Superpowers workflow artifacts (specs/plans) — temporal, not project docs
+docs/superpowers/
+
+# direnv / nix
+.direnv/
+result
+result-*
+
+# Rust
+/target/
+**/target/
+
+# Go
+/bin/
+
+# Node / web
+node_modules/
+/web/dist/
+
+# Env / secrets
+.env
+*.local
