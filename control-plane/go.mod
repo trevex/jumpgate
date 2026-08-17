@@ -1,4 +1,4 @@
-module github.com/nikvoss/jumpgate/control-plane
+module github.com/trevex/jumpgate/control-plane
 
 go 1.26
 

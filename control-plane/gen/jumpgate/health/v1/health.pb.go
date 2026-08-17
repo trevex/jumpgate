@@ -110,7 +110,7 @@ const file_jumpgate_health_v1_health_proto_rawDesc = "" +
 	"\rCheckResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status2]\n" +
 	"\rHealthService\x12L\n" +
-	"\x05Check\x12 .jumpgate.health.v1.CheckRequest\x1a!.jumpgate.health.v1.CheckResponseBKZIgithub.com/nikvoss/jumpgate/control-plane/gen/jumpgate/health/v1;healthv1b\x06proto3"
+	"\x05Check\x12 .jumpgate.health.v1.CheckRequest\x1a!.jumpgate.health.v1.CheckResponseBJZHgithub.com/trevex/jumpgate/control-plane/gen/jumpgate/health/v1;healthv1b\x06proto3"
 
 var (
 	file_jumpgate_health_v1_health_proto_rawDescOnce sync.Once
