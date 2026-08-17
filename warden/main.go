@@ -13,7 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/pg"
@@ -51,6 +53,25 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+
+	q := gen.New(pool)
+	if err := bootstrap.EnsureAdmin(ctx, q, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
+		return err
+	}
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := q.DeleteExpiredAuthTokens(ctx); err != nil {
+					slog.Warn("token gc failed", "err", err)
+				}
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))

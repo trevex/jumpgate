@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	CountUsers(ctx context.Context) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
