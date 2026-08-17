@@ -1,22 +1,75 @@
 // Command control-plane is the jumpgate control plane: identity, authorization,
-// JIT/approvals, vault, audit, and the API. M1 serves only /healthz.
+// JIT/approvals, vault, audit, and the API. M2a wires config, DB migrations, a
+// connection pool, and graceful shutdown; it serves /healthz.
 package main
 
 import (
-	"log"
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/trevex/jumpgate/control-plane/internal/config"
+	"github.com/trevex/jumpgate/control-plane/internal/db/migrate"
 	"github.com/trevex/jumpgate/control-plane/internal/httpapi"
+	"github.com/trevex/jumpgate/control-plane/internal/pg"
 )
 
 func main() {
-	addr := os.Getenv("JUMPGATE_LISTEN")
-	if addr == "" {
-		addr = ":8080"
+	if err := run(); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
 	}
-	log.Printf("control-plane listening on %s", addr)                      //nolint:gosec // addr is from env, not user input
-	if err := http.ListenAndServe(addr, httpapi.NewRouter()); err != nil { //nolint:gosec // M1 stub; timeout will be added when server is hardened
-		log.Fatal(err)
+}
+
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
+
+	if err := migrate.Up(cfg.DatabaseURL); err != nil {
+		return err
+	}
+
+	pool, err := pg.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	srv := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           httpapi.NewRouter(pool),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		slog.Info("control-plane listening", "addr", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+		slog.Info("shutdown signal received")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	return nil
 }

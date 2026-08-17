@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestHealthz(t *testing.T) {
-	srv := httptest.NewServer(NewRouter())
+func TestHealthzNoDB(t *testing.T) {
+	srv := httptest.NewServer(NewRouter(nil))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/healthz")
@@ -20,7 +20,6 @@ func TestHealthz(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-
 	var body struct {
 		Status string `json:"status"`
 	}
@@ -28,6 +27,6 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.Status != "ok" {
-		t.Fatalf("status = %q, want %q", body.Status, "ok")
+		t.Fatalf("status = %q, want ok", body.Status)
 	}
 }
