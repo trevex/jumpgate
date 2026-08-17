@@ -1,0 +1,4 @@
+# Rust toolchain pinned via rustup, provided by the Nix devshell.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-src"]
