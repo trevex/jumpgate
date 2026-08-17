@@ -13,3 +13,7 @@ make gen          # generate protobuf stubs
 make build        # build all binaries
 make test         # run Go + Rust tests
 ````
+
+See [`docs/`](docs/) for technical documentation:
+[architecture](docs/architecture.md) · [development](docs/development.md) ·
+[roadmap](docs/roadmap.md) · [decisions](docs/decisions.md).
