@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -25,6 +26,14 @@ func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService) *IdentityServe
 
 func toUserMsg(u gen.User) *identityv1.User {
 	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, IsAdmin: u.IsAdmin}
+}
+
+func toGroupMsg(g gen.Group) *identityv1.Group {
+	return &identityv1.Group{Id: g.ID.String(), Name: g.Name}
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // CreateUser creates a local user (admin only).
@@ -95,22 +104,83 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	return connect.NewResponse(out), nil
 }
 
-// CreateGroup creates a new group. Stub — implemented in Task 10.
-func (s *IdentityServer) CreateGroup(_ context.Context, _ *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// CreateGroup creates a group (admin only).
+func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	g, err := s.q.CreateGroup(ctx, req.Msg.Name)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("group name already exists"))
+	}
+	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: toGroupMsg(g)}), nil
 }
 
-// ListGroups returns a paginated list of groups. Stub — implemented in Task 10.
-func (s *IdentityServer) ListGroups(_ context.Context, _ *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// ListGroups returns a page of groups (admin only), ordered by id.
+func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	limit := req.Msg.PageSize
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	after := uuid.Nil
+	if req.Msg.PageToken != "" {
+		id, err := uuid.Parse(req.Msg.PageToken)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
+		}
+		after = id
+	}
+	rows, err := s.q.ListGroupsPaged(ctx, gen.ListGroupsPagedParams{Column1: after, Limit: limit})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &identityv1.ListGroupsResponse{}
+	for i := range rows {
+		out.Groups = append(out.Groups, toGroupMsg(rows[i]))
+	}
+	if len(rows) == int(limit) && len(rows) > 0 {
+		out.NextPageToken = rows[len(rows)-1].ID.String()
+	}
+	return connect.NewResponse(out), nil
 }
 
-// AddUserToGroup adds a user to a group. Stub — implemented in Task 10.
-func (s *IdentityServer) AddUserToGroup(_ context.Context, _ *connect.Request[identityv1.AddUserToGroupRequest]) (*connect.Response[identityv1.AddUserToGroupResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// AddUserToGroup adds a user as a member of a group (admin only).
+func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Request[identityv1.AddUserToGroupRequest]) (*connect.Response[identityv1.AddUserToGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := s.q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.AddUserToGroupResponse{}), nil
 }
 
-// AddGroupToGroup adds a group as a member of another group. Stub — implemented in Task 10.
-func (s *IdentityServer) AddGroupToGroup(_ context.Context, _ *connect.Request[identityv1.AddGroupToGroupRequest]) (*connect.Response[identityv1.AddGroupToGroupResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// AddGroupToGroup nests one group inside another (admin only).
+func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Request[identityv1.AddGroupToGroupRequest]) (*connect.Response[identityv1.AddGroupToGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	mid, err := uuid.Parse(req.Msg.MemberGroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
+	}
+	if err := s.q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.AddGroupToGroupResponse{}), nil
 }
