@@ -22,3 +22,7 @@ node_modules/
 # Env / secrets
 .env
 *.local
+
+# Generated Go protobuf stubs ARE committed (control-plane/gen) so consumers
+# build without a codegen step. Rust protobuf stubs are generated into target/
+# by build.rs (already ignored above).
