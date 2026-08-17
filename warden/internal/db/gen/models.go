@@ -19,6 +19,14 @@ type Asset struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type AuthToken struct {
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	TokenHash []byte    `json:"token_hash"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Folder struct {
 	ID        uuid.UUID   `json:"id"`
 	Name      string      `json:"name"`
@@ -60,8 +68,10 @@ type RoleBinding struct {
 }
 
 type User struct {
-	ID          uuid.UUID `json:"id"`
-	Email       string    `json:"email"`
-	DisplayName string    `json:"display_name"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	DisplayName  string    `json:"display_name"`
+	CreatedAt    time.Time `json:"created_at"`
+	PasswordHash string    `json:"password_hash"`
+	IsAdmin      bool      `json:"is_admin"`
 }
