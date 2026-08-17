@@ -11,6 +11,7 @@ when a decision changes or a new one is made.
 | Auth interaction | "Approach A" — control plane brokers, workers enforce | Security-critical state stays centralized in Go; workers are stateless and hold secrets only for a live session; revocation is immediate. |
 | Access model | Custom Role + RoleBinding over OpenFGA | Enterprise-grade custom roles; the graph handles relationships (nested groups, folder inheritance), the control plane resolves roles → a fixed capability vocabulary. |
 | Discoverability | Permission-gated (`requestable`) + 404-not-403 | Least privilege / need-to-know; asset existence is never leaked to unauthorized users. |
+| Catalog visibility | Server-computed via the Authorizer; CodeNotFound for invisible assets | Discovery is permission-gated; asset existence never leaks to unauthorized users. |
 | Postgres escalation | Inline per-statement approval + time-boxed tiered step-up | "Access when you need it" done robustly on a structured protocol; DB-enforced via `SET ROLE` (defense in depth). |
 | SSH escalation | Pre-session only | Parsing commands from an interactive TTY is not a robust enforcement boundary; keep it honest. |
 | Session token | PASETO v4.public (ed25519) | Simpler and more misuse-resistant than JWT. |

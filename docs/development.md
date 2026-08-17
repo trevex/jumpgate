@@ -89,11 +89,12 @@ Makefile            Task entrypoints
 
 ## API (ConnectRPC)
 
+- Three services are currently defined: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships — admin), `CatalogService` (folders/assets/roles/role-bindings admin CRUD + per-user `ListVisibleAssets`/`GetAssetAccess`).
 - Services are defined in `proto/` (buf) and generated to `warden/gen/...` — connect handlers live in the `*connect/` sub-packages. Run `make gen`.
 - Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
 - Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC guards (`RequireAdmin`) enforce access. Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
 - Validation via protovalidate (CEL constraints in the `.proto`). Errors use Connect codes; non-visible resources return `CodeNotFound` (never `PermissionDenied`) to avoid leaking existence.
-- Bootstrapping: there is no self-signup — an initial admin user is seeded directly in the DB (a proper bootstrap flow is a later concern).
+- Bootstrapping: there is no self-signup — on first startup an initial admin is seeded automatically when `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are set in the environment. Without those vars no admin is pre-created; subsequent admin creation requires a direct DB seed.
 
 ## Testing
 
@@ -112,8 +113,4 @@ service. Implement those, register the pool, and the worker can be in any langua
 
 ## Current status
 
-Milestones **M1 (foundation)** and **M2a (access-model data & authorization core)**
-are complete: devshell, workspaces, protobuf codegen, the control-plane data layer
-(Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a
-recursive-CTE backend, graceful shutdown, and green CI. **M2b** adds the REST API
-and catalog/visibility endpoints. See [roadmap.md](roadmap.md) for what's next.
+Milestones **M1 (foundation)** and **M2 (access-model core)** are complete: devshell, workspaces, protobuf codegen, the control-plane data layer (Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a recursive-CTE backend, graceful shutdown, ConnectRPC with `AuthService` + `IdentityService` + `CatalogService`, admin bootstrap via env vars, expired-token GC, and green CI. See [roadmap.md](roadmap.md) for what's next.
