@@ -104,6 +104,8 @@ service. Implement those, register the pool, and the worker can be in any langua
 
 ## Current status
 
-Milestone **M1 (foundation)** is complete: devshell, workspaces, protobuf codegen,
-and `control-plane` + `gateway` `/healthz` binaries with green CI. See
-[roadmap.md](roadmap.md) for what's next.
+Milestones **M1 (foundation)** and **M2a (access-model data & authorization core)**
+are complete: devshell, workspaces, protobuf codegen, the control-plane data layer
+(Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a
+recursive-CTE backend, graceful shutdown, and green CI. **M2b** adds the REST API
+and catalog/visibility endpoints. See [roadmap.md](roadmap.md) for what's next.

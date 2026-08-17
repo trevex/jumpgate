@@ -1,8 +1,9 @@
 # Architecture
 
 > **Status legend:** ✅ implemented · 🟡 partial · ⬜ planned. As of milestone
-> **M1 (foundation)**, only the scaffolding and health surfaces are implemented;
-> the components below describe the target architecture with per-item status.
+> **M2a**, the foundation plus the access-model data layer and authorization
+> resolution are implemented (control plane); the components below describe the
+> target architecture with per-item status.
 
 ## Vision
 
@@ -16,7 +17,7 @@ credential-injected, fully recorded, and auto-expiring.
 
 ```
                     ┌──────────────── Control plane (Go) ──────────────┐
-                    │ identity · authz graph (OpenFGA) · roles/bindings│
+                    │ identity · Authorizer seam (SQL CTEs) · roles/bindings│
                     │ JIT grants · vault · approvals · audit ·         │
                     │ recording metadata · worker-pool registry       │
                     └──────▲───────────────▲──────────────────▲────────┘
