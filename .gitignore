@@ -5,6 +5,8 @@ docs/superpowers/
 .direnv/
 result
 result-*
+# generated symlink by git-hooks.nix on devshell entry
+.pre-commit-config.yaml
 
 # Rust
 /target/
