@@ -8,7 +8,7 @@ follow the MVP.
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
-| **M1** | Foundation & scaffolding — Nix devshell, Go+Rust workspaces, protobuf codegen, control-plane + gateway health binaries, CI | ✅ Done |
+| **M1** | Foundation & scaffolding — Nix devshell, Go+Rust workspaces, protobuf codegen, warden (control plane) + gateway health binaries, CI | ✅ Done |
 | **M2** | Access-model core — users/groups/folders/assets, custom Role + RoleBinding over OpenFGA, visibility tiers, catalog/CRUD REST | 🟡 In progress (M2a done: data + authorizer core; M2b: REST/catalog) |
 | **M3** | JIT + vault + audit — access requests, approval engine, time-boxed grants + reaper, credential vault, hash-chained audit | ⬜ |
 | **M4** | Gateway + ssh-proxy + CLI — worker registry, session routing/LB, `jumpgate connect <ssh>` end-to-end with injection + recording | ⬜ |

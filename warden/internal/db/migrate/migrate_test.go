@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/control-plane/internal/testsupport"
+	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
 func TestUpCreatesSchema(t *testing.T) {

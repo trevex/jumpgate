@@ -18,7 +18,7 @@
         overlays = [ go-overlay.overlays.default ];
         pkgs = import nixpkgs { inherit system overlays; };
 
-        go = pkgs.go-bin.fromGoMod ./control-plane/go.mod;
+        go = pkgs.go-bin.fromGoMod ./warden/go.mod;
 
         pre-commit-check = git-hooks.lib.${system}.run {
           src = ./.;

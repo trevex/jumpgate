@@ -1,12 +1,12 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    schema: "control-plane/internal/db/migrate/migrations"
-    queries: "control-plane/internal/db/queries"
+    schema: "warden/internal/db/migrate/migrations"
+    queries: "warden/internal/db/queries"
     gen:
       go:
         package: "gen"
-        out: "control-plane/internal/db/gen"
+        out: "warden/internal/db/gen"
         sql_package: "pgx/v5"
         emit_interface: true
         emit_json_tags: true

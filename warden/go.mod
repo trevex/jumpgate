@@ -1,4 +1,4 @@
-module github.com/trevex/jumpgate/control-plane
+module github.com/trevex/jumpgate/warden
 
 go 1.26
 
