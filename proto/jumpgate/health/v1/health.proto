@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package jumpgate.health.v1;
+
+option go_package = "github.com/nikvoss/jumpgate/control-plane/gen/jumpgate/health/v1;healthv1";
+
+// HealthService is a trivial service used to validate cross-language codegen
+// and service wiring. Real services are added in later milestones.
+service HealthService {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+message CheckRequest {}
+
+message CheckResponse {
+  string status = 1; // "SERVING"
+}
