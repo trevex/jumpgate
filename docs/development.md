@@ -87,6 +87,14 @@ Makefile            Task entrypoints
 - **Integration tests** boot an ephemeral Postgres via `internal/testsupport` (uses the devshell's `initdb`/`pg_ctl`, no Docker). They `t.Skip` when that tooling isn't on PATH, so run them inside `nix develop`.
 - Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`, `SHUTDOWN_TIMEOUT`.
 
+## API (ConnectRPC)
+
+- Services are defined in `proto/` (buf) and generated to `warden/gen/...` — connect handlers live in the `*connect/` sub-packages. Run `make gen`.
+- Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
+- Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC guards (`RequireAdmin`) enforce access. Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
+- Validation via protovalidate (CEL constraints in the `.proto`). Errors use Connect codes; non-visible resources return `CodeNotFound` (never `PermissionDenied`) to avoid leaking existence.
+- Bootstrapping: there is no self-signup — an initial admin user is seeded directly in the DB (a proper bootstrap flow is a later concern).
+
 ## Testing
 
 - **Go:** standard `go test`; tests exercise real behavior (e.g. the warden

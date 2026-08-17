@@ -43,10 +43,8 @@ credential-injected, fully recorded, and auto-expiring.
 The single source of truth and the brain. Serves the REST API + embedded web UI.
 Modules (all ⬜ except the HTTP skeleton):
 
-- **API server** ✅ skeleton (chi, `/healthz`) — REST + OpenAPI; WebSocket for live
-  browser sessions; serves the embedded SPA.
-- **Identity** ⬜ — local users & groups (nested), argon2id, UI sessions, CLI tokens.
-  SSO (OIDC/SAML) and SCIM arrive in M2.
+- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
+- **Identity** 🟡 (M2b: local users/groups/nested memberships + password login/opaque tokens + admin guard; OIDC/SAML/SCIM later).
 - **Authorization** 🟡 (M2a: resolution implemented; REST catalog in M2b) — roll-our-own recursive-CTE `Authorizer` (OpenFGA is a future drop-in behind the seam); see [Access model](#access-model).
 - **Role service** ⬜ — custom roles as capability bundles.
 - **Resource catalog** ⬜ — assets and folders with labels.

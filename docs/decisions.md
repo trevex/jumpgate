@@ -17,6 +17,7 @@ when a decision changes or a new one is made.
 | Identity (MVP) | Local accounts first | Fastest to iterate; OIDC/SAML/SCIM is a later sub-project. |
 | Authz engine | `Authorizer` seam + roll-our-own Postgres/recursive-CTE backend (M2a) | Our model (nested groups, folder inheritance, standing/requestable tiers) maps cleanly to recursive SQL CTEs; avoids OpenFGA's heavy in-process footprint (~59 deps, separate store). OpenFGA (embedded or sidecar) remains a drop-in behind the seam. |
 | Data layer | sqlc + pgx/v5 + goose (embedded migrations) | Type-safe SQL without ORM magic; migrations embedded in the binary; tests run against an ephemeral Postgres (initdb/pg_ctl), no Docker. |
+| API layer | ConnectRPC (connect-go) over buf; opaque DB-backed bearer tokens | One proto contract for browser + CLI + future Rust gRPC workers, no Envoy; protovalidate for validation; CodeNotFound hides non-visible resources; tokens are revocable server-side (not JWT). |
 | CLI language | Go (cobra) | Shares the API client; clean static cross-compiles. |
 | Frontend | React + Vite SPA embedded in the backend binary | Matches the Teleport/hoop pattern; largest ecosystem for data-heavy admin UIs. |
 | Dev environment | Nix flake devshell + direnv | One pinned, reproducible toolchain across contributors and CI. |
