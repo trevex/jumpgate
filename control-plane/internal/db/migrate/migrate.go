@@ -2,9 +2,11 @@
 package migrate
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx" for goose
 	"github.com/pressly/goose/v3"
@@ -21,11 +23,16 @@ func Up(dsn string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	goose.SetBaseFS(migrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("set dialect: %w", err)
+	fsys, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		return fmt.Errorf("sub fs: %w", err)
 	}
-	if err := goose.Up(db, "migrations"); err != nil {
+
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, fsys)
+	if err != nil {
+		return fmt.Errorf("goose provider: %w", err)
+	}
+	if _, err := provider.Up(context.Background()); err != nil {
 		return fmt.Errorf("goose up: %w", err)
 	}
 	return nil
