@@ -60,6 +60,7 @@
             pkgs.protobuf
             pkgs.protoc-gen-go
             pkgs.protoc-gen-go-grpc
+            pkgs.protoc-gen-connect-go
             pkgs.nodejs_22
             pkgs.pnpm
             pkgs.postgresql

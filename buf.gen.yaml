@@ -3,6 +3,6 @@ plugins:
   - local: protoc-gen-go
     out: warden/gen
     opt: paths=source_relative
-  - local: protoc-gen-go-grpc
+  - local: protoc-gen-connect-go
     out: warden/gen
     opt: paths=source_relative
