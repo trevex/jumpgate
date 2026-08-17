@@ -14,12 +14,22 @@ type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
+	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, name string) (Group, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
+	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
+	DeleteExpiredAuthTokens(ctx context.Context) error
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
+	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 }
 
 var _ Querier = (*Queries)(nil)

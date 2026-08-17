@@ -158,7 +158,7 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin
 `
 
 type CreateUserParams struct {
@@ -174,6 +174,32 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.DisplayName,
 		&i.CreatedAt,
+		&i.PasswordHash,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
+const createUserFull = `-- name: CreateUserFull :one
+INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin
+`
+
+type CreateUserFullParams struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	IsAdmin     bool   `json:"is_admin"`
+}
+
+func (q *Queries) CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUserFull, arg.Email, arg.DisplayName, arg.IsAdmin)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.DisplayName,
+		&i.CreatedAt,
+		&i.PasswordHash,
+		&i.IsAdmin,
 	)
 	return i, err
 }
@@ -193,4 +219,75 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listGroupsPaged = `-- name: ListGroupsPaged :many
+SELECT id, name, created_at FROM groups
+WHERE ($1::uuid IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2
+`
+
+type ListGroupsPagedParams struct {
+	Column1 uuid.UUID `json:"column_1"`
+	Limit   int32     `json:"limit"`
+}
+
+func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error) {
+	rows, err := q.db.Query(ctx, listGroupsPaged, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, email, display_name, created_at, password_hash, is_admin FROM users
+WHERE ($1::uuid IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2
+`
+
+type ListUsersParams struct {
+	Column1 uuid.UUID `json:"column_1"`
+	Limit   int32     `json:"limit"`
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+			&i.PasswordHash,
+			&i.IsAdmin,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

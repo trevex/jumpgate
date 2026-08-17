@@ -27,3 +27,18 @@ RETURNING *;
 
 -- name: GetAsset :one
 SELECT * FROM assets WHERE id = $1;
+
+-- name: ListUsers :many
+SELECT * FROM users
+WHERE ($1::uuid IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2;
+
+-- name: CreateUserFull :one
+INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING *;
+
+-- name: ListGroupsPaged :many
+SELECT * FROM groups
+WHERE ($1::uuid IS NULL OR id > $1)
+ORDER BY id
+LIMIT $2;
