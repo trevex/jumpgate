@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 )
 
 // NewPool creates and verifies a pgx connection pool for dsn.
+// It registers the google/uuid codec so that uuid.UUID values can be scanned
+// from UUID columns returned by raw pool queries.
 func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -20,6 +24,10 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg.MaxConnLifetime = time.Hour
 	cfg.MaxConnIdleTime = 30 * time.Minute
 	cfg.HealthCheckPeriod = time.Minute
+	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		pgxuuid.Register(conn.TypeMap())
+		return nil
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
