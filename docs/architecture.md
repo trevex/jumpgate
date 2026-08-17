@@ -1,0 +1,136 @@
+# Architecture
+
+> **Status legend:** ✅ implemented · 🟡 partial · ⬜ planned. As of milestone
+> **M1 (foundation)**, only the scaffolding and health surfaces are implemented;
+> the components below describe the target architecture with per-item status.
+
+## Vision
+
+jumpgate provides secure, audited, **just-in-time** access to infrastructure —
+Kubernetes, VMs (SSH + RDP), databases, and generic HTTP/APIs — without
+installing agents on the targets. The core bet is **zero standing access**:
+nothing is granted until requested; access is time-boxed, approval-gated,
+credential-injected, fully recorded, and auto-expiring.
+
+## The three planes
+
+```
+                    ┌──────────────── Control plane (Go) ──────────────┐
+                    │ identity · authz graph (OpenFGA) · roles/bindings│
+                    │ JIT grants · vault · approvals · audit ·         │
+                    │ recording metadata · worker-pool registry       │
+                    └──────▲───────────────▲──────────────────▲────────┘
+              token mint /  │     gRPC:     │ authz + creds    │ recording /
+              introspection │  pool roster  │ + approvals      │ audit events
+                     ┌──────┴──────┐        │                  │
+   client ────TLS───►│   Gateway   │  (only externally exposed component;
+ (CLI / browser)     │   (Rust)    │   thin, protocol-agnostic session router)
+                     └──────┬──────┘
+                            │ forwards the pinned session stream to a worker
+          ┌─────────────────┼───────────────────┐
+     ┌────▼─────┐     ┌──────▼─────┐     (planned: rdp-proxy [Rust],
+     │ ssh-proxy│     │  pg-proxy  │             k8s-proxy [Go], …)
+     │  (Rust)  │     │   (Rust)   │
+     └────┬─────┘     └──────┬─────┘
+          └──────── inject creds · proxy · record ───────┘
+                            │
+                      target assets
+```
+
+### Control plane — Go ✅ (skeleton) / ⬜ (features)
+
+The single source of truth and the brain. Serves the REST API + embedded web UI.
+Modules (all ⬜ except the HTTP skeleton):
+
+- **API server** ✅ skeleton (chi, `/healthz`) — REST + OpenAPI; WebSocket for live
+  browser sessions; serves the embedded SPA.
+- **Identity** ⬜ — local users & groups (nested), argon2id, UI sessions, CLI tokens.
+  SSO (OIDC/SAML) and SCIM arrive in M2.
+- **Authorization** ⬜ — OpenFGA relationship graph (see [Access model](#access-model)).
+- **Role service** ⬜ — custom roles as capability bundles.
+- **Resource catalog** ⬜ — assets and folders with labels.
+- **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
+- **JIT / approval engine** ⬜ — access requests, approvals, time-boxed grants, reaper.
+- **Audit log** ⬜ — hash-chained, tamper-evident.
+- **Recording service** ⬜ — session blobs to object store; metadata + hashes in Postgres.
+- **Worker registry** ⬜ — watches k8s Endpoints; feeds the gateway its roster.
+- **Token minter** ⬜ — short-lived PASETO v4 session tokens bound to a grant.
+
+Chosen for the Kubernetes operator ecosystem (kubebuilder/controller-runtime),
+mature ReBAC engines (OpenFGA), enterprise SSO breadth, and team velocity.
+
+### Gateway — Rust ✅ (skeleton)
+
+The only externally exposed component: a thin, protocol-agnostic, **session-aware
+load balancer**. It validates the control-plane-signed session token, reads the
+target protocol from the token framing, picks a healthy worker (least-sessions)
+and **pins** the connection for its lifetime, then forwards the still-native byte
+stream over internal mTLS. It never terminates SSH/Postgres/RDP — that protocol
+independence is what lets each worker be written in the best language for its
+protocol. Built on tokio + rustls. M1 implements a `/healthz` axum surface only.
+
+### Protocol workers — Rust ⬜
+
+Stateless enforcers, one Deployment per protocol, scaled independently by replica
+count. Each terminates its protocol, calls the control plane over gRPC for the
+target address + just-in-time credential, injects the credential, proxies, and
+records the session. MVP workers: `ssh-proxy` (russh) and `pg-proxy` (pgwire +
+sqlparser-rs). Because they sit behind the language-agnostic gateway, future
+workers may be Go (e.g. `k8s-proxy` on client-go).
+
+### Data-plane interaction model ("Approach A")
+
+The control plane **brokers**; workers **enforce**. Security-critical state (vault,
+policy, grants) stays centralized in Go; the Rust data plane holds a credential
+only for the duration of a live, authorized session. Revocation is immediate
+(workers introspect the grant at session start; grant deletion tears sessions down).
+
+## Access model
+
+Relationship-based (ReBAC) over **OpenFGA**, separating *what a role means* from
+*who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). ⬜ (M2)
+
+1. **Capabilities** — a fixed vocabulary the workers enforce (`connect`, `read`,
+   `write`, `ddl`, `admin`, connection identity, escalation knobs). Not user-editable.
+2. **Role** — an admin-defined bundle of capabilities scoped to a resource type
+   (e.g. *PG-Migrator*, *SRE-Prod-SSH*). This is the customer's "custom role".
+3. **RoleBinding** — assigns a role to subjects at a scope (folder or asset),
+   as either standing (`assignee`) or requestable eligibility (`requestable`).
+
+The OpenFGA graph answers assignment/visibility/requestability (with nested groups
+and folder inheritance); the control plane resolves roles → capabilities.
+
+**Discoverability is a permission.** Against any asset a user is *Active*
+(can connect now), *Requestable* (visible, may request), or *Invisible* (existence
+undisclosed). The catalog is computed server-side from the graph; requests for
+non-visible assets return **404, not 403**, so topology never leaks.
+
+## Just-in-time access & escalation ⬜ (M3/M5)
+
+One approval engine, two timings:
+
+- **Pre-session** — request a (higher-privilege) role before connecting. Used by
+  **SSH** (the injected credential carries the privilege; no inline TTY gating,
+  which is not a robust boundary).
+- **Inline** — during a live session, a specific action pauses pending approval,
+  then auto-resumes. Used by **Postgres**: `pg-proxy` classifies each statement to
+  a privilege tier (`readonly`/`readwrite`/`ddl`); a statement above the current
+  tier pauses and offers **Approve once** or **Elevate to tier X for N minutes**
+  (a session-scoped, time-boxed step-up, enforced at the DB via `SET ROLE`).
+
+A JIT grant is a temporary RoleBinding edge with an expiry, reaped on timeout —
+the same primitive for a 2-hour SSH grant or a 15-minute Postgres step-up.
+
+## Audit & recording ⬜ (M3/M4)
+
+Every request, reason, approval, grant, session start/stop, step-up, and expiry is
+written to an append-only, **hash-chained** audit log
+(`entry_hash = sha256(prev_hash ‖ canonical(entry))`) so tampering breaks the
+chain. Sessions are recorded (SSH as asciicast v2; Postgres as a structured
+statement log) to object storage with per-chunk hashes. SIEM export is a later
+milestone.
+
+## Key technology choices
+
+See [decisions.md](decisions.md) for the rationale behind Go+Rust, the two-tier
+data plane, agentless posture, OpenFGA, PASETO, and the frontend stack.
