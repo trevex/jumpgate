@@ -11,16 +11,16 @@ gen: ## Generate protobuf stubs (Go + Rust)
 	buf generate
 
 build: ## Build all binaries
-	go build ./...
+	cd control-plane && go build ./...
 	cargo build --workspace
 
 test: ## Run Go + Rust tests
-	go test ./...
+	cd control-plane && go test ./...
 	cargo nextest run --workspace
 
 lint: ## Run formatters/linters
 	gofmt -l control-plane cli 2>/dev/null | (! grep .) || (echo "gofmt needed"; exit 1)
-	golangci-lint run ./...
+	cd control-plane && golangci-lint run ./...
 	cargo fmt --all -- --check
 	cargo clippy --all-targets -- -D warnings
 
