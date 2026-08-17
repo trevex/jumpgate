@@ -183,14 +183,73 @@ func (s *CatalogServer) ListRoles(ctx context.Context, req *connect.Request[cata
 	return connect.NewResponse(out), nil
 }
 
-// CreateRoleBinding — implemented in Task 6.
-func (s *CatalogServer) CreateRoleBinding(_ context.Context, _ *connect.Request[catalogv1.CreateRoleBindingRequest]) (*connect.Response[catalogv1.CreateRoleBindingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
+func optUUID(s string) (pgtype.UUID, bool, error) {
+	if s == "" {
+		return pgtype.UUID{}, false, nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return pgtype.UUID{}, false, err
+	}
+	return pgUUID(id), true, nil
 }
 
-// DeleteRoleBinding — implemented in Task 6.
-func (s *CatalogServer) DeleteRoleBinding(_ context.Context, _ *connect.Request[catalogv1.DeleteRoleBindingRequest]) (*connect.Response[catalogv1.DeleteRoleBindingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// CreateRoleBinding grants a role to a subject at a scope (admin only).
+func (s *CatalogServer) CreateRoleBinding(ctx context.Context, req *connect.Request[catalogv1.CreateRoleBindingRequest]) (*connect.Response[catalogv1.CreateRoleBindingResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	scopeFolder, hasFolder, err := optUUID(req.Msg.ScopeFolderId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_folder_id"))
+	}
+	scopeAsset, hasAsset, err := optUUID(req.Msg.ScopeAssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
+	}
+	if hasFolder == hasAsset { // both set or both unset
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of scope_folder_id, scope_asset_id is required"))
+	}
+	subjUser, hasUser, err := optUUID(req.Msg.SubjectUserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_user_id"))
+	}
+	subjGroup, hasGroup, err := optUUID(req.Msg.SubjectGroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
+	}
+	if hasUser == hasGroup {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
+	}
+	rb, err := s.q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: roleID, Kind: req.Msg.Kind,
+		ScopeFolderID: scopeFolder, ScopeAssetID: scopeAsset,
+		SubjectUserID: subjUser, SubjectGroupID: subjGroup,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.CreateRoleBindingResponse{Id: rb.ID.String()}), nil
+}
+
+// DeleteRoleBinding removes a binding (admin only). Deleting a non-existent id is a no-op.
+func (s *CatalogServer) DeleteRoleBinding(ctx context.Context, req *connect.Request[catalogv1.DeleteRoleBindingRequest]) (*connect.Response[catalogv1.DeleteRoleBindingResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	if err := s.q.DeleteRoleBinding(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.DeleteRoleBindingResponse{}), nil
 }
 
 // ListVisibleAssets — implemented in Task 7.
