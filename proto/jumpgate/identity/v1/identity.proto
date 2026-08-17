@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package jumpgate.identity.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1;identityv1";
+
+// IdentityService manages local users, groups, and nested memberships.
+// All RPCs require an admin bearer token.
+service IdentityService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {}
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {}
+
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
+  rpc AddUserToGroup(AddUserToGroupRequest) returns (AddUserToGroupResponse) {}
+  rpc AddGroupToGroup(AddGroupToGroupRequest) returns (AddGroupToGroupResponse) {}
+}
+
+message User {
+  string id           = 1;
+  string email        = 2;
+  string display_name = 3;
+  bool   is_admin     = 4;
+}
+
+message Group {
+  string id   = 1;
+  string name = 2;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message CreateGroupResponse {
+  Group group = 1;
+}
+
+message CreateUserRequest {
+  string email        = 1 [(buf.validate.field).string.email = true];
+  string display_name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string password     = 3 [(buf.validate.field).string.min_len = 8];
+  bool   is_admin     = 4;
+}
+
+message GetUserRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ListUsersRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+message CreateGroupRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+}
+
+message ListGroupsRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+  string next_page_token = 2;
+}
+
+message AddUserToGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id  = 2 [(buf.validate.field).string.uuid = true];
+}
+message AddUserToGroupResponse {}
+
+message AddGroupToGroupRequest {
+  string group_id        = 1 [(buf.validate.field).string.uuid = true];
+  string member_group_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message AddGroupToGroupResponse {}

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package jumpgate.auth.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1";
+
+// AuthService issues and inspects bearer tokens for local accounts.
+service AuthService {
+  // Login exchanges email + password for a bearer token. Unauthenticated.
+  rpc Login(LoginRequest) returns (LoginResponse) {}
+  // WhoAmI returns the caller's identity. Requires a bearer token.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {}
+}
+
+message LoginRequest {
+  string email    = 1 [(buf.validate.field).string.email = true];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message LoginResponse {
+  string token    = 1;
+  string user_id  = 2;
+  bool   is_admin = 3;
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string user_id      = 1;
+  string email        = 2;
+  string display_name = 3;
+  bool   is_admin     = 4;
+}
