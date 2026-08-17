@@ -46,7 +46,7 @@ Modules (all ⬜ except the HTTP skeleton):
   browser sessions; serves the embedded SPA.
 - **Identity** ⬜ — local users & groups (nested), argon2id, UI sessions, CLI tokens.
   SSO (OIDC/SAML) and SCIM arrive in M2.
-- **Authorization** ⬜ — OpenFGA relationship graph (see [Access model](#access-model)).
+- **Authorization** 🟡 (M2a: resolution implemented; REST catalog in M2b) — roll-our-own recursive-CTE `Authorizer` (OpenFGA is a future drop-in behind the seam); see [Access model](#access-model).
 - **Role service** ⬜ — custom roles as capability bundles.
 - **Resource catalog** ⬜ — assets and folders with labels.
 - **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
@@ -87,8 +87,9 @@ only for the duration of a live, authorized session. Revocation is immediate
 
 ## Access model
 
-Relationship-based (ReBAC) over **OpenFGA**, separating *what a role means* from
-*who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). ⬜ (M2)
+Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, folder-subtree inheritance, and the Active/Requestable/Invisible tiers. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.
+
+The model separates *what a role means* from *who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). 🟡 (M2a: resolution implemented; M2b: REST catalog)
 
 1. **Capabilities** — a fixed vocabulary the workers enforce (`connect`, `read`,
    `write`, `ddl`, `admin`, connection identity, escalation knobs). Not user-editable.
@@ -97,7 +98,7 @@ Relationship-based (ReBAC) over **OpenFGA**, separating *what a role means* from
 3. **RoleBinding** — assigns a role to subjects at a scope (folder or asset),
    as either standing (`assignee`) or requestable eligibility (`requestable`).
 
-The OpenFGA graph answers assignment/visibility/requestability (with nested groups
+The recursive-CTE backend answers assignment/visibility/requestability (with nested groups
 and folder inheritance); the control plane resolves roles → capabilities.
 
 **Discoverability is a permission.** Against any asset a user is *Active*

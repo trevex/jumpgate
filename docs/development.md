@@ -79,11 +79,19 @@ Makefile            Task entrypoints
 - **Rust** consumes protos via `tonic-build` in each crate's `build.rs` (output in
   `target/`, not committed).
 
+## Data layer
+
+- **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `control-plane/internal/db/queries`, generate typed Go into `control-plane/internal/db/gen` with `sqlc generate` (config: `sqlc.yaml`). Generated code is committed.
+- **Migrations** are goose SQL files in `control-plane/internal/db/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`).
+- **Authorization** goes through the `internal/authz` `Authorizer` seam; the current backend resolves access with recursive SQL CTEs over Postgres.
+- **Integration tests** boot an ephemeral Postgres via `internal/testsupport` (uses the devshell's `initdb`/`pg_ctl`, no Docker). They `t.Skip` when that tooling isn't on PATH, so run them inside `nix develop`.
+- Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`, `SHUTDOWN_TIMEOUT`.
+
 ## Testing
 
 - **Go:** standard `go test`; tests exercise real behavior (e.g. the control-plane
   health test drives an `httptest` server and decodes real JSON). Integration tests
-  will use `testcontainers` for Postgres/OpenFGA.
+  boot an ephemeral Postgres via `internal/testsupport` (initdb/pg_ctl, no Docker).
 - **Rust:** `cargo nextest`; axum handlers tested via `tower::ServiceExt::oneshot`.
 - Prefer tests that verify behavior over mocks.
 
