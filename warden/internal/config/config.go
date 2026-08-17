@@ -13,6 +13,9 @@ type Config struct {
 	ListenAddr      string        `env:"LISTEN_ADDR" envDefault:":8080"`
 	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
+
+	BootstrapAdminEmail    string `env:"BOOTSTRAP_ADMIN_EMAIL"`
+	BootstrapAdminPassword string `env:"BOOTSTRAP_ADMIN_PASSWORD"`
 }
 
 // Load reads configuration from environment variables.
