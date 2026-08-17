@@ -74,3 +74,14 @@ func TestUsersCRUDRequiresAdmin(t *testing.T) {
 		t.Fatalf("list returned %d users, want >=2", len(list.Msg.Users))
 	}
 }
+
+func TestGetUserMalformedUUID(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	_, err := c.GetUser(context.Background(), withToken(connect.NewRequest(&identityv1.GetUserRequest{Id: "not-a-uuid"}), tok))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("malformed uuid code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+}
