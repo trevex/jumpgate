@@ -65,11 +65,18 @@ func (q *Queries) GetActiveCA(ctx context.Context, kind string) (CaKey, error) {
 }
 
 const getAssetSecret = `-- name: GetAssetSecret :one
-SELECT id, asset_id, name, sealed, created_at FROM asset_secrets WHERE id = $1
+SELECT id, asset_id, name, sealed, created_at FROM asset_secrets WHERE id = $1 AND asset_id = $2
 `
 
-func (q *Queries) GetAssetSecret(ctx context.Context, id uuid.UUID) (AssetSecret, error) {
-	row := q.db.QueryRow(ctx, getAssetSecret, id)
+type GetAssetSecretParams struct {
+	ID      uuid.UUID `json:"id"`
+	AssetID uuid.UUID `json:"asset_id"`
+}
+
+// Scoped to the owning asset: a config referencing another asset's secret (admin
+// misconfiguration) fails closed rather than leaking a secret cross-asset.
+func (q *Queries) GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error) {
+	row := q.db.QueryRow(ctx, getAssetSecret, arg.ID, arg.AssetID)
 	var i AssetSecret
 	err := row.Scan(
 		&i.ID,

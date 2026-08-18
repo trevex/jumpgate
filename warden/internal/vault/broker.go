@@ -158,7 +158,10 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 		// but guard anyway rather than pass a zero uuid.
 		return nil, ErrNoConfig
 	}
-	row, err := b.q.GetAssetSecret(ctx, uuid.UUID(cfg.StoredSecretID.Bytes))
+	row, err := b.q.GetAssetSecret(ctx, gen.GetAssetSecretParams{
+		ID:      uuid.UUID(cfg.StoredSecretID.Bytes),
+		AssetID: assetID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNoConfig

@@ -45,7 +45,9 @@ type Querier interface {
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
-	GetAssetSecret(ctx context.Context, id uuid.UUID) (AssetSecret, error)
+	// Scoped to the owning asset: a config referencing another asset's secret (admin
+	// misconfiguration) fails closed rather than leaking a secret cross-asset.
+	GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
