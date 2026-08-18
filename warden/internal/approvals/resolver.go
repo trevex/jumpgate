@@ -19,8 +19,9 @@ import (
 type Rule struct {
 	ID                uuid.UUID
 	RequiredApprovals int
-	ApproverRoleID    uuid.UUID // uuid.Nil when the policy has no approver-role source
-	RequesterRoleID   uuid.UUID // uuid.Nil when the policy has no requester-role source
+	ApproverRoleID    uuid.UUID       // uuid.Nil when the policy has no approver-role source
+	RequesterRoleID   uuid.UUID       // uuid.Nil when the policy has no requester-role source
+	MaxDuration       pgtype.Interval // invalid/zero when the policy has no per-scope duration cap (NULL)
 }
 
 // Resolver answers approval questions over the control-plane Postgres.
@@ -40,27 +41,28 @@ WITH RECURSIVE ancestors(folder_id, depth) AS (
   UNION ALL
     SELECT f.parent_id, a.depth + 1 FROM folders f JOIN ancestors a ON f.id = a.folder_id WHERE f.parent_id IS NOT NULL
 ),
-candidates(id, required_approvals, approver_role_id, requester_role_id, spec) AS (
-    SELECT id, required_approvals, approver_role_id, requester_role_id, 0 FROM request_policies WHERE role_id = $1 AND scope_asset_id = $2
+candidates(id, required_approvals, approver_role_id, requester_role_id, max_duration, spec) AS (
+    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 0 FROM request_policies WHERE role_id = $1 AND scope_asset_id = $2
   UNION ALL
-    SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, a.depth + 1
+    SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, a.depth + 1
     FROM request_policies rp JOIN ancestors a ON rp.scope_folder_id = a.folder_id WHERE rp.role_id = $1
   UNION ALL
-    SELECT id, required_approvals, approver_role_id, requester_role_id, 1000000 FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
+    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 1000000 FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
 )
-SELECT id, required_approvals, approver_role_id, requester_role_id FROM candidates ORDER BY spec ASC LIMIT 1`
+SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration FROM candidates ORDER BY spec ASC LIMIT 1`
 	var id uuid.UUID
 	var req int32
 	var approver pgtype.UUID
 	var requester pgtype.UUID
-	err := r.pool.QueryRow(ctx, sql, roleID, assetID).Scan(&id, &req, &approver, &requester)
+	var maxDuration pgtype.Interval
+	err := r.pool.QueryRow(ctx, sql, roleID, assetID).Scan(&id, &req, &approver, &requester, &maxDuration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("effective rule: %w", err)
 	}
-	rule := &Rule{ID: id, RequiredApprovals: int(req)}
+	rule := &Rule{ID: id, RequiredApprovals: int(req), MaxDuration: maxDuration}
 	if approver.Valid {
 		rule.ApproverRoleID = uuid.UUID(approver.Bytes)
 	}
