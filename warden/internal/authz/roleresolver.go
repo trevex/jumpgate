@@ -1,0 +1,84 @@
+package authz
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// RoleResolver answers explicit role-rewrite membership questions.
+type RoleResolver struct{ pool *pgxpool.Pool }
+
+// NewRoleResolver constructs a RoleResolver.
+func NewRoleResolver(pool *pgxpool.Pool) *RoleResolver { return &RoleResolver{pool: pool} }
+
+// HoldsRole reports whether userID is a member of roleID on the given object
+// (objectKind is "asset" or "folder"), resolving explicit role_grants rewrite
+// rules (same_object + parent) down to direct standing bindings. Group-aware and
+// cycle-safe (goals are deduped via UNION, so the finite goal set terminates).
+func (r *RoleResolver) HoldsRole(ctx context.Context, userID, roleID uuid.UUID, objectKind string, objectID uuid.UUID) (bool, error) {
+	// The goals CTE expands (role, object) pairs via role_grants rewrite rules.
+	// PostgreSQL requires the recursive reference to appear exactly once in the
+	// recursive term.  We achieve multi-branch expansion by first computing a
+	// "next_goals" derived table (one reference to goals, three UNION ALL branches)
+	// and then UNIONing that into the accumulator.
+	const sql = `
+WITH RECURSIVE
+user_groups(group_id) AS (
+    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
+),
+goals(role_id, object_kind, object_id) AS (
+    -- seed
+    SELECT $2::uuid, $3::text, $4::uuid
+  UNION
+    -- one reference to goals; three expansion branches combined before the UNION
+    SELECT ng.next_role_id, ng.next_kind, ng.next_object_id
+    FROM goals g,
+         LATERAL (
+             -- same_object: (R,O) → (S,O)
+             SELECT rg.source_role_id AS next_role_id,
+                    g.object_kind    AS next_kind,
+                    g.object_id      AS next_object_id
+             FROM role_grants rg
+             WHERE rg.role_id = g.role_id AND rg.via = 'same_object'
+
+             UNION ALL
+
+             -- parent on asset: (R,asset A) → (S, folder of A)
+             SELECT rg.source_role_id,
+                    'folder'::text,
+                    a.folder_id
+             FROM role_grants rg
+             JOIN assets a ON g.object_kind = 'asset' AND a.id = g.object_id
+             WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+
+             UNION ALL
+
+             -- parent on folder: (R,folder F) → (S, parent folder)
+             SELECT rg.source_role_id,
+                    'folder'::text,
+                    f.parent_id
+             FROM role_grants rg
+             JOIN folders f ON g.object_kind = 'folder' AND f.id = g.object_id
+                            AND f.parent_id IS NOT NULL
+             WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+         ) ng
+)
+SELECT EXISTS (
+    SELECT 1
+    FROM goals g
+    JOIN role_bindings rb ON rb.role_id = g.role_id AND rb.kind = 'standing'
+      AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
+         OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
+      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
+)`
+	var ok bool
+	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("holds role: %w", err)
+	}
+	return ok, nil
+}
