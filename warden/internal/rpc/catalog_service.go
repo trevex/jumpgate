@@ -344,17 +344,23 @@ func (s *CatalogServer) ListRoleGrants(ctx context.Context, req *connect.Request
 
 // ExplainRole enumerates every derivation by which a user holds a role on an
 // asset. Admins may explain anyone; a non-admin may only explain themselves.
+//
+// user_id is parsed to a canonical uuid before the self-check, so a non-admin
+// may pass their own id in any parseable form (e.g. uppercase or URN).
+// Unknown-but-parseable user_id/role_id/asset_id yield holds=false, paths=[]
+// (reported as "no access", not an error): this is intentional for the
+// admin/self introspection tool.
 func (s *CatalogServer) ExplainRole(ctx context.Context, req *connect.Request[catalogv1.ExplainRoleRequest]) (*connect.Response[catalogv1.ExplainRoleResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	if !caller.IsAdmin && req.Msg.UserId != caller.ID.String() {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
-	}
 	userID, err := uuid.Parse(req.Msg.UserId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if !caller.IsAdmin && userID != caller.ID {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
 	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {

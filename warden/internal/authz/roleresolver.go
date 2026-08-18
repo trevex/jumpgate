@@ -41,6 +41,9 @@ goals(role_id, object_kind, object_id) AS (
     SELECT ng.next_role_id, ng.next_kind, ng.next_object_id
     FROM goals g,
          LATERAL (
+             -- The same three rewrite arms (same_object, parent-from-asset,
+             -- parent-from-folder) are duplicated in ExplainRole below — keep the
+             -- traversal semantics in sync (ExplainRole additionally emits via + path).
              -- same_object: (R,O) → (S,O)
              SELECT rg.source_role_id AS next_role_id,
                     g.object_kind    AS next_kind,
@@ -121,6 +124,10 @@ type explainStepJSON struct {
 // to HoldsRole: the in-path guard only prevents revisiting a (role,object)
 // tuple within one path, so it does not shrink the reachable-and-satisfied goal
 // set; it merely bounds each path to distinct tuples, guaranteeing termination.
+//
+// Unknown-but-parseable userID/roleID/assetID simply match no goals or bindings
+// and yield holds=false, paths=nil (no error): this is intentional for the
+// admin/self introspection tool.
 func (r *RoleResolver) ExplainRole(ctx context.Context, userID, roleID, assetID uuid.UUID) (bool, []ExplainPath, error) {
 	const sql = `
 WITH RECURSIVE
@@ -138,6 +145,9 @@ goals(role_id, object_kind, object_id, path) AS (
            g.path || jsonb_build_object('role_id', x.role_id, 'object_kind', x.object_kind, 'object_id', x.object_id, 'via', x.via)
     FROM goals g,
     LATERAL (
+        -- The same three rewrite arms (same_object, parent-from-asset,
+        -- parent-from-folder) are duplicated in HoldsRole above — keep the
+        -- traversal semantics in sync (this variant additionally emits via + path).
         SELECT rg.source_role_id AS role_id, g.object_kind AS object_kind, g.object_id AS object_id, 'same_object'::text AS via
         FROM role_grants rg WHERE rg.role_id = g.role_id AND rg.via = 'same_object'
       UNION ALL
@@ -161,7 +171,11 @@ FROM goals g
 JOIN role_bindings rb ON rb.role_id = g.role_id AND rb.kind = 'standing'
   AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
     OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
-  AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))`
+  AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+-- Defensive cap: role_grants is tiny/admin-curated, but bound worst-case result
+-- size. This caps explanation breadth only — holds (len(paths)>0) stays correct
+-- because the cap is ≥ 1 and never empties a non-empty result.
+LIMIT 500`
 
 	rows, err := r.pool.Query(ctx, sql, userID, roleID, assetID)
 	if err != nil {
