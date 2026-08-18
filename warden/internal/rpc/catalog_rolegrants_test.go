@@ -21,7 +21,7 @@ func TestRoleGrantCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	mustRole := func(name string) string {
-		r, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: name, ResourceType: "asset", Capabilities: []string{"read"}}), tok))
+		r, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: name, ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
 		if err != nil {
 			t.Fatalf("role %s: %v", name, err)
 		}
@@ -125,7 +125,7 @@ func TestExplainRole(t *testing.T) {
 	}
 	pgID := pg.Msg.Asset.Id
 
-	owner, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "owner", ResourceType: "asset", Capabilities: []string{"*"}}), tok))
+	owner, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "owner", ResourceType: "asset", Capabilities: []string{"db:**"}}), tok))
 	if err != nil {
 		t.Fatalf("role owner: %v", err)
 	}

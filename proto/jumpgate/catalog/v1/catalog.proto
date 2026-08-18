@@ -50,7 +50,13 @@ message ListAssetsByFolderResponse { repeated Asset assets = 1; }
 message CreateRoleRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
   string resource_type = 2 [(buf.validate.field).string = {in: ["folder", "asset"]}];
-  repeated string capabilities = 3;
+  // Each capability is a colon-delimited scoped path: scope:action[:qualifier…]
+  // (≥2 segments). A segment is lowercase-alphanumeric with internal hyphens.
+  // Glob patterns are permitted in a role's stored list: '*' matches exactly one
+  // segment; a trailing '**' matches one-or-more remaining segments (only as the
+  // final segment). Rejects unscoped ("admin"), empty segments ("k8s:"),
+  // non-final '**' ("k8s:**:x"), and uppercase/junk.
+  repeated string capabilities = 3 [(buf.validate.field).repeated.items.string.pattern = "^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$"];
 }
 message CreateRoleResponse { Role role = 1; }
 

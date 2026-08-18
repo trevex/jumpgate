@@ -105,11 +105,11 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	pgstaging = mkAsset(staging.ID, "pg-staging")
 	topsecret = mkAsset(secret.ID, "top-secret")
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "operator", ResourceType: "asset", Capabilities: caps("connect", "read", "write")})
+	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "operator", ResourceType: "asset", Capabilities: caps("ssh:connect", "db:read", "db:write")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	vw, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "viewer", ResourceType: "asset", Capabilities: caps("read")})
+	vw, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "viewer", ResourceType: "asset", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,17 +167,17 @@ func TestCheckCapability(t *testing.T) {
 	a := NewSQLAuthorizer(pool)
 	ctx := context.Background()
 
-	if ok, err := a.Check(ctx, alice, pgprod, "write"); err != nil || !ok {
-		t.Fatalf("Check(write, pgprod) = %v, %v; want true", ok, err)
+	if ok, err := a.Check(ctx, alice, pgprod, "db:write"); err != nil || !ok {
+		t.Fatalf("Check(db:write, pgprod) = %v, %v; want true", ok, err)
 	}
-	if ok, err := a.Check(ctx, alice, pgprod, "admin"); err != nil || ok {
-		t.Fatalf("Check(admin, pgprod) = %v, %v; want false", ok, err)
+	if ok, err := a.Check(ctx, alice, pgprod, "db:admin"); err != nil || ok {
+		t.Fatalf("Check(db:admin, pgprod) = %v, %v; want false", ok, err)
 	}
-	if ok, err := a.Check(ctx, alice, pgstaging, "read"); err != nil || ok {
-		t.Fatalf("Check(read, pgstaging) = %v, %v; want false (requestable != active)", ok, err)
+	if ok, err := a.Check(ctx, alice, pgstaging, "db:read"); err != nil || ok {
+		t.Fatalf("Check(db:read, pgstaging) = %v, %v; want false (requestable != active)", ok, err)
 	}
-	if ok, err := a.Check(ctx, alice, topsecret, "read"); err != nil || ok {
-		t.Fatalf("Check(read, topsecret) = %v, %v; want false", ok, err)
+	if ok, err := a.Check(ctx, alice, topsecret, "db:read"); err != nil || ok {
+		t.Fatalf("Check(db:read, topsecret) = %v, %v; want false", ok, err)
 	}
 }
 
@@ -216,7 +216,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", ResourceType: "asset", Capabilities: caps("read")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", ResourceType: "asset", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,8 +232,8 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 	}
 
 	a := NewSQLAuthorizer(pool)
-	if ok, err := a.Check(ctx, alice.ID, deepAsset.ID, "read"); err != nil || !ok {
-		t.Fatalf("Check(read, deepAsset via 3-level inheritance) = %v, %v; want true", ok, err)
+	if ok, err := a.Check(ctx, alice.ID, deepAsset.ID, "db:read"); err != nil || !ok {
+		t.Fatalf("Check(db:read, deepAsset via 3-level inheritance) = %v, %v; want true", ok, err)
 	}
 	vis, err := a.VisibleAssets(ctx, alice.ID)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", ResourceType: "asset", Capabilities: caps("read")})
+	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", ResourceType: "asset", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,8 +304,8 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 
 	// Negative: without an explicit `parent` rule the folder binding must NOT
 	// reach the descendant asset.
-	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || ok {
-		t.Fatalf("Check(read, asset) before grant = %v, %v; want false (no implicit folder walk)", ok, err)
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:read"); err != nil || ok {
+		t.Fatalf("Check(db:read, asset) before grant = %v, %v; want false (no implicit folder walk)", ok, err)
 	}
 	// Pin the visibility path too: asset must not be Active.
 	vis, err := a.VisibleAssets(ctx, user.ID)
@@ -331,8 +331,8 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 	}
 
 	// Positive: the flip proves heldCTE honors the explicit-only cascade.
-	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || !ok {
-		t.Fatalf("Check(read, asset) after grant = %v, %v; want true", ok, err)
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:read"); err != nil || !ok {
+		t.Fatalf("Check(db:read, asset) after grant = %v, %v; want true", ok, err)
 	}
 	vis2, err := a.VisibleAssets(ctx, user.ID)
 	if err != nil {
@@ -387,11 +387,11 @@ func TestCheckSameObjectComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", ResourceType: "asset", Capabilities: caps("read")})
+	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", ResourceType: "asset", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", ResourceType: "asset", Capabilities: caps("write")})
+	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", ResourceType: "asset", Capabilities: caps("db:write")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,16 +413,100 @@ func TestCheckSameObjectComposition(t *testing.T) {
 	a := NewSQLAuthorizer(pool)
 
 	// super's own capability holds directly.
-	if ok, err := a.Check(ctx, user.ID, asset.ID, "write"); err != nil || !ok {
-		t.Fatalf("Check(write, asset) = %v, %v; want true (super's own cap)", ok, err)
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:write"); err != nil || !ok {
+		t.Fatalf("Check(db:write, asset) = %v, %v; want true (super's own cap)", ok, err)
 	}
 	// read comes from base, reachable via the same_object rewrite from super.
-	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || !ok {
-		t.Fatalf("Check(read, asset) = %v, %v; want true (base via same_object)", ok, err)
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:read"); err != nil || !ok {
+		t.Fatalf("Check(db:read, asset) = %v, %v; want true (base via same_object)", ok, err)
 	}
 	// guard: a capability neither role has → false.
-	if ok, err := a.Check(ctx, user.ID, asset.ID, "admin"); err != nil || ok {
-		t.Fatalf("Check(admin, asset) = %v, %v; want false", ok, err)
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:admin"); err != nil || ok {
+		t.Fatalf("Check(db:admin, asset) = %v, %v; want false", ok, err)
+	}
+}
+
+// TestCheckGlobCapabilities pins the SQL→Go glob path in Check: a role's stored
+// capability patterns are matched against the concrete requested capability via
+// CapMatch. Each subcase binds a role STANDING on the asset with a distinct
+// capability pattern and asserts positive/negative Check outcomes.
+func TestCheckGlobCapabilities(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "glob@x", DisplayName: "Glob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "glob-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// bindRole creates a role with the given capability patterns and a STANDING
+	// binding of it to `user` on a fresh asset, returning that asset id.
+	bindRole := func(name string, patterns ...string) uuid.UUID {
+		asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name + "-asset", Labels: []byte("{}")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, ResourceType: "asset", Capabilities: caps(patterns...)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: role.ID, Kind: "standing", ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return asset.ID
+	}
+
+	type want struct {
+		cap string
+		ok  bool
+	}
+	cases := []struct {
+		name     string
+		patterns []string
+		wants    []want
+	}{
+		{"k8s-dstar", []string{"k8s:**"}, []want{
+			{"k8s:connect", true},
+			{"k8s:impersonate:cluster-admin", true},
+		}},
+		{"k8s-star", []string{"k8s:*"}, []want{
+			{"k8s:connect", true},
+			{"k8s:impersonate:cluster-admin", false},
+		}},
+		{"k8s-impersonate-star", []string{"k8s:impersonate:*"}, []want{
+			{"k8s:impersonate:cluster-admin", true},
+			{"k8s:connect", false},
+		}},
+		{"db-ddl-concrete", []string{"db:ddl"}, []want{
+			{"db:ddl", true},
+			{"db:connect", false},
+		}},
+		{"star-connect", []string{"*:connect"}, []want{
+			{"ssh:connect", true},
+			{"db:connect", true},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			asset := bindRole(tc.name, tc.patterns...)
+			for _, w := range tc.wants {
+				got, err := a.Check(ctx, user.ID, asset, w.cap)
+				if err != nil {
+					t.Fatalf("Check(%q): %v", w.cap, err)
+				}
+				if got != w.ok {
+					t.Fatalf("Check(patterns=%v, %q) = %v, want %v", tc.patterns, w.cap, got, w.ok)
+				}
+			}
+		})
 	}
 }
 
