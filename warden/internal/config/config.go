@@ -41,6 +41,11 @@ type Config struct {
 	SessionTokenTTL time.Duration `env:"SESSION_TOKEN_TTL" envDefault:"60s"`
 	// GatewayEndpoint is the externally reachable gateway address the CLI dials.
 	GatewayEndpoint string `env:"GATEWAY_ENDPOINT" envDefault:"localhost:8443"`
+
+	// SSHCertMaxTTL bounds an issued JIT SSH certificate's lifetime. It is a
+	// backstop only: teardown handles in-session revocation, so the cert TTL need
+	// not be short — it just caps a session that outlives all warden signals.
+	SSHCertMaxTTL time.Duration `env:"SSH_CERT_MAX_TTL" envDefault:"8h"`
 }
 
 // Load reads configuration from environment variables.

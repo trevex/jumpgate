@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
@@ -94,7 +95,7 @@ func TestMuxServesHealthzAndRegisters(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t), nil); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t), nil, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
