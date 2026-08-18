@@ -75,6 +75,16 @@ type AuditLog struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
+type AuditOutbox struct {
+	ID          uuid.UUID   `json:"id"`
+	Seq         pgtype.Int8 `json:"seq"`
+	EventType   string      `json:"event_type"`
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+	Subject     string      `json:"subject"`
+	Details     []byte      `json:"details"`
+	CreatedAt   time.Time   `json:"created_at"`
+}
+
 type AuthToken struct {
 	ID        uuid.UUID `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`

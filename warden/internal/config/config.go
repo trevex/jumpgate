@@ -27,6 +27,11 @@ type Config struct {
 	// drives the side effects (audit + teardown).
 	ReaperInterval time.Duration `env:"REAPER_INTERVAL" envDefault:"30s"`
 
+	// AuditDrainInterval is how often the transactional audit outbox drainer moves
+	// enqueued events (written durably inside domain transactions) into the
+	// hash-chained audit_log. A short interval keeps the chain close to real time.
+	AuditDrainInterval time.Duration `env:"AUDIT_DRAIN_INTERVAL" envDefault:"1s"`
+
 	// VaultMasterKey is the base64-encoded 32-byte master KEK that seals CA private
 	// keys and stored secrets at rest. Empty means the vault is disabled.
 	VaultMasterKey string `env:"VAULT_MASTER_KEY"`
