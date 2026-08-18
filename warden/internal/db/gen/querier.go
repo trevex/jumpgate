@@ -39,6 +39,7 @@ type Querier interface {
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	DeleteLiveSession(ctx context.Context, id uuid.UUID) error
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
@@ -58,6 +59,7 @@ type Querier interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
+	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
@@ -65,6 +67,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
+	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
@@ -79,6 +82,8 @@ type Querier interface {
 	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
 	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
+	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
 	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
 	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
@@ -90,6 +95,7 @@ type Querier interface {
 	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
+	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) error
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error

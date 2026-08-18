@@ -7,6 +7,9 @@ package gen
 
 import (
 	"context"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createSessionSigningKey = `-- name: CreateSessionSigningKey :one
@@ -31,6 +34,15 @@ func (q *Queries) CreateSessionSigningKey(ctx context.Context, arg CreateSession
 	return i, err
 }
 
+const deleteLiveSession = `-- name: DeleteLiveSession :exec
+DELETE FROM live_sessions WHERE id = $1
+`
+
+func (q *Queries) DeleteLiveSession(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteLiveSession, id)
+	return err
+}
+
 const getActiveSessionSigningKey = `-- name: GetActiveSessionSigningKey :one
 SELECT id, sealed, public_key, created_at, active FROM session_signing_keys WHERE active
 `
@@ -46,4 +58,154 @@ func (q *Queries) GetActiveSessionSigningKey(ctx context.Context) (SessionSignin
 		&i.Active,
 	)
 	return i, err
+}
+
+const getLiveSession = `-- name: GetLiveSession :one
+SELECT id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at FROM live_sessions WHERE id = $1
+`
+
+func (q *Queries) GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error) {
+	row := q.db.QueryRow(ctx, getLiveSession, id)
+	var i LiveSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AssetID,
+		&i.WorkerID,
+		&i.GrantID,
+		&i.Protocol,
+		&i.Principals,
+		&i.ClientKeyFp,
+		&i.StartedAt,
+		&i.TerminateRequestedAt,
+	)
+	return i, err
+}
+
+const insertLiveSession = `-- name: InsertLiveSession :one
+INSERT INTO live_sessions (id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at
+`
+
+type InsertLiveSessionParams struct {
+	ID          uuid.UUID   `json:"id"`
+	UserID      uuid.UUID   `json:"user_id"`
+	AssetID     uuid.UUID   `json:"asset_id"`
+	WorkerID    string      `json:"worker_id"`
+	GrantID     pgtype.UUID `json:"grant_id"`
+	Protocol    string      `json:"protocol"`
+	Principals  []string    `json:"principals"`
+	ClientKeyFp string      `json:"client_key_fp"`
+}
+
+func (q *Queries) InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error) {
+	row := q.db.QueryRow(ctx, insertLiveSession,
+		arg.ID,
+		arg.UserID,
+		arg.AssetID,
+		arg.WorkerID,
+		arg.GrantID,
+		arg.Protocol,
+		arg.Principals,
+		arg.ClientKeyFp,
+	)
+	var i LiveSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AssetID,
+		&i.WorkerID,
+		&i.GrantID,
+		&i.Protocol,
+		&i.Principals,
+		&i.ClientKeyFp,
+		&i.StartedAt,
+		&i.TerminateRequestedAt,
+	)
+	return i, err
+}
+
+const listLiveSessionsByUserAsset = `-- name: ListLiveSessionsByUserAsset :many
+SELECT id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at FROM live_sessions WHERE user_id = $1 AND asset_id = $2
+`
+
+type ListLiveSessionsByUserAssetParams struct {
+	UserID  uuid.UUID `json:"user_id"`
+	AssetID uuid.UUID `json:"asset_id"`
+}
+
+func (q *Queries) ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error) {
+	rows, err := q.db.Query(ctx, listLiveSessionsByUserAsset, arg.UserID, arg.AssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiveSession
+	for rows.Next() {
+		var i LiveSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AssetID,
+			&i.WorkerID,
+			&i.GrantID,
+			&i.Protocol,
+			&i.Principals,
+			&i.ClientKeyFp,
+			&i.StartedAt,
+			&i.TerminateRequestedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveSessionsByWorker = `-- name: ListLiveSessionsByWorker :many
+SELECT id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at FROM live_sessions WHERE worker_id = $1
+`
+
+func (q *Queries) ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error) {
+	rows, err := q.db.Query(ctx, listLiveSessionsByWorker, workerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiveSession
+	for rows.Next() {
+		var i LiveSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AssetID,
+			&i.WorkerID,
+			&i.GrantID,
+			&i.Protocol,
+			&i.Principals,
+			&i.ClientKeyFp,
+			&i.StartedAt,
+			&i.TerminateRequestedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markLiveSessionTerminating = `-- name: MarkLiveSessionTerminating :exec
+UPDATE live_sessions SET terminate_requested_at = now() WHERE id = $1 AND terminate_requested_at IS NULL
+`
+
+func (q *Queries) MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markLiveSessionTerminating, id)
+	return err
 }
