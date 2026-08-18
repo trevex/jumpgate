@@ -8,6 +8,10 @@
 mod config;
 mod connect;
 mod health;
+// Worker selection (Task 11) is wired into the connection handler in Task 13;
+// until then it is only exercised by its own tests.
+#[allow(dead_code)]
+mod lb;
 // The roster client (Task 10) is wired into `main` in Task 13; for now only its
 // unit-tested `Roster` map is exercised.
 #[allow(dead_code)]
