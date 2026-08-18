@@ -43,7 +43,7 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-flow", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-flow", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}

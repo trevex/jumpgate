@@ -99,7 +99,7 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	}
 
 	mkAsset := func(folder uuid.UUID, name string) uuid.UUID {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}")})
+		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -236,7 +236,7 @@ func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "gf-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "gf-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +468,7 @@ func TestRequestableViaExplicitSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "bg-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "bg-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +673,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deepAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "deep", Labels: []byte("{}")})
+	deepAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "deep", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "cascade-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "cascade-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -844,7 +844,7 @@ func TestCheckSameObjectComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "compose-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "compose-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -910,7 +910,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 	// bindRole creates a role with the given capability patterns and a STANDING
 	// binding of it to `user` on a fresh asset, returning that asset id.
 	bindRole := func(name string, patterns ...string) uuid.UUID {
-		asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name + "-asset", Labels: []byte("{}")})
+		asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name + "-asset", Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1050,7 +1050,7 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deep, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: leaf.ID, Name: "casc-deep", Labels: []byte("{}")})
+	deep, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: leaf.ID, Name: "casc-deep", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1110,7 +1110,7 @@ func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "hrs-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "hrs-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1167,7 +1167,7 @@ func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "grr-asset", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "grr-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}

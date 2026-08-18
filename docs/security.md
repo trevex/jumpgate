@@ -8,10 +8,12 @@ treatments elsewhere ([access-model.md](access-model.md),
 
 > **Status:** most control-plane mechanisms are implemented today
 > (existence-hiding, the opaque-token auth model, capability validation, the audit
-> primitive, and the full **JIT request→approve→grant→reaper** workflow with
-> time-boxed least-privilege grants and their revocation matrix, M3c); the
-> **data-plane** enforcement, live-session **teardown**, and **secrets-at-rest** are
-> still **planned** (M3d/M4/M5). Each item below is marked.
+> primitive, the full **JIT request→approve→grant→reaper** workflow with
+> time-boxed least-privilege grants and their revocation matrix (M3c), and
+> **secrets-at-rest** — the envelope-encrypting **CredentialBroker/vault** (M3d,
+> which **completes M3**)); the **data-plane** enforcement, live-session
+> **teardown**, and live credential **injection** are still **planned** (M4/M5).
+> Each item below is marked.
 
 ## Posture — what we defend
 
@@ -39,6 +41,9 @@ treatments elsewhere ([access-model.md](access-model.md),
   grants live in warden (Go); the data plane holds a credential only for the life
   of an authorized session
   ([architecture.md](architecture.md#data-plane-interaction-model-approach-a)).
+  ✅ The **vault** — envelope-encrypted secrets + the CAs + the `CredentialBroker`
+  seam — is built (M3d); the data-plane worker that receives a minted credential is
+  M4.
 
 ## Existence-hiding — topology never leaks
 
@@ -156,12 +161,42 @@ teardown) lands with those subsystems. See
 > (write the event inside the domain tx, drain it with a worker) — a deferred
 > follow-up.
 
-## Secrets at rest
+## Secrets at rest — envelope encryption ✅ (M3d)
 
-The **CredentialBroker** will **envelope-encrypt** the secrets it holds — CA
-private keys and stored target secrets — under a master key (**NaCl secretbox**
-in M3; a **pluggable KMS** later). Decryption happens only to hand a credential
-to a worker for a live, authorized session. **Planned** (M3d).
+The **CredentialBroker** (the vault) **envelope-encrypts** every secret it holds —
+CA private keys (`ca_keys.sealed`) and stored target secrets (`asset_secrets.
+sealed`). Each secret gets a fresh random **256-bit DEK** that encrypts the
+plaintext (**AES-256-GCM**); the DEK is then **wrapped** by a **master KEK**
+(also AES-256-GCM). Plaintext **never** touches the DB unsealed, and the sealed
+bytes are **never** returned via the API — decryption happens only inside the
+broker to hand a credential out (in M4, to a worker for a live, authorized
+session). GCM makes it **fail-closed**: a wrong KEK or a tampered blob fails
+`Open`. See [architecture.md](architecture.md#vault--credentialbroker-m3d).
+
+- **Master-key custody.** The KEK is a base64 32-byte `VAULT_MASTER_KEY`
+  (**env for now**; a **KMS** is the future seam — only the DEK-wrap step changes,
+  so master-key rotation re-wraps DEKs without touching ciphertexts). The vault is
+  **disabled** (fail-closed, warn at boot) if the key is unset, **fatal** if
+  malformed.
+- **⚠ Losing the master key loses all sealed secrets.** There is no recovery path —
+  the DEKs are wrapped under it. Custody of `VAULT_MASTER_KEY` (or the future KMS
+  key) is a top-tier operational secret.
+
+**Short-lived, capability-scoped credentials.** The credential the broker mints is
+**bounded by the grant TTL** — the caller passes `ValidUntil` (in M4, the granting
+`access_grant`'s remaining lifetime) into the cert's `ValidBefore` / the leaf's
+`NotAfter`, so a credential never outlives the authorization behind it. For SSH,
+the cert's principals are **capability-derived and entitlement-scoped**: the broker
+intersects the host's `allowed_logins` with the user's `ssh:login:*` capabilities
+(`Check`) and signs a cert whose `ValidPrincipals` is **exactly** that intersection
+— **no static host login**, and `ssh:login:*` is bounded by the host allowlist. An
+empty intersection is refused, and the CA **independently refuses to sign a
+principal-less cert** (which OpenSSH treats as "valid for every account, incl.
+root") as defense-in-depth. Every issuance appends a **`credential.issued`** audit
+event. See [access-model.md](access-model.md#ssh-access--os-logins-are-capabilities-m3d).
+
+**Implemented** (M3d — envelope crypto, both CAs, the broker + SSH/stored-secret
+providers, `VaultService`). Live credential **injection** into a session is **M4**.
 
 ## Threat-model summary
 
@@ -174,9 +209,11 @@ to a worker for a live, authorized session. **Planned** (M3d).
 | Over-broad capability grant slips in unnoticed | Grammar validation at role creation; `**` is the explicit, auditable "whole scope"; `CapMatch` fails closed | Implemented (this branch) |
 | Access revoked but live session continues | Grant revoke/expiry re-evaluates authz immediately (drops from the held closure) + calls the teardown seam; forced session kill is the M4 gateway path | Grant revoke/expiry/audit/seam: M3c ✅ · live-session kill: M4 ⬜ |
 | Compromised/departed user keeps acting | `deactivated_at` off-switch: rejected at Login **and** the auth interceptor (`Unauthenticated`) on any authenticated RPC | Implemented (M-v2); residual: still counts in others' authz sets until unbound/deleted (full CTE exclusion deferred) |
-| Credential exposed on a compromised target | Agentless: no credential/software on targets; worker holds it only for a live session | Planned (M4/M5) |
+| Credential exposed on a compromised target | Agentless: no credential/software on targets; the credential is **short-lived** (broker-bounded by the grant TTL) and the worker holds it only for a live session | Broker + short-lived creds: M3d ✅ · agentless injection into a live session: M4 ⬜ |
+| Over-broad SSH host login (static account, root-for-all) | SSH cert principals are **capability-derived**: `allowed_logins ∩ user's ssh:login:* caps`; empty → refused; the CA refuses a principal-less (all-accounts) cert | Implemented (M3d) |
 | Audit log tampered to hide activity | Hash-chained append-only log; independently verifiable | Primitive: M3a ✅ · JIT events wired M3c ✅ · full wiring ongoing (known post-commit crash window, outbox deferred) |
-| Secrets (CA keys, target creds) read at rest | Envelope encryption (NaCl secretbox master key; KMS pluggable) | Planned (M3d) |
+| Secrets (CA keys, target creds) read at rest | Envelope encryption: per-secret AES-256-GCM DEK wrapped by a master KEK (`VAULT_MASTER_KEY`; KMS-pluggable); sealed bytes never leave the DB/API; fail-closed `Open` | Implemented (M3d) |
+| Master key lost/leaked | Losing `VAULT_MASTER_KEY` loses all sealed secrets (no recovery); KMS custody is the future seam — treat the key as a top-tier operational secret | Residual (documented; KMS deferred) |
 
 ## Related
 

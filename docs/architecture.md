@@ -48,7 +48,7 @@ Modules (all ⬜ except the HTTP skeleton):
 - **Authorization** ✅ (recursive-CTE Authorizer + catalog RPCs; OpenFGA remains a future drop-in behind the seam). See [Access model](#access-model).
 - **Access config (AccessService)** ✅ — all admin authorization config in one surface: custom **roles** (capability bundles), **role_grants** (the `same_object`/`parent` rewrite rules), **role_bindings** (standing-only), **request_policies** + requester/approver **subjects**, and `ExplainRole`.
 - **Resource catalog** ✅ folders/assets CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding. All role/authz config lives in AccessService.
-- **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
+- **Credential vault / CredentialBroker** ✅ (M3d) — envelope-encrypted secrets at rest (per-secret AES-256-GCM DEK wrapped by a master KEK, KMS-ready), an SSH user CA + an X.509 client CA, and the **`CredentialBroker`** seam that mints a short-lived credential for a (user, asset) with **capability-driven SSH principals**. Admin surface is `VaultService`. **This completes M3.** The broker is built + tested but not yet wired to a live session — the worker calling `Issue` and live credential **injection** are **M4**. See [Vault / CredentialBroker](#vault--credentialbroker-m3d).
 - **JIT / request engine (AccessRequestService)** ✅ (M3c) — the full runtime lifecycle: `RequestAccess` (self-service at `required_approvals=0`), `Approve`/`Deny` (N-of-M, distinct approvers, one deny rejects, atomic mint under a row lock), `Cancel`, `RevokeGrant`, `ListMyRequests`/`ListPendingApprovals`/`ListMyGrants`/`ListGrants`. Approved requests mint a **time-boxed `access_grants` row** that joins the authorizer's held closure; an in-process **reaper** (`ReaperInterval`) expires grants. Live-session **teardown** is a wired **`GrantTerminator` seam** (no-op now; real gateway kill is M4).
 - **Request policies** ✅ (M3b + Access-Model v2) one `request_policies` row per (role, scope) whose **existence makes the role requestable** there: role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override, most-specific wins. Symmetric eligibility — requester = holders of `requester_role` on the scope ∪ explicit `requester` subjects; approver = holders of `approver_role` ∪ explicit `approver` subjects; both resolved **standing-only** via `HoldsRoleStanding` (a JIT grant confers access but never governance). No policy ⇒ not requestable. A policy also carries `required_approvals` (`≥ 0`; `0` = self-service) and a nullable `max_duration` grant cap. CRUD in `AccessService`; resolver (`EffectiveRule`, `IsApprover`, `IsEligibleRequester`) + `ResolveApproval` in `AccessRequestService`.
 - **Audit log** 🟡 (M3a) hash-chained tamper-evident audit log (`entry_hash = sha256(prev_hash ‖ canonical(entry))`); append-only with advisory-lock genesis; chain independently verifiable (Append/Verify).
@@ -202,13 +202,116 @@ authorizer's held-closure base becomes `role_bindings ∪ active access_grants`
 the **deactivation** of its subject — each audited and routed to the
 `GrantTerminator` teardown seam.
 
+## Vault / CredentialBroker ✅ (M3d) — completes M3
+
+The vault is the boundary that turns "this user is authorized" into "here is the
+short-lived credential to reach the target". Built + tested in **M3d**; the live
+consumer (the worker calling it, credential **injection** into a session) is
+**M4**. This section **completes M3**.
+
+### Envelope encryption — the `secrets` package ✅
+
+All CA private keys and stored secrets are **envelope-encrypted at rest**:
+
+- A **master KEK** comes from config `VAULT_MASTER_KEY` (a base64-encoded **32-byte**
+  key, not a passphrase). Built into a `secrets.Sealer` **once at startup**. If the
+  key is **unset** the vault is **disabled** (boot + a `slog.Warn`; sealing write
+  paths fail closed with `FailedPrecondition`); a **malformed** key is **fatal**.
+- Each secret gets a fresh random **256-bit DEK** — `ct = AES-256-GCM(plaintext,
+  DEK)`; the DEK is then **wrapped** by the KEK (`AES-256-GCM(DEK, KEK)`). `Seal`
+  serializes `{version, wrapped_dek+nonces, ct+nonce}` into one `bytea`; `Open`
+  reverses it. GCM gives tamper detection — a wrong KEK or a flipped byte fails
+  `Open` (fail-closed).
+- **KMS-ready:** only the DEK-wrap step is the KMS seam — a future KMS wraps/unwraps
+  the DEK; master-key rotation re-wraps DEKs only, never the ciphertexts.
+
+Plaintext CA keys / secrets **never** touch the DB unsealed, and sealed bytes are
+**never** returned via the API. See [security.md](security.md#secrets-at-rest).
+
+### Certificate authorities — the `ca` package ✅
+
+Two global CA singletons, private material sealed into `ca_keys` (one **active**
+per kind), initialized once via `VaultService.InitCA(kind)`:
+
+- **SSH user CA** — ed25519. `public_material` = the `authorized_keys` CA line
+  (hosts add it to `TrustedUserCAKeys` to trust warden-minted user certs).
+- **X.509 client CA** — self-signed, ECDSA P-256. `public_material` = the CA cert
+  PEM (mTLS services trust it). **Built + unit-tested but not reachable via any
+  `assets.kind` yet** — Postgres/k8s wire it up in **M5**.
+
+`GetCAPublic(kind)` distributes the public material to targets.
+
+### The broker + providers ✅
+
+`CredentialBroker.Issue(ctx, userID, assetID, {ClientSSHPubKey, ValidUntil,
+KeyID})` (`warden/internal/vault`) is an **internal Go seam — not an RPC**. It
+loads the asset (`kind`) → its typed config → runs the matching provider:
+
+- **ssh-ca** (`ssh` asset, `auth_method='ca-cert'`): derives the entitled
+  principals (below), signs `ClientSSHPubKey` with the SSH CA into an SSH **user
+  cert** with `ValidPrincipals = principals`, `ValidBefore = ValidUntil`, and the
+  audit `KeyId`. Returns `{Kind:"ssh-cert"}`.
+- **stored-key / stored-secret** (`ssh` asset, `auth_method='stored-key'`): `Open`s
+  the linked `asset_secret` and returns `{Kind:"secret"}` (no cert).
+- **x509** provider: mints a short-lived client cert (CN = user identity, `NotAfter
+  = ValidUntil`) via the X.509 CA. **Built + tested, not reachable via a kind yet
+  (M5).**
+
+`ValidUntil` / `KeyID` are **caller-supplied**; in M4 the worker passes the
+granting `access_grant`'s remaining TTL and id so **a credential never outlives its
+grant**. Every successful `Issue` appends a **`credential.issued`** audit event
+(actor = user, subject = `asset:<id>`, details = provider / principals / key-id /
+validity), post-fact and best-effort like the JIT events.
+
+### Capability-driven SSH principals ✅ (Teleport-style)
+
+The broker is the enforcement point for **which OS accounts a user may log in as**.
+It does **not** trust the host's `allowed_logins` wholesale — it intersects that
+list with the user's live capabilities:
+
+```
+principals = { L ∈ ssh_asset_config.allowed_logins
+               : authz.Check(user, asset, "ssh:login:" + L) }
+```
+
+`Check` is the same glob-aware, grant-aware authorizer used everywhere: a role
+holding `ssh:login:*` matches every allowed login; `ssh:login:root` matches just
+`root`; the capability may be held via a standing binding **or** an active JIT
+grant. An **empty** intersection is **refused** (`ErrNoLoginEntitlement` — no cert,
+no audit) rather than defaulting to an all-accounts cert; the `ca` layer
+**independently** refuses to sign a principal-less certificate as
+defense-in-depth. So the minted cert authorizes **exactly** the logins the user is
+entitled to — no static host login. See
+[access-model.md](access-model.md#ssh-access--os-logins-are-capabilities-m3d).
+
+### `GetAssetSecret` scoping ✅
+
+The broker's stored-secret lookup is scoped to the owning asset (id **and**
+`asset_id`), so a secret can never be opened for the wrong asset (fail-closed).
+
+### Admin API — `VaultService` ✅
+
+Admin-guarded ConnectRPC: `InitCA(kind)` / `GetCAPublic(kind)`; `SetAssetSecret` /
+`DeleteAssetSecret` / `ListAssetSecrets` (**metadata only — id/name/created_at,
+never the value**); `SetSSHAssetConfig` / `GetSSHAssetConfig`. `CatalogService.
+CreateAsset` gains a validated `kind` (default `ssh`). Sealed private material
+never leaves the server.
+
+### Scope boundary — no live injection yet
+
+M3d **builds + tests** the broker by calling `Issue` directly and asserting the
+emitted cert/secret. It does **not** connect to hosts, inject into a session, or
+wire the broker to a proxy — that (and the worker passing the grant TTL) is **M4**;
+the `postgres`/`k8s` typed configs + their proxies are **M5**.
+
 ## Audit & recording 🟡 (M3a primitive ✅ · JIT events ✅ · sessions M4/M5)
 
 Every request, reason, approval, grant, session start/stop, step-up, and expiry is
 written to an append-only, **hash-chained** audit log
 (`entry_hash = sha256(prev_hash ‖ canonical(entry))`) so tampering breaks the
 chain. The JIT workflow emits `access_request.created`/`.approved`/`.denied`/
-`.cancelled` and `access_grant.activated`/`.revoked`/`.expired` (M3c). Audit
+`.cancelled` and `access_grant.activated`/`.revoked`/`.expired` (M3c), and the
+vault emits `credential.issued` on each broker issuance (M3d). Audit
 appends are **post-commit** (the audit logger opens its own advisory-locked tx and
 cannot join the domain tx), which leaves a small **crash window** between the domain
 commit and the append — a known limitation, to be closed with a transactional

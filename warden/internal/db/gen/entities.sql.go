@@ -41,17 +41,23 @@ func (q *Queries) AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) 
 }
 
 const createAsset = `-- name: CreateAsset :one
-INSERT INTO assets (folder_id, name, labels) VALUES ($1, $2, $3) RETURNING id, folder_id, name, labels, created_at
+INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING id, folder_id, name, labels, created_at, kind
 `
 
 type CreateAssetParams struct {
 	FolderID uuid.UUID `json:"folder_id"`
 	Name     string    `json:"name"`
 	Labels   []byte    `json:"labels"`
+	Kind     string    `json:"kind"`
 }
 
 func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error) {
-	row := q.db.QueryRow(ctx, createAsset, arg.FolderID, arg.Name, arg.Labels)
+	row := q.db.QueryRow(ctx, createAsset,
+		arg.FolderID,
+		arg.Name,
+		arg.Labels,
+		arg.Kind,
+	)
 	var i Asset
 	err := row.Scan(
 		&i.ID,
@@ -59,6 +65,7 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 		&i.Name,
 		&i.Labels,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -231,7 +238,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT id, folder_id, name, labels, created_at FROM assets WHERE id = $1
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = $1
 `
 
 func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
@@ -243,6 +250,7 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		&i.Name,
 		&i.Labels,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
