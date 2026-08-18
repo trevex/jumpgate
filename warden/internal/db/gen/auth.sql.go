@@ -84,7 +84,7 @@ func (q *Queries) GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (Aut
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, display_name, created_at, password_hash, is_admin FROM users WHERE email = $1
+SELECT id, email, display_name, created_at, password_hash, is_admin, deactivated_at FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -97,12 +97,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, display_name, created_at, password_hash, is_admin FROM users WHERE id = $1
+SELECT id, email, display_name, created_at, password_hash, is_admin, deactivated_at FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -115,6 +116,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
