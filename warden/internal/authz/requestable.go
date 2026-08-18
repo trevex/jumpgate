@@ -14,26 +14,36 @@ import (
 //  1. an effective request_policy for (R, A) resolves — most-specific by scope:
 //     asset A > nearest ancestor folder > role-default (scope NULL); AND
 //  2. the user is ELIGIBLE for that policy — either the policy names a
-//     requester_role_id the user holds on A (via the explicit role-rewrite graph,
-//     i.e. (requester_role, A) ∈ held), OR the user (directly or via a nested
-//     group) is a kind='requester' explicit subject of that policy; AND
-//  3. the user does NOT already hold R Active (standing) on A — i.e.
-//     (R, A) ∉ held. (Active excludes requestable.)
+//     requester_role_id the user holds STANDING on A (via the explicit role-rewrite
+//     graph, i.e. (requester_role, A) ∈ held_standing — grants excluded, this is a
+//     governance predicate), OR the user (directly or via a nested group) is a
+//     kind='requester' explicit subject of that policy; AND
+//  3. the user does NOT already hold R Active on A — i.e. (R, A) ∉ held (grants
+//     count here). (Active excludes requestable.)
 //
 // A policy with NO requester_role_id AND no kind='requester' subjects makes
 // nobody eligible: a NULL requester_role is NOT treated as "anyone".
 //
-// The `held` CTE below is the same forward-closure as heldCTE (group-aware,
-// role_grants same_object + parent). Evaluating it ONCE serves both the
-// "already active" subtraction and the "holds requester_role on A" predicate,
-// so the requester predicate composes with groups + parent cascade for free.
+// TWO forward-closures live below (M3c — grants confer access but not governance):
 //
-// SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies here must resolve
-// membership identically to heldCTE in sql_authorizer.go (and to
-// visibleRequestableCTE below). Divergence would make Requestable eligibility
-// disagree with Check's grant decision. See the note on heldCTE. The `held` base
-// is `role_bindings ∪ active access_grants`; the active-grant arm must stay
-// byte-for-byte identical across all held-style copies.
+//   - `held` (→ `held_on_asset`): the grant-augmented closure, base =
+//     `role_bindings ∪ active access_grants`. Used for ACTIVE-EXCLUSION — a role
+//     held Active via a JIT grant must NOT be double-offered as Requestable. This
+//     is the same forward-closure as heldCTE in sql_authorizer.go.
+//
+//   - `held_standing` (→ `held_standing_on_asset`): the standing-only closure,
+//     base = `role_bindings` ONLY (no grant arm). Used for the REQUESTER PREDICATE
+//     ("holds requester_role on A") — a JIT-granted requester_role must NOT make
+//     downstream roles Requestable. This is the governance/eligibility membership,
+//     dual to RoleResolver.HoldsRoleStanding.
+//
+// SECURITY — KEEP IN SYNC: the `user_groups` body and the THREE recursive rewrite
+// arms (same_object + two parent arms) must be IDENTICAL across `held`,
+// `held_standing`, heldCTE (sql_authorizer.go), and visibleRequestableCTE below.
+// The two closures differ ONLY in their base: `held` adds the active-grant arm,
+// `held_standing` does not. The active-grant arm must stay byte-for-byte identical
+// wherever it appears. Divergence in the rewrite arms would make Requestable
+// eligibility disagree with Check's grant decision (or with HoldsRoleStanding).
 const requestableRolesCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -41,6 +51,7 @@ user_groups(group_id) AS (
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),
+-- grant-augmented closure (base = bindings ∪ active grants) → active-exclusion.
 held(role_id, object_kind, object_id) AS (
     SELECT rb.role_id,
            (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
@@ -72,9 +83,40 @@ held(role_id, object_kind, object_id) AS (
         WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
     ) x
 ),
--- roles the user already holds Active (standing) on asset A.
+-- standing-only closure (base = bindings ONLY, no grant arm) → requester predicate.
+-- Governance membership: a JIT-granted role must NOT confer request eligibility.
+held_standing(role_id, object_kind, object_id) AS (
+    SELECT rb.role_id,
+           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
+           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
+    FROM role_bindings rb
+    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    SELECT x.role_id, x.object_kind, x.object_id
+    FROM held_standing h,
+    LATERAL (
+        SELECT rg.role_id, h.object_kind, h.object_id
+        FROM role_grants rg
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
+      UNION ALL
+        SELECT rg.role_id, 'folder'::text, cf.id
+        FROM role_grants rg
+        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+      UNION ALL
+        SELECT rg.role_id, 'asset'::text, ca.id
+        FROM role_grants rg
+        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+    ) x
+),
+-- roles the user already holds Active on asset A (grants count → active-exclusion).
 held_on_asset(role_id) AS (
     SELECT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
+),
+-- roles the user holds STANDING on asset A (grants excluded → requester predicate).
+held_standing_on_asset(role_id) AS (
+    SELECT role_id FROM held_standing WHERE object_kind = 'asset' AND object_id = $2
 ),
 -- ancestor folders of asset A (self-folder at depth 0, walking parent links).
 ancestors(folder_id, depth) AS (
@@ -104,10 +146,11 @@ effective(role_id, policy_id, requester_role_id) AS (
 SELECT e.role_id
 FROM effective e
 WHERE
-  -- eligibility: requester_role held on A, OR explicit kind='requester' subject.
+  -- eligibility: requester_role held STANDING on A (grants excluded — governance),
+  -- OR explicit kind='requester' subject.
   (
     ( e.requester_role_id IS NOT NULL
-      AND EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.role_id = e.requester_role_id) )
+      AND EXISTS (SELECT 1 FROM held_standing_on_asset ha WHERE ha.role_id = e.requester_role_id) )
     OR EXISTS (
         SELECT 1 FROM request_policy_subjects rps
         WHERE rps.policy_id = e.policy_id
@@ -115,7 +158,7 @@ WHERE
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
     )
   )
-  -- active excludes requestable.
+  -- active excludes requestable (grants count — a granted-Active role is excluded).
   AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.role_id = e.role_id)`
 
 // visibleRequestableCTE is the all-assets analogue of requestableRolesCTE: for a
@@ -124,10 +167,14 @@ WHERE
 // semantics are identical; the ancestor/candidate/effective computation is
 // generalized per-asset (keyed on the asset id) rather than pinned to one asset.
 //
-// SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies must resolve
-// membership identically to heldCTE (sql_authorizer.go) and requestableRolesCTE
-// above. The `held` base is `role_bindings ∪ active access_grants`; the
-// active-grant arm must stay byte-for-byte identical across all held-style copies.
+// SECURITY — KEEP IN SYNC: like requestableRolesCTE above, this query carries TWO
+// forward-closures: `held` (grant-augmented, base = `role_bindings ∪ active
+// access_grants`) for ACTIVE-EXCLUSION, and `held_standing` (standing-only, base =
+// `role_bindings` ONLY) for the REQUESTER PREDICATE. The `user_groups` body and the
+// three recursive rewrite arms must be IDENTICAL across `held`, `held_standing`,
+// heldCTE (sql_authorizer.go), and requestableRolesCTE above; the closures differ
+// ONLY in their base. The active-grant arm must stay byte-for-byte identical
+// wherever it appears.
 const visibleRequestableCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -135,6 +182,7 @@ user_groups(group_id) AS (
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),
+-- grant-augmented closure (base = bindings ∪ active grants) → active-exclusion.
 held(role_id, object_kind, object_id) AS (
     SELECT rb.role_id,
            (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
@@ -166,8 +214,37 @@ held(role_id, object_kind, object_id) AS (
         WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
     ) x
 ),
+-- standing-only closure (base = bindings ONLY, no grant arm) → requester predicate.
+held_standing(role_id, object_kind, object_id) AS (
+    SELECT rb.role_id,
+           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
+           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
+    FROM role_bindings rb
+    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    SELECT x.role_id, x.object_kind, x.object_id
+    FROM held_standing h,
+    LATERAL (
+        SELECT rg.role_id, h.object_kind, h.object_id
+        FROM role_grants rg
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
+      UNION ALL
+        SELECT rg.role_id, 'folder'::text, cf.id
+        FROM role_grants rg
+        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+      UNION ALL
+        SELECT rg.role_id, 'asset'::text, ca.id
+        FROM role_grants rg
+        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+    ) x
+),
 held_on_asset(asset_id, role_id) AS (
     SELECT object_id, role_id FROM held WHERE object_kind = 'asset'
+),
+held_standing_on_asset(asset_id, role_id) AS (
+    SELECT object_id, role_id FROM held_standing WHERE object_kind = 'asset'
 ),
 -- ancestor folders for every asset: (asset_id, folder_id, depth), depth 0 at the
 -- asset's own folder, walking parent links upward.
@@ -199,8 +276,9 @@ SELECT e.asset_id, e.role_id
 FROM effective e
 WHERE
   (
+    -- requester_role held STANDING (grants excluded — governance predicate).
     ( e.requester_role_id IS NOT NULL
-      AND EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.requester_role_id) )
+      AND EXISTS (SELECT 1 FROM held_standing_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.requester_role_id) )
     OR EXISTS (
         SELECT 1 FROM request_policy_subjects rps
         WHERE rps.policy_id = e.policy_id
@@ -208,6 +286,7 @@ WHERE
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
     )
   )
+  -- active excludes requestable (grants count — a granted-Active role is excluded).
   AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.role_id)`
 
 // requestableRoles returns the roles requestable (but not already active) for the

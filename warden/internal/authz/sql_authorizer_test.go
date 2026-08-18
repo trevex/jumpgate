@@ -1092,3 +1092,200 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 		t.Fatalf("deep requestable = %v, want [target] (requester_role held via nested group + cascade)", roles.Requestable)
 	}
 }
+
+// TestHoldsRoleStandingExcludesGrants (M3c T5): for a purely-granted role,
+// HoldsRole (access membership) is true but HoldsRoleStanding (governance
+// membership) is false; for a standing-bound role, both are true.
+func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	rr := NewRoleResolver(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "hrs@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "hrs-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "hrs-asset", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	granted, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-granted", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	standing, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-standing", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// granted: held ONLY via an active JIT grant.
+	fabricateGrant(t, pool, user.ID, granted.ID, asset.ID, grantOpts{expiresIn: time.Hour})
+	// standing: held via a standing binding.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: standing.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Granted role: HoldsRole true, HoldsRoleStanding false.
+	if ok, err := rr.HoldsRole(ctx, user.ID, granted.ID, "asset", asset.ID); err != nil || !ok {
+		t.Fatalf("HoldsRole(granted) = %v, %v; want true", ok, err)
+	}
+	if ok, err := rr.HoldsRoleStanding(ctx, user.ID, granted.ID, "asset", asset.ID); err != nil || ok {
+		t.Fatalf("HoldsRoleStanding(granted) = %v, %v; want false (grants excluded)", ok, err)
+	}
+
+	// Standing role: both true.
+	if ok, err := rr.HoldsRole(ctx, user.ID, standing.ID, "asset", asset.ID); err != nil || !ok {
+		t.Fatalf("HoldsRole(standing) = %v, %v; want true", ok, err)
+	}
+	if ok, err := rr.HoldsRoleStanding(ctx, user.ID, standing.ID, "asset", asset.ID); err != nil || !ok {
+		t.Fatalf("HoldsRoleStanding(standing) = %v, %v; want true", ok, err)
+	}
+}
+
+// TestGrantedRequesterRoleNotRequestable (M3c T2 governance): when the requester
+// role of a policy is held ONLY via an active JIT grant, the downstream role must
+// NOT become Requestable (governance uses the standing-only closure). A STANDING
+// binding of the requester role flips it to Requestable.
+func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grr@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "grr-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "grr-asset", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-requester", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-target", ResourceType: "asset", Capabilities: caps("db:admin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Policy: target requestable on asset, requester_role = requester.
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: target.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1, RequesterRoleID: pgUUID(requester.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// user holds requester ONLY via an active JIT grant.
+	fabricateGrant(t, pool, user.ID, requester.ID, asset.ID, grantOpts{expiresIn: time.Hour})
+
+	// requester is Active (access membership via grant), but target must NOT be
+	// Requestable — the requester predicate is standing-only.
+	roles, err := a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeHasRequester := false
+	for _, r := range roles.Active {
+		if r == requester.ID {
+			activeHasRequester = true
+		}
+	}
+	if !activeHasRequester {
+		t.Fatalf("requester must be Active via grant; got .Active=%v", roles.Active)
+	}
+	for _, r := range roles.Requestable {
+		if r == target.ID {
+			t.Fatalf("target must NOT be Requestable when requester_role held only via grant; got .Requestable=%v", roles.Requestable)
+		}
+	}
+	// asset must not be Requestable-visible for target either.
+	vis, err := a.VisibleAssets(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, av := range vis {
+		if av.AssetID == asset.ID {
+			for _, r := range av.RoleIDs {
+				if r == target.ID {
+					t.Fatalf("target must NOT be Requestable-visible via granted requester_role; got roles=%v", av.RoleIDs)
+				}
+			}
+		}
+	}
+
+	// Now give a STANDING binding of the requester role → target becomes Requestable.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: requester.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	roles2, err := a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRequestable := false
+	for _, r := range roles2.Requestable {
+		if r == target.ID {
+			targetRequestable = true
+		}
+	}
+	if !targetRequestable {
+		t.Fatalf("target must be Requestable once requester_role held STANDING; got .Requestable=%v", roles2.Requestable)
+	}
+}
+
+// TestActiveExclusionStillCountsGrants (M3c T4 regression): a role held Active via
+// a grant is NOT double-offered in .Requestable — active-exclusion keeps the grant
+// arm. Uses the seed's request_policy(dba, pgstaging): granting dba on pgstaging
+// makes it Active there, so it must drop out of Requestable.
+func TestActiveExclusionStillCountsGrants(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
+	a := NewSQLAuthorizer(pool)
+
+	// Pre: dba is Requestable on pgstaging (alice holds viewer requester standing).
+	pre, err := a.RolesOnAsset(ctx, alice, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preRequestable := false
+	for _, r := range pre.Requestable {
+		if r == dbaRole {
+			preRequestable = true
+		}
+	}
+	if !preRequestable {
+		t.Fatalf("pre: dba must be Requestable on pgstaging; got .Requestable=%v", pre.Requestable)
+	}
+
+	fabricateGrant(t, pool, alice, dbaRole, pgstaging, grantOpts{expiresIn: time.Hour})
+
+	post, err := a.RolesOnAsset(ctx, alice, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range post.Active {
+		if r == dbaRole {
+			goto activeOK
+		}
+	}
+	t.Fatalf("post: dba must be Active via grant; got .Active=%v", post.Active)
+activeOK:
+	for _, r := range post.Requestable {
+		if r == dbaRole {
+			t.Fatalf("post: dba must NOT be Requestable once granted Active (active-exclusion counts grants); got .Requestable=%v", post.Requestable)
+		}
+	}
+}
