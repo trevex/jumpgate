@@ -47,6 +47,10 @@ WHERE (sqlc.narg(subject_user_id)::uuid IS NULL OR subject_user_id = sqlc.narg(s
 ORDER BY granted_at DESC;
 
 -- name: RevokeGrant :one
+-- Predicate is revoked_at IS NULL only (NOT the derived "active" filter with
+-- expires_at): a grant past expiry but not yet reaped is still revocable so the
+-- deactivation cascade can stamp a reason/actor on it. Authz already excludes it
+-- (expires_at > now() is false everywhere), so this is harmless.
 UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $3
 WHERE id = $1 AND revoked_at IS NULL
 RETURNING *;
