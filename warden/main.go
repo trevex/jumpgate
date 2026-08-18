@@ -78,12 +78,21 @@ func run() error {
 		}
 	}()
 
+	// Build the audit Logger ONCE and share it: the outbox drainer (below) and every
+	// enqueuer/appender must operate over the same pool so the advisory lock and the
+	// hash chain stay consistent.
+	auditLog := audit.New(pool)
+	// Transactional audit outbox drainer: moves events enqueued durably inside domain
+	// transactions (audit_outbox) into the hash-chained audit_log, closing the
+	// post-commit crash window. Exits on ctx.Done() (graceful shutdown).
+	go auditLog.RunDrainer(ctx, cfg.AuditDrainInterval)
+
 	// Build the access-request Service ONCE and share it: the RPC handlers and the
 	// expiry reaper must use the same terminator + audit instance.
 	// NoopTerminator until M4 wires live-session teardown against the gateway.
 	arSvc := accessrequest.NewService(
 		pool,
-		audit.New(pool),
+		auditLog,
 		approvals.New(pool),
 		authz.NewRoleResolver(pool),
 		accessrequest.NoopTerminator{},
