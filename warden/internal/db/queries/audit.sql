@@ -1,6 +1,9 @@
 -- name: NormalizeJSON :one
 SELECT $1::jsonb;
 
+-- name: AcquireAuditLock :exec
+SELECT pg_advisory_xact_lock(4919);
+
 -- name: GetLastAuditEntry :one
 SELECT * FROM audit_log ORDER BY seq DESC LIMIT 1;
 

@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireAuditLock = `-- name: AcquireAuditLock :exec
+SELECT pg_advisory_xact_lock(4919)
+`
+
+func (q *Queries) AcquireAuditLock(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, acquireAuditLock)
+	return err
+}
+
 const getLastAuditEntry = `-- name: GetLastAuditEntry :one
 SELECT id, seq, event_type, actor_user_id, subject, details, prev_hash, entry_hash, created_at FROM audit_log ORDER BY seq DESC LIMIT 1
 `

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
@@ -71,5 +72,31 @@ func TestAppendWithActor(t *testing.T) {
 	}
 	if err := log.Verify(ctx); err != nil {
 		t.Fatalf("verify: %v", err)
+	}
+}
+
+func TestChainSurvivesActorDeletion(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "actor@x", DisplayName: "Actor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := audit.New(pool)
+	if err := log.Append(ctx, audit.Event{Type: "login", ActorID: u.ID, Subject: "user:actor"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Append(ctx, audit.Event{Type: "logout", ActorID: u.ID, Subject: "user:actor"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Verify(ctx); err != nil {
+		t.Fatalf("pre-deletion verify: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Verify(ctx); err != nil {
+		t.Fatalf("chain must remain verifiable after actor deletion: %v", err)
 	}
 }
