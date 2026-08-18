@@ -1,0 +1,101 @@
+package dataplane
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+)
+
+// Terminator is the real GrantTerminator: it re-evaluates the connect predicate for
+// the sessions a revoked/expired grant might have authorized and tears down only
+// those that no longer pass. A session that still has a standing login survives.
+type Terminator struct {
+	pool  *pgxpool.Pool
+	authz authz.Authorizer
+	audit *audit.Logger
+}
+
+// NewTerminator builds the terminator.
+func NewTerminator(pool *pgxpool.Pool, a authz.Authorizer, log *audit.Logger) *Terminator {
+	return &Terminator{pool: pool, authz: a, audit: log}
+}
+
+// TerminateGrant satisfies accessrequest.GrantTerminator. It re-evaluates the
+// (subject, asset) of the (now-revoked/expired) grant and tears down any of that
+// pair's live sessions that no longer pass the connect predicate.
+func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) error {
+	g, err := gen.New(t.pool).GetGrant(ctx, grantID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return t.Reevaluate(ctx, g.SubjectUserID, g.ScopeAssetID)
+}
+
+// Reevaluate re-checks the connect predicate for all live sessions of (user,asset)
+// and tears down those that no longer pass. Exported so the reconnect re-sync
+// (Task 11) and the M4d eligibility cascade can reuse it.
+func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) error {
+	q := gen.New(t.pool)
+	sessions, err := q.ListLiveSessionsByUserAsset(ctx, gen.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	cfg, err := q.GetSSHAssetConfig(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	logins, err := authz.EntitledLogins(ctx, t.authz, userID, assetID, cfg.AllowedLogins)
+	if err != nil {
+		return err
+	}
+	if len(logins) > 0 {
+		return nil // still authorized; keep every session
+	}
+	for _, sess := range sessions {
+		if err := t.requestTeardown(ctx, sess.ID, "authorization revoked"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// requestTeardown marks the session terminating + enqueues session.terminated in one
+// tx, then NOTIFYs so the stream-owning replica pushes the Teardown.
+func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, reason string) error {
+	tx, err := t.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+	if err := q.MarkLiveSessionTerminating(ctx, sessionID); err != nil {
+		return err
+	}
+	detail, _ := json.Marshal(map[string]any{"session_id": sessionID.String(), "reason": reason})
+	if err := t.audit.Enqueue(ctx, q, audit.Event{
+		Type:    EventSessionTerminated,
+		ActorID: uuid.Nil,
+		Subject: "live_session:" + sessionID.String(),
+		Details: detail,
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	return NotifyTeardown(ctx, t.pool, sessionID.String(), reason)
+}
