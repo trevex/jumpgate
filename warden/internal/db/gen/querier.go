@@ -12,6 +12,7 @@ import (
 )
 
 type Querier interface {
+	AcquireAuditLock(ctx context.Context) error
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	CountUsers(ctx context.Context) (int64, error)

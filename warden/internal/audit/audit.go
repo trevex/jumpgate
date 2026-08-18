@@ -55,8 +55,10 @@ func computeHash(prevHash []byte, e Event) []byte {
 	return h.Sum(nil)
 }
 
-// Append writes one entry, chaining from the current tail (serialized via a
-// row lock in a transaction so concurrent appends can't fork the chain).
+// Append writes one entry, chaining from the current tail. An advisory lock
+// serializes all appends (including concurrent first-inserts) so the genesis
+// entry can only be created once even when the table is empty (FOR UPDATE
+// cannot lock a row that does not exist).
 func (l *Logger) Append(ctx context.Context, e Event) error {
 	if e.Details == nil {
 		e.Details = []byte("{}")
@@ -67,6 +69,10 @@ func (l *Logger) Append(ctx context.Context, e Event) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := gen.New(tx)
+
+	if err := q.AcquireAuditLock(ctx); err != nil {
+		return fmt.Errorf("acquire audit lock: %w", err)
+	}
 
 	// Normalize details via postgres so the hashed bytes match what is stored.
 	normalized, err := q.NormalizeJSON(ctx, e.Details)
@@ -102,6 +108,10 @@ func (l *Logger) Append(ctx context.Context, e Event) error {
 }
 
 // Verify recomputes the whole chain and returns an error at the first mismatch.
+// It detects mutation, reordering, and middle-row deletion of committed entries,
+// but cannot detect truncation of the most-recent entries (a shorter valid chain
+// is indistinguishable from the full chain). Detecting tail truncation requires
+// anchoring the chain tip in an external store — a later milestone.
 func (l *Logger) Verify(ctx context.Context) error {
 	rows, err := gen.New(l.pool).ListAuditEntries(ctx)
 	if err != nil {
