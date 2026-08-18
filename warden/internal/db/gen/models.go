@@ -97,6 +97,14 @@ type RoleBinding struct {
 	CreatedAt      time.Time   `json:"created_at"`
 }
 
+type RoleGrant struct {
+	ID           uuid.UUID `json:"id"`
+	RoleID       uuid.UUID `json:"role_id"`
+	SourceRoleID uuid.UUID `json:"source_role_id"`
+	Via          string    `json:"via"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type User struct {
 	ID           uuid.UUID `json:"id"`
 	Email        string    `json:"email"`
