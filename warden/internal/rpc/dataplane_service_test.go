@@ -364,6 +364,71 @@ func TestReconcileTearsDownUnauthorizedRetainedSession(t *testing.T) {
 	}
 }
 
+// TestWorkerSessionEndedDeletesRow: a worker holds an authorized live session (its
+// login source is still active, so the reconnect re-sync keeps the row on Register).
+// When the worker then reports SessionEnded, warden deletes the live_sessions row and
+// audits exactly one session.ended.
+func TestWorkerSessionEndedDeletesRow(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool) // grant is active → still authorized at register time
+
+	ctx := context.Background()
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	// Register reporting the session as still live so reconcile re-evaluates and,
+	// finding it authorized, keeps the row — the SessionEnded frame is what deletes it.
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: []string{seed.sess.String()}},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+
+	// Row must still exist after Ack (reconcile kept the authorized session).
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+		t.Fatalf("count live_sessions after ack: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("live_sessions row missing after ack (reconcile pre-empted the test): count=%d", n)
+	}
+
+	// Worker reports the session ended.
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_SessionEnded{
+		SessionEnded: &dataplanev1.SessionEnded{SessionId: seed.sess.String(), Reason: "closed"},
+	}}); err != nil {
+		t.Fatalf("send session-ended: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+			t.Fatalf("count live_sessions: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("SessionEnded did not delete the live_sessions row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := sessionEventCount(t, pool, dataplane.EventSessionEnded); got != 1 {
+		t.Fatalf("session.ended events = %d, want 1", got)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
 // waitConnected polls the registry until worker's connected state matches want, or
 // fails after a short timeout (Add/Remove happen inside the handler goroutine).
 func waitConnected(t *testing.T, reg *dataplane.Registry, workerID string, want bool) {

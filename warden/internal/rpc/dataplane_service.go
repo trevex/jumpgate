@@ -3,10 +3,12 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
@@ -148,11 +150,14 @@ func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID stri
 	return nil
 }
 
-// handleSessionEnded removes a live session on a worker's SessionEnded report.
-// STUB — implemented in Task 12.
-//
-// TODO(Task 12): delete the live_sessions row and emit the session.ended audit
-// event when the worker reports a session has ended.
-func (s *DataplaneServer) handleSessionEnded(_ context.Context, _, _ string) error {
-	return nil
+// handleSessionEnded removes a live session on a worker's SessionEnded report
+// (natural close or a forced-kill confirmation) and audits session.ended. It is
+// idempotent (MarkEnded no-ops if the row is already gone), so a duplicate or
+// late report is harmless.
+func (s *DataplaneServer) handleSessionEnded(ctx context.Context, sessionID, reason string) error {
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("bad session id %q: %w", sessionID, err)
+	}
+	return s.terminator.MarkEnded(ctx, sid, reason)
 }
