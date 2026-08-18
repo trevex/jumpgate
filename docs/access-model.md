@@ -23,7 +23,7 @@ conceptual reference behind the `Authorizer` and the approval `Resolver`.
 | **Group** | A named set of subjects. A group's members are users *and/or other groups* → **nested groups**. |
 | **Folder** | A container in a hierarchy (`parent_id`). Organizes assets and is the unit of folder-scoped **inheritance**. |
 | **Asset** | A protected resource (an SSH host, a Postgres DB, a k8s cluster, …). Belongs to exactly one folder; carries free-form `labels`. |
-| **Capability** | A **scoped, namespaced verb** — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `db:ddl`, `k8s:impersonate:cluster-admin`). **Format-validated** at role creation and matched with **glob** semantics (`*` = one segment, trailing `**` = a whole scope). warden treats a capability as an **opaque token**; its *meaning* / enforcement lives at the **workers** (M4+). See [capabilities.md](capabilities.md). |
+| **Capability** | A **scoped, namespaced verb** — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `ssh:login:root`, `db:ddl`, `k8s:impersonate:cluster-admin`). **Format-validated** at role creation and matched with **glob** semantics (`*` = one segment, trailing `**` = a whole scope). warden treats a capability as an **opaque token**; its *meaning* / enforcement lives at the **workers** (M4+) — with one already load-bearing in the control plane: `ssh:login:<account>` drives the [SSH cert principals](#ssh-access--os-logins-are-capabilities-m3d) the M3d broker mints. See [capabilities.md](capabilities.md). |
 | **Role** | An **admin-defined** named bundle of capabilities, scoped to a resource type (`asset` or `folder`). E.g. *PG-ReadOnly* = `[read]`, *cluster-admin* = `[connect,read,write,admin]`. This is the "custom role". |
 | **RoleBinding** | Attaches a **role** to a **subject** (user or group) at a **scope** (folder or asset). A binding is **standing-only** — permanent, admin-granted access. There is no `requestable` kind; requestability comes from a RequestPolicy, not a binding. |
 | **RequestPolicy** | One row per **(role R, scope = folder \| asset \| NULL-default)**. Its **existence makes R requestable on that scope**. Carries the requester side (who may ask), the approval threshold, and the approver side (who signs off). Replaces the old ApprovalRule and the `requestable` binding in one model. |
@@ -306,6 +306,44 @@ Policy override: request_policy(cluster-admin, asset cluster-prod)
 A request for `cluster-admin` on `cluster-prod` now needs **2** approvals from
 **sec-leads only** — folder owners no longer qualify there. The override
 *replaces* the inherited policy for that (role, scope).
+
+## SSH access — OS logins are capabilities (M3d)
+
+The same capability graph that decides *whether* a user reaches an SSH host also
+decides **which OS accounts they may log in as** — the Teleport-style model. An OS
+login is a capability `ssh:login:<account>` (it fits the
+`scope:action:qualifier` grammar; see [capabilities.md](capabilities.md)); a role
+**grants** it like any other capability (`ssh-admin = [ssh:login:root]`,
+`ssh-deploy = [ssh:login:deploy]`, or the broad `ssh:login:*`).
+
+When the [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints an
+SSH certificate for a user on a host, the cert's `ValidPrincipals` is:
+
+```
+{ L ∈ ssh_asset_config.allowed_logins : the user holds ssh:login:<L> on the asset }
+```
+
+i.e. the host's OS-account **allowlist** intersected with the user's **held**
+`ssh:login:*` capabilities (resolved by the same glob-aware, group-aware `Check`).
+The login capability may be held via a **standing binding** *or* an **active JIT
+grant** — grants count in `Check` exactly like standing access — so requesting a
+role like `ssh-admin` just-in-time is what lets a user `root` into a box for the
+grant's window. Concretely:
+
+- A user holding `ssh:login:root` on a host with `allowed_logins=[root,deploy]`
+  gets a cert valid for `root` only (not `deploy`).
+- A user holding `ssh:login:*` gets `[root, deploy]` — every allowed login.
+- A user holding **no** matching login capability gets **nothing** — the broker
+  refuses (no cert), and the SSH CA independently refuses to sign a principal-less
+  ("valid for every account") certificate as defense-in-depth.
+
+So there is **no static host login**: the account you land as is a strict function
+of your live entitlements, bounded by the accounts the host actually offers. The
+`ssh:connect`-style "may I open a session at all" capability and the actual proxy
+enforcement live at the **ssh-proxy worker (M4)**; M3d builds + tests the
+principal-derivation and cert minting directly. Cross-reference:
+[capabilities.md](capabilities.md#initial-vocabulary),
+[security.md](security.md#secrets-at-rest).
 
 ## Onboarding & the empty-catalog consequence
 

@@ -138,12 +138,17 @@ opaque tokens and answers yes/no on each; the k8s-proxy is what turns a
 ## Initial vocabulary
 
 Illustrative and **grows as workers land**. Everything below is
-**defined-for-the-model**; column *Enforced today* is **No** across the board
-because there are no workers yet.
+**defined-for-the-model**; column *Enforced today* is **No** for the
+worker-enforced protocol verbs because there are no workers yet — with **one
+exception**: `ssh:login:<account>` is already **consumed in the control plane** by
+the M3d [CredentialBroker](architecture.md#vault--credentialbroker-m3d), which
+turns a user's held `ssh:login:*` capabilities into the exact `ValidPrincipals` of
+the SSH certificate it mints (the *session* is still gated by the ssh-proxy in M4).
 
 | Capability | Meaning (worker-side) | Introduced with | Enforced today |
 |---|---|---|---|
 | `ssh:connect` | Open an SSH session to the target | ssh-proxy (M4) | No |
+| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any allowed login). **Drives the SSH cert principals** the M3d [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints: `ValidPrincipals = allowed_logins ∩ the user's held ssh:login:*` | vault/CredentialBroker (M3d); ssh-proxy (M4) | **Consumed by the broker (M3d)** for cert minting; live session enforcement is ssh-proxy (M4) |
 | `db:connect` | Open a Postgres session | pg-proxy (M5) | No |
 | `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (M5) | No |
 | `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (M5) | No |
