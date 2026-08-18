@@ -133,4 +133,32 @@ func TestX509CASignAndVerify(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("leaf.Verify: %v", err)
 	}
+	// SECURITY: a client leaf must NOT be a CA (would let it sign further certs).
+	if leaf.IsCA {
+		t.Fatal("client leaf must not be a CA")
+	}
+}
+
+func TestSSHCARejectsEmptyPrincipals(t *testing.T) {
+	seed, _, err := GenerateSSHCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshCA, err := LoadSSHCA(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, uPriv, _ := ed25519.GenerateKey(rand.Reader)
+	userPub, _ := ssh.NewPublicKey(uPriv.Public())
+	vb := time.Now().Add(time.Hour)
+	// An empty ValidPrincipals list is "valid for any principal" in OpenSSH — must be refused.
+	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: nil, ValidBefore: vb}); err == nil {
+		t.Fatal("nil principals must be refused")
+	}
+	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{}, ValidBefore: vb}); err == nil {
+		t.Fatal("empty principals must be refused")
+	}
+	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{"root", ""}, ValidBefore: vb}); err == nil {
+		t.Fatal("empty-string principal must be refused")
+	}
 }

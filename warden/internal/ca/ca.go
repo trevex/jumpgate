@@ -68,6 +68,17 @@ type SSHCertParams struct {
 
 // SignUserKey signs a user's public key and returns an SSH user certificate.
 func (c *SSHCA) SignUserKey(userPub ssh.PublicKey, p SSHCertParams) (*ssh.Certificate, error) {
+	// SECURITY: an empty ValidPrincipals list means "valid for ANY principal" in
+	// OpenSSH — an all-accounts (incl. root) cert. Refuse to sign one here as
+	// defense-in-depth, independent of any caller-side entitlement check.
+	if len(p.Principals) == 0 {
+		return nil, fmt.Errorf("refusing to sign an SSH cert with no principals (would authorize every account)")
+	}
+	for _, pr := range p.Principals {
+		if pr == "" {
+			return nil, fmt.Errorf("refusing to sign an SSH cert with an empty principal")
+		}
+	}
 	serial, err := randomSerialUint64()
 	if err != nil {
 		return nil, err
