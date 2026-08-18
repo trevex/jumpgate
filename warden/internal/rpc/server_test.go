@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,12 +14,41 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
+
+// testSessionTTL / testGatewayEndpoint are the fixed session-admission params used
+// by the rpc test servers.
+const (
+	testSessionTTL      = 60 * time.Second
+	testGatewayEndpoint = "gateway.test:8443"
+)
+
+// testSessionService initializes an active session signing key (via a KeyStore
+// backed by the test sealer) and builds a session.Service over the pool. It
+// returns the service plus the Ed25519 public key so tests can build a
+// sessiontoken.Verifier and assert round-tripped claims.
+func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) (*session.Service, ed25519.PublicKey) {
+	t.Helper()
+	ctx := context.Background()
+	ks := session.NewKeyStore(gen.New(pool), sealer)
+	if err := ks.Init(ctx); err != nil {
+		t.Fatalf("session keystore init: %v", err)
+	}
+	priv, pub, err := ks.LoadActive(ctx)
+	if err != nil {
+		t.Fatalf("session keystore load: %v", err)
+	}
+	svc := session.NewService(gen.New(pool), authz.NewSQLAuthorizer(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
+	return svc, pub
+}
 
 // testMasterKeyB64 is a base64-encoded 32-byte KEK used to build a real sealer
 // for the rpc tests, so VaultService's sealing write paths are exercised.
@@ -64,7 +94,7 @@ func TestMuxServesHealthzAndRegisters(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t)); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t), nil); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

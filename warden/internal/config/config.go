@@ -35,6 +35,12 @@ type Config struct {
 	// VaultMasterKey is the base64-encoded 32-byte master KEK that seals CA private
 	// keys and stored secrets at rest. Empty means the vault is disabled.
 	VaultMasterKey string `env:"VAULT_MASTER_KEY"`
+
+	// SessionTokenTTL bounds the data-plane admission token lifetime (an admission
+	// ticket; the session outlives it — teardown handles in-session revocation).
+	SessionTokenTTL time.Duration `env:"SESSION_TOKEN_TTL" envDefault:"60s"`
+	// GatewayEndpoint is the externally reachable gateway address the CLI dials.
+	GatewayEndpoint string `env:"GATEWAY_ENDPOINT" envDefault:"localhost:8443"`
 }
 
 // Load reads configuration from environment variables.
