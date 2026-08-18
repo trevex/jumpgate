@@ -146,7 +146,7 @@ because there are no workers yet.
 | `ssh:connect` | Open an SSH session to the target | ssh-proxy (M4) | No |
 | `db:connect` | Open a Postgres session | pg-proxy (M5) | No |
 | `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (M5) | No |
-| `db:*` / read/write/query-level caps | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`) | pg-proxy (M5) | No |
+| `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (M5) | No |
 | `k8s:connect` | Reach the cluster API through the proxy | k8s-proxy (later sub-project) | No |
 | `k8s:access` | Impersonate **as the requesting user** | k8s-proxy (later) | No |
 | `k8s:impersonate:<role>` | Impersonate **as `<role>`** (e.g. `k8s:impersonate:cluster-admin`) | k8s-proxy (later) | No |

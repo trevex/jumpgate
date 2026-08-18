@@ -109,10 +109,11 @@ access ends access *now*.
 
 **Mechanism (Approach A).** warden (the control plane) is the source of truth
 for authorization, so warden must **signal** the gateway/workers to kill sessions
-when the effective authorization for a live session changes — the M1 teardown
-channel (`WatchTeardown` on the worker ↔ control-plane gRPC contract). Workers
-map each **live session → the grant/binding(s) it relies on** and support forced
-termination of a session by that key. The trigger is a re-evaluation of
+when the effective authorization for a live session changes — via a **teardown
+channel** on the worker ↔ control-plane contract, to be designed and added with
+the gateway (M4; no such RPC exists yet). Workers map each **live session → the
+grant/binding(s) it relies on** and support forced termination of a session by
+that key. The trigger is a re-evaluation of
 `HoldsRole` / grant validity:
 
 - **push** — re-evaluate on a change event (a grant reaped, a binding/membership
