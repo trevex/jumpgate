@@ -73,8 +73,8 @@ the **M4 gateway/worker session registry** — full treatment in
 Every security-relevant event is appended to a **hash-chained, append-only**
 audit log: `entry_hash = sha256(prev_hash ‖ canonical(entry))`, so any
 after-the-fact edit or deletion breaks the chain and is detectable
-(`Verify`). Forced session terminations are audited alongside the revocation that
-caused them. The append/verify **primitive is implemented** (M3a); **wiring it
+(`Verify`). Forced session terminations will be audited alongside the revocation
+that caused them (with the teardown path, M3c/M4). The append/verify **primitive is implemented** (M3a); **wiring it
 across every event** (requests, approvals, grants, session start/stop, teardown)
 is **ongoing** as those subsystems land. See
 [architecture.md](architecture.md#audit--recording).
