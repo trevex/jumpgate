@@ -26,5 +26,12 @@ func (l Lookup) Load(ctx context.Context, id uuid.UUID) (CurrentUser, error) {
 	if err != nil {
 		return CurrentUser{}, fmt.Errorf("load user: %w", err)
 	}
+	// Deactivated users are rejected here: the interceptor leaves the context
+	// user unset on a Load error, so every authenticated RPC (RequireAdmin /
+	// UserFromContext) then fails with CodeUnauthenticated even with an
+	// otherwise-valid token.
+	if u.DeactivatedAt.Valid {
+		return CurrentUser{}, fmt.Errorf("load user: account deactivated")
+	}
 	return CurrentUser{ID: u.ID, Email: u.Email, IsAdmin: u.IsAdmin}, nil
 }

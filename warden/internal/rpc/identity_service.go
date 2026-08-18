@@ -184,3 +184,131 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 	}
 	return connect.NewResponse(&identityv1.AddGroupToGroupResponse{}), nil
 }
+
+// RemoveUserFromGroup removes a user from a group (admin only). No-op if absent.
+func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveUserFromGroupRequest]) (*connect.Response[identityv1.RemoveUserFromGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := s.q.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	return connect.NewResponse(&identityv1.RemoveUserFromGroupResponse{}), nil
+}
+
+// RemoveGroupFromGroup removes a nested group membership (admin only). No-op if absent.
+func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveGroupFromGroupRequest]) (*connect.Response[identityv1.RemoveGroupFromGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	mid, err := uuid.Parse(req.Msg.MemberGroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
+	}
+	if err := s.q.RemoveGroupFromGroup(ctx, gen.RemoveGroupFromGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	return connect.NewResponse(&identityv1.RemoveGroupFromGroupResponse{}), nil
+}
+
+// ListGroupMembers lists a group's direct member users and member groups (admin only).
+func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Request[identityv1.ListGroupMembersRequest]) (*connect.Response[identityv1.ListGroupMembersResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	users, err := s.q.ListGroupMemberUsers(ctx, gid)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	groups, err := s.q.ListGroupMemberGroups(ctx, gid)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &identityv1.ListGroupMembersResponse{}
+	for i := range users {
+		out.Users = append(out.Users, toUserMsg(users[i]))
+	}
+	for i := range groups {
+		out.Groups = append(out.Groups, toGroupMsg(groups[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// DeactivateUser marks a user deactivated, blocking all authenticated RPCs for
+// them at token lookup (admin only). Idempotent; unknown ids are a no-op.
+func (s *IdentityServer) DeactivateUser(ctx context.Context, req *connect.Request[identityv1.DeactivateUserRequest]) (*connect.Response[identityv1.DeactivateUserResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := s.q.DeactivateUser(ctx, uid); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.DeactivateUserResponse{}), nil
+}
+
+// ReactivateUser clears a user's deactivation (admin only). Idempotent.
+func (s *IdentityServer) ReactivateUser(ctx context.Context, req *connect.Request[identityv1.ReactivateUserRequest]) (*connect.Response[identityv1.ReactivateUserResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := s.q.ReactivateUser(ctx, uid); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.ReactivateUserResponse{}), nil
+}
+
+// DeleteUser deletes a user; memberships, bindings, and policy subjects cascade
+// (admin only). Deleting a non-existent id is a no-op.
+func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[identityv1.DeleteUserRequest]) (*connect.Response[identityv1.DeleteUserResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := s.q.DeleteUser(ctx, uid); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	return connect.NewResponse(&identityv1.DeleteUserResponse{}), nil
+}
+
+// DeleteGroup deletes a group; memberships, bindings, and policy subjects cascade
+// (admin only). Deleting a non-existent id is a no-op.
+func (s *IdentityServer) DeleteGroup(ctx context.Context, req *connect.Request[identityv1.DeleteGroupRequest]) (*connect.Response[identityv1.DeleteGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	if err := s.q.DeleteGroup(ctx, gid); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	return connect.NewResponse(&identityv1.DeleteGroupResponse{}), nil
+}

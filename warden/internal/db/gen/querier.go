@@ -27,11 +27,14 @@ type Querier interface {
 	CreateRoleGrant(ctx context.Context, arg CreateRoleGrantParams) (RoleGrant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
+	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
@@ -46,6 +49,8 @@ type Querier interface {
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
+	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
+	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
 	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
@@ -57,7 +62,10 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
+	ReactivateUser(ctx context.Context, id uuid.UUID) error
+	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
+	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 }
