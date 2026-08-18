@@ -13,10 +13,14 @@ import (
 
 type Querier interface {
 	AcquireAuditLock(ctx context.Context) error
+	AddApproval(ctx context.Context, arg AddApprovalParams) (AccessRequestApproval, error)
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error)
+	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -35,9 +39,13 @@ type Querier interface {
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
+	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
+	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
+	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
@@ -45,13 +53,20 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
+	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
+	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
+	// Admin listing: all grants (active + past), optionally narrowed to a subject
+	// and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
+	// active_only=false => include revoked/expired.
+	ListGrantsFiltered(ctx context.Context, arg ListGrantsFilteredParams) ([]AccessGrant, error)
 	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
 	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
 	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
 	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
@@ -66,6 +81,13 @@ type Querier interface {
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
 	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
+	RevokeActiveGrantsForUser(ctx context.Context, arg RevokeActiveGrantsForUserParams) ([]AccessGrant, error)
+	// Predicate is revoked_at IS NULL only (NOT the derived "active" filter with
+	// expires_at): a grant past expiry but not yet reaped is still revocable so the
+	// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
+	// (expires_at > now() is false everywhere), so this is harmless.
+	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
+	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 }

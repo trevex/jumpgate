@@ -10,11 +10,25 @@ follow the MVP.
 |-----------|-------|--------|
 | **M1** | Foundation & scaffolding — Nix devshell, Go+Rust workspaces, protobuf codegen, warden (control plane) + gateway health binaries, CI | ✅ Done |
 | **M2** | Access-model core — users/groups/folders/assets, custom Role + RoleBinding over OpenFGA, visibility tiers, catalog/CRUD REST | ✅ Done (data, authorizer, ConnectRPC, auth, identity, catalog/visibility) |
-| **M3** | JIT + vault + audit — access requests, approval engine, time-boxed grants + reaper, credential vault, hash-chained audit | 🟡 In progress (M3a audit + M3b approval policy + M3-roles explicit ReBAC-light role model — `role_grants`, `HoldsRole`, rewired Authorizer + approver-role, admin API + `ExplainRole` — done; M3c JIT request/grant workflow + M3d vault/CA next) |
+| **M3** | JIT + vault + audit — access requests, approval engine, time-boxed grants + reaper, credential vault, hash-chained audit | 🟡 In progress (M3a audit + M3b approval policy + M3-roles explicit ReBAC-light role model + **M3c JIT request→approve→grant→reaper** — done; M3d vault/CA next) |
 | **M4** | Gateway + ssh-proxy + CLI — worker registry, session routing/LB, `jumpgate connect <ssh>` end-to-end with injection + recording | ⬜ |
 | **M5** | pg-proxy + inline step-up — Postgres access, per-statement approval, tiered `SET ROLE` step-up | ⬜ |
 | **M6** | Web UI — embedded SPA, admin console, approvals, xterm.js terminal, web SQL console | ⬜ |
 | **M7** | Deploy — Helm chart + docker-compose packaging | ⬜ |
+
+### M3 sub-milestones
+
+| Sub | Scope | Status |
+|-----|-------|--------|
+| **M3a** | Hash-chained tamper-evident audit log (Append/Verify) | ✅ Done |
+| **M3-roles** | Explicit ReBAC-light role model — `role_grants`, `HoldsRole`, rewired Authorizer + approver-role, admin API + `ExplainRole` | ✅ Done |
+| **M3b** | Approval/request policy model — `request_policies` + subjects, most-specific resolution, requester/approver predicates, `ResolveApproval` | ✅ Done |
+| **M3c** | JIT runtime — `RequestAccess`/approve/deny/cancel (N-of-M; self-service at `required_approvals=0`), time-boxed `access_grants` joining the held closure (grants≠governance), duration clamp, expiry **reaper**, manual/self/approver/deactivation revocation, teardown seam (no-op), full audit events | ✅ Done |
+| **M3d** | CredentialBroker/vault + SSH/x509 CAs (envelope-encrypted at rest) | ⬜ Next |
+
+**Next:** M3d (CredentialBroker/vault) and M4 (gateway + ssh-proxy + the real
+`GrantTerminator` session-kill path + the eligibility-change cascade for standing
+bindings/memberships/rewrites).
 
 ## Beyond the MVP (later product sub-projects)
 

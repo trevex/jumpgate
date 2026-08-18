@@ -338,6 +338,43 @@ func TestApprovalResolver(t *testing.T) {
 			t.Fatalf("RequiredApprovals = %d; want 2 (nearest ancestor folder prod/db)", rule.RequiredApprovals)
 		}
 	})
+
+	// --- Assertion 8: EffectiveRule surfaces max_duration when set on the policy ---
+	// Fresh role/asset so existing assertions are untouched. A role-default policy
+	// with a 1h cap must round-trip through EffectiveRule.MaxDuration; a policy with
+	// NULL max_duration must yield an invalid interval.
+	t.Run("max-duration-round-trips", func(t *testing.T) {
+		capped, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "capped", ResourceType: "asset", Capabilities: caps()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID:            capped.ID,
+			RequiredApprovals: 0,
+			MaxDuration:       pgtype.Interval{Microseconds: 3600 * 1_000_000, Valid: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		rule, err := r.EffectiveRule(ctx, capped.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("EffectiveRule(capped) error: %v", err)
+		}
+		if rule == nil {
+			t.Fatal("EffectiveRule(capped) returned nil; want policy with max_duration")
+		}
+		if !rule.MaxDuration.Valid || rule.MaxDuration.Microseconds != 3600*1_000_000 {
+			t.Fatalf("MaxDuration = %+v; want valid 3600s", rule.MaxDuration)
+		}
+
+		// dba's folder-override policy has NULL max_duration → invalid interval.
+		dbaRule, err := r.EffectiveRule(ctx, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("EffectiveRule(dba) error: %v", err)
+		}
+		if dbaRule.MaxDuration.Valid {
+			t.Fatalf("MaxDuration = %+v; want invalid (NULL)", dbaRule.MaxDuration)
+		}
+	})
 }
 
 // TestIsEligibleRequester covers the new (not-yet-wired) requester-eligibility
@@ -462,6 +499,173 @@ func TestIsEligibleRequester(t *testing.T) {
 		}
 		if ok {
 			t.Fatal("IsEligibleRequester(erin) = true; want false (approver subject, not requester)")
+		}
+	})
+}
+
+// fabricateGrant inserts a minimal access_requests + active access_grants row for
+// (user, role, asset), returning the grant id. Mirrors the authz test helper;
+// used to prove a JIT-granted role confers access but NOT governance eligibility.
+func fabricateGrant(t *testing.T, pool *pgxpool.Pool, user, role, asset uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var reqID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+INSERT INTO access_requests (requester_user_id, role_id, asset_id, requested_duration, required_approvals, granted_duration, status, resolved_at)
+VALUES ($1, $2, $3, '1 hour', 1, '1 hour', 'granted', now())
+RETURNING id`, user, role, asset).Scan(&reqID); err != nil {
+		t.Fatalf("fabricate access_request: %v", err)
+	}
+	var grantID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+INSERT INTO access_grants (request_id, role_id, scope_asset_id, subject_user_id, expires_at)
+VALUES ($1, $2, $3, $4, now() + '1 hour'::interval)
+RETURNING id`, reqID, role, asset, user).Scan(&grantID); err != nil {
+		t.Fatalf("fabricate access_grant: %v", err)
+	}
+	return grantID
+}
+
+// TestGrantedApproverRoleIsNotApprover (M3c T1): a user who holds the policy's
+// approver_role ONLY via an active JIT grant is NOT an approver; a STANDING binding
+// of that approver_role makes them an approver. Governance uses HoldsRoleStanding.
+func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	r := approvals.New(pool)
+
+	// Roles: dba (the requestable role) + approver (confers approver eligibility).
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approver, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "approver", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grantapprover@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Role-default policy for dba, approver_role = approver.
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            dba.ID,
+		RequiredApprovals: 1,
+		ApproverRoleID:    pg(approver.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// user holds `approver` ONLY via an active JIT grant on the asset.
+	fabricateGrant(t, pool, user.ID, approver.ID, pgAsset.ID)
+
+	t.Run("granted-approver-role-is-not-approver", func(t *testing.T) {
+		ok, err := r.IsApprover(ctx, user.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsApprover error: %v", err)
+		}
+		if ok {
+			t.Fatal("IsApprover = true; want false (approver_role held only via JIT grant confers no governance)")
+		}
+	})
+
+	t.Run("standing-approver-role-is-approver", func(t *testing.T) {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID:        approver.ID,
+			ScopeAssetID:  pg(pgAsset.ID),
+			SubjectUserID: pg(user.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := r.IsApprover(ctx, user.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsApprover error: %v", err)
+		}
+		if !ok {
+			t.Fatal("IsApprover = false; want true (standing binding of approver_role)")
+		}
+	})
+}
+
+// TestGrantedRequesterRoleIsNotEligible (M3c T2): a user who holds the policy's
+// requester_role ONLY via an active JIT grant is NOT an eligible requester; a
+// STANDING binding of that requester_role makes them eligible.
+func TestGrantedRequesterRoleIsNotEligible(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	r := approvals.New(pool)
+
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grantrequester@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            dba.ID,
+		RequiredApprovals: 1,
+		RequesterRoleID:   pg(requester.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// user holds `requester` ONLY via an active JIT grant on the asset.
+	fabricateGrant(t, pool, user.ID, requester.ID, pgAsset.ID)
+
+	t.Run("granted-requester-role-is-not-eligible", func(t *testing.T) {
+		ok, err := r.IsEligibleRequester(ctx, user.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester error: %v", err)
+		}
+		if ok {
+			t.Fatal("IsEligibleRequester = true; want false (requester_role held only via JIT grant confers no governance)")
+		}
+	})
+
+	t.Run("standing-requester-role-is-eligible", func(t *testing.T) {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID:        requester.ID,
+			ScopeAssetID:  pg(pgAsset.ID),
+			SubjectUserID: pg(user.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := r.IsEligibleRequester(ctx, user.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester error: %v", err)
+		}
+		if !ok {
+			t.Fatal("IsEligibleRequester = false; want true (standing binding of requester_role)")
 		}
 	})
 }

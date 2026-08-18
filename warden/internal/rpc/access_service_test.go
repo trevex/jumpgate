@@ -628,6 +628,76 @@ func TestRequestPolicyCRUD(t *testing.T) {
 	}
 }
 
+// TestRequestPolicySelfServiceAndMaxDuration covers M3c policy-config surface
+// additions: required_approvals=0 (self-service) is now accepted, and
+// max_duration_seconds round-trips through Create → ListRequestPolicies.
+func TestRequestPolicySelfServiceAndMaxDuration(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	ctx := context.Background()
+
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "self-service-role", ResourceType: "asset", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := role.Msg.Role.Id
+
+	// required_approvals=0 (self-service) now SUCCEEDS; max_duration_seconds set.
+	policy, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:             roleID,
+		RequiredApprovals:  0,
+		MaxDurationSeconds: 3600,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create self-service policy: %v", err)
+	}
+	if policy.Msg.Policy.RequiredApprovals != 0 {
+		t.Fatalf("required_approvals = %d, want 0", policy.Msg.Policy.RequiredApprovals)
+	}
+	if policy.Msg.Policy.MaxDurationSeconds != 3600 {
+		t.Fatalf("max_duration_seconds = %d, want 3600 (Create response)", policy.Msg.Policy.MaxDurationSeconds)
+	}
+
+	// max_duration_seconds round-trips through a subsequent read.
+	policies, err := acc.ListRequestPolicies(ctx, withToken(connect.NewRequest(&accessv1.ListRequestPoliciesRequest{
+		RoleId: roleID,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list request policies: %v", err)
+	}
+	var found *accessv1.RequestPolicy
+	for _, p := range policies.Msg.Policies {
+		if p.Id == policy.Msg.Policy.Id {
+			found = p
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("created policy not found in ListRequestPolicies")
+	}
+	if found.MaxDurationSeconds != 3600 {
+		t.Fatalf("max_duration_seconds = %d, want 3600 (list read)", found.MaxDurationSeconds)
+	}
+
+	// Update to clear the cap (0 → NULL) and keep self-service.
+	upd, err := acc.UpdateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.UpdateRequestPolicyRequest{
+		Id:                 policy.Msg.Policy.Id,
+		RequiredApprovals:  0,
+		MaxDurationSeconds: 0,
+	}), tok))
+	if err != nil {
+		t.Fatalf("update request policy: %v", err)
+	}
+	if upd.Msg.Policy.MaxDurationSeconds != 0 {
+		t.Fatalf("updated max_duration_seconds = %d, want 0 (NULL)", upd.Msg.Policy.MaxDurationSeconds)
+	}
+}
+
 // TestRequestPolicyRequesterSide is the additive requester-side coverage:
 // CreateRequestPolicy with requester_role_id set + a kind='requester' subject
 // that round-trips via ListPolicySubjects.

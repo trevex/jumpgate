@@ -6,12 +6,43 @@ import "buf/validate/validate.proto";
 
 option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1";
 
-// AccessRequestService is the JIT access-request runtime.
-//
-// RequestAccess/Approve/Deny/Revoke + access_grants + reaper are M3c.
+// AccessRequestService is the JIT access-request runtime: request a role on an
+// asset, approve/deny/cancel a pending request, and list your own requests or
+// the requests you may approve. Grants are minted when a request reaches its
+// required-approval threshold (or immediately for self-service policies).
 service AccessRequestService {
   // ResolveApproval returns the effective request policy for a (role, asset) pair.
   rpc ResolveApproval(ResolveApprovalRequest) returns (ResolveApprovalResponse) {}
+
+  // RequestAccess opens a JIT access request for a role on an asset. A
+  // self-service policy (required_approvals=0) grants immediately.
+  rpc RequestAccess(RequestAccessRequest) returns (RequestAccessResponse) {}
+
+  // CancelRequest cancels the caller's own pending request.
+  rpc CancelRequest(CancelRequestRequest) returns (CancelRequestResponse) {}
+
+  // ApproveRequest records the caller's approval; the Nth distinct approval mints the grant.
+  rpc ApproveRequest(ApproveRequestRequest) returns (ApproveRequestResponse) {}
+
+  // DenyRequest records the caller's denial, immediately denying the request.
+  rpc DenyRequest(DenyRequestRequest) returns (DenyRequestResponse) {}
+
+  // ListMyRequests lists the caller's own access requests, newest first.
+  rpc ListMyRequests(ListMyRequestsRequest) returns (ListMyRequestsResponse) {}
+
+  // ListPendingApprovals lists pending requests the caller is eligible to approve.
+  rpc ListPendingApprovals(ListPendingApprovalsRequest) returns (ListPendingApprovalsResponse) {}
+
+  // RevokeGrant revokes an active access grant. Permitted for an admin, the
+  // grant's subject (self-revoke), or a standing approver for the grant's
+  // (role, asset).
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse) {}
+
+  // ListMyGrants lists the caller's own access grants (active + past).
+  rpc ListMyGrants(ListMyGrantsRequest) returns (ListMyGrantsResponse) {}
+
+  // ListGrants lists access grants for admin introspection (active + past).
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {}
 }
 
 message ResolveApprovalRequest {
@@ -23,4 +54,101 @@ message ResolveApprovalResponse {
   bool requestable = 1; // false = no rule => not JIT-requestable
   int32 required_approvals = 2;
   string approver_role_id = 3;
+}
+
+// AccessRequest is a JIT access request DTO.
+message AccessRequest {
+  string id = 1;
+  string requester_id = 2;
+  string role_id = 3;
+  string asset_id = 4;
+  string status = 5; // pending | granted | denied | cancelled
+  int32 required_approvals = 6;
+  int32 approvals_so_far = 7;
+  string reason = 8;
+  string created_at = 9;    // RFC3339
+  string resolved_at = 10;  // RFC3339, empty if unresolved
+  string grant_id = 11;     // set when a grant was minted
+}
+
+message RequestAccessRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 duration_seconds = 3 [(buf.validate.field).int64.gt = 0];
+  string reason = 4;
+}
+
+message RequestAccessResponse {
+  AccessRequest request = 1;
+}
+
+message CancelRequestRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message CancelRequestResponse {}
+
+message ApproveRequestRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ApproveRequestResponse {
+  AccessRequest request = 1;
+}
+
+message DenyRequestRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message DenyRequestResponse {
+  AccessRequest request = 1;
+}
+
+message ListMyRequestsRequest {}
+
+message ListMyRequestsResponse {
+  repeated AccessRequest requests = 1;
+}
+
+message ListPendingApprovalsRequest {}
+
+message ListPendingApprovalsResponse {
+  repeated AccessRequest requests = 1;
+}
+
+// Grant is an access_grant DTO.
+message Grant {
+  string id = 1;
+  string role_id = 2;
+  string asset_id = 3;
+  string subject_user_id = 4;
+  string granted_at = 5;      // RFC3339
+  string expires_at = 6;      // RFC3339
+  string revoked_at = 7;      // RFC3339, empty if not revoked
+  string revoked_reason = 8;  // empty if not revoked
+  bool active = 9;            // revoked_at IS NULL AND expires_at > now()
+}
+
+message RevokeGrantRequest {
+  string grant_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message RevokeGrantResponse {
+  Grant grant = 1;
+}
+
+message ListMyGrantsRequest {}
+
+message ListMyGrantsResponse {
+  repeated Grant grants = 1;
+}
+
+message ListGrantsRequest {
+  string subject_user_id = 1; // optional; empty => any subject
+  bool active_only = 2;       // optional; true => active grants only
+}
+
+message ListGrantsResponse {
+  repeated Grant grants = 1;
 }

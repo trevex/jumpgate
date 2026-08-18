@@ -149,3 +149,43 @@ func TestUpCreatesRoleGrants(t *testing.T) {
 		t.Fatal("table \"role_grants\" was not created")
 	}
 }
+
+func TestUpCreatesAccessRequests(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+
+	if err := Up(dsn); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	for _, table := range []string{
+		"access_requests", "access_request_approvals", "access_grants",
+	} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+			table).Scan(&exists)
+		if err != nil {
+			t.Fatalf("check %s: %v", table, err)
+		}
+		if !exists {
+			t.Fatalf("table %q was not created", table)
+		}
+	}
+
+	// request_policies.max_duration column must exist.
+	var exists bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='request_policies' AND column_name='max_duration')`).Scan(&exists); err != nil {
+		t.Fatalf("check request_policies.max_duration: %v", err)
+	}
+	if !exists {
+		t.Fatal("request_policies.max_duration column was not created")
+	}
+}

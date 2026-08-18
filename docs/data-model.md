@@ -2,7 +2,7 @@
 
 A reference for warden's Postgres schema — the core tables, their key columns,
 and how they relate. Derived from the embedded migrations
-(`warden/internal/db/migrate/migrations/0001..0007`). This is the storage behind
+(`warden/internal/db/migrate/migrations/0001..0008`). This is the storage behind
 the concepts in [access-model.md](access-model.md); read that first for the
 *meaning*, this for the *columns*.
 
@@ -47,8 +47,22 @@ without changing the domain — see [decisions.md](decisions.md).
 
         audit_log  (seq, prev_hash, entry_hash)   — append-only, hash-chained
 
-        access_grants  (M3c — not yet a table; time-boxed JIT grants)
+        access_requests ──┐ (requester_user_id, role_id, asset_id,
+         (status pending  │  required_approvals + granted_duration SNAPSHOTS)
+          →granted|denied │
+          |cancelled)     ├── access_request_approvals
+                          │     (approver_user_id, decision approve|deny,
+                          │      UNIQUE per approver)
+                          └── access_grants
+                                (role_id, scope_asset_id, subject_user_id,
+                                 expires_at, revoked_at/by/reason;
+                                 active ⇔ revoked_at IS NULL AND expires_at > now())
 ```
+
+The JIT-runtime tables (`access_requests` → `access_request_approvals` /
+`access_grants`) reference `users`, `roles`, and `assets`; a live `access_grant`
+joins the authorizer's standing set (see below and
+[access-model.md](access-model.md#standing-access--what-can-i-do-right-now)).
 
 `role_bindings` and `request_policies` each reference **either** a folder **or** an
 asset as their scope (CHECK-enforced XOR; `request_policies` also allows
@@ -171,9 +185,10 @@ and `requester_role_id` are both `ON DELETE RESTRICT`.
 | `role_id` | the requestable role → `roles(id)` (`ON DELETE CASCADE`) |
 | `scope_folder_id` | override scope folder → `folders(id)` (nullable) |
 | `scope_asset_id` | override scope asset → `assets(id)` (nullable); both NULL = role-level default |
-| `required_approvals` | int, **CHECK ≥ 1** (the N-of-M threshold). `0` = self-service is a **design-intent** knob for M3c and is **not yet allowed** by this CHECK / the `CreateRequestPolicy` validation. |
+| `required_approvals` | int, **CHECK ≥ 0** (the N-of-M threshold; relaxed from `≥ 1` in `0008`). `0` = **self-service**: an eligible requester is auto-granted, no approver needed (`CreateRequestPolicy`/`UpdateRequestPolicy` validation is now `gte: 0`). |
 | `approver_role_id` | "holders of this role on the scope may approve" → `roles(id)` (nullable, `ON DELETE RESTRICT`) |
 | `requester_role_id` | "holders of this role on the scope may request" → `roles(id)` (nullable, `ON DELETE RESTRICT`; added `0006`). A NULL requester-role is **not** "anyone". |
+| `max_duration` | interval, **nullable** (added `0008`); per-policy ceiling on a granted duration. NULL ⇒ fall back to the global `MaxGrantTTL` cap. |
 
 ### `request_policy_subjects` — explicit requester/approver subjects
 
@@ -189,16 +204,76 @@ by `kind`. Subject is user **xor** group (`one_subject`).
 | `subject_user_id` | → `users(id)` (nullable) |
 | `subject_group_id` | → `groups(id)` (nullable) |
 
-### `access_grants` — time-boxed JIT grants (M3c — not yet a table)
+### `access_requests` — JIT access requests (M3c)
 
-**Not yet in the schema.** Described here for completeness. The M3c request→approve
-workflow will write a row per activated request — roughly `(role, scope,
-subject_user, request_id, approved_by, expires_at, revoked_at, …)`, always to a
-**user** (the requester). The authorizer's standing set will then become
-`role_bindings ∪ active access_grants` (non-expired, non-revoked), so a granted
-role flows through the rewrite graph exactly like a permanent binding until a
-reaper removes it at expiry. Warden owns the record; runtime never mutates admin
-config (`role_bindings`). See [access-model.md](access-model.md#approval--who-signs-off-and-how-a-request-activates-m3c-workflow).
+A user's request to activate a **requestable** role on an **asset** (asset-scoped
+only in M3c). Added in `0008`. `required_approvals` and `granted_duration` are
+**snapshots** taken at request time (`required_approvals` from the effective
+policy; `granted_duration` = the clamped duration `min(requested,
+policy.max_duration, global MaxGrantTTL)`) so a mid-flight policy edit cannot
+change an in-progress request. A **partial-unique index**
+(`uq_pending_request` on `(requester_user_id, role_id, asset_id) WHERE status =
+'pending'`) blocks a second pending request for the same tuple.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `requester_user_id` | → `users(id)` (`ON DELETE CASCADE`) |
+| `role_id` | requested role → `roles(id)` (`ON DELETE CASCADE`) |
+| `asset_id` | requested scope asset → `assets(id)` (`ON DELETE CASCADE`) |
+| `reason` | text (default `''`) — free-form justification |
+| `requested_duration` | interval — what the requester asked for |
+| `required_approvals` | int — **snapshot** of the effective policy's N-of-M threshold |
+| `granted_duration` | interval — **snapshot** of the clamped grant lifetime |
+| `status` | CHECK in (`pending`, `granted`, `denied`, `cancelled`); default `pending` |
+| `created_at` | timestamptz (default `now()`) |
+| `resolved_at` | timestamptz, nullable (set when it leaves `pending`) |
+
+### `access_request_approvals` — per-approver decisions (M3c)
+
+One row per approver decision on a request. `UNIQUE (request_id,
+approver_user_id)` enforces **one decision per approver** (blocks double-voting).
+A single `deny` rejects the request; the N-th distinct `approve` mints the grant.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `request_id` | → `access_requests(id)` (`ON DELETE CASCADE`) |
+| `approver_user_id` | → `users(id)` (`ON DELETE CASCADE`) |
+| `decision` | CHECK in (`approve`, `deny`) |
+| `created_at` | timestamptz (default `now()`) |
+
+### `access_grants` — time-boxed JIT grants (M3c)
+
+Written when a request is granted (self-service at `required_approvals = 0`, or on
+reaching the approval threshold). Always to a **user** (the requester) at an
+**asset** scope, with a denormalized `role_id`/`scope_asset_id` so the grant joins
+the authorizer directly. `UNIQUE (request_id)` means **a request yields at most one
+grant**. A grant is **active** iff `revoked_at IS NULL AND expires_at > now()`; the
+authorizer's held-closure base becomes `role_bindings ∪ active access_grants`, so a
+live grant flows through the role-rewrite graph exactly like a standing binding and
+stops conferring the instant it expires or is revoked. Warden owns the record;
+runtime never mutates admin config (`role_bindings`). A partial index
+(`idx_access_grants_active` on `subject_user_id WHERE revoked_at IS NULL`) serves
+the active-grant lookups.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `request_id` | → `access_requests(id)` (`ON DELETE CASCADE`); UNIQUE |
+| `role_id` | granted role (denormalized for the authz union) → `roles(id)` (`ON DELETE CASCADE`) |
+| `scope_asset_id` | granted scope asset → `assets(id)` (`ON DELETE CASCADE`) |
+| `subject_user_id` | grantee (the requester) → `users(id)` (`ON DELETE CASCADE`) |
+| `granted_at` | timestamptz (default `now()`) |
+| `expires_at` | timestamptz **NOT NULL** — end of the grant window |
+| `revoked_at` | timestamptz, nullable — set on manual revoke, deactivation, or expiry |
+| `revoked_by` | → `users(id)` (`ON DELETE SET NULL`); **NULL actor = reaper/system** (expiry) |
+| `revoked_reason` | text, nullable (`expired`, `user_deactivated`, or a caller reason) |
+
+See [access-model.md](access-model.md#approval--who-signs-off-and-how-a-request-activates-m3c-workflow)
+for the request→approve→grant workflow and
+[security.md](security.md#continuous-enforcement--revocation-tears-down-live-sessions)
+for the revocation matrix.
 
 ### `audit_log` — hash-chained append-only log
 

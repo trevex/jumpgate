@@ -11,6 +11,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccessGrant struct {
+	ID            uuid.UUID          `json:"id"`
+	RequestID     uuid.UUID          `json:"request_id"`
+	RoleID        uuid.UUID          `json:"role_id"`
+	ScopeAssetID  uuid.UUID          `json:"scope_asset_id"`
+	SubjectUserID uuid.UUID          `json:"subject_user_id"`
+	GrantedAt     time.Time          `json:"granted_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy     pgtype.UUID        `json:"revoked_by"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
+type AccessRequest struct {
+	ID                uuid.UUID          `json:"id"`
+	RequesterUserID   uuid.UUID          `json:"requester_user_id"`
+	RoleID            uuid.UUID          `json:"role_id"`
+	AssetID           uuid.UUID          `json:"asset_id"`
+	Reason            string             `json:"reason"`
+	RequestedDuration pgtype.Interval    `json:"requested_duration"`
+	RequiredApprovals int32              `json:"required_approvals"`
+	GrantedDuration   pgtype.Interval    `json:"granted_duration"`
+	Status            string             `json:"status"`
+	CreatedAt         time.Time          `json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+}
+
+type AccessRequestApproval struct {
+	ID             uuid.UUID `json:"id"`
+	RequestID      uuid.UUID `json:"request_id"`
+	ApproverUserID uuid.UUID `json:"approver_user_id"`
+	Decision       string    `json:"decision"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type Asset struct {
 	ID        uuid.UUID `json:"id"`
 	FolderID  uuid.UUID `json:"folder_id"`
@@ -61,14 +96,15 @@ type GroupMembership struct {
 }
 
 type RequestPolicy struct {
-	ID                uuid.UUID   `json:"id"`
-	RoleID            uuid.UUID   `json:"role_id"`
-	ScopeFolderID     pgtype.UUID `json:"scope_folder_id"`
-	ScopeAssetID      pgtype.UUID `json:"scope_asset_id"`
-	RequiredApprovals int32       `json:"required_approvals"`
-	ApproverRoleID    pgtype.UUID `json:"approver_role_id"`
-	CreatedAt         time.Time   `json:"created_at"`
-	RequesterRoleID   pgtype.UUID `json:"requester_role_id"`
+	ID                uuid.UUID       `json:"id"`
+	RoleID            uuid.UUID       `json:"role_id"`
+	ScopeFolderID     pgtype.UUID     `json:"scope_folder_id"`
+	ScopeAssetID      pgtype.UUID     `json:"scope_asset_id"`
+	RequiredApprovals int32           `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID     `json:"approver_role_id"`
+	CreatedAt         time.Time       `json:"created_at"`
+	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
+	MaxDuration       pgtype.Interval `json:"max_duration"`
 }
 
 type RequestPolicySubject struct {

@@ -36,6 +36,12 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 // expansion arm or the base case here, change ALL copies or eligibility silently
 // diverges from Check. (Kept as copies because each query wraps it in different
 // trailing CTEs; keep the closure semantics identical.)
+//
+// The `held` BASE is `role_bindings ∪ active access_grants`: a standing binding
+// OR a live JIT grant (M3c). The active-grant arm below (user-subject +
+// asset-scope, revoked_at IS NULL AND expires_at > now()) MUST stay byte-for-byte
+// identical across all held-style copies. Because activity is filtered by now(),
+// an expired/revoked grant stops conferring immediately — no reaper required.
 const heldCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -50,6 +56,12 @@ held(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
+    -- KEEP THIS ARM IDENTICAL across all held-style copies (requestable.go).
+    SELECT g.role_id, 'asset'::text, g.scope_asset_id
+    FROM access_grants g
+    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
