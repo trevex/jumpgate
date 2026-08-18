@@ -22,7 +22,7 @@ conceptual reference behind the `Authorizer` and `ApprovalResolver`.
 | **Group** | A named set of subjects. A group's members are users *and/or other groups* → **nested groups**. |
 | **Folder** | A container in a hierarchy (`parent_id`). Organizes assets and is the unit of **inheritance**. |
 | **Asset** | A protected resource (an SSH host, a Postgres DB, a k8s cluster, …). Belongs to exactly one folder; carries free-form `labels`. |
-| **Capability** | A fixed, code-enforced primitive (`connect`, `read`, `write`, `ddl`, `admin`, …). Not user-editable — the workers only understand these. |
+| **Capability** | A **scoped, namespaced verb** — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `db:ddl`, `k8s:impersonate:cluster-admin`). **Format-validated** at role creation and matched with **glob** semantics (`*` = one segment, trailing `**` = a whole scope). warden treats a capability as an **opaque token**; its *meaning* / enforcement lives at the **workers** (M4+). See [capabilities.md](capabilities.md). |
 | **Role** | An **admin-defined** named bundle of capabilities, scoped to a resource type (`asset` or `folder`). E.g. *PG-ReadOnly* = `[read]`, *cluster-admin* = `[connect,read,write,admin]`. This is the "custom role". |
 | **RoleBinding** | Attaches a **role** to a **subject** (user or group) at a **scope** (folder or asset), as one of two **kinds**: `standing` (access now) or `requestable` (eligible to request). |
 | **ApprovalRule** | Governs how a **requestable** role is activated: attached to a role (role-level default) with optional per-(role, scope) overrides. Carries `required_approvals` + approver sources. |
@@ -171,6 +171,9 @@ Binding:  dana → owner          STANDING      on folder k8s     (dana is an ow
   dana's folder binding confers `owner` on `cluster-x` → **dana** can approve.
 - On approval (M3c): a **time-boxed `standing` cluster-admin binding** is written for
   alice on cluster-x; a reaper removes it at expiry, reverting her to requestable.
+  Because authorization is **continuous**, expiry (or any revocation) must also
+  **tear down any live session** the grant supported — see
+  [continuous revocation](architecture.md#continuous-revocation--live-session-teardown-m3c-reaper--m4-gateway).
 
 Now tighten a vital asset:
 
@@ -272,7 +275,7 @@ Each role still carries its own ApprovalRule, so a composed role like
                     │  (standing | requestable)                          
                     │ role                                               
                     ▼                                                    
-                  Role ──► capabilities [ …fixed vocabulary… ]           
+                  Role ──► capabilities [ scope:action[:qual] · glob ]   
                     ▲     (role_grants: R ⊇ S via same_object | parent — role-rewrite)
                     │ governs activation of a *requestable* binding      
                  ApprovalRule (role-level default + per-scope override)  
