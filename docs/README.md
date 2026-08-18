@@ -16,6 +16,7 @@ planned, so the docs never drift from the code.
 | Page | What it covers |
 |------|----------------|
 | [architecture.md](architecture.md) | System design: control plane, two-tier data plane, access model, JIT/approvals, audit |
+| [access-model.md](access-model.md) | Conceptual reference: how groups, folders, assets, roles, bindings & approval rules interact (with worked examples) |
 | [development.md](development.md) | Getting started: Nix devshell, repo layout, codegen, testing, CI conventions |
 | [roadmap.md](roadmap.md) | Milestone plan (M1–M7) and current status |
 | [decisions.md](decisions.md) | Key architecture decisions and their rationale |
