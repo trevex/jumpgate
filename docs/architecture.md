@@ -87,7 +87,7 @@ only for the duration of a live, authorized session. Revocation is immediate
 
 ## Access model
 
-Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, folder-subtree inheritance, and the Active/Requestable/Invisible tiers. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.
+Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, folder-subtree inheritance, and the Active/Requestable/Invisible tiers. As of **M3-roles**, folder cascade of **standing** access is **explicit**: a role reaches a folder's descendants only if it declares a `parent` role-rewrite rule (an explicit ReBAC-light userset-rewrite over `role_grants`, resolved by `HoldsRole`), not an automatic subtree walk; requestable-visibility and approval-rule folder inheritance keep the implicit cascade for now. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.
 
 The model separates *what a role means* from *who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). 🟡 (M2a: resolution implemented; M2b: REST catalog)
 
