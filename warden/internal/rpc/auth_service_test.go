@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,7 +12,9 @@ import (
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
@@ -30,13 +33,40 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	}
 	t.Cleanup(pool.Close)
 
+	sealer := testSealer(t)
+	sessionSvc, _ := testSessionService(t, pool, sealer)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t)); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return pool, srv.URL
+}
+
+// newServerWithSession is newServer that also returns the Ed25519 public key of the
+// active session signing key, for tests that verify minted admission tokens.
+func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKey) {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	sealer := testSealer(t)
+	sessionSvc, pub := testSessionService(t, pool, sealer)
+	mux := http.NewServeMux()
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry()); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return pool, srv.URL, pub
 }
 
 // newServerNoVault is newServer with the vault disabled (nil sealer), to exercise
@@ -53,7 +83,7 @@ func newServerNoVault(t *testing.T) (*pgxpool.Pool, string) {
 	}
 	t.Cleanup(pool.Close)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil, audit.New(pool), nil, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

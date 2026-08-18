@@ -13,7 +13,9 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/db/pgerr"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/session"
 )
 
 // VaultServer implements vaultv1connect.VaultServiceHandler: the admin API for
@@ -74,6 +76,32 @@ func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.I
 		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
 	}
 	return connect.NewResponse(&vaultv1.InitCAResponse{PublicMaterial: row.PublicMaterial}), nil
+}
+
+// InitSessionKey generates and seals the active Ed25519 session-token signing
+// key, returning its public half. A second init hits the unique-active index and
+// surfaces as AlreadyExists. The running server loads the signing key once at
+// boot, so a fresh deploy must restart warden after InitSessionKey to enable
+// CreateSession/SetupSession.
+func (s *VaultServer) InitSessionKey(ctx context.Context, _ *connect.Request[vaultv1.InitSessionKeyRequest]) (*connect.Response[vaultv1.InitSessionKeyResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if s.sealer == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
+	}
+	ks := session.NewKeyStore(s.q, s.sealer)
+	if err := ks.Init(ctx); err != nil {
+		if pgerr.IsUniqueViolation(err) {
+			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("session signing key already initialized"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	_, pub, err := ks.LoadActive(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&vaultv1.InitSessionKeyResponse{PublicKey: pub}), nil
 }
 
 // GetCAPublic returns the active CA's public material for a kind.

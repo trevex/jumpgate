@@ -38,6 +38,9 @@ const (
 	// VaultServiceGetCAPublicProcedure is the fully-qualified name of the VaultService's GetCAPublic
 	// RPC.
 	VaultServiceGetCAPublicProcedure = "/jumpgate.vault.v1.VaultService/GetCAPublic"
+	// VaultServiceInitSessionKeyProcedure is the fully-qualified name of the VaultService's
+	// InitSessionKey RPC.
+	VaultServiceInitSessionKeyProcedure = "/jumpgate.vault.v1.VaultService/InitSessionKey"
 	// VaultServiceSetAssetSecretProcedure is the fully-qualified name of the VaultService's
 	// SetAssetSecret RPC.
 	VaultServiceSetAssetSecretProcedure = "/jumpgate.vault.v1.VaultService/SetAssetSecret"
@@ -60,6 +63,9 @@ type VaultServiceClient interface {
 	// Certificate authorities.
 	InitCA(context.Context, *connect.Request[v1.InitCARequest]) (*connect.Response[v1.InitCAResponse], error)
 	GetCAPublic(context.Context, *connect.Request[v1.GetCAPublicRequest]) (*connect.Response[v1.GetCAPublicResponse], error)
+	// InitSessionKey generates the active session-token signing key (Ed25519, private
+	// half sealed). Admin-only; a second init hits the unique-active index.
+	InitSessionKey(context.Context, *connect.Request[v1.InitSessionKeyRequest]) (*connect.Response[v1.InitSessionKeyResponse], error)
 	// Per-asset stored secrets (write-only in; metadata-only out).
 	SetAssetSecret(context.Context, *connect.Request[v1.SetAssetSecretRequest]) (*connect.Response[v1.SetAssetSecretResponse], error)
 	DeleteAssetSecret(context.Context, *connect.Request[v1.DeleteAssetSecretRequest]) (*connect.Response[v1.DeleteAssetSecretResponse], error)
@@ -90,6 +96,12 @@ func NewVaultServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+VaultServiceGetCAPublicProcedure,
 			connect.WithSchema(vaultServiceMethods.ByName("GetCAPublic")),
+			connect.WithClientOptions(opts...),
+		),
+		initSessionKey: connect.NewClient[v1.InitSessionKeyRequest, v1.InitSessionKeyResponse](
+			httpClient,
+			baseURL+VaultServiceInitSessionKeyProcedure,
+			connect.WithSchema(vaultServiceMethods.ByName("InitSessionKey")),
 			connect.WithClientOptions(opts...),
 		),
 		setAssetSecret: connect.NewClient[v1.SetAssetSecretRequest, v1.SetAssetSecretResponse](
@@ -129,6 +141,7 @@ func NewVaultServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 type vaultServiceClient struct {
 	initCA            *connect.Client[v1.InitCARequest, v1.InitCAResponse]
 	getCAPublic       *connect.Client[v1.GetCAPublicRequest, v1.GetCAPublicResponse]
+	initSessionKey    *connect.Client[v1.InitSessionKeyRequest, v1.InitSessionKeyResponse]
 	setAssetSecret    *connect.Client[v1.SetAssetSecretRequest, v1.SetAssetSecretResponse]
 	deleteAssetSecret *connect.Client[v1.DeleteAssetSecretRequest, v1.DeleteAssetSecretResponse]
 	listAssetSecrets  *connect.Client[v1.ListAssetSecretsRequest, v1.ListAssetSecretsResponse]
@@ -144,6 +157,11 @@ func (c *vaultServiceClient) InitCA(ctx context.Context, req *connect.Request[v1
 // GetCAPublic calls jumpgate.vault.v1.VaultService.GetCAPublic.
 func (c *vaultServiceClient) GetCAPublic(ctx context.Context, req *connect.Request[v1.GetCAPublicRequest]) (*connect.Response[v1.GetCAPublicResponse], error) {
 	return c.getCAPublic.CallUnary(ctx, req)
+}
+
+// InitSessionKey calls jumpgate.vault.v1.VaultService.InitSessionKey.
+func (c *vaultServiceClient) InitSessionKey(ctx context.Context, req *connect.Request[v1.InitSessionKeyRequest]) (*connect.Response[v1.InitSessionKeyResponse], error) {
+	return c.initSessionKey.CallUnary(ctx, req)
 }
 
 // SetAssetSecret calls jumpgate.vault.v1.VaultService.SetAssetSecret.
@@ -176,6 +194,9 @@ type VaultServiceHandler interface {
 	// Certificate authorities.
 	InitCA(context.Context, *connect.Request[v1.InitCARequest]) (*connect.Response[v1.InitCAResponse], error)
 	GetCAPublic(context.Context, *connect.Request[v1.GetCAPublicRequest]) (*connect.Response[v1.GetCAPublicResponse], error)
+	// InitSessionKey generates the active session-token signing key (Ed25519, private
+	// half sealed). Admin-only; a second init hits the unique-active index.
+	InitSessionKey(context.Context, *connect.Request[v1.InitSessionKeyRequest]) (*connect.Response[v1.InitSessionKeyResponse], error)
 	// Per-asset stored secrets (write-only in; metadata-only out).
 	SetAssetSecret(context.Context, *connect.Request[v1.SetAssetSecretRequest]) (*connect.Response[v1.SetAssetSecretResponse], error)
 	DeleteAssetSecret(context.Context, *connect.Request[v1.DeleteAssetSecretRequest]) (*connect.Response[v1.DeleteAssetSecretResponse], error)
@@ -202,6 +223,12 @@ func NewVaultServiceHandler(svc VaultServiceHandler, opts ...connect.HandlerOpti
 		VaultServiceGetCAPublicProcedure,
 		svc.GetCAPublic,
 		connect.WithSchema(vaultServiceMethods.ByName("GetCAPublic")),
+		connect.WithHandlerOptions(opts...),
+	)
+	vaultServiceInitSessionKeyHandler := connect.NewUnaryHandler(
+		VaultServiceInitSessionKeyProcedure,
+		svc.InitSessionKey,
+		connect.WithSchema(vaultServiceMethods.ByName("InitSessionKey")),
 		connect.WithHandlerOptions(opts...),
 	)
 	vaultServiceSetAssetSecretHandler := connect.NewUnaryHandler(
@@ -240,6 +267,8 @@ func NewVaultServiceHandler(svc VaultServiceHandler, opts ...connect.HandlerOpti
 			vaultServiceInitCAHandler.ServeHTTP(w, r)
 		case VaultServiceGetCAPublicProcedure:
 			vaultServiceGetCAPublicHandler.ServeHTTP(w, r)
+		case VaultServiceInitSessionKeyProcedure:
+			vaultServiceInitSessionKeyHandler.ServeHTTP(w, r)
 		case VaultServiceSetAssetSecretProcedure:
 			vaultServiceSetAssetSecretHandler.ServeHTTP(w, r)
 		case VaultServiceDeleteAssetSecretProcedure:
@@ -265,6 +294,10 @@ func (UnimplementedVaultServiceHandler) InitCA(context.Context, *connect.Request
 
 func (UnimplementedVaultServiceHandler) GetCAPublic(context.Context, *connect.Request[v1.GetCAPublicRequest]) (*connect.Response[v1.GetCAPublicResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.vault.v1.VaultService.GetCAPublic is not implemented"))
+}
+
+func (UnimplementedVaultServiceHandler) InitSessionKey(context.Context, *connect.Request[v1.InitSessionKeyRequest]) (*connect.Response[v1.InitSessionKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.vault.v1.VaultService.InitSessionKey is not implemented"))
 }
 
 func (UnimplementedVaultServiceHandler) SetAssetSecret(context.Context, *connect.Request[v1.SetAssetSecretRequest]) (*connect.Response[v1.SetAssetSecretResponse], error) {
