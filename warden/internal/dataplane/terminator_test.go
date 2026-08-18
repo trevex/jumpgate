@@ -165,6 +165,73 @@ func (f *termFixture) sessionTerminatedCount(t *testing.T) int {
 	return n
 }
 
+// sessionEndedCount drains the outbox and counts session.ended entries.
+func (f *termFixture) sessionEndedCount(t *testing.T) int {
+	t.Helper()
+	for {
+		n, err := audit.New(f.pool).DrainOnce(f.ctx, 256)
+		if err != nil {
+			t.Fatalf("DrainOnce: %v", err)
+		}
+		if n < 256 {
+			break
+		}
+	}
+	rows, err := f.q.ListAuditEntries(f.ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	n := 0
+	for _, r := range rows {
+		if r.EventType == dataplane.EventSessionEnded {
+			n++
+		}
+	}
+	return n
+}
+
+// liveSessionExists reports whether the fixture's live_sessions row is still present.
+func (f *termFixture) liveSessionExists(t *testing.T) bool {
+	t.Helper()
+	var n int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, f.sess).Scan(&n); err != nil {
+		t.Fatalf("count live_sessions: %v", err)
+	}
+	return n > 0
+}
+
+// TestMarkEndedDeletesAndAuditsOnce: MarkEnded deletes the live_sessions row and
+// enqueues exactly one session.ended event; a second call on the (now-gone) row is
+// a clean no-op — still exactly one event (idempotent), and audit chain verifies.
+func TestMarkEndedDeletesAndAuditsOnce(t *testing.T) {
+	f := setupTerm(t)
+
+	if err := f.term.MarkEnded(f.ctx, f.sess, "worker reconnected without session"); err != nil {
+		t.Fatalf("MarkEnded (1): %v", err)
+	}
+	if f.liveSessionExists(t) {
+		t.Fatal("MarkEnded: live_sessions row must be deleted")
+	}
+	if n := f.sessionEndedCount(t); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+
+	// Idempotent: the row is already gone, so the second call deletes 0 rows and
+	// must NOT enqueue a duplicate session.ended.
+	if err := f.term.MarkEnded(f.ctx, f.sess, "worker reconnected without session"); err != nil {
+		t.Fatalf("MarkEnded (2): %v", err)
+	}
+	if n := f.sessionEndedCount(t); n != 1 {
+		t.Fatalf("session.ended events after repeat = %d, want exactly 1 (idempotent)", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify (post-repeat): %v", err)
+	}
+}
+
 // TestTerminateGrantKillsSoleSource: the JIT grant is the user's ONLY login source.
 // Once revoked, EntitledLogins is empty → the live session must be torn down.
 func TestTerminateGrantKillsSoleSource(t *testing.T) {

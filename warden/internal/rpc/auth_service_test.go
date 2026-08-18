@@ -12,6 +12,7 @@ import (
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -35,7 +36,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	sealer := testSealer(t)
 	sessionSvc, _ := testSessionService(t, pool, sealer)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, sessionSvc, nil, dataplane.NewRegistry()); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
@@ -60,7 +61,7 @@ func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKe
 	sealer := testSealer(t)
 	sessionSvc, pub := testSessionService(t, pool, sealer)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, sessionSvc, nil, dataplane.NewRegistry()); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
@@ -82,7 +83,7 @@ func newServerNoVault(t *testing.T) (*pgxpool.Pool, string) {
 	}
 	t.Cleanup(pool.Close)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil, nil, nil, dataplane.NewRegistry()); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil, audit.New(pool), nil, nil, dataplane.NewRegistry()); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

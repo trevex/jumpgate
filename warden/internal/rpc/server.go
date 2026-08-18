@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
@@ -43,7 +44,7 @@ import (
 // nil under the same conditions as sessionSvc, in which case DataplaneService is
 // not mounted. registry is the in-memory worker registry shared with the (later)
 // terminator/listener so teardown can be pushed to the owning stream.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry) error {
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -79,7 +80,8 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Servi
 	}
 
 	if setupSvc != nil {
-		dPath, dHandler := dataplanev1connect.NewDataplaneServiceHandler(NewDataplaneServer(setupSvc, registry, pool), opts)
+		terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), auditLog)
+		dPath, dHandler := dataplanev1connect.NewDataplaneServiceHandler(NewDataplaneServer(setupSvc, registry, pool, terminator), opts)
 		mux.Handle(dPath, dHandler)
 	}
 

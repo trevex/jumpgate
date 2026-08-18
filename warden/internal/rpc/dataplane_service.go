@@ -11,20 +11,22 @@ import (
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // DataplaneServer implements dataplanev1connect.DataplaneServiceHandler: the
 // worker lifeline stream (register/heartbeat/session-ended + teardown push) and
 // the unary session-setup admission RPC.
 type DataplaneServer struct {
-	setup    *dataplane.SetupService
-	registry *dataplane.Registry
-	pool     *pgxpool.Pool
+	setup      *dataplane.SetupService
+	registry   *dataplane.Registry
+	pool       *pgxpool.Pool
+	terminator *dataplane.Terminator
 }
 
 // NewDataplaneServer constructs the data-plane RPC implementation.
-func NewDataplaneServer(setup *dataplane.SetupService, registry *dataplane.Registry, pool *pgxpool.Pool) *DataplaneServer {
-	return &DataplaneServer{setup: setup, registry: registry, pool: pool}
+func NewDataplaneServer(setup *dataplane.SetupService, registry *dataplane.Registry, pool *pgxpool.Pool, terminator *dataplane.Terminator) *DataplaneServer {
+	return &DataplaneServer{setup: setup, registry: registry, pool: pool, terminator: terminator}
 }
 
 // SetupSession redeems a session token: it re-checks authorization, records the
@@ -78,7 +80,7 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 		return err
 	}
 
-	// Reconnect re-sync (Task 11) — stubbed for now.
+	// Reconnect re-sync: reconcile DB-recorded sessions against what the worker reports.
 	if err := s.reconcileOnRegister(ctx, workerID, reg.LiveSessionIds); err != nil {
 		slog.Error("reconcile on register failed", "worker_id", workerID, "err", err)
 	}
@@ -119,13 +121,30 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 	}
 }
 
-// reconcileOnRegister re-evaluates this worker's live sessions on (re)connect.
-// STUB — implemented in Task 11.
-//
-// TODO(Task 11): reconcile warden's live_sessions for this worker against the
-// worker-reported live IDs and re-push teardown for any that lost authorization
-// while the stream was down.
-func (s *DataplaneServer) reconcileOnRegister(_ context.Context, _ string, _ []string) error {
+// reconcileOnRegister reconciles a (re)connecting worker's DB-recorded live sessions
+// against the set it reports still having. Sessions the worker dropped are marked
+// ended; sessions it retains are re-evaluated and torn down if they lost
+// authorization while the stream was down. Best-effort per session (errors logged).
+func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID string, workerLiveIDs []string) error {
+	have := make(map[string]bool, len(workerLiveIDs))
+	for _, id := range workerLiveIDs {
+		have[id] = true
+	}
+	rows, err := gen.New(s.pool).ListLiveSessionsByWorker(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if !have[row.ID.String()] {
+			if err := s.terminator.MarkEnded(ctx, row.ID, "worker reconnected without session"); err != nil {
+				slog.Error("reconcile mark-ended failed", "session_id", row.ID, "err", err)
+			}
+			continue
+		}
+		if err := s.terminator.Reevaluate(ctx, row.UserID, row.AssetID); err != nil {
+			slog.Error("reconcile reevaluate failed", "session_id", row.ID, "err", err)
+		}
+	}
 	return nil
 }
 

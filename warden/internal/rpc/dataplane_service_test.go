@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
@@ -17,6 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
@@ -51,7 +54,7 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, p, testAccessRequestService(p), sealer, sessionSvc, setupSvc, registry); err != nil {
+	if err := rpc.Register(mux, p, testAccessRequestService(p), sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
@@ -167,6 +170,197 @@ func TestSetupSessionRPCUnauthenticated(t *testing.T) {
 	}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("bogus-token SetupSession = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// reconcileSeed is a minimal seed for the reconnect re-sync scenarios: an ssh asset
+// (allowed_logins {deploy}, target set), a role carrying ssh:login:deploy conferred
+// to a user via an active JIT grant, and a live_sessions row owned by "w1".
+type reconcileSeed struct {
+	user  uuid.UUID
+	asset uuid.UUID
+	grant uuid.UUID
+	sess  uuid.UUID
+}
+
+func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-recon-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-recon", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+		AssetID: asset.ID, AllowedLogins: []string{"deploy"}, AuthMethod: "ca-cert",
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetConfig: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE ssh_asset_config SET target_address = $1 WHERE asset_id = $2`, "10.0.0.5:22", asset.ID); err != nil {
+		t.Fatalf("set target_address: %v", err)
+	}
+
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`)})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+		RequesterUserID:   user.ID,
+		RoleID:            role.ID,
+		AssetID:           asset.ID,
+		Reason:            "seed",
+		RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		RequiredApprovals: 0,
+		GrantedDuration:   pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		Status:            "granted",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessRequest: %v", err)
+	}
+	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID, SubjectUserID: user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessGrant: %v", err)
+	}
+
+	sess, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+		ID: uuid.New(), UserID: user.ID, AssetID: asset.ID, WorkerID: "w1",
+		GrantID: pgtype.UUID{Bytes: grant.ID, Valid: true}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
+	})
+	if err != nil {
+		t.Fatalf("InsertLiveSession: %v", err)
+	}
+	return reconcileSeed{user: user.ID, asset: asset.ID, grant: grant.ID, sess: sess.ID}
+}
+
+// registerWorker opens a WorkerStream, sends Register with the given live-session IDs,
+// and waits for the RegisterAck. The caller keeps the stream open (cleanup closes it).
+func registerWorker(t *testing.T, url string, liveIDs []string) {
+	t.Helper()
+	ctx := context.Background()
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: liveIDs},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+}
+
+// sessionEventCount drains the outbox and counts audit entries of the given type.
+func sessionEventCount(t *testing.T, pool *pgxpool.Pool, eventType string) int {
+	t.Helper()
+	ctx := context.Background()
+	log := audit.New(pool)
+	for {
+		n, err := log.DrainOnce(ctx, 256)
+		if err != nil {
+			t.Fatalf("DrainOnce: %v", err)
+		}
+		if n < 256 {
+			break
+		}
+	}
+	rows, err := gen.New(pool).ListAuditEntries(ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	n := 0
+	for _, r := range rows {
+		if r.EventType == eventType {
+			n++
+		}
+	}
+	return n
+}
+
+// TestReconcileMarksEndedWhenWorkerDroppedSession: a worker (re)registers reporting NO
+// live sessions, but warden has a DB row for it. The reconnect re-sync must mark that
+// session ended — delete the row and emit session.ended.
+func TestReconcileMarksEndedWhenWorkerDroppedSession(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool)
+
+	registerWorker(t, url, nil) // worker reports no sessions
+
+	ctx := context.Background()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+			t.Fatalf("count live_sessions: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reconcile did not delete the dropped session's live_sessions row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := sessionEventCount(t, pool, dataplane.EventSessionEnded); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1", n)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestReconcileTearsDownUnauthorizedRetainedSession: the worker still reports the
+// session, but its authorization was revoked while the stream was down. The reconnect
+// re-sync must re-evaluate and tear it down — mark terminating + emit session.terminated.
+func TestReconcileTearsDownUnauthorizedRetainedSession(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool)
+
+	ctx := context.Background()
+	// Revoke the sole login source before the worker reconnects.
+	if _, err := pool.Exec(ctx, `UPDATE access_grants SET revoked_at = now() WHERE id = $1`, seed.grant); err != nil {
+		t.Fatalf("revoke grant: %v", err)
+	}
+
+	registerWorker(t, url, []string{seed.sess.String()}) // worker still has it
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var ts pgtype.Timestamptz
+		if err := pool.QueryRow(ctx, `SELECT terminate_requested_at FROM live_sessions WHERE id = $1`, seed.sess).Scan(&ts); err != nil {
+			t.Fatalf("select terminate_requested_at: %v", err)
+		}
+		if ts.Valid {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reconcile did not set terminate_requested_at on the unauthorized retained session")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := sessionEventCount(t, pool, dataplane.EventSessionTerminated); n != 1 {
+		t.Fatalf("session.terminated events = %d, want 1", n)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
 	}
 }
 

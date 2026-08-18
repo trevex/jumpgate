@@ -39,7 +39,7 @@ type Querier interface {
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
-	DeleteLiveSession(ctx context.Context, id uuid.UUID) error
+	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error

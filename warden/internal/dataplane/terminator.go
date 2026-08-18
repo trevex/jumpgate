@@ -74,6 +74,36 @@ func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) 
 	return nil
 }
 
+// MarkEnded records a session's end: it deletes the live_sessions row and enqueues
+// a session.ended audit event, in one tx. Idempotent — if the row is already gone
+// (deleted 0 rows), it is a clean no-op (no duplicate audit). Used by the reconnect
+// re-sync (a worker that no longer has a session) and by SessionEnded reports.
+func (t *Terminator) MarkEnded(ctx context.Context, sessionID uuid.UUID, reason string) error {
+	tx, err := t.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+	n, err := q.DeleteLiveSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil // already ended — no duplicate audit
+	}
+	detail, _ := json.Marshal(map[string]any{"session_id": sessionID.String(), "reason": reason})
+	if err := t.audit.Enqueue(ctx, q, audit.Event{
+		Type:    EventSessionEnded,
+		ActorID: uuid.Nil,
+		Subject: "live_session:" + sessionID.String(),
+		Details: detail,
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // requestTeardown marks the session terminating + enqueues session.terminated in one
 // tx, then NOTIFYs so the stream-owning replica pushes the Teardown. Idempotent: safe
 // to call repeatedly — only the transition (0→terminating) enqueues the audit event +
