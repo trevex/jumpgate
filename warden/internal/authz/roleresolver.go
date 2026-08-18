@@ -74,12 +74,22 @@ goals(role_id, object_kind, object_id) AS (
          ) ng
 )
 SELECT EXISTS (
+    -- satisfaction via a standing role_binding on the reached goal.
     SELECT 1
     FROM goals g
     JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
          OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
       AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
+  UNION ALL
+    -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
+    -- SECURITY: mirror of the held-base grant arm (see heldCTE). now() enforces
+    -- expiry/revocation at query time — no reaper required.
+    SELECT 1
+    FROM goals g
+    JOIN access_grants ag ON ag.role_id = g.role_id
+      AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
+      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
 )`
 	var ok bool
 	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
@@ -166,12 +176,26 @@ goals(role_id, object_kind, object_id, path) AS (
           AND (e->>'object_id')::uuid = x.object_id
     )
 )
-SELECT g.path, rb.id, rb.subject_user_id, rb.subject_group_id
-FROM goals g
-JOIN role_bindings rb ON rb.role_id = g.role_id
-  AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
-    OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
-  AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+SELECT path, binding_id, subject_user_id, subject_group_id
+FROM (
+    -- satisfaction via a standing role_binding on the reached goal.
+    SELECT g.path AS path, rb.id AS binding_id, rb.subject_user_id, rb.subject_group_id
+    FROM goals g
+    JOIN role_bindings rb ON rb.role_id = g.role_id
+      AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
+        OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
+      AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION ALL
+    -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
+    -- SECURITY: mirror of the held-base grant arm (see heldCTE). The grant id
+    -- stands in as binding_id and its user is the subject; now() enforces
+    -- expiry/revocation at query time — no reaper required.
+    SELECT g.path AS path, ag.id AS binding_id, ag.subject_user_id, NULL::uuid AS subject_group_id
+    FROM goals g
+    JOIN access_grants ag ON ag.role_id = g.role_id
+      AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
+      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+) sat
 -- Defensive cap: role_grants is tiny/admin-curated, but bound worst-case result
 -- size. This caps explanation breadth only — holds (len(paths)>0) stays correct
 -- because the cap is ≥ 1 and never empties a non-empty result.
