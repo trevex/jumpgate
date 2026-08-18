@@ -144,7 +144,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
-	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}")})
+	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}

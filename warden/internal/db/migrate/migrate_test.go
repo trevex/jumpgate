@@ -150,6 +150,46 @@ func TestUpCreatesRoleGrants(t *testing.T) {
 	}
 }
 
+func TestUpCreatesVault(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+
+	if err := Up(dsn); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	for _, table := range []string{
+		"ca_keys", "asset_secrets", "ssh_asset_config",
+	} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+			table).Scan(&exists)
+		if err != nil {
+			t.Fatalf("check %s: %v", table, err)
+		}
+		if !exists {
+			t.Fatalf("table %q was not created", table)
+		}
+	}
+
+	// assets.kind column must exist.
+	var exists bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assets' AND column_name='kind')`).Scan(&exists); err != nil {
+		t.Fatalf("check assets.kind: %v", err)
+	}
+	if !exists {
+		t.Fatal("assets.kind column was not created")
+	}
+}
+
 func TestUpCreatesAccessRequests(t *testing.T) {
 	dsn := testsupport.StartPostgres(t)
 

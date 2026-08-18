@@ -79,7 +79,7 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Asset pg in prod/db
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}")})
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestIsEligibleRequester(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: prod.ID, Name: "pg", Labels: []byte("{}")})
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: prod.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}")})
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +621,7 @@ func TestGrantedRequesterRoleIsNotEligible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}")})
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}

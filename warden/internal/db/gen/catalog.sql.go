@@ -74,7 +74,7 @@ func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding
 }
 
 const listAssetsByFolder = `-- name: ListAssetsByFolder :many
-SELECT id, folder_id, name, labels, created_at FROM assets WHERE folder_id = $1 ORDER BY id
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error) {
@@ -92,6 +92,7 @@ func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([
 			&i.Name,
 			&i.Labels,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -104,7 +105,7 @@ func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([
 }
 
 const listAssetsByIDs = `-- name: ListAssetsByIDs :many
-SELECT id, folder_id, name, labels, created_at FROM assets WHERE id = ANY($1::uuid[])
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
@@ -122,6 +123,7 @@ func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]
 			&i.Name,
 			&i.Labels,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
