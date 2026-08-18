@@ -115,23 +115,26 @@ message RequestPolicy {
   int32 required_approvals = 5;
   string requester_role_id = 6; // empty = no requester-role source
   string approver_role_id = 7;  // empty = no approver-role source
+  int64 max_duration_seconds = 8; // 0 = no per-scope duration cap (NULL)
 }
 
 message CreateRequestPolicyRequest {
   string role_id = 1 [(buf.validate.field).string.uuid = true];
   string scope_folder_id = 2; // optional; empty for role-default or asset scope
   string scope_asset_id = 3;  // optional
-  int32 required_approvals = 4 [(buf.validate.field).int32 = {gte: 1, lte: 20}];
+  int32 required_approvals = 4 [(buf.validate.field).int32 = {gte: 0, lte: 20}];
   string requester_role_id = 5; // optional
   string approver_role_id = 6;  // optional
+  int64 max_duration_seconds = 7 [(buf.validate.field).int64 = {gte: 0}]; // 0 = no per-scope cap (NULL)
 }
 message CreateRequestPolicyResponse { RequestPolicy policy = 1; }
 
 message UpdateRequestPolicyRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
-  int32 required_approvals = 2 [(buf.validate.field).int32 = {gte: 1, lte: 20}];
+  int32 required_approvals = 2 [(buf.validate.field).int32 = {gte: 0, lte: 20}];
   string requester_role_id = 3; // optional
   string approver_role_id = 4;  // optional
+  int64 max_duration_seconds = 5 [(buf.validate.field).int64 = {gte: 0}]; // 0 = no per-scope cap (NULL)
 }
 message UpdateRequestPolicyResponse { RequestPolicy policy = 1; }
 

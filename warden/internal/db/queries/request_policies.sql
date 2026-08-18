@@ -1,11 +1,11 @@
 -- name: CreateRequestPolicy :one
-INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id, max_duration)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: UpdateRequestPolicy :one
 UPDATE request_policies
-SET required_approvals = $2, approver_role_id = $3, requester_role_id = $4
+SET required_approvals = $2, approver_role_id = $3, requester_role_id = $4, max_duration = $5
 WHERE id = $1
 RETURNING *;
 

@@ -338,6 +338,43 @@ func TestApprovalResolver(t *testing.T) {
 			t.Fatalf("RequiredApprovals = %d; want 2 (nearest ancestor folder prod/db)", rule.RequiredApprovals)
 		}
 	})
+
+	// --- Assertion 8: EffectiveRule surfaces max_duration when set on the policy ---
+	// Fresh role/asset so existing assertions are untouched. A role-default policy
+	// with a 1h cap must round-trip through EffectiveRule.MaxDuration; a policy with
+	// NULL max_duration must yield an invalid interval.
+	t.Run("max-duration-round-trips", func(t *testing.T) {
+		capped, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "capped", ResourceType: "asset", Capabilities: caps()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID:            capped.ID,
+			RequiredApprovals: 0,
+			MaxDuration:       pgtype.Interval{Microseconds: 3600 * 1_000_000, Valid: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		rule, err := r.EffectiveRule(ctx, capped.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("EffectiveRule(capped) error: %v", err)
+		}
+		if rule == nil {
+			t.Fatal("EffectiveRule(capped) returned nil; want policy with max_duration")
+		}
+		if !rule.MaxDuration.Valid || rule.MaxDuration.Microseconds != 3600*1_000_000 {
+			t.Fatalf("MaxDuration = %+v; want valid 3600s", rule.MaxDuration)
+		}
+
+		// dba's folder-override policy has NULL max_duration → invalid interval.
+		dbaRule, err := r.EffectiveRule(ctx, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("EffectiveRule(dba) error: %v", err)
+		}
+		if dbaRule.MaxDuration.Valid {
+			t.Fatalf("MaxDuration = %+v; want invalid (NULL)", dbaRule.MaxDuration)
+		}
+	})
 }
 
 // TestIsEligibleRequester covers the new (not-yet-wired) requester-eligibility
