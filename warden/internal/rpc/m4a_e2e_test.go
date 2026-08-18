@@ -100,9 +100,16 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
+	// The user (bearer) services and the mesh (Dataplane/Gateway) services share one
+	// mux in this e2e harness. The mesh handlers derive the worker id from the mesh
+	// identity, which on this plain-h2c server is injected as a fixed "w1" worker (in
+	// production it comes from the mTLS cert SAN via mesh.Middleware).
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, arSvc, sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
-		t.Fatalf("register: %v", err)
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc); err != nil {
+		t.Fatalf("register user: %v", err)
+	}
+	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+		t.Fatalf("register mesh: %v", err)
 	}
 
 	// Run the teardown Listener: NOTIFY → push into the registry → worker stream.
@@ -112,7 +119,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	var protos http.Protocols
 	protos.SetHTTP1(true)
 	protos.SetUnencryptedHTTP2(true)
-	srv := httptest.NewUnstartedServer(mux)
+	srv := httptest.NewUnstartedServer(withTestWorkerIdentity(mux, "w1"))
 	srv.Config.Protocols = &protos
 	srv.Start()
 	t.Cleanup(srv.Close)

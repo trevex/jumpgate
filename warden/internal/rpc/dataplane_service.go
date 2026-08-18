@@ -14,7 +14,24 @@ import (
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/mesh"
 )
+
+// workerIdentity returns the authoritative worker id from the request's mesh
+// identity, enforcing that the caller presented a `worker`-role mesh cert whose
+// SAN id equals claimedID. Enforcement is UNCONDITIONAL: no mesh identity in ctx
+// (illegitimate on the mesh listener, where mTLS guarantees identity) or a claim
+// that differs from the cert → PermissionDenied.
+func workerIdentity(ctx context.Context, claimedID string) (string, error) {
+	id, ok := mesh.IdentityFromContext(ctx)
+	if !ok || id.Role != "worker" {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("worker mesh identity required"))
+	}
+	if claimedID != id.ID {
+		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("worker_id %q does not match cert identity %q", claimedID, id.ID))
+	}
+	return id.ID, nil
+}
 
 // DataplaneServer implements dataplanev1connect.DataplaneServiceHandler: the
 // worker lifeline stream (register/heartbeat/session-ended + teardown push) and
@@ -35,7 +52,13 @@ func NewDataplaneServer(setup *dataplane.SetupService, registry *dataplane.Regis
 // live session, and issues a JIT SSH certificate. Domain sentinels are mapped to
 // Connect codes here; the domain layer stays transport-agnostic.
 func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
-	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, req.Msg.WorkerId, req.Msg.ClientSshPublicKey)
+	// Derive the authoritative worker id from the mTLS cert SAN; the request must
+	// not claim a different worker than its certificate (else PermissionDenied).
+	workerID, err := workerIdentity(ctx, req.Msg.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.ClientSshPublicKey)
 	switch {
 	case errors.Is(err, dataplane.ErrBadToken), errors.Is(err, dataplane.ErrKeyMismatch):
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
@@ -72,7 +95,11 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 	if reg == nil || reg.WorkerId == "" {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("first frame must be Register with worker_id"))
 	}
-	workerID := reg.WorkerId
+	// The registered worker_id must equal the mTLS cert identity (cert authoritative).
+	workerID, err := workerIdentity(ctx, reg.WorkerId)
+	if err != nil {
+		return err
+	}
 
 	sink := make(chan dataplane.Signal, 64)
 	s.registry.Add(workerID, sink)
