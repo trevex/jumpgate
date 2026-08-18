@@ -95,7 +95,7 @@ type Querier interface {
 	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
-	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) error
+	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error

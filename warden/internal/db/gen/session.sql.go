@@ -201,11 +201,14 @@ func (q *Queries) ListLiveSessionsByWorker(ctx context.Context, workerID string)
 	return items, nil
 }
 
-const markLiveSessionTerminating = `-- name: MarkLiveSessionTerminating :exec
+const markLiveSessionTerminating = `-- name: MarkLiveSessionTerminating :execrows
 UPDATE live_sessions SET terminate_requested_at = now() WHERE id = $1 AND terminate_requested_at IS NULL
 `
 
-func (q *Queries) MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, markLiveSessionTerminating, id)
-	return err
+func (q *Queries) MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markLiveSessionTerminating, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

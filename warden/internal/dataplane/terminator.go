@@ -44,7 +44,8 @@ func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) erro
 
 // Reevaluate re-checks the connect predicate for all live sessions of (user,asset)
 // and tears down those that no longer pass. Exported so the reconnect re-sync
-// (Task 11) and the M4d eligibility cascade can reuse it.
+// (Task 11) and the M4d eligibility cascade can reuse it. Idempotent: safe to call
+// repeatedly — teardown of an already-terminating session is a no-op (see requestTeardown).
 func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) error {
 	q := gen.New(t.pool)
 	sessions, err := q.ListLiveSessionsByUserAsset(ctx, gen.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
@@ -74,7 +75,9 @@ func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) 
 }
 
 // requestTeardown marks the session terminating + enqueues session.terminated in one
-// tx, then NOTIFYs so the stream-owning replica pushes the Teardown.
+// tx, then NOTIFYs so the stream-owning replica pushes the Teardown. Idempotent: safe
+// to call repeatedly — only the transition (0→terminating) enqueues the audit event +
+// NOTIFY; a repeat call on an already-terminating session is a clean no-op.
 func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, reason string) error {
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
@@ -82,8 +85,13 @@ func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, r
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := gen.New(tx)
-	if err := q.MarkLiveSessionTerminating(ctx, sessionID); err != nil {
+	n, err := q.MarkLiveSessionTerminating(ctx, sessionID)
+	if err != nil {
 		return err
+	}
+	if n == 0 {
+		// Already terminating — idempotent no-op (no duplicate audit/notify).
+		return nil
 	}
 	detail, _ := json.Marshal(map[string]any{"session_id": sessionID.String(), "reason": reason})
 	if err := t.audit.Enqueue(ctx, q, audit.Event{

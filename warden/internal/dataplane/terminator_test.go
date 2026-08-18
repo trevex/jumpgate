@@ -206,6 +206,35 @@ func TestTerminateGrantKillsSoleSource(t *testing.T) {
 	}
 }
 
+// TestTerminateGrantIdempotent: sole-source setup (as in TestTerminateGrantKillsSoleSource),
+// but TerminateGrant is called TWICE. The second call re-lists the already-terminating
+// session (repeat teardown is the intended pattern for reconnect re-sync + cascade), and
+// must NOT enqueue a duplicate session.terminated audit event.
+func TestTerminateGrantIdempotent(t *testing.T) {
+	f := setupTerm(t)
+	gid := f.mkGrant(t)
+
+	f.revokeGrant(t, gid)
+
+	// Call teardown twice; the mark is guarded so the second flips 0 rows.
+	if err := f.term.TerminateGrant(f.ctx, gid); err != nil {
+		t.Fatalf("TerminateGrant (1): %v", err)
+	}
+	if err := f.term.TerminateGrant(f.ctx, gid); err != nil {
+		t.Fatalf("TerminateGrant (2): %v", err)
+	}
+
+	if !f.terminateRequestedAt(t).Valid {
+		t.Fatal("idempotent teardown: terminate_requested_at must be non-NULL")
+	}
+	if n := f.sessionTerminatedCount(t); n != 1 {
+		t.Fatalf("session.terminated events = %d, want exactly 1 (no duplicate on repeat)", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
 // TestTerminateGrantKeepsStandingSession: the user holds BOTH a standing binding
 // AND a JIT grant of the role. Revoking the grant must NOT tear down the session —
 // the standing binding still confers the login. This is the critical property.
