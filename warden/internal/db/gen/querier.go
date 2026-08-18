@@ -82,6 +82,10 @@ type Querier interface {
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
 	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
 	RevokeActiveGrantsForUser(ctx context.Context, arg RevokeActiveGrantsForUserParams) ([]AccessGrant, error)
+	// Predicate is revoked_at IS NULL only (NOT the derived "active" filter with
+	// expires_at): a grant past expiry but not yet reaped is still revocable so the
+	// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
+	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error

@@ -444,6 +444,10 @@ type RevokeGrantParams struct {
 	RevokedReason pgtype.Text `json:"revoked_reason"`
 }
 
+// Predicate is revoked_at IS NULL only (NOT the derived "active" filter with
+// expires_at): a grant past expiry but not yet reaped is still revocable so the
+// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
+// (expires_at > now() is false everywhere), so this is harmless.
 func (q *Queries) RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error) {
 	row := q.db.QueryRow(ctx, revokeGrant, arg.ID, arg.RevokedBy, arg.RevokedReason)
 	var i AccessGrant
