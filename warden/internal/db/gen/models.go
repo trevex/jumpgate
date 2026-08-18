@@ -19,6 +19,18 @@ type Asset struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type AuditLog struct {
+	ID          uuid.UUID   `json:"id"`
+	Seq         pgtype.Int8 `json:"seq"`
+	EventType   string      `json:"event_type"`
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+	Subject     string      `json:"subject"`
+	Details     []byte      `json:"details"`
+	PrevHash    []byte      `json:"prev_hash"`
+	EntryHash   []byte      `json:"entry_hash"`
+	CreatedAt   time.Time   `json:"created_at"`
+}
+
 type AuthToken struct {
 	ID        uuid.UUID `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`
