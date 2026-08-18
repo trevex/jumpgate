@@ -92,14 +92,18 @@ func run() error {
 	go auditLog.RunDrainer(ctx, cfg.AuditDrainInterval)
 
 	// Build the access-request Service ONCE and share it: the RPC handlers and the
-	// expiry reaper must use the same terminator + audit instance.
-	// NoopTerminator until M4 wires live-session teardown against the gateway.
+	// expiry reaper must use the same terminator + audit instance. The terminator is
+	// the real grant-keyed dataplane.Terminator (stateless): grant revocation/expiry/
+	// deactivation now re-evaluates closures and tears down live sessions via
+	// LISTEN/NOTIFY. (A second instance in rpc.Register for DataplaneServer is fine.)
+	authorizer := authz.NewSQLAuthorizer(pool)
+	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := accessrequest.NewService(
 		pool,
 		auditLog,
 		approvals.New(pool),
 		authz.NewRoleResolver(pool),
-		accessrequest.NoopTerminator{},
+		terminator,
 		cfg.MaxGrantTTL,
 	)
 	// Expiry reaper: sweeps expired grants, audits access_grant.expired, and tears
@@ -133,6 +137,15 @@ func run() error {
 	// rebuilt from reconnecting streams), but DataplaneService only mounts when
 	// setupSvc is non-nil.
 	registry := dataplane.NewRegistry()
+	// Start the teardown Listener on the lifecycle ctx, sharing the DataplaneService's
+	// Registry so grant-keyed teardown NOTIFYs reach locally-owned worker streams. It
+	// is cheap (one LISTEN conn) and a harmless no-op when no DataplaneService is
+	// mounted (no sinks registered).
+	go func() {
+		if err := dataplane.NewListener(pool, registry).Run(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("teardown listener stopped", "err", err)
+		}
+	}()
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
 	if sealer != nil {
@@ -143,7 +156,6 @@ func run() error {
 		} else if err != nil {
 			return err
 		} else {
-			authorizer := authz.NewSQLAuthorizer(pool)
 			sessionSvc = session.NewService(gen.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)

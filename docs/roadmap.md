@@ -37,6 +37,16 @@ a background drainer chains it into the hash-linked log, closing the post-commit
 crash window. Deferred to later milestones: CA rotation and the eligibility-change
 grant cascade.
 
+**M4a — data-plane spine ✅.** The spine shipped: session-token **minting**
+(`CreateSession`), the worker ↔ warden `dataplane/v1` contract (`SetupSession` +
+`WorkerStream`), the durable **`live_sessions`** ledger, and the real **grant-keyed
+`GrantTerminator`** (closure re-eval + **`LISTEN/NOTIFY`** to the owning worker
+stream). The signing key is initialized via the admin `InitSessionKey` RPC (loaded
+once at boot — restart warden after init to enable `CreateSession`/`SetupSession`).
+Remaining: **M4b** gateway (routing + mTLS), **M4c** ssh-proxy worker + `jumpgate
+connect` CLI, **M4d** eligibility cascade + pull-sweep + orphan-GC, **M4e**
+recording.
+
 **Next:** M4 (gateway + ssh-proxy + CLI — **live credential injection** wiring the
 broker to a session, the real `GrantTerminator` session-kill path, and the
 eligibility-change cascade for standing bindings/memberships/rewrites).
