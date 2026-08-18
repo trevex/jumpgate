@@ -85,6 +85,52 @@ policy, grants) stays centralized in Go; the Rust data plane holds a credential
 only for the duration of a live, authorized session. Revocation is immediate
 (workers introspect the grant at session start; grant deletion tears sessions down).
 
+### Continuous revocation — live-session teardown ⬜ (M3c reaper + M4 gateway)
+
+> **Design constraint, not yet implemented.** This is a load-bearing invariant
+> that the M3c reaper and the M4 gateway/worker session registry must satisfy.
+
+**Authorization is continuous, not connect-time only.** A session is authorized
+for its whole lifetime, not just at the handshake. When the authorization a live
+session depends on is revoked, that session must be **terminated**, not merely
+blocked at the *next* connect. "Zero standing access" is only true if losing
+access ends access *now*.
+
+**Revocation sources** that must trigger teardown of any dependent live session:
+
+| Source | Change |
+|---|---|
+| JIT grant | expires or is revoked (the M3c reaper) |
+| Standing `role_binding` | deleted |
+| `role_grants` rewrite rule | changed so it no longer confers the role (`HoldsRole` flips to false) |
+| Group membership | a `group_memberships` row removed |
+| Approval | a granted approval revoked |
+| User | deactivated |
+
+**Mechanism (Approach A).** warden (the control plane) is the source of truth
+for authorization, so warden must **signal** the gateway/workers to kill sessions
+when the effective authorization for a live session changes — via a **teardown
+channel** on the worker ↔ control-plane contract, to be designed and added with
+the gateway (M4; no such RPC exists yet). Workers map each **live session → the
+grant/binding(s) it relies on** and support forced termination of a session by
+that key. The trigger is a re-evaluation of
+`HoldsRole` / grant validity:
+
+- **push** — re-evaluate on a change event (a grant reaped, a binding/membership
+  deleted) and signal teardown for any session whose authorization no longer
+  holds; and/or
+- **pull** — a periodic sweep that re-checks live sessions against current
+  authorization.
+
+**Every forced termination is an audit event** appended to the hash-chained log
+(see [Audit & recording](#audit--recording)), alongside the revocation that
+caused it.
+
+**Scope.** This spans **M3c** (reaper → teardown signal) and **M4** (gateway /
+worker **session registry** + kill path). Keeping the **session ↔ grant/binding
+mapping** and the **teardown RPC** in scope for those milestones is what makes
+this invariant real rather than aspirational.
+
 ## Access model
 
 Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, folder-subtree inheritance, and the Active/Requestable/Invisible tiers. As of **M3-roles**, folder cascade of **standing** access is **explicit**: a role reaches a folder's descendants only if it declares a `parent` role-rewrite rule (an explicit ReBAC-light userset-rewrite over `role_grants`, resolved by `HoldsRole`), not an automatic subtree walk; requestable-visibility and approval-rule folder inheritance keep the implicit cascade for now. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.

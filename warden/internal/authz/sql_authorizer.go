@@ -2,6 +2,7 @@ package authz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -230,19 +231,45 @@ SELECT role_id FROM applicable WHERE asset_id = $2`, userID, assetID)
 	return r, nil
 }
 
+// Check reports whether the user holds a role on the asset whose capability set
+// grants the concrete `capability`. It fetches the candidate capability sets of
+// the roles held on the asset (via the explicit role-rewrite graph) and matches
+// each stored pattern against the requested capability with CapMatch, so glob
+// semantics ('*' / trailing '**') live in one auditable Go function rather than
+// embedded regex-in-SQL. `capability` is internal (from workers) and assumed
+// concrete — it is not proto-validated.
 func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
-	var ok bool
-	err := s.pool.QueryRow(ctx, heldCTE+`
-SELECT EXISTS (
-    SELECT 1
-    FROM held h
-    JOIN roles r ON r.id = h.role_id
-    WHERE h.object_kind = 'asset'
-      AND h.object_id = $2
-      AND jsonb_exists(r.capabilities, $3)
-)`, userID, assetID, capability).Scan(&ok)
+	rows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT r.capabilities
+FROM held h JOIN roles r ON r.id = h.role_id
+WHERE h.object_kind = 'asset' AND h.object_id = $2`, userID, assetID)
 	if err != nil {
 		return false, fmt.Errorf("check: %w", err)
 	}
-	return ok, nil
+	defer rows.Close()
+
+	matched := false
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return false, fmt.Errorf("check scan: %w", err)
+		}
+		if matched {
+			continue // keep draining so the pooled conn is fully consumed
+		}
+		var patterns []string
+		if err := json.Unmarshal(raw, &patterns); err != nil {
+			return false, fmt.Errorf("check unmarshal capabilities: %w", err)
+		}
+		for _, p := range patterns {
+			if CapMatch(p, capability) {
+				matched = true
+				break
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("check rows: %w", err)
+	}
+	return matched, nil
 }
