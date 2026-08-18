@@ -20,6 +20,7 @@ httparse = "1"
 x509-parser = "0.16"
 rand = "0.8"
 thiserror = "1"
+pasetors = "0.8.0"
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -29,3 +30,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 rcgen = "0.13"
 tempfile = "3"
+time = { version = "0.3", features = ["formatting", "std"] }
