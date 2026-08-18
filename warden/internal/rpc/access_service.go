@@ -248,7 +248,7 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 		SubjectUserID: subjUser, SubjectGroupID: subjGroup,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.CreateRoleBindingResponse{Id: rb.ID.String()}), nil
 }
@@ -348,7 +348,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 		RequesterRoleID:   requesterRole,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.CreateRequestPolicyResponse{Policy: toRequestPolicyMsg(policy)}), nil
 }
@@ -377,7 +377,7 @@ func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Req
 		RequesterRoleID:   requesterRole,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.UpdateRequestPolicyResponse{Policy: toRequestPolicyMsg(policy)}), nil
 }
@@ -444,7 +444,7 @@ func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Reques
 		SubjectGroupID: subjGroup,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.AddPolicySubjectResponse{Id: ps.ID.String()}), nil
 }
