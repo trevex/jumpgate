@@ -39,6 +39,28 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	return pool, srv.URL
 }
 
+// newServerNoVault is newServer with the vault disabled (nil sealer), to exercise
+// the fail-closed paths when VAULT_MASTER_KEY is unset.
+func newServerNoVault(t *testing.T) (*pgxpool.Pool, string) {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	mux := http.NewServeMux()
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return pool, srv.URL
+}
+
 func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	t.Helper()
 	ctx := context.Background()

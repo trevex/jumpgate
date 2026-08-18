@@ -15,6 +15,32 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 )
 
+// TestVaultNilSealerFailsClosed locks the vault-disabled contract: the seal paths
+// fail with FailedPrecondition (never nil-deref), and the admin guard still runs
+// first (a non-admin is denied even with no sealer).
+func TestVaultNilSealerFailsClosed(t *testing.T) {
+	pool, url := newServerNoVault(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "user@x", "password123", false)
+	atok := adminToken(t, url)
+	utok := authClient(t, url, "user@x", "password123")
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Admin on a disabled vault: seal paths → FailedPrecondition.
+	if _, err := c.InitCA(ctx, withToken(connect.NewRequest(&vaultv1.InitCARequest{Kind: "ssh"}), atok)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("InitCA (nil sealer) = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+	a := newAsset(t, url, atok, "ssh")
+	if _, err := c.SetAssetSecret(ctx, withToken(connect.NewRequest(&vaultv1.SetAssetSecretRequest{AssetId: a.Id, Name: "pw", Value: []byte("x")}), atok)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("SetAssetSecret (nil sealer) = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+	// Non-admin: the admin guard runs before the sealer check.
+	if _, err := c.InitCA(ctx, withToken(connect.NewRequest(&vaultv1.InitCARequest{Kind: "ssh"}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("InitCA (non-admin, nil sealer) = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
 // newAsset creates a folder + asset (of the given kind) and returns the asset id.
 func newAsset(t *testing.T, url, tok, kind string) *catalogv1.Asset {
 	t.Helper()
