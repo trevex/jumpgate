@@ -6,6 +6,7 @@
 //! verification, load-balancing and the worker proxy land in later tasks.
 
 mod config;
+mod connect;
 mod health;
 mod tls;
 
