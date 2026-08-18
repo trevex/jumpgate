@@ -23,12 +23,27 @@ import (
 // authz-correctness requirement. It is idempotent: ExpireGrants excludes rows with
 // revoked_at already set, so a re-run over the same window returns 0.
 func (s *Service) ReapExpired(ctx context.Context) (int, error) {
-	expired, err := gen.New(s.pool).ExpireGrants(ctx)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	expired, err := q.ExpireGrants(ctx)
 	if err != nil {
 		return 0, err
 	}
 	for _, g := range expired {
-		s.appendExpired(ctx, g)
+		if err := s.enqueueExpired(ctx, q, g); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+
+	for _, g := range expired {
 		s.terminate(ctx, g.ID)
 	}
 	return len(expired), nil
@@ -53,11 +68,12 @@ func (s *Service) RunReaper(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// appendExpired writes the grant-expiry audit event (best-effort). The actor is the
+// enqueueExpired writes the grant-expiry audit event into the outbox on the
+// caller's tx-bound querier (atomic with the expiry write). The actor is the
 // system (uuid.Nil): expiry is time-driven, with no human actor.
-func (s *Service) appendExpired(ctx context.Context, g gen.AccessGrant) {
+func (s *Service) enqueueExpired(ctx context.Context, q *gen.Queries, g gen.AccessGrant) error {
 	if s.audit == nil {
-		return
+		return nil
 	}
 	details := map[string]any{
 		"grant_id":   g.ID.String(),
@@ -67,12 +83,10 @@ func (s *Service) appendExpired(ctx context.Context, g gen.AccessGrant) {
 		"subject":    g.SubjectUserID.String(),
 	}
 	raw, _ := json.Marshal(details)
-	if err := s.audit.Append(ctx, audit.Event{
+	return s.audit.Enqueue(ctx, q, audit.Event{
 		Type:    EventGrantExpired,
 		ActorID: uuid.Nil,
 		Subject: "access_grant:" + g.ID.String(),
 		Details: raw,
-	}); err != nil {
-		slog.Error("audit append failed", "event", EventGrantExpired, "grant_id", g.ID.String(), "err", err)
-	}
+	})
 }
