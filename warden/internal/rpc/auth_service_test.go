@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,7 +32,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	t.Cleanup(pool.Close)
 
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool); err != nil {
+	if err := rpc.Register(mux, pool, 8*time.Hour); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

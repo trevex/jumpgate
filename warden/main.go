@@ -75,7 +75,7 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool); err != nil {
+	if err := rpc.Register(mux, pool, cfg.MaxGrantTTL); err != nil {
 		return err
 	}
 

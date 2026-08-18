@@ -214,6 +214,28 @@ func (q *Queries) GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, erro
 	return i, err
 }
 
+const getGrantByRequest = `-- name: GetGrantByRequest :one
+SELECT id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason FROM access_grants WHERE request_id = $1
+`
+
+func (q *Queries) GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error) {
+	row := q.db.QueryRow(ctx, getGrantByRequest, requestID)
+	var i AccessGrant
+	err := row.Scan(
+		&i.ID,
+		&i.RequestID,
+		&i.RoleID,
+		&i.ScopeAssetID,
+		&i.SubjectUserID,
+		&i.GrantedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.RevokedBy,
+		&i.RevokedReason,
+	)
+	return i, err
+}
+
 const listAccessRequestsByRequester = `-- name: ListAccessRequestsByRequester :many
 SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests WHERE requester_user_id = $1 ORDER BY created_at DESC
 `
@@ -274,6 +296,42 @@ func (q *Queries) ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UU
 			&i.RevokedAt,
 			&i.RevokedBy,
 			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingRequests = `-- name: ListPendingRequests :many
+SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests WHERE status = 'pending' ORDER BY created_at DESC
+`
+
+func (q *Queries) ListPendingRequests(ctx context.Context) ([]AccessRequest, error) {
+	rows, err := q.db.Query(ctx, listPendingRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessRequest
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
+			&i.Reason,
+			&i.RequestedDuration,
+			&i.RequiredApprovals,
+			&i.GrantedDuration,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
 		); err != nil {
 			return nil, err
 		}

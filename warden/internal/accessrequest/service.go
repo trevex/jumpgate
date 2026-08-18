@@ -1,0 +1,512 @@
+// Package accessrequest implements the JIT access-request workflow: request a
+// role on an asset, approve/deny/cancel a pending request, and mint time-boxed
+// access_grants when a request reaches its required-approval threshold.
+//
+// CONCURRENCY: state transitions take a row lock on the access_request
+// (GetAccessRequestForUpdate, FOR UPDATE) and count approvals inside the same
+// tx, so two concurrent approvals cannot both cross the threshold and mint two
+// grants. UNIQUE(request_id) on access_grants is the backstop; UNIQUE(request_id,
+// approver_user_id) blocks double-voting.
+//
+// AUDIT: audit.Logger.Append opens its own advisory-locked tx and therefore
+// cannot join the domain tx. Audit events are appended AFTER the domain tx
+// commits — appending inside the domain tx (while holding request row locks)
+// would risk lock-ordering deadlocks against the audit advisory lock. The domain
+// write is the source of truth; the audit entry follows the committed fact.
+package accessrequest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+)
+
+// pgUniqueViolation is the SQLSTATE for a unique-constraint violation.
+const pgUniqueViolation = "23505"
+
+// Sentinel errors the RPC handler maps to Connect codes.
+var (
+	ErrNotEligible      = errors.New("not eligible to request this role")    // → NotFound (existence-hiding)
+	ErrNotRequestable   = errors.New("role is not JIT-requestable on asset") // → FailedPrecondition
+	ErrAlreadyActive    = errors.New("role already active on asset")         // → FailedPrecondition
+	ErrDuplicatePending = errors.New("a pending request already exists")     // → AlreadyExists
+	ErrNotPending       = errors.New("request is not pending")               // → FailedPrecondition
+	ErrNotApprover      = errors.New("not an approver for this request")     // → PermissionDenied
+	ErrSelfApprove      = errors.New("cannot approve your own request")      // → PermissionDenied
+	ErrAlreadyVoted     = errors.New("already voted on this request")        // → AlreadyExists
+	ErrNotRequester     = errors.New("not the requester")                    // → PermissionDenied
+)
+
+// Request is the DTO returned to the transport layer.
+type Request struct {
+	ID                uuid.UUID
+	RequesterID       uuid.UUID
+	RoleID            uuid.UUID
+	AssetID           uuid.UUID
+	Status            string
+	RequiredApprovals int
+	ApprovalsSoFar    int
+	Reason            string
+	CreatedAt         time.Time
+	ResolvedAt        time.Time // zero when unresolved
+	GrantID           uuid.UUID // uuid.Nil when no grant minted
+}
+
+// Service is the JIT access-request domain service.
+type Service struct {
+	pool     *pgxpool.Pool
+	audit    *audit.Logger
+	resolver *approvals.Resolver
+	roles    *authz.RoleResolver
+	maxTTL   time.Duration
+}
+
+// NewService constructs the access-request Service.
+func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.Resolver, roles *authz.RoleResolver, maxTTL time.Duration) *Service {
+	if maxTTL <= 0 {
+		maxTTL = 8 * time.Hour
+	}
+	return &Service{pool: pool, audit: auditLog, resolver: resolver, roles: roles, maxTTL: maxTTL}
+}
+
+// intervalToDuration converts a pgtype.Interval to a time.Duration, folding
+// Months/Days with civil-day approximations (30d month, 24h day) so admin caps
+// expressed in those units are honored. Invalid/zero → (0, false).
+func intervalToDuration(iv pgtype.Interval) (time.Duration, bool) {
+	if !iv.Valid {
+		return 0, false
+	}
+	const day = 24 * time.Hour
+	d := time.Duration(iv.Months)*30*day + time.Duration(iv.Days)*day + time.Duration(iv.Microseconds)*time.Microsecond
+	if d <= 0 {
+		return 0, false
+	}
+	return d, true
+}
+
+// clamp returns min(dur, ruleMax if set else maxTTL, maxTTL).
+func (s *Service) clamp(dur time.Duration, ruleMax pgtype.Interval) time.Duration {
+	granted := dur
+	if ceiling, ok := intervalToDuration(ruleMax); ok {
+		if granted > ceiling {
+			granted = ceiling
+		}
+	}
+	if granted > s.maxTTL {
+		granted = s.maxTTL
+	}
+	return granted
+}
+
+// durationToInterval encodes a positive duration as a Microseconds interval.
+func durationToInterval(d time.Duration) pgtype.Interval {
+	return pgtype.Interval{Microseconds: int64(d / time.Microsecond), Valid: true}
+}
+
+// toRequest maps a gen.AccessRequest plus derived fields to the DTO.
+func toRequest(r gen.AccessRequest, approvals int, grantID uuid.UUID) Request {
+	out := Request{
+		ID:                r.ID,
+		RequesterID:       r.RequesterUserID,
+		RoleID:            r.RoleID,
+		AssetID:           r.AssetID,
+		Status:            r.Status,
+		RequiredApprovals: int(r.RequiredApprovals),
+		ApprovalsSoFar:    approvals,
+		Reason:            r.Reason,
+		CreatedAt:         r.CreatedAt,
+		GrantID:           grantID,
+	}
+	if r.ResolvedAt.Valid {
+		out.ResolvedAt = r.ResolvedAt.Time
+	}
+	return out
+}
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint violation.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
+}
+
+// RequestAccess opens a JIT access request for (roleID, assetID). A self-service
+// policy (required_approvals=0) mints the grant immediately.
+func (s *Service) RequestAccess(ctx context.Context, requester, roleID, assetID uuid.UUID, dur time.Duration, reason string) (Request, error) {
+	// Governance: eligibility is STANDING-only (a JIT grant does NOT confer it).
+	eligible, err := s.resolver.IsEligibleRequester(ctx, requester, roleID, assetID)
+	if err != nil {
+		return Request{}, err
+	}
+	if !eligible {
+		return Request{}, ErrNotEligible
+	}
+	rule, err := s.resolver.EffectiveRule(ctx, roleID, assetID)
+	if err != nil {
+		return Request{}, err
+	}
+	if rule == nil {
+		return Request{}, ErrNotRequestable
+	}
+	// HoldsRole counts active grants: if the caller already has it active, refuse.
+	held, err := s.roles.HoldsRole(ctx, requester, roleID, "asset", assetID)
+	if err != nil {
+		return Request{}, err
+	}
+	if held {
+		return Request{}, ErrAlreadyActive
+	}
+
+	granted := s.clamp(dur, rule.MaxDuration)
+	if granted <= 0 {
+		return Request{}, ErrNotRequestable
+	}
+
+	selfService := rule.RequiredApprovals == 0
+	status := "pending"
+	if selfService {
+		status = "granted"
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Request{}, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+		RequesterUserID:   requester,
+		RoleID:            roleID,
+		AssetID:           assetID,
+		Reason:            reason,
+		RequestedDuration: durationToInterval(dur),
+		RequiredApprovals: int32(rule.RequiredApprovals), //nolint:gosec // bounded ≥0 by policy constraint
+		GrantedDuration:   durationToInterval(granted),
+		Status:            status,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Request{}, ErrDuplicatePending
+		}
+		return Request{}, fmt.Errorf("create access request: %w", err)
+	}
+
+	var grantID uuid.UUID
+	if selfService {
+		grant, err := s.mintGrant(ctx, q, req, granted)
+		if err != nil {
+			return Request{}, err
+		}
+		grantID = grant.ID
+		if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+			Status:     "granted",
+			ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			ID:         req.ID,
+		}); err != nil {
+			return Request{}, fmt.Errorf("resolve self-service request: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("commit: %w", err)
+	}
+
+	s.append(ctx, EventRequestCreated, requester, req, nil)
+	if selfService {
+		s.appendGrant(ctx, requester, req, grantID)
+	}
+
+	approvalsSoFar := 0
+	return toRequest(req, approvalsSoFar, grantID), nil
+}
+
+// Approve records approver's approval; the Nth distinct approval mints the grant.
+func (s *Service) Approve(ctx context.Context, approver, requestID uuid.UUID) (Request, error) {
+	return s.vote(ctx, approver, requestID, "approve")
+}
+
+// Deny records approver's denial, immediately denying the request.
+func (s *Service) Deny(ctx context.Context, approver, requestID uuid.UUID) (Request, error) {
+	return s.vote(ctx, approver, requestID, "deny")
+}
+
+func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decision string) (Request, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Request{}, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	req, err := q.GetAccessRequestForUpdate(ctx, requestID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Request{}, ErrNotPending
+	}
+	if err != nil {
+		return Request{}, fmt.Errorf("lock request: %w", err)
+	}
+	if req.Status != "pending" {
+		return Request{}, ErrNotPending
+	}
+
+	// Governance: approver eligibility is STANDING-only (a JIT grant does NOT confer it).
+	ok, err := s.resolver.IsApprover(ctx, approver, req.RoleID, req.AssetID)
+	if err != nil {
+		return Request{}, err
+	}
+	if !ok {
+		return Request{}, ErrNotApprover
+	}
+	if approver == req.RequesterUserID {
+		return Request{}, ErrSelfApprove
+	}
+
+	if _, err := q.AddApproval(ctx, gen.AddApprovalParams{
+		RequestID:      requestID,
+		ApproverUserID: approver,
+		Decision:       decision,
+	}); err != nil {
+		if isUniqueViolation(err) {
+			return Request{}, ErrAlreadyVoted
+		}
+		return Request{}, fmt.Errorf("add approval: %w", err)
+	}
+
+	var (
+		grantID uuid.UUID
+		granted bool
+	)
+	if decision == "deny" {
+		if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+			Status:     "denied",
+			ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			ID:         requestID,
+		}); err != nil {
+			return Request{}, fmt.Errorf("deny request: %w", err)
+		}
+		req.Status = "denied"
+	} else {
+		count, err := q.CountApprovals(ctx, requestID)
+		if err != nil {
+			return Request{}, fmt.Errorf("count approvals: %w", err)
+		}
+		if count >= int64(req.RequiredApprovals) {
+			gr, err := s.mintGrant(ctx, q, req, mustDuration(req.GrantedDuration))
+			if err != nil {
+				return Request{}, err
+			}
+			grantID = gr.ID
+			granted = true
+			if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+				Status:     "granted",
+				ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+				ID:         requestID,
+			}); err != nil {
+				return Request{}, fmt.Errorf("grant request: %w", err)
+			}
+			req.Status = "granted"
+		}
+	}
+
+	// Read the final approval count inside the tx for the returned DTO.
+	approvalsSoFar, err := q.CountApprovals(ctx, requestID)
+	if err != nil {
+		return Request{}, fmt.Errorf("count approvals: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("commit: %w", err)
+	}
+
+	if decision == "deny" {
+		s.append(ctx, EventRequestDenied, approver, req, nil)
+	} else {
+		s.append(ctx, EventRequestApproved, approver, req, nil)
+		if granted {
+			s.appendGrant(ctx, approver, req, grantID)
+		}
+	}
+	return toRequest(req, int(approvalsSoFar), grantID), nil
+}
+
+// Cancel cancels the requester's own pending request.
+func (s *Service) Cancel(ctx context.Context, requester, requestID uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	req, err := q.GetAccessRequestForUpdate(ctx, requestID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotPending
+	}
+	if err != nil {
+		return fmt.Errorf("lock request: %w", err)
+	}
+	if req.RequesterUserID != requester {
+		return ErrNotRequester
+	}
+	if req.Status != "pending" {
+		return ErrNotPending
+	}
+	if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+		Status:     "cancelled",
+		ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		ID:         requestID,
+	}); err != nil {
+		return fmt.Errorf("cancel request: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	req.Status = "cancelled"
+	s.append(ctx, EventRequestCancelled, requester, req, nil)
+	return nil
+}
+
+// mintGrant inserts the access_grant for a granted request. Shared by
+// RequestAccess (self-service) and Approve (threshold reached). The tx-scoped
+// UNIQUE(request_id) is the backstop against a duplicate grant under concurrency.
+func (s *Service) mintGrant(ctx context.Context, q *gen.Queries, req gen.AccessRequest, granted time.Duration) (gen.AccessGrant, error) {
+	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+		RequestID:     req.ID,
+		RoleID:        req.RoleID,
+		ScopeAssetID:  req.AssetID,
+		SubjectUserID: req.RequesterUserID,
+		ExpiresAt:     time.Now().Add(granted),
+	})
+	if err != nil {
+		return gen.AccessGrant{}, fmt.Errorf("mint grant: %w", err)
+	}
+	return grant, nil
+}
+
+// mustDuration converts a stored granted_duration interval to a Duration; if the
+// interval is somehow invalid it falls back to a safe non-zero minimum so a
+// granted request always yields a live grant window.
+func mustDuration(iv pgtype.Interval) time.Duration {
+	if d, ok := intervalToDuration(iv); ok {
+		return d
+	}
+	return time.Minute
+}
+
+// ListMyRequests returns the caller's own requests, newest first.
+func (s *Service) ListMyRequests(ctx context.Context, requester uuid.UUID) ([]Request, error) {
+	q := gen.New(s.pool)
+	rows, err := q.ListAccessRequestsByRequester(ctx, requester)
+	if err != nil {
+		return nil, fmt.Errorf("list my requests: %w", err)
+	}
+	out := make([]Request, 0, len(rows))
+	for _, r := range rows {
+		count, err := q.CountApprovals(ctx, r.ID)
+		if err != nil {
+			return nil, fmt.Errorf("count approvals: %w", err)
+		}
+		grantID := s.grantIDFor(ctx, q, r)
+		out = append(out, toRequest(r, int(count), grantID))
+	}
+	return out, nil
+}
+
+// ListPendingApprovals returns pending requests the caller may approve (an
+// eligible approver, excluding the caller's own requests). The pending set is
+// small; filter in Go via IsApprover for correctness over cleverness.
+func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([]Request, error) {
+	q := gen.New(s.pool)
+	rows, err := q.ListPendingRequests(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pending requests: %w", err)
+	}
+	out := make([]Request, 0)
+	for _, r := range rows {
+		if r.RequesterUserID == caller {
+			continue
+		}
+		ok, err := s.resolver.IsApprover(ctx, caller, r.RoleID, r.AssetID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		count, err := q.CountApprovals(ctx, r.ID)
+		if err != nil {
+			return nil, fmt.Errorf("count approvals: %w", err)
+		}
+		out = append(out, toRequest(r, int(count), uuid.Nil))
+	}
+	return out, nil
+}
+
+// grantIDFor returns the grant id for a granted request, or uuid.Nil.
+func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRequest) uuid.UUID {
+	if r.Status != "granted" {
+		return uuid.Nil
+	}
+	gr, err := q.GetGrantByRequest(ctx, r.ID)
+	if err != nil {
+		return uuid.Nil
+	}
+	return gr.ID
+}
+
+// append writes a request-lifecycle audit event (best-effort, post-commit).
+func (s *Service) append(ctx context.Context, eventType string, actor uuid.UUID, req gen.AccessRequest, extra map[string]any) {
+	if s.audit == nil {
+		return
+	}
+	details := map[string]any{
+		"request_id": req.ID.String(),
+		"role_id":    req.RoleID.String(),
+		"asset_id":   req.AssetID.String(),
+		"requester":  req.RequesterUserID.String(),
+		"status":     req.Status,
+	}
+	for k, v := range extra {
+		details[k] = v
+	}
+	raw, _ := json.Marshal(details)
+	_ = s.audit.Append(ctx, audit.Event{
+		Type:    eventType,
+		ActorID: actor,
+		Subject: "access_request:" + req.ID.String(),
+		Details: raw,
+	})
+}
+
+// appendGrant writes the grant-activation audit event.
+func (s *Service) appendGrant(ctx context.Context, actor uuid.UUID, req gen.AccessRequest, grantID uuid.UUID) {
+	if s.audit == nil {
+		return
+	}
+	details := map[string]any{
+		"request_id": req.ID.String(),
+		"grant_id":   grantID.String(),
+		"role_id":    req.RoleID.String(),
+		"asset_id":   req.AssetID.String(),
+		"subject":    req.RequesterUserID.String(),
+	}
+	raw, _ := json.Marshal(details)
+	_ = s.audit.Append(ctx, audit.Event{
+		Type:    EventGrantActivated,
+		ActorID: actor,
+		Subject: "access_grant:" + grantID.String(),
+		Details: raw,
+	})
+}

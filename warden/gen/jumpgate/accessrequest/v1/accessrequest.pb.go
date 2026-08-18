@@ -134,6 +134,659 @@ func (x *ResolveApprovalResponse) GetApproverRoleId() string {
 	return ""
 }
 
+// AccessRequest is a JIT access request DTO.
+type AccessRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RequesterId       string                 `protobuf:"bytes,2,opt,name=requester_id,json=requesterId,proto3" json:"requester_id,omitempty"`
+	RoleId            string                 `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	AssetId           string                 `protobuf:"bytes,4,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Status            string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"` // pending | granted | denied | cancelled
+	RequiredApprovals int32                  `protobuf:"varint,6,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
+	ApprovalsSoFar    int32                  `protobuf:"varint,7,opt,name=approvals_so_far,json=approvalsSoFar,proto3" json:"approvals_so_far,omitempty"`
+	Reason            string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAt         string                 `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`     // RFC3339
+	ResolvedAt        string                 `protobuf:"bytes,10,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"` // RFC3339, empty if unresolved
+	GrantId           string                 `protobuf:"bytes,11,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`          // set when a grant was minted
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AccessRequest) Reset() {
+	*x = AccessRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessRequest) ProtoMessage() {}
+
+func (x *AccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessRequest.ProtoReflect.Descriptor instead.
+func (*AccessRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AccessRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetRequesterId() string {
+	if x != nil {
+		return x.RequesterId
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetRequiredApprovals() int32 {
+	if x != nil {
+		return x.RequiredApprovals
+	}
+	return 0
+}
+
+func (x *AccessRequest) GetApprovalsSoFar() int32 {
+	if x != nil {
+		return x.ApprovalsSoFar
+	}
+	return 0
+}
+
+func (x *AccessRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetResolvedAt() string {
+	if x != nil {
+		return x.ResolvedAt
+	}
+	return ""
+}
+
+func (x *AccessRequest) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+type RequestAccessRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RoleId          string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	AssetId         string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	DurationSeconds int64                  `protobuf:"varint,3,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	Reason          string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RequestAccessRequest) Reset() {
+	*x = RequestAccessRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestAccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestAccessRequest) ProtoMessage() {}
+
+func (x *RequestAccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestAccessRequest.ProtoReflect.Descriptor instead.
+func (*RequestAccessRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RequestAccessRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *RequestAccessRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *RequestAccessRequest) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+func (x *RequestAccessRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type RequestAccessResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *AccessRequest         `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestAccessResponse) Reset() {
+	*x = RequestAccessResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestAccessResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestAccessResponse) ProtoMessage() {}
+
+func (x *RequestAccessResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestAccessResponse.ProtoReflect.Descriptor instead.
+func (*RequestAccessResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RequestAccessResponse) GetRequest() *AccessRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type CancelRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRequestRequest) Reset() {
+	*x = CancelRequestRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRequestRequest) ProtoMessage() {}
+
+func (x *CancelRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRequestRequest.ProtoReflect.Descriptor instead.
+func (*CancelRequestRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CancelRequestRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type CancelRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRequestResponse) Reset() {
+	*x = CancelRequestResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRequestResponse) ProtoMessage() {}
+
+func (x *CancelRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRequestResponse.ProtoReflect.Descriptor instead.
+func (*CancelRequestResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{6}
+}
+
+type ApproveRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveRequestRequest) Reset() {
+	*x = ApproveRequestRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveRequestRequest) ProtoMessage() {}
+
+func (x *ApproveRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveRequestRequest.ProtoReflect.Descriptor instead.
+func (*ApproveRequestRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ApproveRequestRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type ApproveRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *AccessRequest         `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveRequestResponse) Reset() {
+	*x = ApproveRequestResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveRequestResponse) ProtoMessage() {}
+
+func (x *ApproveRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveRequestResponse.ProtoReflect.Descriptor instead.
+func (*ApproveRequestResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ApproveRequestResponse) GetRequest() *AccessRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type DenyRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyRequestRequest) Reset() {
+	*x = DenyRequestRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyRequestRequest) ProtoMessage() {}
+
+func (x *DenyRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyRequestRequest.ProtoReflect.Descriptor instead.
+func (*DenyRequestRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DenyRequestRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type DenyRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *AccessRequest         `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyRequestResponse) Reset() {
+	*x = DenyRequestResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyRequestResponse) ProtoMessage() {}
+
+func (x *DenyRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyRequestResponse.ProtoReflect.Descriptor instead.
+func (*DenyRequestResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DenyRequestResponse) GetRequest() *AccessRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type ListMyRequestsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyRequestsRequest) Reset() {
+	*x = ListMyRequestsRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyRequestsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyRequestsRequest) ProtoMessage() {}
+
+func (x *ListMyRequestsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyRequestsRequest.ProtoReflect.Descriptor instead.
+func (*ListMyRequestsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{11}
+}
+
+type ListMyRequestsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Requests      []*AccessRequest       `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyRequestsResponse) Reset() {
+	*x = ListMyRequestsResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyRequestsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyRequestsResponse) ProtoMessage() {}
+
+func (x *ListMyRequestsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyRequestsResponse.ProtoReflect.Descriptor instead.
+func (*ListMyRequestsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListMyRequestsResponse) GetRequests() []*AccessRequest {
+	if x != nil {
+		return x.Requests
+	}
+	return nil
+}
+
+type ListPendingApprovalsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPendingApprovalsRequest) Reset() {
+	*x = ListPendingApprovalsRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPendingApprovalsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPendingApprovalsRequest) ProtoMessage() {}
+
+func (x *ListPendingApprovalsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPendingApprovalsRequest.ProtoReflect.Descriptor instead.
+func (*ListPendingApprovalsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{13}
+}
+
+type ListPendingApprovalsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Requests      []*AccessRequest       `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPendingApprovalsResponse) Reset() {
+	*x = ListPendingApprovalsResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPendingApprovalsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPendingApprovalsResponse) ProtoMessage() {}
+
+func (x *ListPendingApprovalsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPendingApprovalsResponse.ProtoReflect.Descriptor instead.
+func (*ListPendingApprovalsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListPendingApprovalsResponse) GetRequests() []*AccessRequest {
+	if x != nil {
+		return x.Requests
+	}
+	return nil
+}
+
 var File_jumpgate_accessrequest_v1_accessrequest_proto protoreflect.FileDescriptor
 
 const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
@@ -145,9 +798,57 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\x17ResolveApprovalResponse\x12 \n" +
 	"\vrequestable\x18\x01 \x01(\bR\vrequestable\x12-\n" +
 	"\x12required_approvals\x18\x02 \x01(\x05R\x11requiredApprovals\x12(\n" +
-	"\x10approver_role_id\x18\x03 \x01(\tR\x0eapproverRoleId2\x92\x01\n" +
+	"\x10approver_role_id\x18\x03 \x01(\tR\x0eapproverRoleId\"\xda\x02\n" +
+	"\rAccessRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\frequester_id\x18\x02 \x01(\tR\vrequesterId\x12\x17\n" +
+	"\arole_id\x18\x03 \x01(\tR\x06roleId\x12\x19\n" +
+	"\basset_id\x18\x04 \x01(\tR\aassetId\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12-\n" +
+	"\x12required_approvals\x18\x06 \x01(\x05R\x11requiredApprovals\x12(\n" +
+	"\x10approvals_so_far\x18\a \x01(\x05R\x0eapprovalsSoFar\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\x12\x1f\n" +
+	"\vresolved_at\x18\n" +
+	" \x01(\tR\n" +
+	"resolvedAt\x12\x19\n" +
+	"\bgrant_id\x18\v \x01(\tR\agrantId\"\xaa\x01\n" +
+	"\x14RequestAccessRequest\x12!\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12#\n" +
+	"\basset_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x122\n" +
+	"\x10duration_seconds\x18\x03 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x0fdurationSeconds\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"[\n" +
+	"\x15RequestAccessResponse\x12B\n" +
+	"\arequest\x18\x01 \x01(\v2(.jumpgate.accessrequest.v1.AccessRequestR\arequest\"?\n" +
+	"\x14CancelRequestRequest\x12'\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\trequestId\"\x17\n" +
+	"\x15CancelRequestResponse\"@\n" +
+	"\x15ApproveRequestRequest\x12'\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\trequestId\"\\\n" +
+	"\x16ApproveRequestResponse\x12B\n" +
+	"\arequest\x18\x01 \x01(\v2(.jumpgate.accessrequest.v1.AccessRequestR\arequest\"=\n" +
+	"\x12DenyRequestRequest\x12'\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\trequestId\"Y\n" +
+	"\x13DenyRequestResponse\x12B\n" +
+	"\arequest\x18\x01 \x01(\v2(.jumpgate.accessrequest.v1.AccessRequestR\arequest\"\x17\n" +
+	"\x15ListMyRequestsRequest\"^\n" +
+	"\x16ListMyRequestsResponse\x12D\n" +
+	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\"\x1d\n" +
+	"\x1bListPendingApprovalsRequest\"d\n" +
+	"\x1cListPendingApprovalsResponse\x12D\n" +
+	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests2\xec\x06\n" +
 	"\x14AccessRequestService\x12z\n" +
-	"\x0fResolveApproval\x121.jumpgate.accessrequest.v1.ResolveApprovalRequest\x1a2.jumpgate.accessrequest.v1.ResolveApprovalResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
+	"\x0fResolveApproval\x121.jumpgate.accessrequest.v1.ResolveApprovalRequest\x1a2.jumpgate.accessrequest.v1.ResolveApprovalResponse\"\x00\x12t\n" +
+	"\rRequestAccess\x12/.jumpgate.accessrequest.v1.RequestAccessRequest\x1a0.jumpgate.accessrequest.v1.RequestAccessResponse\"\x00\x12t\n" +
+	"\rCancelRequest\x12/.jumpgate.accessrequest.v1.CancelRequestRequest\x1a0.jumpgate.accessrequest.v1.CancelRequestResponse\"\x00\x12w\n" +
+	"\x0eApproveRequest\x120.jumpgate.accessrequest.v1.ApproveRequestRequest\x1a1.jumpgate.accessrequest.v1.ApproveRequestResponse\"\x00\x12n\n" +
+	"\vDenyRequest\x12-.jumpgate.accessrequest.v1.DenyRequestRequest\x1a..jumpgate.accessrequest.v1.DenyRequestResponse\"\x00\x12w\n" +
+	"\x0eListMyRequests\x120.jumpgate.accessrequest.v1.ListMyRequestsRequest\x1a1.jumpgate.accessrequest.v1.ListMyRequestsResponse\"\x00\x12\x89\x01\n" +
+	"\x14ListPendingApprovals\x126.jumpgate.accessrequest.v1.ListPendingApprovalsRequest\x1a7.jumpgate.accessrequest.v1.ListPendingApprovalsResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
 
 var (
 	file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescOnce sync.Once
@@ -161,19 +862,49 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP() []byte {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescData
 }
 
-var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_jumpgate_accessrequest_v1_accessrequest_proto_goTypes = []any{
-	(*ResolveApprovalRequest)(nil),  // 0: jumpgate.accessrequest.v1.ResolveApprovalRequest
-	(*ResolveApprovalResponse)(nil), // 1: jumpgate.accessrequest.v1.ResolveApprovalResponse
+	(*ResolveApprovalRequest)(nil),       // 0: jumpgate.accessrequest.v1.ResolveApprovalRequest
+	(*ResolveApprovalResponse)(nil),      // 1: jumpgate.accessrequest.v1.ResolveApprovalResponse
+	(*AccessRequest)(nil),                // 2: jumpgate.accessrequest.v1.AccessRequest
+	(*RequestAccessRequest)(nil),         // 3: jumpgate.accessrequest.v1.RequestAccessRequest
+	(*RequestAccessResponse)(nil),        // 4: jumpgate.accessrequest.v1.RequestAccessResponse
+	(*CancelRequestRequest)(nil),         // 5: jumpgate.accessrequest.v1.CancelRequestRequest
+	(*CancelRequestResponse)(nil),        // 6: jumpgate.accessrequest.v1.CancelRequestResponse
+	(*ApproveRequestRequest)(nil),        // 7: jumpgate.accessrequest.v1.ApproveRequestRequest
+	(*ApproveRequestResponse)(nil),       // 8: jumpgate.accessrequest.v1.ApproveRequestResponse
+	(*DenyRequestRequest)(nil),           // 9: jumpgate.accessrequest.v1.DenyRequestRequest
+	(*DenyRequestResponse)(nil),          // 10: jumpgate.accessrequest.v1.DenyRequestResponse
+	(*ListMyRequestsRequest)(nil),        // 11: jumpgate.accessrequest.v1.ListMyRequestsRequest
+	(*ListMyRequestsResponse)(nil),       // 12: jumpgate.accessrequest.v1.ListMyRequestsResponse
+	(*ListPendingApprovalsRequest)(nil),  // 13: jumpgate.accessrequest.v1.ListPendingApprovalsRequest
+	(*ListPendingApprovalsResponse)(nil), // 14: jumpgate.accessrequest.v1.ListPendingApprovalsResponse
 }
 var file_jumpgate_accessrequest_v1_accessrequest_proto_depIdxs = []int32{
-	0, // 0: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
-	1, // 1: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2,  // 0: jumpgate.accessrequest.v1.RequestAccessResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
+	2,  // 1: jumpgate.accessrequest.v1.ApproveRequestResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
+	2,  // 2: jumpgate.accessrequest.v1.DenyRequestResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
+	2,  // 3: jumpgate.accessrequest.v1.ListMyRequestsResponse.requests:type_name -> jumpgate.accessrequest.v1.AccessRequest
+	2,  // 4: jumpgate.accessrequest.v1.ListPendingApprovalsResponse.requests:type_name -> jumpgate.accessrequest.v1.AccessRequest
+	0,  // 5: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
+	3,  // 6: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:input_type -> jumpgate.accessrequest.v1.RequestAccessRequest
+	5,  // 7: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:input_type -> jumpgate.accessrequest.v1.CancelRequestRequest
+	7,  // 8: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:input_type -> jumpgate.accessrequest.v1.ApproveRequestRequest
+	9,  // 9: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:input_type -> jumpgate.accessrequest.v1.DenyRequestRequest
+	11, // 10: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:input_type -> jumpgate.accessrequest.v1.ListMyRequestsRequest
+	13, // 11: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:input_type -> jumpgate.accessrequest.v1.ListPendingApprovalsRequest
+	1,  // 12: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
+	4,  // 13: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:output_type -> jumpgate.accessrequest.v1.RequestAccessResponse
+	6,  // 14: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:output_type -> jumpgate.accessrequest.v1.CancelRequestResponse
+	8,  // 15: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:output_type -> jumpgate.accessrequest.v1.ApproveRequestResponse
+	10, // 16: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:output_type -> jumpgate.accessrequest.v1.DenyRequestResponse
+	12, // 17: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:output_type -> jumpgate.accessrequest.v1.ListMyRequestsResponse
+	14, // 18: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:output_type -> jumpgate.accessrequest.v1.ListPendingApprovalsResponse
+	12, // [12:19] is the sub-list for method output_type
+	5,  // [5:12] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_accessrequest_v1_accessrequest_proto_init() }
@@ -187,7 +918,7 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc), len(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

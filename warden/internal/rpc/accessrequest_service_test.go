@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
@@ -13,7 +16,146 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
+
+func pgU(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
+
+// TestAccessRequestRPCFlow exercises request→approve→grant over ConnectRPC plus
+// the authz sentinel→Connect-code mappings.
+func TestAccessRequestRPCFlow(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, ResourceType: "asset", Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole: %v", err)
+		}
+		return r.ID
+	}
+	target := mkRole("db-admin-flow")
+	requesterRole := mkRole("requester-flow")
+	approverRole := mkRole("approver-flow")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-flow"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-flow", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: target, RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy: %v", err)
+	}
+
+	userID := func(pool *pgxpool.Pool, email string) uuid.UUID {
+		var id uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&id); err != nil {
+			t.Fatalf("lookup user %s: %v", email, err)
+		}
+		return id
+	}
+	bind := func(uid, roleID uuid.UUID) {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: roleID, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+	}
+
+	seedUser(t, pool, "req@flow", "password123", false)
+	seedUser(t, pool, "app@flow", "password123", false)
+	seedUser(t, pool, "stranger@flow", "password123", false)
+	bind(userID(pool, "req@flow"), requesterRole)
+	bind(userID(pool, "app@flow"), approverRole)
+
+	reqTok := authClient(t, url, "req@flow", "password123")
+	appTok := authClient(t, url, "app@flow", "password123")
+	strangerTok := authClient(t, url, "stranger@flow", "password123")
+
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Unauthenticated → Unauthenticated.
+	_, err = client.RequestAccess(ctx, connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: target.String(), AssetId: asset.ID.String(), DurationSeconds: 3600,
+	}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("anon RequestAccess = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+
+	// Ineligible requester → NotFound (existence-hiding).
+	_, err = client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: target.String(), AssetId: asset.ID.String(), DurationSeconds: 3600,
+	}), strangerTok))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("ineligible RequestAccess = %v, want NotFound", connect.CodeOf(err))
+	}
+
+	// Eligible requester opens the request.
+	resp, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: target.String(), AssetId: asset.ID.String(), DurationSeconds: 3600, Reason: "incident",
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+	if resp.Msg.Request.Status != "pending" {
+		t.Fatalf("status = %q, want pending", resp.Msg.Request.Status)
+	}
+	reqID := resp.Msg.Request.Id
+
+	// Duplicate pending → AlreadyExists.
+	_, err = client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: target.String(), AssetId: asset.ID.String(), DurationSeconds: 3600,
+	}), reqTok))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup RequestAccess = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+
+	// Non-approver Approve → PermissionDenied.
+	_, err = client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{RequestId: reqID}), strangerTok))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-approver Approve = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Approver sees it pending; requester does not.
+	pend, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{}), appTok))
+	if err != nil {
+		t.Fatalf("ListPendingApprovals: %v", err)
+	}
+	if len(pend.Msg.Requests) != 1 || pend.Msg.Requests[0].Id != reqID {
+		t.Fatalf("pending = %+v, want [%s]", pend.Msg.Requests, reqID)
+	}
+
+	// Approve → granted + grant id.
+	appr, err := client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{RequestId: reqID}), appTok))
+	if err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+	if appr.Msg.Request.Status != "granted" || appr.Msg.Request.GrantId == "" {
+		t.Fatalf("approve = %+v, want granted + grant_id", appr.Msg.Request)
+	}
+
+	// Requester's list shows the granted request.
+	mine, err := client.ListMyRequests(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{}), reqTok))
+	if err != nil {
+		t.Fatalf("ListMyRequests: %v", err)
+	}
+	if len(mine.Msg.Requests) != 1 || mine.Msg.Requests[0].Status != "granted" || mine.Msg.Requests[0].GrantId == "" {
+		t.Fatalf("my requests = %+v, want one granted with grant_id", mine.Msg.Requests)
+	}
+
+	// Re-approve → FailedPrecondition.
+	_, err = client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{RequestId: reqID}), appTok))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("re-approve = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+}
 
 func TestResolveApproval(t *testing.T) {
 	pool, url := newServer(t)
