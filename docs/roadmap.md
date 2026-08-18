@@ -30,6 +30,13 @@ follow the MVP.
 `postgres`/`k8s` typed configs and **live credential injection** (the worker
 calling the broker's `Issue`) land in **M4/M5**.
 
+**Post-M3 hardening pass ✅.** Before M4: a **held-closure drift-guard** test that
+locks the duplicated recursive-CTE copies in sync, and a **transactional audit
+outbox** — the JIT services + reaper enqueue each event inside their domain tx and
+a background drainer chains it into the hash-linked log, closing the post-commit
+crash window. Deferred to later milestones: CA rotation and the eligibility-change
+grant cascade.
+
 **Next:** M4 (gateway + ssh-proxy + CLI — **live credential injection** wiring the
 broker to a session, the real `GrantTerminator` session-kill path, and the
 eligibility-change cascade for standing bindings/memberships/rewrites).

@@ -151,15 +151,25 @@ implemented** (M3a); wiring it across the remaining events (session start/stop,
 teardown) lands with those subsystems. See
 [architecture.md](architecture.md#audit--recording).
 
-> **Known limitation — audit crash window.** The audit logger opens its **own
-> advisory-locked transaction** and so cannot enlist in the domain transaction;
-> events are therefore appended **post-commit**. A crash in the narrow window
-> between the domain commit and the append leaves a durable action (e.g. a minted
-> grant) with **no audit entry** — a gap in the tamper-evident trail. An append
-> failure is logged loudly (`slog.Error`) but does **not** fail the RPC (the action
-> already committed). Closing this fully needs a **transactional audit outbox**
-> (write the event inside the domain tx, drain it with a worker) — a deferred
-> follow-up.
+> **Audit durability — transactional outbox ✅.** The audit logger's direct
+> `Append` opens its **own advisory-locked transaction** and cannot enlist in a
+> domain transaction, so a post-commit append would leave a **crash window**
+> between the domain commit and the append. The JIT access-request services
+> (`RequestAccess`/`Approve`/`Deny`/`Cancel`/grant mint) and the expiry reaper
+> instead **enqueue** each event into an `audit_outbox` row **inside the same
+> domain transaction** (`Enqueue(ctx, q, …)`): the event and the action it records
+> commit atomically or not at all, so a crash can never leave a durable action
+> without its audit event. If the enqueue fails, the whole domain transaction
+> rolls back (the action does not happen), so there is no silent gap. A background
+> **drainer** (`RunDrainer`/`DrainOnce`) moves outbox rows into the hash-chained
+> `audit_log` in one advisory-locked transaction — chaining then deleting each row
+> together, so delivery is exactly-once and re-drains safely after a crash.
+>
+> One event is **not** yet on the outbox: the vault's `credential.issued`
+> (`Broker.Issue`) is a genuinely **post-fact** append — the certificate is already
+> minted and returned, with no domain transaction to enlist in — so it still uses
+> direct `Append`. Its narrow crash window is benign (a re-issue is harmless) and
+> a follow-up may fold it in.
 
 ## Secrets at rest — envelope encryption ✅ (M3d)
 
@@ -211,7 +221,7 @@ providers, `VaultService`). Live credential **injection** into a session is **M4
 | Compromised/departed user keeps acting | `deactivated_at` off-switch: rejected at Login **and** the auth interceptor (`Unauthenticated`) on any authenticated RPC | Implemented (M-v2); residual: still counts in others' authz sets until unbound/deleted (full CTE exclusion deferred) |
 | Credential exposed on a compromised target | Agentless: no credential/software on targets; the credential is **short-lived** (broker-bounded by the grant TTL) and the worker holds it only for a live session | Broker + short-lived creds: M3d ✅ · agentless injection into a live session: M4 ⬜ |
 | Over-broad SSH host login (static account, root-for-all) | SSH cert principals are **capability-derived**: `allowed_logins ∩ user's ssh:login:* caps`; empty → refused; the CA refuses a principal-less (all-accounts) cert | Implemented (M3d) |
-| Audit log tampered to hide activity | Hash-chained append-only log; independently verifiable | Primitive: M3a ✅ · JIT events wired M3c ✅ · full wiring ongoing (known post-commit crash window, outbox deferred) |
+| Audit log tampered to hide activity | Hash-chained append-only log; independently verifiable | Primitive: M3a ✅ · JIT events wired M3c ✅ · durability: **transactional outbox** (enqueue in-tx, background drain) closes the crash window ✅ (`credential.issued` post-fact append excepted) |
 | Secrets (CA keys, target creds) read at rest | Envelope encryption: per-secret AES-256-GCM DEK wrapped by a master KEK (`VAULT_MASTER_KEY`; KMS-pluggable); sealed bytes never leave the DB/API; fail-closed `Open` | Implemented (M3d) |
 | Master key lost/leaked | Losing `VAULT_MASTER_KEY` loses all sealed secrets (no recovery); KMS custody is the future seam — treat the key as a top-tier operational secret | Residual (documented; KMS deferred) |
 
