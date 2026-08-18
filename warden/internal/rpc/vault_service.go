@@ -2,7 +2,9 @@ package rpc
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
+	"net/url"
 	"time"
 
 	"connectrpc.com/connect"
@@ -14,9 +16,13 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/pgerr"
+	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 )
+
+// meshCertTTL is the validity window of an issued mesh leaf certificate.
+const meshCertTTL = 90 * 24 * time.Hour
 
 // VaultServer implements vaultv1connect.VaultServiceHandler: the admin API for
 // certificate authorities, per-asset stored secrets, and SSH asset config.
@@ -76,6 +82,76 @@ func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.I
 		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
 	}
 	return connect.NewResponse(&vaultv1.InitCAResponse{PublicMaterial: row.PublicMaterial}), nil
+}
+
+// InitMeshCA generates and seals the dedicated internal mesh mTLS CA, returning
+// its certificate PEM (public trust material). A second init hits the
+// unique-active index and surfaces as AlreadyExists. The sealed private key
+// never leaves the server.
+func (s *VaultServer) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1.InitMeshCARequest]) (*connect.Response[vaultv1.InitMeshCAResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if s.sealer == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
+	}
+	keyDER, certPEM, err := ca.GenerateMeshCA()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	sealed, err := s.sealer.Seal(keyDER)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if _, err := s.q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM)}); err != nil {
+		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
+	}
+	return connect.NewResponse(&vaultv1.InitMeshCAResponse{CaCertPem: certPEM}), nil
+}
+
+// IssueMeshCert signs a client-generated CSR into a mesh leaf certificate whose
+// URI SAN is stamped from the trusted spiffe_id (never from the CSR). The client
+// keeps its private key; only the leaf cert and CA bundle are returned. Requires
+// an already-initialized mesh CA (else FailedPrecondition).
+func (s *VaultServer) IssueMeshCert(ctx context.Context, req *connect.Request[vaultv1.IssueMeshCertRequest]) (*connect.Response[vaultv1.IssueMeshCertResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if s.sealer == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
+	}
+	// Validate the spiffe id shape (defense in depth over ca.SignCSR).
+	u, err := url.Parse(req.Msg.SpiffeId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad spiffe_id"))
+	}
+	if _, err := mesh.ParseIdentity(u); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	row, err := s.q.GetActiveCA(ctx, "mesh")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("mesh CA not initialized"))
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	keyDER, err := s.sealer.Open(row.Sealed)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	mca, err := ca.LoadMeshCA(keyDER, []byte(row.PublicMaterial))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	blk, _ := pem.Decode(req.Msg.CsrPem)
+	if blk == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad csr pem"))
+	}
+	leafPEM, bundlePEM, err := mca.SignCSR(blk.Bytes, req.Msg.SpiffeId, meshCertTTL)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewResponse(&vaultv1.IssueMeshCertResponse{CertPem: leafPEM, CaBundlePem: bundlePEM}), nil
 }
 
 // InitSessionKey generates and seals the active Ed25519 session-token signing

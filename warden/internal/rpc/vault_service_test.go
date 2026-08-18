@@ -2,6 +2,8 @@ package rpc_test
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"net/http"
 	"reflect"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
+	"github.com/trevex/jumpgate/warden/internal/ca"
 )
 
 // TestVaultNilSealerFailsClosed locks the vault-disabled contract: the seal paths
@@ -117,6 +120,126 @@ func TestVaultInitCA(t *testing.T) {
 		if got.Msg.PublicMaterial != resp.Msg.PublicMaterial {
 			t.Fatalf("GetCAPublic(%s) mismatch", kind)
 		}
+	}
+}
+
+// csrPEM generates a fresh CSR for the given spiffe id and returns it PEM-encoded.
+func csrPEM(t *testing.T, spiffeID string) []byte {
+	t.Helper()
+	_, csrDER, err := ca.GenerateCSR(spiffeID)
+	if err != nil {
+		t.Fatalf("GenerateCSR: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
+}
+
+func TestInitMeshCAAndIssue(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	initResp, err := c.InitMeshCA(ctx, withToken(connect.NewRequest(&vaultv1.InitMeshCARequest{}), tok))
+	if err != nil {
+		t.Fatalf("InitMeshCA: %v", err)
+	}
+	if len(initResp.Msg.CaCertPem) == 0 {
+		t.Fatal("InitMeshCA: empty ca_cert_pem")
+	}
+
+	const spiffeID = "spiffe://jumpgate/worker/w1"
+	issueResp, err := c.IssueMeshCert(ctx, withToken(connect.NewRequest(&vaultv1.IssueMeshCertRequest{
+		CsrPem:   csrPEM(t, spiffeID),
+		SpiffeId: spiffeID,
+	}), tok))
+	if err != nil {
+		t.Fatalf("IssueMeshCert: %v", err)
+	}
+
+	// Leaf parses.
+	leafBlk, _ := pem.Decode(issueResp.Msg.CertPem)
+	if leafBlk == nil {
+		t.Fatal("IssueMeshCert: cert_pem is not PEM")
+	}
+	leaf, err := x509.ParseCertificate(leafBlk.Bytes)
+	if err != nil {
+		t.Fatalf("parse leaf: %v", err)
+	}
+	// Carries the URI SAN.
+	if len(leaf.URIs) != 1 || leaf.URIs[0].String() != spiffeID {
+		t.Fatalf("leaf URIs = %v, want [%s]", leaf.URIs, spiffeID)
+	}
+	// Chains to the returned bundle.
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(issueResp.Msg.CaBundlePem) {
+		t.Fatal("ca_bundle_pem not usable as roots")
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		t.Fatalf("leaf does not chain to bundle: %v", err)
+	}
+
+	// A second InitMeshCA hits uq_active_ca → AlreadyExists.
+	_, err = c.InitMeshCA(ctx, withToken(connect.NewRequest(&vaultv1.InitMeshCARequest{}), tok))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("InitMeshCA 2nd = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+}
+
+func TestIssueMeshCertBadSpiffe(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	if _, err := c.InitMeshCA(ctx, withToken(connect.NewRequest(&vaultv1.InitMeshCARequest{}), tok)); err != nil {
+		t.Fatalf("InitMeshCA: %v", err)
+	}
+	// A non-spiffe URI is rejected by mesh.ParseIdentity → InvalidArgument.
+	_, err := c.IssueMeshCert(ctx, withToken(connect.NewRequest(&vaultv1.IssueMeshCertRequest{
+		CsrPem:   csrPEM(t, "spiffe://jumpgate/worker/w1"),
+		SpiffeId: "https://x/y/z",
+	}), tok))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("IssueMeshCert bad spiffe = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+}
+
+func TestIssueMeshCertRequiresAdmin(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "user@x", "password123", false)
+	utok := authClient(t, url, "user@x", "password123")
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	if _, err := c.InitMeshCA(ctx, withToken(connect.NewRequest(&vaultv1.InitMeshCARequest{}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("InitMeshCA non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	_, err := c.IssueMeshCert(ctx, withToken(connect.NewRequest(&vaultv1.IssueMeshCertRequest{
+		CsrPem:   csrPEM(t, "spiffe://jumpgate/worker/w1"),
+		SpiffeId: "spiffe://jumpgate/worker/w1",
+	}), utok))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("IssueMeshCert non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+func TestIssueMeshCertNoMeshCA(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Without InitMeshCA, issuing fails FailedPrecondition.
+	_, err := c.IssueMeshCert(ctx, withToken(connect.NewRequest(&vaultv1.IssueMeshCertRequest{
+		CsrPem:   csrPEM(t, "spiffe://jumpgate/worker/w1"),
+		SpiffeId: "spiffe://jumpgate/worker/w1",
+	}), tok))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("IssueMeshCert without mesh CA = %v, want FailedPrecondition", connect.CodeOf(err))
 	}
 }
 
