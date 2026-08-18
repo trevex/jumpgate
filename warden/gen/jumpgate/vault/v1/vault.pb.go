@@ -198,6 +198,86 @@ func (x *GetCAPublicResponse) GetPublicMaterial() string {
 	return ""
 }
 
+type InitSessionKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InitSessionKeyRequest) Reset() {
+	*x = InitSessionKeyRequest{}
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InitSessionKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InitSessionKeyRequest) ProtoMessage() {}
+
+func (x *InitSessionKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InitSessionKeyRequest.ProtoReflect.Descriptor instead.
+func (*InitSessionKeyRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{4}
+}
+
+type InitSessionKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PublicKey     []byte                 `protobuf:"bytes,1,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InitSessionKeyResponse) Reset() {
+	*x = InitSessionKeyResponse{}
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InitSessionKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InitSessionKeyResponse) ProtoMessage() {}
+
+func (x *InitSessionKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InitSessionKeyResponse.ProtoReflect.Descriptor instead.
+func (*InitSessionKeyResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *InitSessionKeyResponse) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
 type SetAssetSecretRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
@@ -209,7 +289,7 @@ type SetAssetSecretRequest struct {
 
 func (x *SetAssetSecretRequest) Reset() {
 	*x = SetAssetSecretRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[4]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +301,7 @@ func (x *SetAssetSecretRequest) String() string {
 func (*SetAssetSecretRequest) ProtoMessage() {}
 
 func (x *SetAssetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[4]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,7 +314,7 @@ func (x *SetAssetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAssetSecretRequest.ProtoReflect.Descriptor instead.
 func (*SetAssetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{4}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SetAssetSecretRequest) GetAssetId() string {
@@ -267,7 +347,7 @@ type SetAssetSecretResponse struct {
 
 func (x *SetAssetSecretResponse) Reset() {
 	*x = SetAssetSecretResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[5]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +359,7 @@ func (x *SetAssetSecretResponse) String() string {
 func (*SetAssetSecretResponse) ProtoMessage() {}
 
 func (x *SetAssetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[5]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,7 +372,7 @@ func (x *SetAssetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAssetSecretResponse.ProtoReflect.Descriptor instead.
 func (*SetAssetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{5}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SetAssetSecretResponse) GetId() string {
@@ -311,7 +391,7 @@ type DeleteAssetSecretRequest struct {
 
 func (x *DeleteAssetSecretRequest) Reset() {
 	*x = DeleteAssetSecretRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[6]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +403,7 @@ func (x *DeleteAssetSecretRequest) String() string {
 func (*DeleteAssetSecretRequest) ProtoMessage() {}
 
 func (x *DeleteAssetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[6]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +416,7 @@ func (x *DeleteAssetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAssetSecretRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAssetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{6}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteAssetSecretRequest) GetId() string {
@@ -354,7 +434,7 @@ type DeleteAssetSecretResponse struct {
 
 func (x *DeleteAssetSecretResponse) Reset() {
 	*x = DeleteAssetSecretResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[7]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +446,7 @@ func (x *DeleteAssetSecretResponse) String() string {
 func (*DeleteAssetSecretResponse) ProtoMessage() {}
 
 func (x *DeleteAssetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[7]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +459,7 @@ func (x *DeleteAssetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAssetSecretResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAssetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{7}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{9}
 }
 
 type ListAssetSecretsRequest struct {
@@ -391,7 +471,7 @@ type ListAssetSecretsRequest struct {
 
 func (x *ListAssetSecretsRequest) Reset() {
 	*x = ListAssetSecretsRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[8]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -403,7 +483,7 @@ func (x *ListAssetSecretsRequest) String() string {
 func (*ListAssetSecretsRequest) ProtoMessage() {}
 
 func (x *ListAssetSecretsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[8]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -416,7 +496,7 @@ func (x *ListAssetSecretsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetSecretsRequest.ProtoReflect.Descriptor instead.
 func (*ListAssetSecretsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{8}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListAssetSecretsRequest) GetAssetId() string {
@@ -438,7 +518,7 @@ type AssetSecretMeta struct {
 
 func (x *AssetSecretMeta) Reset() {
 	*x = AssetSecretMeta{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[9]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +530,7 @@ func (x *AssetSecretMeta) String() string {
 func (*AssetSecretMeta) ProtoMessage() {}
 
 func (x *AssetSecretMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[9]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +543,7 @@ func (x *AssetSecretMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetSecretMeta.ProtoReflect.Descriptor instead.
 func (*AssetSecretMeta) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{9}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AssetSecretMeta) GetId() string {
@@ -496,7 +576,7 @@ type ListAssetSecretsResponse struct {
 
 func (x *ListAssetSecretsResponse) Reset() {
 	*x = ListAssetSecretsResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[10]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +588,7 @@ func (x *ListAssetSecretsResponse) String() string {
 func (*ListAssetSecretsResponse) ProtoMessage() {}
 
 func (x *ListAssetSecretsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[10]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +601,7 @@ func (x *ListAssetSecretsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetSecretsResponse.ProtoReflect.Descriptor instead.
 func (*ListAssetSecretsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{10}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListAssetSecretsResponse) GetSecrets() []*AssetSecretMeta {
@@ -543,7 +623,7 @@ type SetSSHAssetConfigRequest struct {
 
 func (x *SetSSHAssetConfigRequest) Reset() {
 	*x = SetSSHAssetConfigRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[11]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -555,7 +635,7 @@ func (x *SetSSHAssetConfigRequest) String() string {
 func (*SetSSHAssetConfigRequest) ProtoMessage() {}
 
 func (x *SetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[11]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +648,7 @@ func (x *SetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSSHAssetConfigRequest.ProtoReflect.Descriptor instead.
 func (*SetSSHAssetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{11}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SetSSHAssetConfigRequest) GetAssetId() string {
@@ -607,7 +687,7 @@ type SetSSHAssetConfigResponse struct {
 
 func (x *SetSSHAssetConfigResponse) Reset() {
 	*x = SetSSHAssetConfigResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[12]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +699,7 @@ func (x *SetSSHAssetConfigResponse) String() string {
 func (*SetSSHAssetConfigResponse) ProtoMessage() {}
 
 func (x *SetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[12]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +712,7 @@ func (x *SetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSSHAssetConfigResponse.ProtoReflect.Descriptor instead.
 func (*SetSSHAssetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{12}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{14}
 }
 
 type GetSSHAssetConfigRequest struct {
@@ -644,7 +724,7 @@ type GetSSHAssetConfigRequest struct {
 
 func (x *GetSSHAssetConfigRequest) Reset() {
 	*x = GetSSHAssetConfigRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[13]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +736,7 @@ func (x *GetSSHAssetConfigRequest) String() string {
 func (*GetSSHAssetConfigRequest) ProtoMessage() {}
 
 func (x *GetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[13]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +749,7 @@ func (x *GetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSSHAssetConfigRequest.ProtoReflect.Descriptor instead.
 func (*GetSSHAssetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{13}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetSSHAssetConfigRequest) GetAssetId() string {
@@ -690,7 +770,7 @@ type GetSSHAssetConfigResponse struct {
 
 func (x *GetSSHAssetConfigResponse) Reset() {
 	*x = GetSSHAssetConfigResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[14]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +782,7 @@ func (x *GetSSHAssetConfigResponse) String() string {
 func (*GetSSHAssetConfigResponse) ProtoMessage() {}
 
 func (x *GetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[14]
+	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +795,7 @@ func (x *GetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSSHAssetConfigResponse.ProtoReflect.Descriptor instead.
 func (*GetSSHAssetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{14}
+	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetSSHAssetConfigResponse) GetAllowedLogins() []string {
@@ -751,7 +831,11 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\x12GetCAPublicRequest\x12$\n" +
 	"\x04kind\x18\x01 \x01(\tB\x10\xbaH\rr\vR\x03sshR\x04x509R\x04kind\">\n" +
 	"\x13GetCAPublicResponse\x12'\n" +
-	"\x0fpublic_material\x18\x01 \x01(\tR\x0epublicMaterial\"o\n" +
+	"\x0fpublic_material\x18\x01 \x01(\tR\x0epublicMaterial\"\x17\n" +
+	"\x15InitSessionKeyRequest\"7\n" +
+	"\x16InitSessionKeyResponse\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x01 \x01(\fR\tpublicKey\"o\n" +
 	"\x15SetAssetSecretRequest\x12#\n" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12\x1b\n" +
 	"\x04name\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12\x14\n" +
@@ -784,10 +868,11 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\x0eallowed_logins\x18\x01 \x03(\tR\rallowedLogins\x12\x1f\n" +
 	"\vauth_method\x18\x02 \x01(\tR\n" +
 	"authMethod\x12(\n" +
-	"\x10stored_secret_id\x18\x03 \x01(\tR\x0estoredSecretId2\xed\x05\n" +
+	"\x10stored_secret_id\x18\x03 \x01(\tR\x0estoredSecretId2\xd6\x06\n" +
 	"\fVaultService\x12O\n" +
 	"\x06InitCA\x12 .jumpgate.vault.v1.InitCARequest\x1a!.jumpgate.vault.v1.InitCAResponse\"\x00\x12^\n" +
 	"\vGetCAPublic\x12%.jumpgate.vault.v1.GetCAPublicRequest\x1a&.jumpgate.vault.v1.GetCAPublicResponse\"\x00\x12g\n" +
+	"\x0eInitSessionKey\x12(.jumpgate.vault.v1.InitSessionKeyRequest\x1a).jumpgate.vault.v1.InitSessionKeyResponse\"\x00\x12g\n" +
 	"\x0eSetAssetSecret\x12(.jumpgate.vault.v1.SetAssetSecretRequest\x1a).jumpgate.vault.v1.SetAssetSecretResponse\"\x00\x12p\n" +
 	"\x11DeleteAssetSecret\x12+.jumpgate.vault.v1.DeleteAssetSecretRequest\x1a,.jumpgate.vault.v1.DeleteAssetSecretResponse\"\x00\x12m\n" +
 	"\x10ListAssetSecrets\x12*.jumpgate.vault.v1.ListAssetSecretsRequest\x1a+.jumpgate.vault.v1.ListAssetSecretsResponse\"\x00\x12p\n" +
@@ -806,42 +891,46 @@ func file_jumpgate_vault_v1_vault_proto_rawDescGZIP() []byte {
 	return file_jumpgate_vault_v1_vault_proto_rawDescData
 }
 
-var file_jumpgate_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_jumpgate_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_jumpgate_vault_v1_vault_proto_goTypes = []any{
 	(*InitCARequest)(nil),             // 0: jumpgate.vault.v1.InitCARequest
 	(*InitCAResponse)(nil),            // 1: jumpgate.vault.v1.InitCAResponse
 	(*GetCAPublicRequest)(nil),        // 2: jumpgate.vault.v1.GetCAPublicRequest
 	(*GetCAPublicResponse)(nil),       // 3: jumpgate.vault.v1.GetCAPublicResponse
-	(*SetAssetSecretRequest)(nil),     // 4: jumpgate.vault.v1.SetAssetSecretRequest
-	(*SetAssetSecretResponse)(nil),    // 5: jumpgate.vault.v1.SetAssetSecretResponse
-	(*DeleteAssetSecretRequest)(nil),  // 6: jumpgate.vault.v1.DeleteAssetSecretRequest
-	(*DeleteAssetSecretResponse)(nil), // 7: jumpgate.vault.v1.DeleteAssetSecretResponse
-	(*ListAssetSecretsRequest)(nil),   // 8: jumpgate.vault.v1.ListAssetSecretsRequest
-	(*AssetSecretMeta)(nil),           // 9: jumpgate.vault.v1.AssetSecretMeta
-	(*ListAssetSecretsResponse)(nil),  // 10: jumpgate.vault.v1.ListAssetSecretsResponse
-	(*SetSSHAssetConfigRequest)(nil),  // 11: jumpgate.vault.v1.SetSSHAssetConfigRequest
-	(*SetSSHAssetConfigResponse)(nil), // 12: jumpgate.vault.v1.SetSSHAssetConfigResponse
-	(*GetSSHAssetConfigRequest)(nil),  // 13: jumpgate.vault.v1.GetSSHAssetConfigRequest
-	(*GetSSHAssetConfigResponse)(nil), // 14: jumpgate.vault.v1.GetSSHAssetConfigResponse
+	(*InitSessionKeyRequest)(nil),     // 4: jumpgate.vault.v1.InitSessionKeyRequest
+	(*InitSessionKeyResponse)(nil),    // 5: jumpgate.vault.v1.InitSessionKeyResponse
+	(*SetAssetSecretRequest)(nil),     // 6: jumpgate.vault.v1.SetAssetSecretRequest
+	(*SetAssetSecretResponse)(nil),    // 7: jumpgate.vault.v1.SetAssetSecretResponse
+	(*DeleteAssetSecretRequest)(nil),  // 8: jumpgate.vault.v1.DeleteAssetSecretRequest
+	(*DeleteAssetSecretResponse)(nil), // 9: jumpgate.vault.v1.DeleteAssetSecretResponse
+	(*ListAssetSecretsRequest)(nil),   // 10: jumpgate.vault.v1.ListAssetSecretsRequest
+	(*AssetSecretMeta)(nil),           // 11: jumpgate.vault.v1.AssetSecretMeta
+	(*ListAssetSecretsResponse)(nil),  // 12: jumpgate.vault.v1.ListAssetSecretsResponse
+	(*SetSSHAssetConfigRequest)(nil),  // 13: jumpgate.vault.v1.SetSSHAssetConfigRequest
+	(*SetSSHAssetConfigResponse)(nil), // 14: jumpgate.vault.v1.SetSSHAssetConfigResponse
+	(*GetSSHAssetConfigRequest)(nil),  // 15: jumpgate.vault.v1.GetSSHAssetConfigRequest
+	(*GetSSHAssetConfigResponse)(nil), // 16: jumpgate.vault.v1.GetSSHAssetConfigResponse
 }
 var file_jumpgate_vault_v1_vault_proto_depIdxs = []int32{
-	9,  // 0: jumpgate.vault.v1.ListAssetSecretsResponse.secrets:type_name -> jumpgate.vault.v1.AssetSecretMeta
+	11, // 0: jumpgate.vault.v1.ListAssetSecretsResponse.secrets:type_name -> jumpgate.vault.v1.AssetSecretMeta
 	0,  // 1: jumpgate.vault.v1.VaultService.InitCA:input_type -> jumpgate.vault.v1.InitCARequest
 	2,  // 2: jumpgate.vault.v1.VaultService.GetCAPublic:input_type -> jumpgate.vault.v1.GetCAPublicRequest
-	4,  // 3: jumpgate.vault.v1.VaultService.SetAssetSecret:input_type -> jumpgate.vault.v1.SetAssetSecretRequest
-	6,  // 4: jumpgate.vault.v1.VaultService.DeleteAssetSecret:input_type -> jumpgate.vault.v1.DeleteAssetSecretRequest
-	8,  // 5: jumpgate.vault.v1.VaultService.ListAssetSecrets:input_type -> jumpgate.vault.v1.ListAssetSecretsRequest
-	11, // 6: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:input_type -> jumpgate.vault.v1.SetSSHAssetConfigRequest
-	13, // 7: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:input_type -> jumpgate.vault.v1.GetSSHAssetConfigRequest
-	1,  // 8: jumpgate.vault.v1.VaultService.InitCA:output_type -> jumpgate.vault.v1.InitCAResponse
-	3,  // 9: jumpgate.vault.v1.VaultService.GetCAPublic:output_type -> jumpgate.vault.v1.GetCAPublicResponse
-	5,  // 10: jumpgate.vault.v1.VaultService.SetAssetSecret:output_type -> jumpgate.vault.v1.SetAssetSecretResponse
-	7,  // 11: jumpgate.vault.v1.VaultService.DeleteAssetSecret:output_type -> jumpgate.vault.v1.DeleteAssetSecretResponse
-	10, // 12: jumpgate.vault.v1.VaultService.ListAssetSecrets:output_type -> jumpgate.vault.v1.ListAssetSecretsResponse
-	12, // 13: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:output_type -> jumpgate.vault.v1.SetSSHAssetConfigResponse
-	14, // 14: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:output_type -> jumpgate.vault.v1.GetSSHAssetConfigResponse
-	8,  // [8:15] is the sub-list for method output_type
-	1,  // [1:8] is the sub-list for method input_type
+	4,  // 3: jumpgate.vault.v1.VaultService.InitSessionKey:input_type -> jumpgate.vault.v1.InitSessionKeyRequest
+	6,  // 4: jumpgate.vault.v1.VaultService.SetAssetSecret:input_type -> jumpgate.vault.v1.SetAssetSecretRequest
+	8,  // 5: jumpgate.vault.v1.VaultService.DeleteAssetSecret:input_type -> jumpgate.vault.v1.DeleteAssetSecretRequest
+	10, // 6: jumpgate.vault.v1.VaultService.ListAssetSecrets:input_type -> jumpgate.vault.v1.ListAssetSecretsRequest
+	13, // 7: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:input_type -> jumpgate.vault.v1.SetSSHAssetConfigRequest
+	15, // 8: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:input_type -> jumpgate.vault.v1.GetSSHAssetConfigRequest
+	1,  // 9: jumpgate.vault.v1.VaultService.InitCA:output_type -> jumpgate.vault.v1.InitCAResponse
+	3,  // 10: jumpgate.vault.v1.VaultService.GetCAPublic:output_type -> jumpgate.vault.v1.GetCAPublicResponse
+	5,  // 11: jumpgate.vault.v1.VaultService.InitSessionKey:output_type -> jumpgate.vault.v1.InitSessionKeyResponse
+	7,  // 12: jumpgate.vault.v1.VaultService.SetAssetSecret:output_type -> jumpgate.vault.v1.SetAssetSecretResponse
+	9,  // 13: jumpgate.vault.v1.VaultService.DeleteAssetSecret:output_type -> jumpgate.vault.v1.DeleteAssetSecretResponse
+	12, // 14: jumpgate.vault.v1.VaultService.ListAssetSecrets:output_type -> jumpgate.vault.v1.ListAssetSecretsResponse
+	14, // 15: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:output_type -> jumpgate.vault.v1.SetSSHAssetConfigResponse
+	16, // 16: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:output_type -> jumpgate.vault.v1.GetSSHAssetConfigResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -858,7 +947,7 @@ func file_jumpgate_vault_v1_vault_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_vault_v1_vault_proto_rawDesc), len(file_jumpgate_vault_v1_vault_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
