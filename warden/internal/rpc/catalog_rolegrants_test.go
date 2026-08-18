@@ -185,6 +185,27 @@ func TestExplainRole(t *testing.T) {
 		t.Fatal("expected binding id")
 	}
 
+	// multi-path: add a SECOND, distinct derivation — a direct standing binding of
+	// owner on the asset itself (subject = alice). She now holds owner@pg via both
+	// the prod folder-cascade path and this direct-on-asset path.
+	if _, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
+		RoleId: ownerID, Kind: "standing", ScopeAssetId: pgID, SubjectUserId: aliceID,
+	}), tok)); err != nil {
+		t.Fatalf("direct asset binding: %v", err)
+	}
+	multiExp, err := cat.ExplainRole(ctx, withToken(connect.NewRequest(&catalogv1.ExplainRoleRequest{
+		UserId: aliceID, RoleId: ownerID, AssetId: pgID,
+	}), tok))
+	if err != nil {
+		t.Fatalf("explain multi: %v", err)
+	}
+	if !multiExp.Msg.Holds {
+		t.Fatal("expected holds=true with two derivations")
+	}
+	if len(multiExp.Msg.Paths) < 2 {
+		t.Fatalf("expected >= 2 paths via two derivations, got %d", len(multiExp.Msg.Paths))
+	}
+
 	// negative: bob has no path.
 	bob, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "bob@x", DisplayName: "Bob", Password: "password123"}), tok))
 	if err != nil {

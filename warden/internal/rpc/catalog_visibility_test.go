@@ -60,8 +60,8 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// readonly cascades down folders via an explicit parent self-rule. There is no
-	// AddRoleGrant RPC yet (Task 4), so seed the rule directly via the DB.
+	// readonly cascades down folders via an explicit parent self-rule; seed the
+	// cascade rule directly via the DB for test setup.
 	roleID := uuid.MustParse(role.Msg.Role.Id)
 	if _, err := gen.New(pool).CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: roleID, Via: "parent"}); err != nil {
 		t.Fatal(err)
