@@ -56,10 +56,13 @@ folder cascade is resolved through the explicit role-rewrite graph.
 
 ## Standing access — "what can I do right now?"
 
-A user has a capability on an asset when they hold a **`standing`** RoleBinding
-whose **role** includes that capability, where the binding's **subject** is the
-user (or a group they're transitively in) and whose **scope** is the asset or any
-ancestor folder.
+A user has a capability on an asset when they **hold** — per the explicit
+role-rewrite resolution (`HoldsRole`) — a role that includes that capability on
+that asset, backed by a **`standing`** RoleBinding whose **subject** is the user
+(or a group they're transitively in). Concretely that binding is either on the
+asset itself, or on an **ancestor folder for a role that declares a `parent`
+cascade rule** (`R ⊇ R via parent`) — a folder binding for a role with no such
+rule confers access on the folder object alone, not its descendants.
 
 **Worked example**
 
@@ -126,8 +129,9 @@ out as a `standing` binding by an admin).
 A rule carries:
 - `required_approvals` — the **N-of-M** threshold.
 - an optional **approver-role** — "whoever holds *this role* on the requested
-  scope may approve" (evaluated as a `standing` binding on the asset or an
-  ancestor folder, group-aware).
+  asset may approve", resolved via the role-rewrite graph (`HoldsRole`), the same
+  explicit resolution as standing access (a direct binding on the asset, or an
+  ancestor-folder binding for a role with a `parent` cascade rule), group-aware.
 - optional **explicit approver subjects** (users/groups).
 - **Approvers = approver-role holders ∪ explicit subjects.**
 
@@ -153,6 +157,7 @@ is deliberately a different (usually heavier) approval than narrow `admin@asset`
 ```
 Role:     cluster-admin = [connect, read, write, admin]  (resource_type: asset)
           role-level default rule: required_approvals=1, approver-role = owner
+Rewrite:  owner ⊇ owner via parent      ← makes owner cascade down folders
 Folder:   k8s ; Asset: cluster-x (in k8s)
 Binding:  eng → cluster-admin   REQUESTABLE   on folder k8s     (eligibility)
 Binding:  dana → owner          STANDING      on folder k8s     (dana is an owner)
@@ -161,8 +166,9 @@ Binding:  dana → owner          STANDING      on folder k8s     (dana is an ow
 `alice ∈ eng` requests `cluster-admin` on `cluster-x`:
 - `EffectiveRule(cluster-admin, cluster-x)` → the role-level default (no override) →
   requestable, needs **1** approval.
-- Approvers = holders of `owner` on `cluster-x` (via the `k8s` folder) ∪ explicit →
-  **dana** can approve.
+- Approvers = holders of `owner` on `cluster-x` (resolved via `HoldsRole`) ∪ explicit.
+  `owner` cascades `k8s → cluster-x` via its `owner ⊇ owner via parent` rule, so
+  dana's folder binding confers `owner` on `cluster-x` → **dana** can approve.
 - On approval (M3c): a **time-boxed `standing` cluster-admin binding** is written for
   alice on cluster-x; a reaper removes it at expiry, reverting her to requestable.
 
