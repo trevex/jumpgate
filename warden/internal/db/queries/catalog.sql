@@ -22,6 +22,15 @@ SELECT * FROM assets WHERE id = ANY($1::uuid[]);
 -- name: ListRoleBindingsByAsset :many
 SELECT * FROM role_bindings WHERE scope_asset_id = $1 ORDER BY id;
 
+-- name: ListRoleBindings :many
+SELECT * FROM role_bindings
+WHERE (sqlc.narg('role_id')::uuid IS NULL OR role_id = sqlc.narg('role_id'))
+  AND (sqlc.narg('scope_folder_id')::uuid IS NULL OR scope_folder_id = sqlc.narg('scope_folder_id'))
+  AND (sqlc.narg('scope_asset_id')::uuid IS NULL OR scope_asset_id = sqlc.narg('scope_asset_id'))
+  AND (sqlc.narg('subject_user_id')::uuid IS NULL OR subject_user_id = sqlc.narg('subject_user_id'))
+  AND (sqlc.narg('subject_group_id')::uuid IS NULL OR subject_group_id = sqlc.narg('subject_group_id'))
+ORDER BY id;
+
 -- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1;
 

@@ -43,14 +43,14 @@ credential-injected, fully recorded, and auto-expiring.
 The single source of truth and the brain. Serves the REST API + embedded web UI.
 Modules (all ⬜ except the HTTP skeleton):
 
-- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService + CatalogService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
+- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService + CatalogService + AccessService + AccessRequestService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
 - **Identity** 🟡 (M2b: local users/groups/nested memberships + password login/opaque tokens + admin guard; OIDC/SAML/SCIM later). Initial admin seeded via `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` on first startup.
 - **Authorization** ✅ (recursive-CTE Authorizer + catalog RPCs; OpenFGA remains a future drop-in behind the seam). See [Access model](#access-model).
 - **Role service** ⬜ — custom roles as capability bundles.
-- **Resource catalog** ✅ folders/assets/roles/role-bindings CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding.
+- **Resource catalog** ✅ folders/assets CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding. Roles / role-grants / role-bindings / request-policies CRUD live in AccessService.
 - **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
 - **JIT / approval engine** ⬜ — access requests, approvals, time-boxed grants, reaper.
-- **Approvals** 🟡 (M3b) ApprovalRule per (role, scope): role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override; approvers = holders of an approver-role on the requested scope ∪ explicit subjects; most-specific rule wins; no rule ⇒ not JIT-requestable. Resolver (`EffectiveRule`, `IsApprover`) + `ApprovalService` (admin CRUD + `ResolveApproval`).
+- **Approvals** 🟡 (M3b) request-policy per (role, scope): role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override; approvers = holders of an approver-role on the requested scope ∪ explicit subjects; most-specific rule wins; no rule ⇒ not JIT-requestable. Resolver (`EffectiveRule`, `IsApprover`) + request-policy CRUD in `AccessService`; `ResolveApproval` in `AccessRequestService`.
 - **Audit log** 🟡 (M3a) hash-chained tamper-evident audit log (`entry_hash = sha256(prev_hash ‖ canonical(entry))`); append-only with advisory-lock genesis; chain independently verifiable (Append/Verify).
 - **Recording service** ⬜ — session blobs to object store; metadata + hashes in Postgres.
 - **Worker registry** ⬜ — watches k8s Endpoints; feeds the gateway its roster.
