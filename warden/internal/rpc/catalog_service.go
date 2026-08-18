@@ -99,7 +99,7 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 	}
 	f, err := s.q.CreateFolder(ctx, gen.CreateFolderParams{Name: req.Msg.Name, ParentID: parent})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err) // a bad parent_id is InvalidArgument, not Internal
 	}
 	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: toFolderMsg(f)}), nil
 }
@@ -146,7 +146,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	}
 	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}")})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}
 	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsg(a)}), nil
 }
