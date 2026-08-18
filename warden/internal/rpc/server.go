@@ -3,7 +3,6 @@ package rpc
 
 import (
 	"net/http"
-	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
@@ -16,15 +15,15 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
-	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // Register mounts all warden RPC services onto mux with auth + validation
-// interceptors. maxGrantTTL is the hard ceiling on a minted JIT grant's lifetime.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, maxGrantTTL time.Duration) error {
+// interceptors. arSvc is the shared access-request Service (its terminator + audit
+// are also used by the expiry reaper, so caller builds it ONCE and shares it).
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -37,9 +36,6 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, maxGrantTTL time.Duration)
 
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
-	auditLog := audit.New(pool)
-	// NoopTerminator until M4 wires live-session teardown against the gateway.
-	arSvc := accessrequest.NewService(pool, auditLog, resolver, roles, accessrequest.NoopTerminator{}, maxGrantTTL)
 
 	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc), opts)
 	mux.Handle(idPath, idHandler)

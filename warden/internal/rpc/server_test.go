@@ -9,11 +9,28 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
+
+// testAccessRequestService builds a shared access-request Service for the rpc test
+// servers (mirrors the wiring in main.go / rpc.Register).
+func testAccessRequestService(pool *pgxpool.Pool) *accessrequest.Service {
+	return accessrequest.NewService(
+		pool,
+		audit.New(pool),
+		approvals.New(pool),
+		authz.NewRoleResolver(pool),
+		accessrequest.NoopTerminator{},
+		8*time.Hour,
+	)
+}
 
 func TestMuxServesHealthzAndRegisters(t *testing.T) {
 	dsn := testsupport.StartPostgres(t)
@@ -28,7 +45,7 @@ func TestMuxServesHealthzAndRegisters(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, 8*time.Hour); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
