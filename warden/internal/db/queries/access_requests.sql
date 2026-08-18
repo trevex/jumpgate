@@ -37,6 +37,15 @@ SELECT * FROM access_grants WHERE id = $1;
 -- name: ListGrantsBySubject :many
 SELECT * FROM access_grants WHERE subject_user_id = $1 ORDER BY granted_at DESC;
 
+-- name: ListGrantsFiltered :many
+-- Admin listing: all grants (active + past), optionally narrowed to a subject
+-- and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
+-- active_only=false => include revoked/expired.
+SELECT * FROM access_grants
+WHERE (sqlc.narg(subject_user_id)::uuid IS NULL OR subject_user_id = sqlc.narg(subject_user_id)::uuid)
+  AND (NOT @active_only::bool OR (revoked_at IS NULL AND expires_at > now()))
+ORDER BY granted_at DESC;
+
 -- name: RevokeGrant :one
 UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $3
 WHERE id = $1 AND revoked_at IS NULL

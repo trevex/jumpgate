@@ -307,6 +307,52 @@ func (q *Queries) ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UU
 	return items, nil
 }
 
+const listGrantsFiltered = `-- name: ListGrantsFiltered :many
+SELECT id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason FROM access_grants
+WHERE ($1::uuid IS NULL OR subject_user_id = $1::uuid)
+  AND (NOT $2::bool OR (revoked_at IS NULL AND expires_at > now()))
+ORDER BY granted_at DESC
+`
+
+type ListGrantsFilteredParams struct {
+	SubjectUserID pgtype.UUID `json:"subject_user_id"`
+	ActiveOnly    bool        `json:"active_only"`
+}
+
+// Admin listing: all grants (active + past), optionally narrowed to a subject
+// and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
+// active_only=false => include revoked/expired.
+func (q *Queries) ListGrantsFiltered(ctx context.Context, arg ListGrantsFilteredParams) ([]AccessGrant, error) {
+	rows, err := q.db.Query(ctx, listGrantsFiltered, arg.SubjectUserID, arg.ActiveOnly)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessGrant
+	for rows.Next() {
+		var i AccessGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestID,
+			&i.RoleID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.GrantedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingRequests = `-- name: ListPendingRequests :many
 SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests WHERE status = 'pending' ORDER BY created_at DESC
 `

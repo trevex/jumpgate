@@ -59,6 +59,10 @@ type Querier interface {
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
+	// Admin listing: all grants (active + past), optionally narrowed to a subject
+	// and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
+	// active_only=false => include revoked/expired.
+	ListGrantsFiltered(ctx context.Context, arg ListGrantsFilteredParams) ([]AccessGrant, error)
 	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
 	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)

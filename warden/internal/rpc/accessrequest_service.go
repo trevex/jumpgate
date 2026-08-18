@@ -50,6 +50,12 @@ func mapAccessRequestErr(err error) error {
 		return connect.NewError(connect.CodeAlreadyExists, errors.New("already voted on this request"))
 	case errors.Is(err, accessrequest.ErrNotRequester):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("not the requester"))
+	case errors.Is(err, accessrequest.ErrGrantNotFound):
+		return connect.NewError(connect.CodeNotFound, errors.New("grant not found"))
+	case errors.Is(err, accessrequest.ErrRevokeForbidden):
+		return connect.NewError(connect.CodePermissionDenied, errors.New("not permitted to revoke this grant"))
+	case errors.Is(err, accessrequest.ErrGrantInactive):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("grant is already inactive"))
 	default:
 		return connect.NewError(connect.CodeInternal, err)
 	}
@@ -72,6 +78,23 @@ func toAccessRequestMsg(r accessrequest.Request) *accessrequestv1.AccessRequest 
 	}
 	if r.GrantID != uuid.Nil {
 		msg.GrantId = r.GrantID.String()
+	}
+	return msg
+}
+
+func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
+	msg := &accessrequestv1.Grant{
+		Id:            g.ID.String(),
+		RoleId:        g.RoleID.String(),
+		AssetId:       g.AssetID.String(),
+		SubjectUserId: g.SubjectUserID.String(),
+		GrantedAt:     g.GrantedAt.UTC().Format(time.RFC3339),
+		ExpiresAt:     g.ExpiresAt.UTC().Format(time.RFC3339),
+		RevokedReason: g.RevokedReason,
+		Active:        g.Active,
+	}
+	if !g.RevokedAt.IsZero() {
+		msg.RevokedAt = g.RevokedAt.UTC().Format(time.RFC3339)
 	}
 	return msg
 }
@@ -209,6 +232,65 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, _ *conne
 	out := &accessrequestv1.ListPendingApprovalsResponse{}
 	for i := range rows {
 		out.Requests = append(out.Requests, toAccessRequestMsg(rows[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// RevokeGrant revokes an access grant (admin, subject self-revoke, or approver).
+func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Request[accessrequestv1.RevokeGrantRequest]) (*connect.Response[accessrequestv1.RevokeGrantResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	grantID, err := uuid.Parse(req.Msg.GrantId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad grant_id"))
+	}
+	g, err := s.svc.RevokeGrant(ctx, caller, grantID, req.Msg.Reason)
+	if err != nil {
+		return nil, mapAccessRequestErr(err)
+	}
+	out := toGrantMsg(s.svc.GrantDTO(g))
+	return connect.NewResponse(&accessrequestv1.RevokeGrantResponse{Grant: out}), nil
+}
+
+// ListMyGrants lists the caller's own grants (authenticated).
+func (s *AccessRequestServer) ListMyGrants(ctx context.Context, _ *connect.Request[accessrequestv1.ListMyGrantsRequest]) (*connect.Response[accessrequestv1.ListMyGrantsResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	rows, err := s.svc.ListMyGrants(ctx, caller.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &accessrequestv1.ListMyGrantsResponse{}
+	for i := range rows {
+		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ListGrants lists grants for admin introspection (admin only).
+func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	filter := accessrequest.GrantFilter{ActiveOnly: req.Msg.ActiveOnly}
+	if req.Msg.SubjectUserId != "" {
+		sid, err := uuid.Parse(req.Msg.SubjectUserId)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_user_id"))
+		}
+		filter.Subject = sid
+	}
+	rows, err := s.svc.ListGrants(ctx, filter)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &accessrequestv1.ListGrantsResponse{}
+	for i := range rows {
+		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
 	}
 	return connect.NewResponse(out), nil
 }

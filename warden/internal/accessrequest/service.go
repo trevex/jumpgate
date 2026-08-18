@@ -39,6 +39,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
@@ -57,6 +58,9 @@ var (
 	ErrSelfApprove      = errors.New("cannot approve your own request")      // → PermissionDenied
 	ErrAlreadyVoted     = errors.New("already voted on this request")        // → AlreadyExists
 	ErrNotRequester     = errors.New("not the requester")                    // → PermissionDenied
+	ErrGrantNotFound    = errors.New("grant not found")                      // → NotFound
+	ErrRevokeForbidden  = errors.New("not permitted to revoke this grant")   // → PermissionDenied
+	ErrGrantInactive    = errors.New("grant is already inactive")            // → FailedPrecondition
 )
 
 // Request is the DTO returned to the transport layer.
@@ -74,21 +78,39 @@ type Request struct {
 	GrantID           uuid.UUID // uuid.Nil when no grant minted
 }
 
-// Service is the JIT access-request domain service.
-type Service struct {
-	pool     *pgxpool.Pool
-	audit    *audit.Logger
-	resolver *approvals.Resolver
-	roles    *authz.RoleResolver
-	maxTTL   time.Duration
+// Grant is the DTO for an access_grant returned to the transport layer.
+type Grant struct {
+	ID            uuid.UUID
+	RoleID        uuid.UUID
+	AssetID       uuid.UUID
+	SubjectUserID uuid.UUID
+	GrantedAt     time.Time
+	ExpiresAt     time.Time
+	RevokedAt     time.Time // zero when not revoked
+	RevokedReason string
+	Active        bool // revoked_at IS NULL AND expires_at > now()
 }
 
-// NewService constructs the access-request Service.
-func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.Resolver, roles *authz.RoleResolver, maxTTL time.Duration) *Service {
+// Service is the JIT access-request domain service.
+type Service struct {
+	pool       *pgxpool.Pool
+	audit      *audit.Logger
+	resolver   *approvals.Resolver
+	roles      *authz.RoleResolver
+	terminator GrantTerminator
+	maxTTL     time.Duration
+}
+
+// NewService constructs the access-request Service. A nil terminator defaults to
+// NoopTerminator (session teardown is wired against the gateway in M4).
+func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.Resolver, roles *authz.RoleResolver, terminator GrantTerminator, maxTTL time.Duration) *Service {
 	if maxTTL <= 0 {
 		maxTTL = 8 * time.Hour
 	}
-	return &Service{pool: pool, audit: auditLog, resolver: resolver, roles: roles, maxTTL: maxTTL}
+	if terminator == nil {
+		terminator = NoopTerminator{}
+	}
+	return &Service{pool: pool, audit: auditLog, resolver: resolver, roles: roles, terminator: terminator, maxTTL: maxTTL}
 }
 
 // intervalToDuration converts a pgtype.Interval to a time.Duration, folding
@@ -523,5 +545,168 @@ func (s *Service) appendGrant(ctx context.Context, actor uuid.UUID, req gen.Acce
 		Details: raw,
 	}); err != nil {
 		slog.Error("audit append failed", "event", EventGrantActivated, "grant_id", grantID.String(), "err", err)
+	}
+}
+
+// RevokeGrant revokes a single access_grant. The caller may revoke if they are an
+// admin, the grant's subject (self-revoke), or a STANDING approver for the grant's
+// (role, asset) — symmetric with approval authority. On success the revocation is
+// audited and the terminator is notified so live sessions relying on the grant are
+// torn down (both post-commit, best-effort).
+func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, grantID uuid.UUID, reason string) (gen.AccessGrant, error) {
+	g, err := gen.New(s.pool).GetGrant(ctx, grantID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return gen.AccessGrant{}, ErrGrantNotFound
+	}
+	if err != nil {
+		return gen.AccessGrant{}, fmt.Errorf("get grant: %w", err)
+	}
+
+	authorized := caller.IsAdmin || g.SubjectUserID == caller.ID
+	if !authorized {
+		ok, err := s.resolver.IsApprover(ctx, caller.ID, g.RoleID, g.ScopeAssetID)
+		if err != nil {
+			return gen.AccessGrant{}, err
+		}
+		authorized = ok
+	}
+	if !authorized {
+		return gen.AccessGrant{}, ErrRevokeForbidden
+	}
+
+	revoked, err := gen.New(s.pool).RevokeGrant(ctx, gen.RevokeGrantParams{
+		ID:            grantID,
+		RevokedBy:     pgtype.UUID{Bytes: caller.ID, Valid: true},
+		RevokedReason: pgtype.Text{String: reason, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// 0 rows updated: the grant was already revoked or has no live window.
+		return gen.AccessGrant{}, ErrGrantInactive
+	}
+	if err != nil {
+		return gen.AccessGrant{}, fmt.Errorf("revoke grant: %w", err)
+	}
+
+	s.appendRevoked(ctx, caller.ID, revoked)
+	s.terminate(ctx, revoked.ID)
+	return revoked, nil
+}
+
+// RevokeGrantsForUser revokes ALL of a user's active grants (used by the
+// deactivation cascade). Each revoked grant is audited and its sessions
+// terminated. Returns the number of grants revoked.
+func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UUID, reason string) (int, error) {
+	revoked, err := gen.New(s.pool).RevokeActiveGrantsForUser(ctx, gen.RevokeActiveGrantsForUserParams{
+		SubjectUserID: userID,
+		RevokedBy:     pgtype.UUID{Bytes: actor, Valid: true},
+		RevokedReason: pgtype.Text{String: reason, Valid: true},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("revoke grants for user: %w", err)
+	}
+	for _, g := range revoked {
+		s.appendRevoked(ctx, actor, g)
+		s.terminate(ctx, g.ID)
+	}
+	return len(revoked), nil
+}
+
+// ListMyGrants returns the caller's own grants (active + past), newest first.
+func (s *Service) ListMyGrants(ctx context.Context, subject uuid.UUID) ([]Grant, error) {
+	rows, err := gen.New(s.pool).ListGrantsBySubject(ctx, subject)
+	if err != nil {
+		return nil, fmt.Errorf("list my grants: %w", err)
+	}
+	return toGrants(rows), nil
+}
+
+// GrantFilter narrows an admin grant listing. Subject uuid.Nil = any subject.
+type GrantFilter struct {
+	Subject    uuid.UUID
+	ActiveOnly bool
+}
+
+// ListGrants returns grants for admin introspection (active + past), optionally
+// filtered by subject and/or active-only.
+func (s *Service) ListGrants(ctx context.Context, filter GrantFilter) ([]Grant, error) {
+	params := gen.ListGrantsFilteredParams{ActiveOnly: filter.ActiveOnly}
+	if filter.Subject != uuid.Nil {
+		params.SubjectUserID = pgtype.UUID{Bytes: filter.Subject, Valid: true}
+	}
+	rows, err := gen.New(s.pool).ListGrantsFiltered(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list grants: %w", err)
+	}
+	return toGrants(rows), nil
+}
+
+// GrantDTO maps a raw gen.AccessGrant to the transport DTO (used by handlers
+// that receive the revoked grant from RevokeGrant).
+func (s *Service) GrantDTO(g gen.AccessGrant) Grant { return toGrant(g) }
+
+// toGrant maps a gen.AccessGrant to the DTO, deriving the active flag.
+func toGrant(g gen.AccessGrant) Grant {
+	out := Grant{
+		ID:            g.ID,
+		RoleID:        g.RoleID,
+		AssetID:       g.ScopeAssetID,
+		SubjectUserID: g.SubjectUserID,
+		GrantedAt:     g.GrantedAt,
+		ExpiresAt:     g.ExpiresAt,
+		Active:        !g.RevokedAt.Valid && g.ExpiresAt.After(time.Now()),
+	}
+	if g.RevokedAt.Valid {
+		out.RevokedAt = g.RevokedAt.Time
+	}
+	if g.RevokedReason.Valid {
+		out.RevokedReason = g.RevokedReason.String
+	}
+	return out
+}
+
+func toGrants(rows []gen.AccessGrant) []Grant {
+	out := make([]Grant, 0, len(rows))
+	for _, g := range rows {
+		out = append(out, toGrant(g))
+	}
+	return out
+}
+
+// terminate notifies the terminator that grantID's sessions must be torn down.
+// Best-effort: a terminator error is logged, not returned (mirrors audit append).
+func (s *Service) terminate(ctx context.Context, grantID uuid.UUID) {
+	if s.terminator == nil {
+		return
+	}
+	if err := s.terminator.TerminateGrant(ctx, grantID); err != nil {
+		slog.Error("grant terminator failed", "grant_id", grantID.String(), "err", err)
+	}
+}
+
+// appendRevoked writes the grant-revocation audit event (best-effort, post-commit).
+func (s *Service) appendRevoked(ctx context.Context, actor uuid.UUID, g gen.AccessGrant) {
+	if s.audit == nil {
+		return
+	}
+	reason := ""
+	if g.RevokedReason.Valid {
+		reason = g.RevokedReason.String
+	}
+	details := map[string]any{
+		"grant_id":   g.ID.String(),
+		"request_id": g.RequestID.String(),
+		"role_id":    g.RoleID.String(),
+		"asset_id":   g.ScopeAssetID.String(),
+		"subject":    g.SubjectUserID.String(),
+		"reason":     reason,
+	}
+	raw, _ := json.Marshal(details)
+	if err := s.audit.Append(ctx, audit.Event{
+		Type:    EventGrantRevoked,
+		ActorID: actor,
+		Subject: "access_grant:" + g.ID.String(),
+		Details: raw,
+	}); err != nil {
+		slog.Error("audit append failed", "event", EventGrantRevoked, "grant_id", g.ID.String(), "err", err)
 	}
 }
