@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // protoc's include path there. `buf` is provided by the Nix devshell.
     println!("cargo:rerun-if-changed=../proto/jumpgate/health/v1/health.proto");
     println!("cargo:rerun-if-changed=../proto/jumpgate/session/v1/session.proto");
+    println!("cargo:rerun-if-changed=../proto/jumpgate/dataplane/v1/dataplane.proto");
     println!("cargo:rerun-if-changed=../proto/buf.yaml");
     println!("cargo:rerun-if-changed=../buf.yaml");
     println!("cargo:rerun-if-changed=../buf.lock");
@@ -27,9 +28,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let health = export_dir.join("jumpgate/health/v1/health.proto");
     let session = export_dir.join("jumpgate/session/v1/session.proto");
+    let dataplane = export_dir.join("jumpgate/dataplane/v1/dataplane.proto");
     tonic_build::configure()
         .build_server(false)
         .build_client(true)
-        .compile_protos(&[health, session], &[export_dir])?;
+        .compile_protos(&[health, session, dataplane], &[export_dir])?;
     Ok(())
 }
