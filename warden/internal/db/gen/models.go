@@ -170,6 +170,14 @@ type RoleGrant struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type SessionSigningKey struct {
+	ID        uuid.UUID `json:"id"`
+	Sealed    []byte    `json:"sealed"`
+	PublicKey []byte    `json:"public_key"`
+	CreatedAt time.Time `json:"created_at"`
+	Active    bool      `json:"active"`
+}
+
 type SshAssetConfig struct {
 	AssetID        uuid.UUID   `json:"asset_id"`
 	AllowedLogins  []string    `json:"allowed_logins"`

@@ -31,6 +31,7 @@ type Querier interface {
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
 	CreateRoleGrant(ctx context.Context, arg CreateRoleGrantParams) (RoleGrant, error)
+	CreateSessionSigningKey(ctx context.Context, arg CreateSessionSigningKeyParams) (SessionSigningKey, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
 	DeactivateUser(ctx context.Context, id uuid.UUID) error
@@ -47,6 +48,7 @@ type Querier interface {
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
+	GetActiveSessionSigningKey(ctx context.Context) (SessionSigningKey, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	// Scoped to the owning asset: a config referencing another asset's secret (admin
 	// misconfiguration) fails closed rather than leaking a secret cross-asset.
