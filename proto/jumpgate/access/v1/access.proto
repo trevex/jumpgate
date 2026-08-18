@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+package jumpgate.access.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1;accessv1";
+
+// AccessService manages authorization configuration (admin): roles, role
+// grants (userset rewrites), standing role bindings, and JIT request policies.
+// ExplainRole is admin-or-self introspection.
+service AccessService {
+  // Roles.
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {}
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {}
+  rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {}
+
+  // Role grants (userset rewrites).
+  rpc AddRoleGrant(AddRoleGrantRequest) returns (AddRoleGrantResponse) {}
+  rpc RemoveRoleGrant(RemoveRoleGrantRequest) returns (RemoveRoleGrantResponse) {}
+  rpc ListRoleGrants(ListRoleGrantsRequest) returns (ListRoleGrantsResponse) {}
+
+  // Role bindings (standing-only).
+  rpc CreateRoleBinding(CreateRoleBindingRequest) returns (CreateRoleBindingResponse) {}
+  rpc DeleteRoleBinding(DeleteRoleBindingRequest) returns (DeleteRoleBindingResponse) {}
+  rpc ListRoleBindings(ListRoleBindingsRequest) returns (ListRoleBindingsResponse) {}
+
+  // Request policies (JIT-requestable config: approvals + requester/approver sources).
+  rpc CreateRequestPolicy(CreateRequestPolicyRequest) returns (CreateRequestPolicyResponse) {}
+  rpc UpdateRequestPolicy(UpdateRequestPolicyRequest) returns (UpdateRequestPolicyResponse) {}
+  rpc DeleteRequestPolicy(DeleteRequestPolicyRequest) returns (DeleteRequestPolicyResponse) {}
+  rpc ListRequestPolicies(ListRequestPoliciesRequest) returns (ListRequestPoliciesResponse) {}
+  rpc AddPolicySubject(AddPolicySubjectRequest) returns (AddPolicySubjectResponse) {}
+  rpc RemovePolicySubject(RemovePolicySubjectRequest) returns (RemovePolicySubjectResponse) {}
+  rpc ListPolicySubjects(ListPolicySubjectsRequest) returns (ListPolicySubjectsResponse) {}
+
+  // Introspection (admin-or-self).
+  rpc ExplainRole(ExplainRoleRequest) returns (ExplainRoleResponse) {}
+}
+
+message Role { string id = 1; string name = 2; string resource_type = 3; repeated string capabilities = 4; }
+
+message CreateRoleRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string resource_type = 2 [(buf.validate.field).string = {in: ["folder", "asset"]}];
+  // Each capability is a colon-delimited scoped path: scope:action[:qualifier…]
+  // (≥2 segments). A segment is lowercase-alphanumeric with internal hyphens.
+  // Glob patterns are permitted in a role's stored list: '*' matches exactly one
+  // segment; a trailing '**' matches one-or-more remaining segments (only as the
+  // final segment). Rejects unscoped ("admin"), empty segments ("k8s:"),
+  // non-final '**' ("k8s:**:x"), and uppercase/junk.
+  repeated string capabilities = 3 [(buf.validate.field).repeated.items.string.pattern = "^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$"];
+}
+message CreateRoleResponse { Role role = 1; }
+
+message ListRolesRequest { int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; string page_token = 2; }
+message ListRolesResponse { repeated Role roles = 1; string next_page_token = 2; }
+
+message GetRoleRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetRoleResponse { Role role = 1; }
+
+message RoleGrant { string id = 1; string role_id = 2; string source_role_id = 3; string via = 4; }
+
+message AddRoleGrantRequest {
+  string role_id        = 1 [(buf.validate.field).string.uuid = true];
+  string source_role_id = 2 [(buf.validate.field).string.uuid = true];
+  string via            = 3 [(buf.validate.field).string = {in: ["same_object", "parent"]}];
+}
+message AddRoleGrantResponse { RoleGrant grant = 1; }
+
+message RemoveRoleGrantRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message RemoveRoleGrantResponse {}
+
+message ListRoleGrantsRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListRoleGrantsResponse { repeated RoleGrant grants = 1; }
+
+message RoleBinding {
+  string id = 1;
+  string role_id = 2;
+  string scope_folder_id = 3;
+  string scope_asset_id = 4;
+  string subject_user_id = 5;
+  string subject_group_id = 6;
+}
+
+message CreateRoleBindingRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  reserved 2;  // was `kind` — role_bindings are standing-only (access-model v2)
+  reserved "kind";
+  string scope_folder_id  = 3;
+  string scope_asset_id   = 4;
+  string subject_user_id  = 5;
+  string subject_group_id = 6;
+}
+message CreateRoleBindingResponse { string id = 1; }
+
+message DeleteRoleBindingRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message DeleteRoleBindingResponse {}
+
+// ListRoleBindings filters are all optional; an empty request lists all bindings.
+message ListRoleBindingsRequest {
+  string role_id          = 1;
+  string scope_folder_id  = 2;
+  string scope_asset_id   = 3;
+  string subject_user_id  = 4;
+  string subject_group_id = 5;
+}
+message ListRoleBindingsResponse { repeated RoleBinding bindings = 1; }
+
+message RequestPolicy {
+  string id = 1;
+  string role_id = 2;
+  string scope_folder_id = 3; // empty = not folder-scoped
+  string scope_asset_id = 4;  // empty = not asset-scoped ; both empty = role-level default
+  int32 required_approvals = 5;
+  string requester_role_id = 6; // empty = no requester-role source
+  string approver_role_id = 7;  // empty = no approver-role source
+}
+
+message CreateRequestPolicyRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  string scope_folder_id = 2; // optional; empty for role-default or asset scope
+  string scope_asset_id = 3;  // optional
+  int32 required_approvals = 4 [(buf.validate.field).int32 = {gte: 1, lte: 20}];
+  string requester_role_id = 5; // optional
+  string approver_role_id = 6;  // optional
+}
+message CreateRequestPolicyResponse { RequestPolicy policy = 1; }
+
+message UpdateRequestPolicyRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  int32 required_approvals = 2 [(buf.validate.field).int32 = {gte: 1, lte: 20}];
+  string requester_role_id = 3; // optional
+  string approver_role_id = 4;  // optional
+}
+message UpdateRequestPolicyResponse { RequestPolicy policy = 1; }
+
+message DeleteRequestPolicyRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message DeleteRequestPolicyResponse {}
+
+message ListRequestPoliciesRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListRequestPoliciesResponse { repeated RequestPolicy policies = 1; }
+
+message PolicySubject {
+  string id = 1;
+  string policy_id = 2;
+  string kind = 3; // requester | approver
+  string subject_user_id = 4;
+  string subject_group_id = 5;
+}
+
+message AddPolicySubjectRequest {
+  string policy_id = 1 [(buf.validate.field).string.uuid = true];
+  string kind = 2 [(buf.validate.field).string = {in: ["requester", "approver"]}];
+  string subject_user_id = 3;  // exactly one of user/group
+  string subject_group_id = 4;
+}
+message AddPolicySubjectResponse { string id = 1; }
+
+message RemovePolicySubjectRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message RemovePolicySubjectResponse {}
+
+message ListPolicySubjectsRequest { string policy_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListPolicySubjectsResponse { repeated PolicySubject subjects = 1; }
+
+message ExplainRoleRequest {
+  string user_id  = 1 [(buf.validate.field).string.uuid = true];
+  string role_id  = 2 [(buf.validate.field).string.uuid = true];
+  string asset_id = 3 [(buf.validate.field).string.uuid = true];
+}
+message RoleGrantPathStep { string role_id = 1; string object_kind = 2; string object_id = 3; string via = 4; }
+message ExplainRolePath { repeated RoleGrantPathStep steps = 1; string binding_id = 2; string subject = 3; }
+message ExplainRoleResponse { bool holds = 1; repeated ExplainRolePath paths = 2; }

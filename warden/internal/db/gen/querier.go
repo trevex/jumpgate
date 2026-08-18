@@ -49,6 +49,7 @@ type Querier interface {
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
 	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
+	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)

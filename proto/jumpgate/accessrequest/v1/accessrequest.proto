@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package jumpgate.accessrequest.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1";
+
+// AccessRequestService is the JIT access-request runtime.
+//
+// RequestAccess/Approve/Deny/Revoke + access_grants + reaper are M3c.
+service AccessRequestService {
+  // ResolveApproval returns the effective request policy for a (role, asset) pair.
+  rpc ResolveApproval(ResolveApprovalRequest) returns (ResolveApprovalResponse) {}
+}
+
+message ResolveApprovalRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message ResolveApprovalResponse {
+  bool requestable = 1; // false = no rule => not JIT-requestable
+  int32 required_approvals = 2;
+  string approver_role_id = 3;
+}

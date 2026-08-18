@@ -8,7 +8,8 @@ import (
 	"connectrpc.com/validate"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/gen/jumpgate/approval/v1/approvalv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
@@ -34,13 +35,16 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool) error {
 	mux.Handle(idPath, idHandler)
 
 	authorizer := authz.NewSQLAuthorizer(pool)
-	roles := authz.NewRoleResolver(pool)
-	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, authorizer, roles), opts)
+	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, authorizer), opts)
 	mux.Handle(catPath, catHandler)
 
+	roles := authz.NewRoleResolver(pool)
+	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, roles), opts)
+	mux.Handle(accessPath, accessHandler)
+
 	resolver := approvals.New(pool)
-	apPath, apHandler := approvalv1connect.NewApprovalServiceHandler(NewApprovalServer(q, resolver), opts)
-	mux.Handle(apPath, apHandler)
+	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver), opts)
+	mux.Handle(arPath, arHandler)
 
 	return nil
 }
