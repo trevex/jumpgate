@@ -2,7 +2,7 @@
 
 A reference for warden's Postgres schema — the core tables, their key columns,
 and how they relate. Derived from the embedded migrations
-(`warden/internal/db/migrate/migrations/0001..0008`). This is the storage behind
+(`warden/internal/db/migrate/migrations/0001..0009`). This is the storage behind
 the concepts in [access-model.md](access-model.md); read that first for the
 *meaning*, this for the *columns*.
 
@@ -43,7 +43,14 @@ without changing the domain — see [decisions.md](decisions.md).
            │ folder_id           │ scope_folder_id (role_bindings,
            │                     │                  request_policies)
         assets ◄─────────────────┘
-     (folder_id, labels)   scope_asset_id (role_bindings, request_policies)
+     (folder_id, kind,     scope_asset_id (role_bindings, request_policies)
+      labels)  │
+               │ asset_id
+        ┌──────┴───────┐                       ca_keys  (kind ssh|x509,
+   asset_secrets   ssh_asset_config             sealed, public_material,
+   (name, sealed)  (allowed_logins[],           active — one active per kind)
+        ▲           auth_method, ────────┐      — the M3d vault (sealed at rest)
+        └───────────stored_secret_id ────┘
 
         audit_log  (seq, prev_hash, entry_hash)   — append-only, hash-chained
 
@@ -124,6 +131,7 @@ ancestor walk) assume this forest shape.
 | `id` | uuid PK |
 | `folder_id` | → `folders(id)`, **NOT NULL** (every asset lives in exactly one folder) |
 | `name` | |
+| `kind` | text, **NOT NULL DEFAULT `'ssh'`**, CHECK in (`ssh`, `postgres`, `k8s`) (added `0009`). Selects the asset's **typed credential config** (the vault) — `ssh` → `ssh_asset_config`; `postgres`/`k8s` configs are M5. `assets` stays the generic authz anchor (roles/bindings/grants/policies reference `assets.id` protocol-agnostically); `kind` only drives the [vault](architecture.md#vault--credentialbroker-m3d). |
 | `labels` | jsonb (default `{}`), GIN-indexed |
 
 ### `roles` — capability bundles
@@ -304,6 +312,60 @@ revocation = delete the row. See
 | `user_id` | → `users(id)` |
 | `token_hash` | bytea, unique |
 | `expires_at` | timestamptz |
+
+## Vault tables (M3d)
+
+The credential vault (migration `0009`). All `sealed bytea` columns hold
+**envelope-encrypted** material (a per-secret AES-256-GCM DEK wrapped by the
+master KEK — see [architecture.md](architecture.md#vault--credentialbroker-m3d)
+and [security.md](security.md#secrets-at-rest)); the plaintext **never** touches
+the DB and the sealed bytes are **never** returned via the API (`ListAssetSecrets`
+is metadata-only). See [access-model.md](access-model.md#ssh-access--os-logins-are-capabilities-m3d).
+
+### `ca_keys` — certificate-authority key material (M3d)
+
+Global CA singletons, sealed at rest. At most **one active per kind** (partial
+unique index `uq_active_ca` on `(kind) WHERE active`) — the `active` flag leaves
+room for later rotation. Created by `VaultService.InitCA(kind)`.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `kind` | text, CHECK in (`ssh`, `x509`) — SSH user CA (ed25519) or X.509 client CA (ECDSA P-256) |
+| `sealed` | bytea **NOT NULL** — `Seal`ed CA private material (SSH: 32-byte ed25519 seed; X.509: PKCS#8 key DER). Never returned via the API |
+| `public_material` | text **NOT NULL** — the distributable public half (SSH: the `authorized_keys` CA line hosts add to `TrustedUserCAKeys`; X.509: the CA cert PEM). Returned by `GetCAPublic` |
+| `created_at` | timestamptz (default `now()`) |
+| `active` | boolean **NOT NULL DEFAULT true** — one active per kind (partial unique index) |
+
+### `asset_secrets` — per-asset stored secrets (M3d)
+
+Named secrets bound to an asset (e.g. a stored SSH private key / password), sealed
+at rest. `UNIQUE (asset_id, name)`; `SetAssetSecret` upserts by `(asset_id,
+name)`. Values leave warden **only** via the broker (opened for a live credential);
+`ListAssetSecrets` returns id/name/created_at metadata only.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `asset_id` | → `assets(id)` (`ON DELETE CASCADE`) |
+| `name` | text **NOT NULL** |
+| `sealed` | bytea **NOT NULL** — `Seal`ed secret value. Never returned via the API |
+| `created_at` | timestamptz (default `now()`) |
+
+### `ssh_asset_config` — the SSH kind's typed credential config (M3d)
+
+1:1 with an `ssh` asset (`asset_id` is the PK). Describes how the broker mints an
+SSH credential: the host's OS-account allowlist and the auth method.
+
+| Column | Notes |
+|---|---|
+| `asset_id` | uuid **PK** → `assets(id)` (`ON DELETE CASCADE`) — 1:1 with the asset |
+| `allowed_logins` | `text[]` **NOT NULL** — the OS accounts that exist on the host (the allowlist). The broker's cert principals are this list **∩** the user's `ssh:login:*` capabilities — see [access-model.md](access-model.md#ssh-access--os-logins-are-capabilities-m3d) |
+| `auth_method` | text **NOT NULL**, CHECK in (`ca-cert`, `stored-key`) — mint a short-lived SSH cert via the SSH CA, or return a stored key |
+| `stored_secret_id` | → `asset_secrets(id)` (`ON DELETE RESTRICT`), nullable. **Required iff** `auth_method='stored-key'` (CHECK `stored_key_needs_secret`) |
+
+> `postgres_asset_config` / `k8s_asset_config` (the typed configs for the other
+> `assets.kind` values) land in **M5**, alongside their proxies.
 
 ## Related
 
