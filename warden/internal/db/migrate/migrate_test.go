@@ -97,3 +97,29 @@ func TestUpCreatesApprovalRules(t *testing.T) {
 		}
 	}
 }
+
+func TestUpCreatesRoleGrants(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+
+	if err := Up(dsn); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	var exists bool
+	err = pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+		"role_grants").Scan(&exists)
+	if err != nil {
+		t.Fatalf("check role_grants: %v", err)
+	}
+	if !exists {
+		t.Fatal("table \"role_grants\" was not created")
+	}
+}
