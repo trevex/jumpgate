@@ -24,7 +24,7 @@ func NewApprovalServer(q *gen.Queries, resolver *approvals.Resolver) *ApprovalSe
 	return &ApprovalServer{q: q, resolver: resolver}
 }
 
-func toApprovalRuleMsg(r gen.ApprovalRule) *approvalv1.ApprovalRule {
+func toApprovalRuleMsg(r gen.RequestPolicy) *approvalv1.ApprovalRule {
 	return &approvalv1.ApprovalRule{
 		Id:                r.ID.String(),
 		RoleId:            r.RoleID.String(),
@@ -60,12 +60,13 @@ func (s *ApprovalServer) CreateApprovalRule(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
-	rule, err := s.q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+	rule, err := s.q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            roleID,
 		ScopeFolderID:     scopeFolder,
 		ScopeAssetID:      scopeAsset,
 		RequiredApprovals: req.Msg.RequiredApprovals,
 		ApproverRoleID:    approverRole,
+		// RequesterRoleID left NULL: not exposed via RPC yet (Task 2/3).
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -82,7 +83,7 @@ func (s *ApprovalServer) DeleteApprovalRule(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
 	}
-	if err := s.q.DeleteApprovalRule(ctx, id); err != nil {
+	if err := s.q.DeleteRequestPolicy(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&approvalv1.DeleteApprovalRuleResponse{}), nil
@@ -97,7 +98,7 @@ func (s *ApprovalServer) ListApprovalRules(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	rows, err := s.q.ListApprovalRulesForRole(ctx, roleID)
+	rows, err := s.q.ListRequestPoliciesForRole(ctx, roleID)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -128,8 +129,9 @@ func (s *ApprovalServer) AddRuleApprover(ctx context.Context, req *connect.Reque
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
 	}
-	ra, err := s.q.AddRuleApprover(ctx, gen.AddRuleApproverParams{
-		RuleID:         ruleID,
+	ra, err := s.q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:       ruleID,
+		Kind:           "approver",
 		SubjectUserID:  subjUser,
 		SubjectGroupID: subjGroup,
 	})
@@ -148,7 +150,7 @@ func (s *ApprovalServer) RemoveRuleApprover(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
 	}
-	if err := s.q.DeleteRuleApprover(ctx, id); err != nil {
+	if err := s.q.RemovePolicySubject(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&approvalv1.RemoveRuleApproverResponse{}), nil

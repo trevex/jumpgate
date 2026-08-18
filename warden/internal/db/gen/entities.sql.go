@@ -158,7 +158,7 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
 `
 
 type CreateUserParams struct {
@@ -176,12 +176,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
 
 const createUserFull = `-- name: CreateUserFull :one
-INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin
+INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
 `
 
 type CreateUserFullParams struct {
@@ -200,6 +201,7 @@ func (q *Queries) CreateUserFull(ctx context.Context, arg CreateUserFullParams) 
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
@@ -254,7 +256,7 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, display_name, created_at, password_hash, is_admin FROM users
+SELECT id, email, display_name, created_at, password_hash, is_admin, deactivated_at FROM users
 WHERE ($1::uuid IS NULL OR id > $1)
 ORDER BY id
 LIMIT $2
@@ -281,6 +283,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.PasswordHash,
 			&i.IsAdmin,
+			&i.DeactivatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -11,24 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type ApprovalRule struct {
-	ID                uuid.UUID   `json:"id"`
-	RoleID            uuid.UUID   `json:"role_id"`
-	ScopeFolderID     pgtype.UUID `json:"scope_folder_id"`
-	ScopeAssetID      pgtype.UUID `json:"scope_asset_id"`
-	RequiredApprovals int32       `json:"required_approvals"`
-	ApproverRoleID    pgtype.UUID `json:"approver_role_id"`
-	CreatedAt         time.Time   `json:"created_at"`
-}
-
-type ApprovalRuleApprover struct {
-	ID             uuid.UUID   `json:"id"`
-	RuleID         uuid.UUID   `json:"rule_id"`
-	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
-	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
-	CreatedAt      time.Time   `json:"created_at"`
-}
-
 type Asset struct {
 	ID        uuid.UUID `json:"id"`
 	FolderID  uuid.UUID `json:"folder_id"`
@@ -78,6 +60,26 @@ type GroupMembership struct {
 	CreatedAt     time.Time   `json:"created_at"`
 }
 
+type RequestPolicy struct {
+	ID                uuid.UUID   `json:"id"`
+	RoleID            uuid.UUID   `json:"role_id"`
+	ScopeFolderID     pgtype.UUID `json:"scope_folder_id"`
+	ScopeAssetID      pgtype.UUID `json:"scope_asset_id"`
+	RequiredApprovals int32       `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID `json:"approver_role_id"`
+	CreatedAt         time.Time   `json:"created_at"`
+	RequesterRoleID   pgtype.UUID `json:"requester_role_id"`
+}
+
+type RequestPolicySubject struct {
+	ID             uuid.UUID   `json:"id"`
+	PolicyID       uuid.UUID   `json:"policy_id"`
+	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
+	CreatedAt      time.Time   `json:"created_at"`
+	Kind           string      `json:"kind"`
+}
+
 type Role struct {
 	ID           uuid.UUID `json:"id"`
 	Name         string    `json:"name"`
@@ -106,10 +108,11 @@ type RoleGrant struct {
 }
 
 type User struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	DisplayName  string    `json:"display_name"`
-	CreatedAt    time.Time `json:"created_at"`
-	PasswordHash string    `json:"password_hash"`
-	IsAdmin      bool      `json:"is_admin"`
+	ID            uuid.UUID          `json:"id"`
+	Email         string             `json:"email"`
+	DisplayName   string             `json:"display_name"`
+	CreatedAt     time.Time          `json:"created_at"`
+	PasswordHash  string             `json:"password_hash"`
+	IsAdmin       bool               `json:"is_admin"`
+	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
 }
