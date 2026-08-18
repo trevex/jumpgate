@@ -1,0 +1,23 @@
+syntax = "proto3";
+package jumpgate.gateway.v1;
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/gateway/v1;gatewayv1";
+
+// GatewayService is consumed by the Rust gateway over the internal mTLS mesh.
+service GatewayService {
+  rpc WatchWorkers(WatchWorkersRequest) returns (stream RosterEvent) {}
+  rpc GetSessionVerificationKey(GetSessionVerificationKeyRequest) returns (GetSessionVerificationKeyResponse) {}
+}
+message WatchWorkersRequest {}
+message RosterEvent {
+  enum Kind { KIND_UNSPECIFIED = 0; ADDED = 1; REMOVED = 2; }
+  Kind kind = 1;
+  Worker worker = 2;
+}
+message Worker {
+  string worker_id = 1;
+  string protocol = 2;
+  string dataplane_address = 3;
+  int32 capacity = 4;
+}
+message GetSessionVerificationKeyRequest {}
+message GetSessionVerificationKeyResponse { bytes ed25519_public_key = 1; }

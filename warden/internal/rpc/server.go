@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/gateway/v1/gatewayv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
@@ -27,24 +28,22 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/session"
 )
 
-// Register mounts all warden RPC services onto mux with auth + validation
-// interceptors. arSvc is the shared access-request Service (its terminator + audit
-// are also used by the expiry reaper, so caller builds it ONCE and shares it).
+// RegisterUserServices mounts the USER-facing (bearer-authed) RPC services onto
+// mux with the auth + validation interceptors: Auth, Identity, Catalog, Access,
+// AccessRequest, Vault, and (when available) Session. These serve on warden's
+// existing HTTP bearer-token listener.
+//
+// arSvc is the shared access-request Service (its terminator + audit are also used
+// by the expiry reaper, so caller builds it ONCE and shares it).
 //
 // sealer is the vault sealer built once at startup; a nil sealer means the vault
 // is disabled (VaultService still mounts, but its sealing write paths fail
-// FailedPrecondition). The CredentialBroker is wired in M4 — VaultService is the
-// only vault surface mounted here.
+// FailedPrecondition).
 //
 // sessionSvc is the CLI-facing data-plane admission service. It is nil when the
 // vault or the active session signing key is unavailable; in that case
 // SessionService is not mounted (CreateSession is disabled until initialized).
-//
-// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream); it is
-// nil under the same conditions as sessionSvc, in which case DataplaneService is
-// not mounted. registry is the in-memory worker registry shared with the (later)
-// terminator/listener so teardown can be pushed to the owning stream.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry) error {
+func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -79,6 +78,27 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Servi
 		mux.Handle(sPath, sHandler)
 	}
 
+	return nil
+}
+
+// RegisterMeshServices mounts the WORKER/GATEWAY-facing RPC services onto mux with
+// the validation interceptor ONLY: Dataplane + Gateway. These serve on warden's
+// second, mTLS "mesh" listener; there is no bearer auth here — peer identity comes
+// from the mTLS client cert's URI SAN (via mesh.Middleware) and the handlers derive
+// the authoritative worker_id from it.
+//
+// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream). If it is
+// nil (vault/active-key unavailable), DataplaneService is not mounted. registry is
+// the in-memory worker registry shared with the terminator/listener so teardown can
+// be pushed to the owning stream. gatewaySvc backs the gateway-facing roster +
+// verification-key RPCs and is always mounted.
+func RegisterMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, gatewaySvc *GatewayServer) error {
+	validator := validate.NewInterceptor()
+	opts := connect.WithInterceptors(validator)
+
+	gwPath, gwHandler := gatewayv1connect.NewGatewayServiceHandler(gatewaySvc, opts)
+	mux.Handle(gwPath, gwHandler)
+
 	if setupSvc != nil {
 		terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), auditLog)
 		dPath, dHandler := dataplanev1connect.NewDataplaneServiceHandler(NewDataplaneServer(setupSvc, registry, pool, terminator), opts)
@@ -86,4 +106,17 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Servi
 	}
 
 	return nil
+}
+
+// Register mounts BOTH the user-facing and mesh-facing services onto a single mux.
+// It is a convenience for tests that only exercise the user (bearer) services and
+// do not need the mTLS identity split; production (main.go) and the mesh identity
+// tests use RegisterUserServices / RegisterMeshServices on separate muxes. The
+// GatewayServer here carries no session verification key (its GetSessionVerification
+// Key returns FailedPrecondition), which is acceptable for the user-only tests.
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry) error {
+	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc); err != nil {
+		return err
+	}
+	return RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, NewGatewayServer(registry, nil))
 }

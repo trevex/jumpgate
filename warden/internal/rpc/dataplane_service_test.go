@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -44,7 +45,7 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 	t.Cleanup(p.Close)
 
 	sealer := testSealer(t)
-	sessionSvc, pub := testSessionService(t, p, sealer)
+	_, pub := testSessionService(t, p, sealer)
 
 	authorizer := authz.NewSQLAuthorizer(p)
 	auditLog := audit.New(p)
@@ -54,21 +55,34 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, p, testAccessRequestService(p), sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
-		t.Fatalf("register: %v", err)
+	if err := rpc.RegisterMeshServices(mux, p, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+		t.Fatalf("register mesh: %v", err)
 	}
 
 	// Bidi streaming requires HTTP/2; httptest defaults to HTTP/1.1. Enable
 	// unencrypted (h2c) HTTP/2 on both server and client, matching main.go's
-	// listener configuration.
+	// listener configuration. These tests dial over plain h2c (no mTLS), so wrap the
+	// mesh mux to inject the fixed worker "w1" identity mesh.Middleware would derive
+	// from a cert SAN in production.
 	var protos http.Protocols
 	protos.SetHTTP1(true)
 	protos.SetUnencryptedHTTP2(true)
-	srv := httptest.NewUnstartedServer(mux)
+	srv := httptest.NewUnstartedServer(withTestWorkerIdentity(mux, "w1"))
 	srv.Config.Protocols = &protos
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return p, srv.URL, registry
+}
+
+// withTestWorkerIdentity wraps next so every request carries a fixed worker mesh
+// identity. It stands in for mesh.Middleware on the plain-h2c test servers (which
+// have no client cert to derive a SAN from), letting the identity-enforcing
+// Dataplane handlers run against a known worker id.
+func withTestWorkerIdentity(next http.Handler, workerID string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := mesh.WithIdentity(r.Context(), mesh.Identity{Role: "worker", ID: workerID})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // h2cClient is an HTTP client that speaks unencrypted HTTP/2 (h2c), required for

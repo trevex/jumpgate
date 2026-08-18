@@ -59,15 +59,30 @@ Modules (all ⬜ except the HTTP skeleton):
 Chosen for the Kubernetes operator ecosystem (kubebuilder/controller-runtime),
 mature ReBAC engines (OpenFGA), enterprise SSO breadth, and team velocity.
 
-### Gateway — Rust ✅ (skeleton)
+### Gateway — Rust ✅ (M4b)
 
 The only externally exposed component: a thin, protocol-agnostic, **session-aware
-load balancer**. It validates the control-plane-signed session token, reads the
-target protocol from the token framing, picks a healthy worker (least-sessions)
-and **pins** the connection for its lifetime, then forwards the still-native byte
-stream over internal mTLS. It never terminates SSH/Postgres/RDP — that protocol
-independence is what lets each worker be written in the best language for its
-protocol. Built on tokio + rustls. M1 implements a `/healthz` axum surface only.
+load balancer**. A client opens TLS and sends **HTTP CONNECT** with the session
+token in `Authorization: Bearer`; the gateway **verifies the PASETO token offline**
+(signature + expiry, and reads `proto` for routing — it does NOT check `cnf`, the
+worker does), picks a healthy worker (least in-flight, capacity-capped) from the
+`WatchWorkers` roster, **mTLS-dials** it (pinning the worker's `spiffe://jumpgate/
+worker/<id>` identity), forwards the CONNECT, and **pins** a `copy_bidirectional`
+byte pump for the connection's life. It never terminates SSH/Postgres/RDP — that
+protocol independence is what lets each worker be written in the best language for
+its protocol. It is **teardown-unaware**: a warden `Teardown` force-closes the
+worker's session and the pump collapses on EOF. Built on tokio + rustls. Internal
+mTLS uses a **warden-rooted `mesh` CA**; component identity is a URI SAN, and
+warden derives the authoritative `worker_id` from the peer cert (closing the M4a
+self-asserted-identity gap). Bootstrap: `warden mesh-cert` provisions component
+certs; the gateway fetches the token verification key via `GetSessionVerificationKey`.
+Mesh identities are the 3-part form `spiffe://jumpgate/<role>/<id>` — workers
+`spiffe://jumpgate/worker/<worker_id>`, gateway `spiffe://jumpgate/gateway/<id>`,
+and warden **must** be minted with the SPIFFE id the gateway pins: canonical
+default `spiffe://jumpgate/warden/warden` (override via `WARDEN_MESH_SPIFFE`),
+minted with `warden-meshcert -spiffe spiffe://jumpgate/warden/warden`.
+The real ssh-proxy worker + `jumpgate connect` CLI are **M4c** (M4b tests against a
+stub worker).
 
 ### Protocol workers — Rust ⬜
 
@@ -85,7 +100,7 @@ policy, grants) stays centralized in Go; the Rust data plane holds a credential
 only for the duration of a live, authorized session. Revocation is immediate
 (workers introspect the grant at session start; grant deletion tears sessions down).
 
-### Continuous revocation — live-session teardown 🟡 (M3c reaper ✅ + M4a terminator ✅ + M4b/M4d gaps ⬜)
+### Continuous revocation — live-session teardown 🟡 (M3c reaper ✅ + M4a terminator ✅ + M4b worker mTLS ✅ + M4d cascade ⬜)
 
 > **Largely built.** The M3c side is done: grant revocation/expiry re-evaluates
 > authorization (a revoked/expired grant stops conferring immediately, since the
@@ -138,7 +153,8 @@ caused it.
 `RevokeGrant`, and the deactivation cascade all call the `GrantTerminator` seam
 after marking revoked + auditing), **M4a** (the seam's **real** grant-keyed
 implementation: `live_sessions` ledger + closure re-eval + `LISTEN/NOTIFY` to the
-owning worker stream — **built**), and **M4b/M4d** (worker mTLS transport, plus the
+owning worker stream — **built**), **M4b** (worker/gateway **mTLS** transport with
+cert-SAN-derived authoritative `worker_id` — **built**), and **M4d** (the
 eligibility-change cascade + pull-sweep for standing bindings/memberships/rewrites).
 The **session ↔ grant mapping** (`live_sessions`) and the **teardown push** now
 exist, making this invariant real for grant-keyed revocation rather than
