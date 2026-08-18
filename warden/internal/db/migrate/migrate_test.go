@@ -68,7 +68,7 @@ func TestUpCreatesSchema(t *testing.T) {
 	}
 }
 
-func TestUpCreatesApprovalRules(t *testing.T) {
+func TestUpCreatesRequestPolicies(t *testing.T) {
 	dsn := testsupport.StartPostgres(t)
 
 	if err := Up(dsn); err != nil {
@@ -83,7 +83,7 @@ func TestUpCreatesApprovalRules(t *testing.T) {
 	defer pool.Close()
 
 	for _, table := range []string{
-		"approval_rules", "approval_rule_approvers",
+		"request_policies", "request_policy_subjects",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -95,6 +95,32 @@ func TestUpCreatesApprovalRules(t *testing.T) {
 		if !exists {
 			t.Fatalf("table %q was not created", table)
 		}
+	}
+
+	// The old table names must NOT survive the rename.
+	for _, table := range []string{
+		"approval_rules", "approval_rule_approvers",
+	} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+			table).Scan(&exists)
+		if err != nil {
+			t.Fatalf("check %s: %v", table, err)
+		}
+		if exists {
+			t.Fatalf("legacy table %q still exists after rename", table)
+		}
+	}
+
+	// users.deactivated_at must exist.
+	var exists bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deactivated_at')`).Scan(&exists); err != nil {
+		t.Fatalf("check users.deactivated_at: %v", err)
+	}
+	if !exists {
+		t.Fatal("users.deactivated_at column was not created")
 	}
 }
 

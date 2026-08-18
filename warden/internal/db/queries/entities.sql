@@ -10,6 +10,36 @@ INSERT INTO group_memberships (group_id, member_user_id) VALUES ($1, $2);
 -- name: AddGroupToGroup :exec
 INSERT INTO group_memberships (group_id, member_group_id) VALUES ($1, $2);
 
+-- name: RemoveUserFromGroup :exec
+DELETE FROM group_memberships WHERE group_id = $1 AND member_user_id = $2;
+
+-- name: RemoveGroupFromGroup :exec
+DELETE FROM group_memberships WHERE group_id = $1 AND member_group_id = $2;
+
+-- name: ListGroupMemberUsers :many
+SELECT u.* FROM users u
+JOIN group_memberships gm ON gm.member_user_id = u.id
+WHERE gm.group_id = $1
+ORDER BY u.id;
+
+-- name: ListGroupMemberGroups :many
+SELECT g.* FROM groups g
+JOIN group_memberships gm ON gm.member_group_id = g.id
+WHERE gm.group_id = $1
+ORDER BY g.id;
+
+-- name: DeactivateUser :exec
+UPDATE users SET deactivated_at = now() WHERE id = $1 AND deactivated_at IS NULL;
+
+-- name: ReactivateUser :exec
+UPDATE users SET deactivated_at = NULL WHERE id = $1;
+
+-- name: DeleteGroup :exec
+DELETE FROM groups WHERE id = $1;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1;
+
 -- name: CreateFolder :one
 INSERT INTO folders (name, parent_id) VALUES ($1, $2) RETURNING *;
 
@@ -21,8 +51,8 @@ INSERT INTO roles (name, resource_type, capabilities) VALUES ($1, $2, $3) RETURN
 
 -- name: CreateRoleBinding :one
 INSERT INTO role_bindings
-  (role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+  (role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: GetAsset :one

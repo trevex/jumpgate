@@ -55,7 +55,7 @@ func (q *Queries) GetRole(ctx context.Context, id uuid.UUID) (Role, error) {
 }
 
 const getRoleBinding = `-- name: GetRoleBinding :one
-SELECT id, role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings WHERE id = $1
+SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings WHERE id = $1
 `
 
 func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error) {
@@ -64,7 +64,6 @@ func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding
 	err := row.Scan(
 		&i.ID,
 		&i.RoleID,
-		&i.Kind,
 		&i.ScopeFolderID,
 		&i.ScopeAssetID,
 		&i.SubjectUserID,
@@ -168,8 +167,60 @@ func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Fol
 	return items, nil
 }
 
+const listRoleBindings = `-- name: ListRoleBindings :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings
+WHERE ($1::uuid IS NULL OR role_id = $1)
+  AND ($2::uuid IS NULL OR scope_folder_id = $2)
+  AND ($3::uuid IS NULL OR scope_asset_id = $3)
+  AND ($4::uuid IS NULL OR subject_user_id = $4)
+  AND ($5::uuid IS NULL OR subject_group_id = $5)
+ORDER BY id
+`
+
+type ListRoleBindingsParams struct {
+	RoleID         pgtype.UUID `json:"role_id"`
+	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
+	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
+	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
+}
+
+func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error) {
+	rows, err := q.db.Query(ctx, listRoleBindings,
+		arg.RoleID,
+		arg.ScopeFolderID,
+		arg.ScopeAssetID,
+		arg.SubjectUserID,
+		arg.SubjectGroupID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleBinding
+	for rows.Next() {
+		var i RoleBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoleBindingsByAsset = `-- name: ListRoleBindingsByAsset :many
-SELECT id, role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings WHERE scope_asset_id = $1 ORDER BY id
+SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings WHERE scope_asset_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error) {
@@ -184,7 +235,6 @@ func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgty
 		if err := rows.Scan(
 			&i.ID,
 			&i.RoleID,
-			&i.Kind,
 			&i.ScopeFolderID,
 			&i.ScopeAssetID,
 			&i.SubjectUserID,

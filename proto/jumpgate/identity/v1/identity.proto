@@ -17,6 +17,14 @@ service IdentityService {
   rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
   rpc AddUserToGroup(AddUserToGroupRequest) returns (AddUserToGroupResponse) {}
   rpc AddGroupToGroup(AddGroupToGroupRequest) returns (AddGroupToGroupResponse) {}
+  rpc RemoveUserFromGroup(RemoveUserFromGroupRequest) returns (RemoveUserFromGroupResponse) {}
+  rpc RemoveGroupFromGroup(RemoveGroupFromGroupRequest) returns (RemoveGroupFromGroupResponse) {}
+  rpc ListGroupMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse) {}
+
+  rpc DeactivateUser(DeactivateUserRequest) returns (DeactivateUserResponse) {}
+  rpc ReactivateUser(ReactivateUserRequest) returns (ReactivateUserResponse) {}
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {}
+  rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {}
 }
 
 message User {
@@ -89,3 +97,43 @@ message AddGroupToGroupRequest {
   string member_group_id = 2 [(buf.validate.field).string.uuid = true];
 }
 message AddGroupToGroupResponse {}
+
+message RemoveUserFromGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.uuid = true];
+  string user_id  = 2 [(buf.validate.field).string.uuid = true];
+}
+message RemoveUserFromGroupResponse {}
+
+message RemoveGroupFromGroupRequest {
+  string group_id        = 1 [(buf.validate.field).string.uuid = true];
+  string member_group_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message RemoveGroupFromGroupResponse {}
+
+message ListGroupMembersRequest {
+  string group_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message ListGroupMembersResponse {
+  repeated User  users  = 1;
+  repeated Group groups = 2;
+}
+
+message DeactivateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message DeactivateUserResponse {}
+
+message ReactivateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message ReactivateUserResponse {}
+
+message DeleteUserRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message DeleteUserResponse {}
+
+message DeleteGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message DeleteGroupResponse {}

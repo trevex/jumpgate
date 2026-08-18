@@ -18,7 +18,7 @@ credential-injected, fully recorded, and auto-expiring.
 ```
                     ┌──────────────── Control plane (Go) ──────────────┐
                     │ identity · Authorizer seam (SQL CTEs) · roles/bindings│
-                    │ JIT grants · vault · approvals · audit ·         │
+                    │ request policies · JIT grants · vault · audit ·  │
                     │ recording metadata · worker-pool registry       │
                     └──────▲───────────────▲──────────────────▲────────┘
               token mint /  │     gRPC:     │ authz + creds    │ recording /
@@ -43,14 +43,14 @@ credential-injected, fully recorded, and auto-expiring.
 The single source of truth and the brain. Serves the REST API + embedded web UI.
 Modules (all ⬜ except the HTTP skeleton):
 
-- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService + CatalogService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
+- **API server** ✅ ConnectRPC (connect-go): AuthService + IdentityService + CatalogService + AccessService + AccessRequestService served on the same HTTP server as /healthz; one handler speaks Connect + gRPC + gRPC-Web (no proxy). Auth via a bearer-token interceptor; validation via protovalidate; existence-hiding via CodeNotFound.
 - **Identity** 🟡 (M2b: local users/groups/nested memberships + password login/opaque tokens + admin guard; OIDC/SAML/SCIM later). Initial admin seeded via `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD` on first startup.
 - **Authorization** ✅ (recursive-CTE Authorizer + catalog RPCs; OpenFGA remains a future drop-in behind the seam). See [Access model](#access-model).
-- **Role service** ⬜ — custom roles as capability bundles.
-- **Resource catalog** ✅ folders/assets/roles/role-bindings CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding.
+- **Access config (AccessService)** ✅ — all admin authorization config in one surface: custom **roles** (capability bundles), **role_grants** (the `same_object`/`parent` rewrite rules), **role_bindings** (standing-only), **request_policies** + requester/approver **subjects**, and `ExplainRole`.
+- **Resource catalog** ✅ folders/assets CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding. All role/authz config lives in AccessService.
 - **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
-- **JIT / approval engine** ⬜ — access requests, approvals, time-boxed grants, reaper.
-- **Approvals** 🟡 (M3b) ApprovalRule per (role, scope): role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override; approvers = holders of an approver-role on the requested scope ∪ explicit subjects; most-specific rule wins; no rule ⇒ not JIT-requestable. Resolver (`EffectiveRule`, `IsApprover`) + `ApprovalService` (admin CRUD + `ResolveApproval`).
+- **JIT / request engine (AccessRequestService)** 🟡 — `ResolveApproval` implemented; the `RequestAccess`/`Approve`/`Deny`/`Revoke` lifecycle, the `access_grants` table, the reaper, and teardown are **M3c**.
+- **Request policies** 🟡 (M3b + Access-Model v2) one `request_policies` row per (role, scope) whose **existence makes the role requestable** there: role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override, most-specific wins. Symmetric eligibility — requester = holders of `requester_role` on the scope ∪ explicit `requester` subjects; approver = holders of `approver_role` ∪ explicit `approver` subjects; both resolved via `HoldsRole`. No policy ⇒ not requestable. CRUD in `AccessService`; resolver (`EffectiveRule`, `IsApprover`, `IsEligibleRequester`) + `ResolveApproval` in `AccessRequestService`.
 - **Audit log** 🟡 (M3a) hash-chained tamper-evident audit log (`entry_hash = sha256(prev_hash ‖ canonical(entry))`); append-only with advisory-lock genesis; chain independently verifiable (Append/Verify).
 - **Recording service** ⬜ — session blobs to object store; metadata + hashes in Postgres.
 - **Worker registry** ⬜ — watches k8s Endpoints; feeds the gateway its roster.
@@ -133,28 +133,42 @@ this invariant real rather than aspirational.
 
 ## Access model
 
-Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, folder-subtree inheritance, and the Active/Requestable/Invisible tiers. As of **M3-roles**, folder cascade of **standing** access is **explicit**: a role reaches a folder's descendants only if it declares a `parent` role-rewrite rule (an explicit ReBAC-light userset-rewrite over `role_grants`, resolved by `HoldsRole`), not an automatic subtree walk; requestable-visibility and approval-rule folder inheritance keep the implicit cascade for now. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.
+Relationship-based (ReBAC), accessed through an **`Authorizer` seam**. The M2a implementation resolves access with **recursive SQL (CTEs) over Postgres** — computing transitive nested-group membership, the explicit folder cascade, and the Active/Requestable/Invisible tiers. As of **M3-roles + Access-Model v2**, folder cascade is uniformly **explicit**: a role reaches a folder's descendants only if it declares a `parent` role-rewrite rule (an explicit ReBAC-light userset-rewrite over `role_grants`, resolved by `HoldsRole`), not an automatic subtree walk — and the **same** `HoldsRole` predicate backs standing access *and* a RequestPolicy's requester/approver held-role checks. An OpenFGA-backed implementation (embedded or sidecar) can be dropped in behind the same seam later; the relationship rows are stored tuple-shaped to make that swap mechanical.
 
-The model separates *what a role means* from *who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). 🟡 (M2a: resolution implemented; M2b: REST catalog)
+The model separates *what a role means* from *who holds it* — modeled on Kubernetes RBAC (Role + RoleBinding). 🟡 (M2a: resolution implemented; M2b: catalog RPCs)
 
 1. **Capabilities** — a fixed vocabulary the workers enforce (`connect`, `read`,
    `write`, `ddl`, `admin`, connection identity, escalation knobs). Not user-editable.
 2. **Role** — an admin-defined bundle of capabilities scoped to a resource type
    (e.g. *PG-Migrator*, *SRE-Prod-SSH*). This is the customer's "custom role".
-3. **RoleBinding** — assigns a role to subjects at a scope (folder or asset),
-   as either standing (`assignee`) or requestable eligibility (`requestable`).
+3. **RoleBinding** — assigns a role to subjects at a scope (folder or asset).
+   **Standing-only** (permanent, admin-granted). Requestability is *not* a binding.
+4. **RequestPolicy** — one row per (role, scope) whose **existence makes the role
+   requestable** there; it names who may request (`requester_role` ∪ explicit
+   subjects) and the approval gate (threshold + `approver_role` ∪ subjects).
 
 The recursive-CTE backend answers assignment/visibility/requestability (with nested groups
-and folder inheritance); the control plane resolves roles → capabilities.
+and the explicit folder cascade); the control plane resolves roles → capabilities.
 
 **Discoverability is a permission.** Against any asset a user is *Active*
-(can connect now), *Requestable* (visible, may request), or *Invisible* (existence
-undisclosed). The catalog is computed server-side from the graph; requests for
-non-visible assets return **404, not 403**, so topology never leaks.
+(holds a role now), *Requestable* (eligible to request ≥1 role via a policy, minus
+already-active), or *Invisible* (existence undisclosed). The catalog is computed
+server-side from the graph; requests for non-visible assets return **404, not
+403**, so topology never leaks. See [access-model.md](access-model.md).
 
-## Just-in-time access & escalation ⬜ (M3/M5)
+## Just-in-time access & escalation 🟡 (M3b policy / M3c workflow / M5 inline)
 
-One approval engine, two timings:
+**The request flow (M3c):** `RequestAccess(role, asset)` → the effective
+`request_policy(role, asset)` is resolved most-specific → the requester's
+**eligibility** is checked (`IsEligibleRequester`: holds `requester_role` on the
+asset ∪ explicit `requester` subject) → approvals are collected from the policy's
+approvers (`IsApprover`: holds `approver_role` ∪ explicit `approver` subject),
+N-of-M → on satisfaction a **time-boxed `access_grants` row** is written, joining
+the requester's standing set until a reaper expires it. Policy resolution and the
+eligibility/approver predicates are implemented (M3b + v2); the
+request→grant→reaper workflow and the `access_grants` table are **M3c**.
+
+One request engine, two timings:
 
 - **Pre-session** — request a (higher-privilege) role before connecting. Used by
   **SSH** (the injected credential carries the privilege; no inline TTY gating,
@@ -165,8 +179,10 @@ One approval engine, two timings:
   tier pauses and offers **Approve once** or **Elevate to tier X for N minutes**
   (a session-scoped, time-boxed step-up, enforced at the DB via `SET ROLE`).
 
-A JIT grant is a temporary RoleBinding edge with an expiry, reaped on timeout —
-the same primitive for a 2-hour SSH grant or a 15-minute Postgres step-up.
+A JIT grant is a temporary `access_grants` row (a role for a user at a scope) with
+an expiry, reaped on timeout — the same primitive for a 2-hour SSH grant or a
+15-minute Postgres step-up. It never mutates admin config (`role_bindings`); the
+authorizer's standing set becomes `role_bindings ∪ active access_grants` (M3c).
 
 ## Audit & recording ⬜ (M3/M4)
 

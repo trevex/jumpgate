@@ -45,30 +45,6 @@ const (
 	// CatalogServiceListAssetsByFolderProcedure is the fully-qualified name of the CatalogService's
 	// ListAssetsByFolder RPC.
 	CatalogServiceListAssetsByFolderProcedure = "/jumpgate.catalog.v1.CatalogService/ListAssetsByFolder"
-	// CatalogServiceCreateRoleProcedure is the fully-qualified name of the CatalogService's CreateRole
-	// RPC.
-	CatalogServiceCreateRoleProcedure = "/jumpgate.catalog.v1.CatalogService/CreateRole"
-	// CatalogServiceListRolesProcedure is the fully-qualified name of the CatalogService's ListRoles
-	// RPC.
-	CatalogServiceListRolesProcedure = "/jumpgate.catalog.v1.CatalogService/ListRoles"
-	// CatalogServiceCreateRoleBindingProcedure is the fully-qualified name of the CatalogService's
-	// CreateRoleBinding RPC.
-	CatalogServiceCreateRoleBindingProcedure = "/jumpgate.catalog.v1.CatalogService/CreateRoleBinding"
-	// CatalogServiceDeleteRoleBindingProcedure is the fully-qualified name of the CatalogService's
-	// DeleteRoleBinding RPC.
-	CatalogServiceDeleteRoleBindingProcedure = "/jumpgate.catalog.v1.CatalogService/DeleteRoleBinding"
-	// CatalogServiceAddRoleGrantProcedure is the fully-qualified name of the CatalogService's
-	// AddRoleGrant RPC.
-	CatalogServiceAddRoleGrantProcedure = "/jumpgate.catalog.v1.CatalogService/AddRoleGrant"
-	// CatalogServiceRemoveRoleGrantProcedure is the fully-qualified name of the CatalogService's
-	// RemoveRoleGrant RPC.
-	CatalogServiceRemoveRoleGrantProcedure = "/jumpgate.catalog.v1.CatalogService/RemoveRoleGrant"
-	// CatalogServiceListRoleGrantsProcedure is the fully-qualified name of the CatalogService's
-	// ListRoleGrants RPC.
-	CatalogServiceListRoleGrantsProcedure = "/jumpgate.catalog.v1.CatalogService/ListRoleGrants"
-	// CatalogServiceExplainRoleProcedure is the fully-qualified name of the CatalogService's
-	// ExplainRole RPC.
-	CatalogServiceExplainRoleProcedure = "/jumpgate.catalog.v1.CatalogService/ExplainRole"
 	// CatalogServiceListVisibleAssetsProcedure is the fully-qualified name of the CatalogService's
 	// ListVisibleAssets RPC.
 	CatalogServiceListVisibleAssetsProcedure = "/jumpgate.catalog.v1.CatalogService/ListVisibleAssets"
@@ -83,14 +59,6 @@ type CatalogServiceClient interface {
 	ListFolders(context.Context, *connect.Request[v1.ListFoldersRequest]) (*connect.Response[v1.ListFoldersResponse], error)
 	CreateAsset(context.Context, *connect.Request[v1.CreateAssetRequest]) (*connect.Response[v1.CreateAssetResponse], error)
 	ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error)
-	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
-	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
-	CreateRoleBinding(context.Context, *connect.Request[v1.CreateRoleBindingRequest]) (*connect.Response[v1.CreateRoleBindingResponse], error)
-	DeleteRoleBinding(context.Context, *connect.Request[v1.DeleteRoleBindingRequest]) (*connect.Response[v1.DeleteRoleBindingResponse], error)
-	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
-	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
-	ListRoleGrants(context.Context, *connect.Request[v1.ListRoleGrantsRequest]) (*connect.Response[v1.ListRoleGrantsResponse], error)
-	ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error)
 	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 }
@@ -130,54 +98,6 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("ListAssetsByFolder")),
 			connect.WithClientOptions(opts...),
 		),
-		createRole: connect.NewClient[v1.CreateRoleRequest, v1.CreateRoleResponse](
-			httpClient,
-			baseURL+CatalogServiceCreateRoleProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("CreateRole")),
-			connect.WithClientOptions(opts...),
-		),
-		listRoles: connect.NewClient[v1.ListRolesRequest, v1.ListRolesResponse](
-			httpClient,
-			baseURL+CatalogServiceListRolesProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("ListRoles")),
-			connect.WithClientOptions(opts...),
-		),
-		createRoleBinding: connect.NewClient[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse](
-			httpClient,
-			baseURL+CatalogServiceCreateRoleBindingProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("CreateRoleBinding")),
-			connect.WithClientOptions(opts...),
-		),
-		deleteRoleBinding: connect.NewClient[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse](
-			httpClient,
-			baseURL+CatalogServiceDeleteRoleBindingProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("DeleteRoleBinding")),
-			connect.WithClientOptions(opts...),
-		),
-		addRoleGrant: connect.NewClient[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse](
-			httpClient,
-			baseURL+CatalogServiceAddRoleGrantProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("AddRoleGrant")),
-			connect.WithClientOptions(opts...),
-		),
-		removeRoleGrant: connect.NewClient[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse](
-			httpClient,
-			baseURL+CatalogServiceRemoveRoleGrantProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("RemoveRoleGrant")),
-			connect.WithClientOptions(opts...),
-		),
-		listRoleGrants: connect.NewClient[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse](
-			httpClient,
-			baseURL+CatalogServiceListRoleGrantsProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("ListRoleGrants")),
-			connect.WithClientOptions(opts...),
-		),
-		explainRole: connect.NewClient[v1.ExplainRoleRequest, v1.ExplainRoleResponse](
-			httpClient,
-			baseURL+CatalogServiceExplainRoleProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("ExplainRole")),
-			connect.WithClientOptions(opts...),
-		),
 		listVisibleAssets: connect.NewClient[v1.ListVisibleAssetsRequest, v1.ListVisibleAssetsResponse](
 			httpClient,
 			baseURL+CatalogServiceListVisibleAssetsProcedure,
@@ -199,14 +119,6 @@ type catalogServiceClient struct {
 	listFolders        *connect.Client[v1.ListFoldersRequest, v1.ListFoldersResponse]
 	createAsset        *connect.Client[v1.CreateAssetRequest, v1.CreateAssetResponse]
 	listAssetsByFolder *connect.Client[v1.ListAssetsByFolderRequest, v1.ListAssetsByFolderResponse]
-	createRole         *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
-	listRoles          *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
-	createRoleBinding  *connect.Client[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse]
-	deleteRoleBinding  *connect.Client[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse]
-	addRoleGrant       *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
-	removeRoleGrant    *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
-	listRoleGrants     *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
-	explainRole        *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
 	listVisibleAssets  *connect.Client[v1.ListVisibleAssetsRequest, v1.ListVisibleAssetsResponse]
 	getAssetAccess     *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
 }
@@ -231,46 +143,6 @@ func (c *catalogServiceClient) ListAssetsByFolder(ctx context.Context, req *conn
 	return c.listAssetsByFolder.CallUnary(ctx, req)
 }
 
-// CreateRole calls jumpgate.catalog.v1.CatalogService.CreateRole.
-func (c *catalogServiceClient) CreateRole(ctx context.Context, req *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error) {
-	return c.createRole.CallUnary(ctx, req)
-}
-
-// ListRoles calls jumpgate.catalog.v1.CatalogService.ListRoles.
-func (c *catalogServiceClient) ListRoles(ctx context.Context, req *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
-	return c.listRoles.CallUnary(ctx, req)
-}
-
-// CreateRoleBinding calls jumpgate.catalog.v1.CatalogService.CreateRoleBinding.
-func (c *catalogServiceClient) CreateRoleBinding(ctx context.Context, req *connect.Request[v1.CreateRoleBindingRequest]) (*connect.Response[v1.CreateRoleBindingResponse], error) {
-	return c.createRoleBinding.CallUnary(ctx, req)
-}
-
-// DeleteRoleBinding calls jumpgate.catalog.v1.CatalogService.DeleteRoleBinding.
-func (c *catalogServiceClient) DeleteRoleBinding(ctx context.Context, req *connect.Request[v1.DeleteRoleBindingRequest]) (*connect.Response[v1.DeleteRoleBindingResponse], error) {
-	return c.deleteRoleBinding.CallUnary(ctx, req)
-}
-
-// AddRoleGrant calls jumpgate.catalog.v1.CatalogService.AddRoleGrant.
-func (c *catalogServiceClient) AddRoleGrant(ctx context.Context, req *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error) {
-	return c.addRoleGrant.CallUnary(ctx, req)
-}
-
-// RemoveRoleGrant calls jumpgate.catalog.v1.CatalogService.RemoveRoleGrant.
-func (c *catalogServiceClient) RemoveRoleGrant(ctx context.Context, req *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error) {
-	return c.removeRoleGrant.CallUnary(ctx, req)
-}
-
-// ListRoleGrants calls jumpgate.catalog.v1.CatalogService.ListRoleGrants.
-func (c *catalogServiceClient) ListRoleGrants(ctx context.Context, req *connect.Request[v1.ListRoleGrantsRequest]) (*connect.Response[v1.ListRoleGrantsResponse], error) {
-	return c.listRoleGrants.CallUnary(ctx, req)
-}
-
-// ExplainRole calls jumpgate.catalog.v1.CatalogService.ExplainRole.
-func (c *catalogServiceClient) ExplainRole(ctx context.Context, req *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error) {
-	return c.explainRole.CallUnary(ctx, req)
-}
-
 // ListVisibleAssets calls jumpgate.catalog.v1.CatalogService.ListVisibleAssets.
 func (c *catalogServiceClient) ListVisibleAssets(ctx context.Context, req *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error) {
 	return c.listVisibleAssets.CallUnary(ctx, req)
@@ -287,14 +159,6 @@ type CatalogServiceHandler interface {
 	ListFolders(context.Context, *connect.Request[v1.ListFoldersRequest]) (*connect.Response[v1.ListFoldersResponse], error)
 	CreateAsset(context.Context, *connect.Request[v1.CreateAssetRequest]) (*connect.Response[v1.CreateAssetResponse], error)
 	ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error)
-	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
-	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
-	CreateRoleBinding(context.Context, *connect.Request[v1.CreateRoleBindingRequest]) (*connect.Response[v1.CreateRoleBindingResponse], error)
-	DeleteRoleBinding(context.Context, *connect.Request[v1.DeleteRoleBindingRequest]) (*connect.Response[v1.DeleteRoleBindingResponse], error)
-	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
-	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
-	ListRoleGrants(context.Context, *connect.Request[v1.ListRoleGrantsRequest]) (*connect.Response[v1.ListRoleGrantsResponse], error)
-	ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error)
 	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 }
@@ -330,54 +194,6 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("ListAssetsByFolder")),
 		connect.WithHandlerOptions(opts...),
 	)
-	catalogServiceCreateRoleHandler := connect.NewUnaryHandler(
-		CatalogServiceCreateRoleProcedure,
-		svc.CreateRole,
-		connect.WithSchema(catalogServiceMethods.ByName("CreateRole")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceListRolesHandler := connect.NewUnaryHandler(
-		CatalogServiceListRolesProcedure,
-		svc.ListRoles,
-		connect.WithSchema(catalogServiceMethods.ByName("ListRoles")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceCreateRoleBindingHandler := connect.NewUnaryHandler(
-		CatalogServiceCreateRoleBindingProcedure,
-		svc.CreateRoleBinding,
-		connect.WithSchema(catalogServiceMethods.ByName("CreateRoleBinding")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceDeleteRoleBindingHandler := connect.NewUnaryHandler(
-		CatalogServiceDeleteRoleBindingProcedure,
-		svc.DeleteRoleBinding,
-		connect.WithSchema(catalogServiceMethods.ByName("DeleteRoleBinding")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceAddRoleGrantHandler := connect.NewUnaryHandler(
-		CatalogServiceAddRoleGrantProcedure,
-		svc.AddRoleGrant,
-		connect.WithSchema(catalogServiceMethods.ByName("AddRoleGrant")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceRemoveRoleGrantHandler := connect.NewUnaryHandler(
-		CatalogServiceRemoveRoleGrantProcedure,
-		svc.RemoveRoleGrant,
-		connect.WithSchema(catalogServiceMethods.ByName("RemoveRoleGrant")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceListRoleGrantsHandler := connect.NewUnaryHandler(
-		CatalogServiceListRoleGrantsProcedure,
-		svc.ListRoleGrants,
-		connect.WithSchema(catalogServiceMethods.ByName("ListRoleGrants")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceExplainRoleHandler := connect.NewUnaryHandler(
-		CatalogServiceExplainRoleProcedure,
-		svc.ExplainRole,
-		connect.WithSchema(catalogServiceMethods.ByName("ExplainRole")),
-		connect.WithHandlerOptions(opts...),
-	)
 	catalogServiceListVisibleAssetsHandler := connect.NewUnaryHandler(
 		CatalogServiceListVisibleAssetsProcedure,
 		svc.ListVisibleAssets,
@@ -400,22 +216,6 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceCreateAssetHandler.ServeHTTP(w, r)
 		case CatalogServiceListAssetsByFolderProcedure:
 			catalogServiceListAssetsByFolderHandler.ServeHTTP(w, r)
-		case CatalogServiceCreateRoleProcedure:
-			catalogServiceCreateRoleHandler.ServeHTTP(w, r)
-		case CatalogServiceListRolesProcedure:
-			catalogServiceListRolesHandler.ServeHTTP(w, r)
-		case CatalogServiceCreateRoleBindingProcedure:
-			catalogServiceCreateRoleBindingHandler.ServeHTTP(w, r)
-		case CatalogServiceDeleteRoleBindingProcedure:
-			catalogServiceDeleteRoleBindingHandler.ServeHTTP(w, r)
-		case CatalogServiceAddRoleGrantProcedure:
-			catalogServiceAddRoleGrantHandler.ServeHTTP(w, r)
-		case CatalogServiceRemoveRoleGrantProcedure:
-			catalogServiceRemoveRoleGrantHandler.ServeHTTP(w, r)
-		case CatalogServiceListRoleGrantsProcedure:
-			catalogServiceListRoleGrantsHandler.ServeHTTP(w, r)
-		case CatalogServiceExplainRoleProcedure:
-			catalogServiceExplainRoleHandler.ServeHTTP(w, r)
 		case CatalogServiceListVisibleAssetsProcedure:
 			catalogServiceListVisibleAssetsHandler.ServeHTTP(w, r)
 		case CatalogServiceGetAssetAccessProcedure:
@@ -443,38 +243,6 @@ func (UnimplementedCatalogServiceHandler) CreateAsset(context.Context, *connect.
 
 func (UnimplementedCatalogServiceHandler) ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListAssetsByFolder is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.CreateRole is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListRoles is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) CreateRoleBinding(context.Context, *connect.Request[v1.CreateRoleBindingRequest]) (*connect.Response[v1.CreateRoleBindingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.CreateRoleBinding is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) DeleteRoleBinding(context.Context, *connect.Request[v1.DeleteRoleBindingRequest]) (*connect.Response[v1.DeleteRoleBindingResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.DeleteRoleBinding is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.AddRoleGrant is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.RemoveRoleGrant is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) ListRoleGrants(context.Context, *connect.Request[v1.ListRoleGrantsRequest]) (*connect.Response[v1.ListRoleGrantsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListRoleGrants is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ExplainRole is not implemented"))
 }
 
 func (UnimplementedCatalogServiceHandler) ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error) {
