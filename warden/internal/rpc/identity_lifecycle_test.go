@@ -54,6 +54,12 @@ func TestDeactivateBlocksAuthenticatedRPCs(t *testing.T) {
 		t.Fatalf("whoami while deactivated = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 
+	// A deactivated account cannot mint a NEW token either (correct credentials).
+	_, err = authc.Login(ctx, connect.NewRequest(&authv1.LoginRequest{Email: "dave@x", Password: "password123"}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("login while deactivated = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+
 	// Reactivate restores access with the same token.
 	if _, err := id.ReactivateUser(ctx, withToken(connect.NewRequest(&identityv1.ReactivateUserRequest{UserId: u.Msg.User.Id}), tok)); err != nil {
 		t.Fatalf("reactivate: %v", err)
