@@ -27,7 +27,7 @@ func TestApprovalServiceCRUD(t *testing.T) {
 
 	// Create a role via catalog
 	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{
-		Name: "db-admin", ResourceType: "asset", Capabilities: []string{"read", "write"},
+		Name: "db-admin", ResourceType: "asset", Capabilities: []string{"db:read", "db:write"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -148,7 +148,7 @@ func TestApprovalServiceCRUD(t *testing.T) {
 
 	// Create a second role with no rule → ResolveApproval requestable=false
 	role2, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{
-		Name: "no-rule-role", ResourceType: "asset", Capabilities: []string{"read"},
+		Name: "no-rule-role", ResourceType: "asset", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role2: %v", err)
