@@ -25,7 +25,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "op", ResourceType: "asset", Capabilities: []string{"read"}}), tok))
+	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "op", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}

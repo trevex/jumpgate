@@ -56,7 +56,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	secret := mustF("secret", "")
 	topsecret := mustA(secret, "top-secret")
 
-	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "readonly", ResourceType: "asset", Capabilities: []string{"read"}}), tok))
+	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "readonly", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
