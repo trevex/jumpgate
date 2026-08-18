@@ -78,6 +78,13 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 	s.registry.Add(workerID, sink)
 	defer s.registry.Remove(workerID, sink)
 
+	s.registry.SetWorkerMeta(workerID, dataplane.WorkerMeta{
+		Protocol: firstProtocolOr(reg.Protocols, "ssh"),
+		Address:  reg.DataplaneAddress,
+		Capacity: reg.Capacity,
+	})
+	defer s.registry.ClearWorkerMeta(workerID)
+
 	if err := stream.Send(&dataplanev1.ServerMessage{Msg: &dataplanev1.ServerMessage_Ack{Ack: &dataplanev1.RegisterAck{}}}); err != nil {
 		return err
 	}
@@ -121,6 +128,14 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 			}
 		}
 	}
+}
+
+// firstProtocolOr returns the first protocol in ps, or def if ps is empty.
+func firstProtocolOr(ps []string, def string) string {
+	if len(ps) > 0 && ps[0] != "" {
+		return ps[0]
+	}
+	return def
 }
 
 // reconcileOnRegister reconciles a (re)connecting worker's DB-recorded live sessions
