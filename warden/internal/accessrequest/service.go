@@ -98,7 +98,8 @@ type Service struct {
 }
 
 // NewService constructs the access-request Service. A nil terminator defaults to
-// NoopTerminator (session teardown is wired against the gateway in M4).
+// NoopTerminator; production wires the real dataplane.Terminator (M4a), which tears
+// down live sessions on revocation via closure re-eval + LISTEN/NOTIFY.
 func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.Resolver, roles *authz.RoleResolver, terminator GrantTerminator, maxTTL time.Duration) *Service {
 	if maxTTL <= 0 {
 		maxTTL = 8 * time.Hour
