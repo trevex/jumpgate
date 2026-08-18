@@ -20,6 +20,7 @@ use rustls::{
     CertificateError, ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore,
     ServerConfig, SignatureScheme,
 };
+use x509_parser::extensions::GeneralName;
 
 /// Read and parse a PEM certificate chain from `path`.
 fn load_certs(path: &str) -> anyhow::Result<Vec<CertificateDer<'static>>> {
@@ -41,6 +42,62 @@ fn load_key(path: &str) -> anyhow::Result<PrivateKeyDer<'static>> {
     rustls_pemfile::private_key(&mut reader)
         .with_context(|| format!("parse private key from {path}"))?
         .with_context(|| format!("no private key found in {path}"))
+}
+
+/// Parse a PEM certificate chain from in-memory `pem` bytes.
+fn certs_from_pem(pem: &[u8]) -> anyhow::Result<Vec<CertificateDer<'static>>> {
+    let mut reader = BufReader::new(pem);
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .context("parse certs from PEM bytes")?;
+    if certs.is_empty() {
+        anyhow::bail!("no certificates found in PEM bytes");
+    }
+    Ok(certs)
+}
+
+/// Parse the first PEM private key from in-memory `pem` bytes.
+fn key_from_pem(pem: &[u8]) -> anyhow::Result<PrivateKeyDer<'static>> {
+    let mut reader = BufReader::new(pem);
+    rustls_pemfile::private_key(&mut reader)
+        .context("parse private key from PEM bytes")?
+        .context("no private key found in PEM bytes")
+}
+
+/// In-memory holder of the mesh client's PEM material. Read once at startup so
+/// callers can cheaply build a per-dial [`ClientConfig`] pinned to a specific
+/// peer SPIFFE identity (the worker dial needs a per-worker expected id).
+#[derive(Clone)]
+pub struct MeshClientCerts {
+    pub cert_pem: Vec<u8>,
+    pub key_pem: Vec<u8>,
+    pub ca_pem: Vec<u8>,
+}
+
+impl MeshClientCerts {
+    /// Read the mesh PEM material from disk once.
+    // Wired into `main` in Task 13; until then only its tests exercise it.
+    #[allow(dead_code)]
+    pub fn from_files(
+        cert_pem_path: &str,
+        key_pem_path: &str,
+        ca_pem_path: &str,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            cert_pem: fs::read(cert_pem_path)
+                .with_context(|| format!("read mesh cert {cert_pem_path}"))?,
+            key_pem: fs::read(key_pem_path)
+                .with_context(|| format!("read mesh key {key_pem_path}"))?,
+            ca_pem: fs::read(ca_pem_path).with_context(|| format!("read mesh CA {ca_pem_path}"))?,
+        })
+    }
+
+    /// Build a mesh mTLS client config that verifies the peer chains to the mesh
+    /// CA AND that its URI SAN equals `expected_spiffe` (see
+    /// [`MeshServerCertVerifier`]).
+    pub fn client_config(&self, expected_spiffe: &str) -> anyhow::Result<Arc<ClientConfig>> {
+        mesh_client_config_no_hostname(&self.cert_pem, &self.key_pem, &self.ca_pem, expected_spiffe)
+    }
 }
 
 /// Build the external server TLS config (no client authentication).
@@ -87,30 +144,66 @@ pub fn mesh_client_config(
 }
 
 /// A [`ServerCertVerifier`] that verifies the peer's certificate chains to the
-/// mesh CA and is currently valid, but tolerates the absence of a matching
-/// DNS/IP name in the certificate.
+/// mesh CA and is currently valid, tolerates the absence of a matching DNS/IP
+/// name, but PINS the peer to a specific SPIFFE identity via its URI SAN.
 ///
-/// WHY: warden's mesh leaf certificates carry only a SPIFFE URI SAN
-/// (`spiffe://jumpgate/warden`) and no DNS SAN. tonic's built-in
-/// [`ClientTlsConfig`] (and rustls' default `WebPkiServerVerifier`) always
-/// perform webpki hostname verification against the requested `domain_name`,
-/// which fails with `CertificateError::NotValidForName` for a URI-only cert. We
-/// still want full cryptographic chain verification against the mesh CA — we
-/// only want to skip the *name* check. This verifier delegates everything to
-/// `WebPkiServerVerifier` and swallows *only* the `NotValidForName` outcome.
+/// WHY: warden's / a worker's mesh leaf certificate carries only a SPIFFE URI
+/// SAN (`spiffe://jumpgate/warden`, `spiffe://jumpgate/worker/<id>`) and no DNS
+/// SAN. tonic's built-in [`ClientTlsConfig`] (and rustls' default
+/// `WebPkiServerVerifier`) always perform webpki hostname verification against
+/// the requested `domain_name`, which fails with
+/// `CertificateError::NotValidForName` for a URI-only cert. We still want full
+/// cryptographic chain verification against the mesh CA — we only want to skip
+/// the *DNS name* check. This verifier delegates chain + signature verification
+/// to `WebPkiServerVerifier`, swallows *only* the `NotValidForName` outcome, and
+/// then independently PARSES the end-entity certificate and requires that
+/// exactly one of its URI SANs equals `expected_spiffe`.
 ///
-/// This does NOT weaken authentication in the mesh: the mesh CA is a private CA
-/// that issues certs solely to mesh peers, and the client presents its own leaf
-/// for mutual auth. Identity beyond "signed by the mesh CA" (i.e. the SPIFFE URI
-/// SAN) is enforced server-side; the gateway only dials warden, whose identity
-/// is pinned by the CA trust anchor. Signature verification (`verify_tls1x_*`)
-/// is delegated unchanged.
-// Constructed by `mesh_client_config_no_hostname`, which is wired into the
-// roster client / worker dial in Tasks 12/13.
-#[allow(dead_code)]
+/// Security: chain-to-mesh-CA alone only proves the peer is *some* mesh member —
+/// it does NOT pin *which* one. The URI-SAN pin closes that gap, so the gateway
+/// provably talks to the specific expected identity (`spiffe://jumpgate/warden`
+/// for the roster dial, `spiffe://jumpgate/worker/<id>` for the worker dial).
+/// The check fails closed: a leaf with no URI SAN, or with a mismatching URI
+/// SAN, is rejected. The client also presents its own leaf for mutual auth.
+/// Signature verification (`verify_tls1x_*`) is delegated unchanged.
 #[derive(Debug)]
 struct MeshServerCertVerifier {
     inner: Arc<WebPkiServerVerifier>,
+    /// The SPIFFE URI the peer's end-entity cert MUST carry as a URI SAN.
+    expected_spiffe: String,
+}
+
+impl MeshServerCertVerifier {
+    /// Fail-closed check that the end-entity cert carries exactly one URI SAN
+    /// equal to `self.expected_spiffe`.
+    fn verify_spiffe_identity(&self, end_entity: &CertificateDer<'_>) -> Result<(), RustlsError> {
+        let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
+            .map_err(|_| RustlsError::General("mesh peer certificate unparseable".into()))?;
+
+        // Collect the URI SAN(s). Fail closed if the SAN extension is absent or
+        // carries no URI GeneralName.
+        let san = cert
+            .subject_alternative_name()
+            .map_err(|_| RustlsError::General("mesh peer SAN unparseable".into()))?
+            .ok_or_else(|| RustlsError::General("mesh peer has no SAN extension".into()))?;
+
+        let uris: Vec<&str> = san
+            .value
+            .general_names
+            .iter()
+            .filter_map(|gn| match gn {
+                GeneralName::URI(u) => Some(*u),
+                _ => None,
+            })
+            .collect();
+
+        // Require exactly one URI SAN, equal to the expected identity.
+        if uris.len() == 1 && uris[0] == self.expected_spiffe {
+            Ok(())
+        } else {
+            Err(RustlsError::General("mesh peer identity mismatch".into()))
+        }
+    }
 }
 
 impl ServerCertVerifier for MeshServerCertVerifier {
@@ -122,6 +215,8 @@ impl ServerCertVerifier for MeshServerCertVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
+        // 1. Full chain + validity verification against the mesh CA, tolerating
+        //    only the missing DNS/IP name (URI-only leaf).
         match self.inner.verify_server_cert(
             end_entity,
             intermediates,
@@ -129,15 +224,20 @@ impl ServerCertVerifier for MeshServerCertVerifier {
             ocsp_response,
             now,
         ) {
-            Ok(v) => Ok(v),
+            Ok(_) => {}
             // The chain verified against the mesh CA but the leaf carries no
-            // matching DNS/IP name (only a SPIFFE URI SAN). Accept it — the
-            // chain-to-CA guarantee is what authenticates the mesh peer.
-            Err(RustlsError::InvalidCertificate(CertificateError::NotValidForName)) => {
-                Ok(ServerCertVerified::assertion())
-            }
-            Err(e) => Err(e),
+            // matching DNS/IP name (only a SPIFFE URI SAN). Tolerate *only* the
+            // name mismatch (both the plain and context-carrying variants);
+            // identity is enforced by the URI-SAN pin below.
+            Err(RustlsError::InvalidCertificate(
+                CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. },
+            )) => {}
+            Err(e) => return Err(e),
         }
+
+        // 2. Pin the peer's SPIFFE identity via its URI SAN (fail closed).
+        self.verify_spiffe_identity(end_entity)?;
+        Ok(ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
@@ -163,33 +263,37 @@ impl ServerCertVerifier for MeshServerCertVerifier {
     }
 }
 
-/// Build a mesh mTLS client config that verifies the chain to the mesh CA but
-/// skips DNS/IP hostname verification (see [`MeshServerCertVerifier`]).
+/// Build a mesh mTLS client config that verifies the chain to the mesh CA,
+/// skips DNS/IP hostname verification, and PINS the peer's SPIFFE identity to
+/// `expected_spiffe` via its URI SAN (see [`MeshServerCertVerifier`]).
 ///
-/// Used by the roster tonic client (Task 10) and the worker proxy dial
-/// (Task 12), both of which dial mesh peers whose certs carry only URI SANs.
-// Wired into the roster client / worker dial in Tasks 12/13.
-#[allow(dead_code)]
+/// Takes PEM *bytes* so callers can read the material once and build cheap
+/// per-dial configs (the worker dial pins a per-worker identity). Used by the
+/// roster tonic client (`spiffe://jumpgate/warden`) and the worker proxy dial
+/// (`spiffe://jumpgate/worker/<id>`), both of which dial mesh peers whose certs
+/// carry only URI SANs. Prefer [`MeshClientCerts::client_config`].
 pub fn mesh_client_config_no_hostname(
-    cert_pem_path: &str,
-    key_pem_path: &str,
-    ca_pem_path: &str,
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    ca_pem: &[u8],
+    expected_spiffe: &str,
 ) -> anyhow::Result<Arc<ClientConfig>> {
-    let certs = load_certs(cert_pem_path)?;
-    let key = load_key(key_pem_path)?;
+    let certs = certs_from_pem(cert_pem)?;
+    let key = key_from_pem(key_pem)?;
 
-    let ca_certs = load_certs(ca_pem_path)?;
+    let ca_certs = certs_from_pem(ca_pem)?;
     let mut roots = RootCertStore::empty();
     for ca in ca_certs {
-        roots
-            .add(ca)
-            .with_context(|| format!("add mesh CA cert from {ca_pem_path}"))?;
+        roots.add(ca).context("add mesh CA cert")?;
     }
 
     let webpki = WebPkiServerVerifier::builder(Arc::new(roots))
         .build()
         .context("build webpki mesh verifier")?;
-    let verifier = Arc::new(MeshServerCertVerifier { inner: webpki });
+    let verifier = Arc::new(MeshServerCertVerifier {
+        inner: webpki,
+        expected_spiffe: expected_spiffe.to_string(),
+    });
 
     let config = ClientConfig::builder()
         .dangerous()
@@ -250,20 +354,103 @@ mod tests {
         let ca = rcgen::generate_simple_self_signed(vec!["mesh-ca".to_string()]).unwrap();
         let leaf = rcgen::generate_simple_self_signed(vec!["gateway".to_string()]).unwrap();
 
-        let ca_pem = write_pem(&ca.cert.pem());
-        let leaf_cert_pem = write_pem(&leaf.cert.pem());
-        let leaf_key_pem = write_pem(&leaf.key_pair.serialize_pem());
-
         let cfg = mesh_client_config_no_hostname(
-            leaf_cert_pem.path().to_str().unwrap(),
-            leaf_key_pem.path().to_str().unwrap(),
-            ca_pem.path().to_str().unwrap(),
+            leaf.cert.pem().as_bytes(),
+            leaf.key_pair.serialize_pem().as_bytes(),
+            ca.cert.pem().as_bytes(),
+            "spiffe://jumpgate/warden",
         );
         assert!(
             cfg.is_ok(),
             "mesh_client_config_no_hostname failed: {:?}",
             cfg.err()
         );
+    }
+
+    #[test]
+    fn mesh_client_certs_from_files_and_client_config() {
+        let ca = rcgen::generate_simple_self_signed(vec!["mesh-ca".to_string()]).unwrap();
+        let leaf = rcgen::generate_simple_self_signed(vec!["gateway".to_string()]).unwrap();
+
+        let ca_pem = write_pem(&ca.cert.pem());
+        let leaf_cert_pem = write_pem(&leaf.cert.pem());
+        let leaf_key_pem = write_pem(&leaf.key_pair.serialize_pem());
+
+        let certs = MeshClientCerts::from_files(
+            leaf_cert_pem.path().to_str().unwrap(),
+            leaf_key_pem.path().to_str().unwrap(),
+            ca_pem.path().to_str().unwrap(),
+        )
+        .unwrap();
+        assert!(certs.client_config("spiffe://jumpgate/worker/w1").is_ok());
+    }
+
+    /// Build a leaf whose only SAN is the given SPIFFE URI, signed by `ca`.
+    fn spiffe_leaf(
+        ca_cert: &rcgen::Certificate,
+        ca_key: &rcgen::KeyPair,
+        spiffe: &str,
+    ) -> rcgen::Certificate {
+        let mut params = rcgen::CertificateParams::new(vec![]).unwrap();
+        params.subject_alt_names = vec![rcgen::SanType::URI(spiffe.try_into().unwrap())];
+        let key = rcgen::KeyPair::generate().unwrap();
+        params.signed_by(&key, ca_cert, ca_key).unwrap()
+    }
+
+    /// A self-signed CA: returns (cert, key, ca_pem).
+    fn test_ca() -> (rcgen::Certificate, rcgen::KeyPair, String) {
+        let mut params = rcgen::CertificateParams::new(vec!["mesh-ca".to_string()]).unwrap();
+        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        let ca_pem = cert.pem();
+        (cert, key, ca_pem)
+    }
+
+    fn build_verifier(ca_pem: &str, expected: &str) -> MeshServerCertVerifier {
+        let mut roots = RootCertStore::empty();
+        for c in certs_from_pem(ca_pem.as_bytes()).unwrap() {
+            roots.add(c).unwrap();
+        }
+        let webpki = WebPkiServerVerifier::builder(Arc::new(roots))
+            .build()
+            .unwrap();
+        MeshServerCertVerifier {
+            inner: webpki,
+            expected_spiffe: expected.to_string(),
+        }
+    }
+
+    #[test]
+    fn verifier_accepts_matching_spiffe() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        let leaf = spiffe_leaf(&ca, &ca_key, "spiffe://jumpgate/worker/w1");
+        let v = build_verifier(&ca_pem, "spiffe://jumpgate/worker/w1");
+        let der = CertificateDer::from(leaf.der().to_vec());
+        assert!(v.verify_spiffe_identity(&der).is_ok());
+    }
+
+    #[test]
+    fn verifier_rejects_mismatched_spiffe() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        let leaf = spiffe_leaf(&ca, &ca_key, "spiffe://jumpgate/worker/w2");
+        let v = build_verifier(&ca_pem, "spiffe://jumpgate/worker/w1");
+        let der = CertificateDer::from(leaf.der().to_vec());
+        assert!(v.verify_spiffe_identity(&der).is_err());
+    }
+
+    #[test]
+    fn verifier_rejects_no_uri_san() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        // Leaf with a DNS SAN but no URI SAN -> fail closed.
+        let mut params = rcgen::CertificateParams::new(vec!["host.example".to_string()]).unwrap();
+        params.subject_alt_names =
+            vec![rcgen::SanType::DnsName("host.example".try_into().unwrap())];
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.signed_by(&key, &ca, &ca_key).unwrap();
+        let v = build_verifier(&ca_pem, "spiffe://jumpgate/worker/w1");
+        let der = CertificateDer::from(cert.der().to_vec());
+        assert!(v.verify_spiffe_identity(&der).is_err());
     }
 
     #[test]

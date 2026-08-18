@@ -19,6 +19,12 @@ use std::sync::{Arc, RwLock};
 
 use tonic::transport::{Endpoint, Uri};
 
+use crate::tls::MeshClientCerts;
+
+/// The SPIFFE identity the warden mesh peer must present (URI SAN). Pinned by the
+/// mesh client verifier on the roster dial.
+const WARDEN_SPIFFE: &str = "spiffe://jumpgate/warden";
+
 use crate::pb::jumpgate::gateway::v1::{
     gateway_service_client::GatewayServiceClient, roster_event::Kind,
     GetSessionVerificationKeyRequest, WatchWorkersRequest,
@@ -74,9 +80,17 @@ impl Roster {
 pub async fn run(
     roster: Roster,
     warden_addr: String,
-    mesh_client_config: Arc<rustls::ClientConfig>,
+    certs: MeshClientCerts,
     on_key: impl Fn(Vec<u8>) + Send + Sync + 'static,
 ) {
+    // Build the warden-pinned mesh config once (URI SAN == spiffe://jumpgate/warden).
+    let mesh_client_config = match certs.client_config(WARDEN_SPIFFE) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to build warden mesh client config");
+            return;
+        }
+    };
     loop {
         match connect_and_stream(&roster, &warden_addr, mesh_client_config.clone(), &on_key).await {
             Ok(()) => tracing::warn!("watch_workers stream ended; reconnecting"),

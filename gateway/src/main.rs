@@ -12,6 +12,10 @@ mod health;
 // until then it is only exercised by its own tests.
 #[allow(dead_code)]
 mod lb;
+// The gateway→worker proxy leg (Task 12): exercised by its own tests until the
+// connection handler is wired in Task 13.
+#[allow(dead_code)]
+mod proxy;
 // The roster client (Task 10) is wired into `main` in Task 13; for now only its
 // unit-tested `Roster` map is exercised.
 #[allow(dead_code)]
