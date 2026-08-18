@@ -311,11 +311,13 @@ written to an append-only, **hash-chained** audit log
 (`entry_hash = sha256(prev_hash ‖ canonical(entry))`) so tampering breaks the
 chain. The JIT workflow emits `access_request.created`/`.approved`/`.denied`/
 `.cancelled` and `access_grant.activated`/`.revoked`/`.expired` (M3c), and the
-vault emits `credential.issued` on each broker issuance (M3d). Audit
-appends are **post-commit** (the audit logger opens its own advisory-locked tx and
-cannot join the domain tx), which leaves a small **crash window** between the domain
-commit and the append — a known limitation, to be closed with a transactional
-outbox (see [security.md](security.md#tamper-evident-audit)). Sessions are recorded
+vault emits `credential.issued` on each broker issuance (M3d). The JIT events are
+written through a **transactional outbox**: each service `Enqueue`s its event into
+`audit_outbox` inside the same domain tx (atomic with the state change), and a
+background drainer chains outbox rows into the hash-linked log — closing the
+post-commit crash window (see [security.md](security.md#secrets-at-rest--envelope-encryption)).
+The vault's `credential.issued` is a post-fact append (no domain tx to join) and
+still uses direct `Append`. Sessions are recorded
 (SSH as asciicast v2; Postgres as a structured statement log) to object storage with
 per-chunk hashes — later milestones (M4/M5). SIEM export is a later milestone.
 
