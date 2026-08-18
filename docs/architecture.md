@@ -315,7 +315,7 @@ vault emits `credential.issued` on each broker issuance (M3d). The JIT events ar
 written through a **transactional outbox**: each service `Enqueue`s its event into
 `audit_outbox` inside the same domain tx (atomic with the state change), and a
 background drainer chains outbox rows into the hash-linked log — closing the
-post-commit crash window (see [security.md](security.md#secrets-at-rest--envelope-encryption)).
+post-commit crash window (see [security.md](security.md#tamper-evident-audit)).
 The vault's `credential.issued` is a post-fact append (no domain tx to join) and
 still uses direct `Append`. Sessions are recorded
 (SSH as asciicast v2; Postgres as a structured statement log) to object storage with

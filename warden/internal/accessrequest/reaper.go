@@ -13,10 +13,13 @@ import (
 )
 
 // ReapExpired marks every grant whose window has elapsed as revoked
-// (revoked_reason='expired'), then for each such grant audits access_grant.expired
-// and notifies the terminator so any live sessions are torn down. Both side effects
-// are best-effort and logged on failure — a single audit/terminator error must not
-// abort the sweep. Returns the number of grants expired.
+// (revoked_reason='expired') and, in the same transaction, enqueues an
+// access_grant.expired audit event for each into the outbox — so the expiry and
+// its audit trail commit atomically (an enqueue failure rolls back the whole
+// sweep). After commit it notifies the terminator per grant so any live sessions
+// are torn down; the terminator is best-effort and logged on failure (a single
+// terminator error must not abort the post-commit teardown loop). Returns the
+// number of grants expired.
 //
 // Authorization already treats expired grants as inactive (the held-closure filters
 // expires_at > now()); this reaper is a SIDE-EFFECTS job (audit + teardown), not an
