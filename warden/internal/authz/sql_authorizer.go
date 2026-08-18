@@ -28,6 +28,14 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 // PostgreSQL permits the recursive self-reference exactly once, so the three
 // expansion branches are combined via a LATERAL subquery referencing the current
 // row h (not the recursive relation).
+//
+// SECURITY — SINGLE SOURCE OF TRUTH: the `user_groups` + `held` forward-closure
+// below is duplicated verbatim in requestable.go (requestableRolesCTE,
+// visibleRequestableCTE). Check's grant decision and the Requestable-tier
+// eligibility MUST resolve membership identically. If you change a role_grants
+// expansion arm or the base case here, change ALL copies or eligibility silently
+// diverges from Check. (Kept as copies because each query wraps it in different
+// trailing CTEs; keep them byte-identical.)
 const heldCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
