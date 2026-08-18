@@ -26,6 +26,10 @@ type Config struct {
 	// live sessions. Authorization already excludes expired grants; the reaper only
 	// drives the side effects (audit + teardown).
 	ReaperInterval time.Duration `env:"REAPER_INTERVAL" envDefault:"30s"`
+
+	// VaultMasterKey is the base64-encoded 32-byte master KEK that seals CA private
+	// keys and stored secrets at rest. Empty means the vault is disabled.
+	VaultMasterKey string `env:"VAULT_MASTER_KEY"`
 }
 
 // Load reads configuration from environment variables.

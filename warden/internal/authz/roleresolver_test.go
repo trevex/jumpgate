@@ -88,7 +88,7 @@ func TestHoldsRole(t *testing.T) {
 	}
 
 	// ── asset pg in proddb ────────────────────────────────────────────────────
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}")})
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset pg: %v", err)
 	}

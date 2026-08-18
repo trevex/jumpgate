@@ -16,8 +16,27 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
+
+// testMasterKeyB64 is a base64-encoded 32-byte KEK used to build a real sealer
+// for the rpc tests, so VaultService's sealing write paths are exercised.
+const testMasterKeyB64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+// testSealer builds the shared test sealer from testMasterKeyB64.
+func testSealer(t *testing.T) *secrets.Sealer {
+	t.Helper()
+	key, err := secrets.MasterKeyFromConfig(testMasterKeyB64)
+	if err != nil {
+		t.Fatalf("test master key: %v", err)
+	}
+	s, err := secrets.NewSealer(key)
+	if err != nil {
+		t.Fatalf("test sealer: %v", err)
+	}
+	return s
+}
 
 // testAccessRequestService builds a shared access-request Service for the rpc test
 // servers (mirrors the wiring in main.go / rpc.Register).
@@ -45,7 +64,7 @@ func TestMuxServesHealthzAndRegisters(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool)); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
