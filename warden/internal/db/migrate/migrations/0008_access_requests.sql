@@ -7,7 +7,8 @@ DECLARE cname text;
 BEGIN
   SELECT conname INTO cname FROM pg_constraint
    WHERE conrelid = 'request_policies'::regclass AND contype = 'c'
-     AND pg_get_constraintdef(oid) ILIKE '%required_approvals%';
+     AND pg_get_constraintdef(oid) ILIKE '%required_approvals%'
+   LIMIT 1;
   IF cname IS NOT NULL THEN EXECUTE format('ALTER TABLE request_policies DROP CONSTRAINT %I', cname); END IF;
 END $$;
 -- +goose StatementEnd
@@ -64,9 +65,12 @@ DECLARE cname text;
 BEGIN
   SELECT conname INTO cname FROM pg_constraint
    WHERE conrelid = 'request_policies'::regclass AND contype = 'c'
-     AND pg_get_constraintdef(oid) ILIKE '%required_approvals%';
+     AND pg_get_constraintdef(oid) ILIKE '%required_approvals%'
+   LIMIT 1;
   IF cname IS NOT NULL THEN EXECUTE format('ALTER TABLE request_policies DROP CONSTRAINT %I', cname); END IF;
 END $$;
 -- +goose StatementEnd
+-- NOTE: this fails if any self-service policy (required_approvals = 0) exists;
+-- acceptable, as down migrations are only used in dev.
 ALTER TABLE request_policies ADD CONSTRAINT request_policies_required_approvals_check CHECK (required_approvals >= 1);
 ALTER TABLE request_policies DROP COLUMN max_duration;
