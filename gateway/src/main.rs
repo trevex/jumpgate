@@ -8,11 +8,27 @@
 mod config;
 mod connect;
 mod health;
+// The roster client (Task 10) is wired into `main` in Task 13; for now only its
+// unit-tested `Roster` map is exercised.
+#[allow(dead_code)]
+mod roster;
 mod tls;
 // Wired into the connection handler in a later task (Task 13); until then the
 // verifier is only exercised by its own tests.
 #[allow(dead_code)]
 mod token;
+
+/// Generated tonic clients + prost messages for the jumpgate protos. The gateway
+/// consumes `jumpgate.gateway.v1.GatewayService` over the internal mesh.
+pub mod pb {
+    pub mod jumpgate {
+        pub mod gateway {
+            pub mod v1 {
+                tonic::include_proto!("jumpgate.gateway.v1");
+            }
+        }
+    }
+}
 
 use std::sync::Arc;
 
