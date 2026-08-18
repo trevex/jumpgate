@@ -161,4 +161,11 @@ func TestSSHCARejectsEmptyPrincipals(t *testing.T) {
 	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{"root", ""}, ValidBefore: vb}); err == nil {
 		t.Fatal("empty-string principal must be refused")
 	}
+	// A zero/past ValidBefore would mint an effectively non-expiring cert — refuse.
+	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{"root"}, ValidBefore: time.Time{}}); err == nil {
+		t.Fatal("zero ValidBefore must be refused")
+	}
+	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{"root"}, ValidBefore: time.Now().Add(-time.Minute)}); err == nil {
+		t.Fatal("past ValidBefore must be refused")
+	}
 }
