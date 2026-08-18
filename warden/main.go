@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
@@ -27,6 +28,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
 func main() {
@@ -124,22 +126,34 @@ func run() error {
 	// Build the CLI-facing session admission service. It requires the vault (to
 	// unseal the signing key) and an initialized active session signing key; absent
 	// either, CreateSession is disabled (nil service → SessionService not mounted).
+	//
+	// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream); it is
+	// built alongside sessionSvc under the same preconditions and shares the active
+	// signing key (as a verifier). The worker registry is always created (it is
+	// rebuilt from reconnecting streams), but DataplaneService only mounts when
+	// setupSvc is non-nil.
+	registry := dataplane.NewRegistry()
 	var sessionSvc *session.Service
+	var setupSvc *dataplane.SetupService
 	if sealer != nil {
 		ks := session.NewKeyStore(gen.New(pool), sealer)
-		priv, _, err := ks.LoadActive(ctx)
+		priv, pub, err := ks.LoadActive(ctx)
 		if errors.Is(err, session.ErrNoActiveKey) {
 			slog.Warn("no active session signing key; CreateSession disabled until initialized")
 		} else if err != nil {
 			return err
 		} else {
-			sessionSvc = session.NewService(gen.New(pool), authz.NewSQLAuthorizer(pool), sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+			authorizer := authz.NewSQLAuthorizer(pool)
+			sessionSvc = session.NewService(gen.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
+			verifier := sessiontoken.NewVerifier(pub)
+			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, cfg.SSHCertMaxTTL)
 		}
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc, sealer, sessionSvc); err != nil {
+	if err := rpc.Register(mux, pool, arSvc, sealer, sessionSvc, setupSvc, registry); err != nil {
 		return err
 	}
 
