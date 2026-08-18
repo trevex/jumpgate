@@ -13,17 +13,24 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
 // Register mounts all warden RPC services onto mux with auth + validation
 // interceptors. arSvc is the shared access-request Service (its terminator + audit
 // are also used by the expiry reaper, so caller builds it ONCE and shares it).
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service) error {
+//
+// sealer is the vault sealer built once at startup; a nil sealer means the vault
+// is disabled (VaultService still mounts, but its sealing write paths fail
+// FailedPrecondition). The CredentialBroker is wired in M4 — VaultService is the
+// only vault surface mounted here.
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -49,6 +56,9 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Servi
 
 	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc), opts)
 	mux.Handle(arPath, arHandler)
+
+	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer), opts)
+	mux.Handle(vaultPath, vaultHandler)
 
 	return nil
 }

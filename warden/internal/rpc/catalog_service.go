@@ -69,7 +69,7 @@ func toFolderMsg(f gen.Folder) *catalogv1.Folder {
 }
 
 func toAssetMsg(a gen.Asset) *catalogv1.Asset {
-	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name}
+	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
 // optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
@@ -144,7 +144,11 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
-	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: "ssh"})
+	kind := req.Msg.Kind
+	if kind == "" {
+		kind = "ssh"
+	}
+	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: kind})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}

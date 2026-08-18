@@ -19,7 +19,7 @@ service CatalogService {
 }
 
 message Folder { string id = 1; string name = 2; string parent_id = 3; }
-message Asset  { string id = 1; string folder_id = 2; string name = 3; }
+message Asset  { string id = 1; string folder_id = 2; string name = 3; string kind = 4; }
 
 message CreateFolderRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
@@ -33,6 +33,7 @@ message ListFoldersResponse { repeated Folder folders = 1; string next_page_toke
 message CreateAssetRequest {
   string folder_id = 1 [(buf.validate.field).string.uuid = true];
   string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string kind = 3 [(buf.validate.field).string = {in: ["ssh", "postgres", "k8s", ""]}];
 }
 message CreateAssetResponse { Asset asset = 1; }
 
