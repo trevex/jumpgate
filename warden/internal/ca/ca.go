@@ -79,11 +79,17 @@ func (c *SSHCA) SignUserKey(userPub ssh.PublicKey, p SSHCertParams) (*ssh.Certif
 			return nil, fmt.Errorf("refusing to sign an SSH cert with an empty principal")
 		}
 	}
+	now := time.Now()
+	// SECURITY: a zero/past ValidBefore casts to a huge uint64 → an effectively
+	// non-expiring cert. The credential must be time-bounded (never outlive its
+	// grant), so refuse a non-future expiry here rather than trust the caller.
+	if p.ValidBefore.IsZero() || !p.ValidBefore.After(now) {
+		return nil, fmt.Errorf("refusing to sign an SSH cert with a non-future ValidBefore")
+	}
 	serial, err := randomSerialUint64()
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
 	cert := &ssh.Certificate{
 		Key:             userPub,
 		CertType:        ssh.UserCert,
