@@ -17,6 +17,10 @@ service CatalogService {
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {}
   rpc CreateRoleBinding(CreateRoleBindingRequest) returns (CreateRoleBindingResponse) {}
   rpc DeleteRoleBinding(DeleteRoleBindingRequest) returns (DeleteRoleBindingResponse) {}
+  rpc AddRoleGrant(AddRoleGrantRequest) returns (AddRoleGrantResponse) {}
+  rpc RemoveRoleGrant(RemoveRoleGrantRequest) returns (RemoveRoleGrantResponse) {}
+  rpc ListRoleGrants(ListRoleGrantsRequest) returns (ListRoleGrantsResponse) {}
+  rpc ExplainRole(ExplainRoleRequest) returns (ExplainRoleResponse) {}
   rpc ListVisibleAssets(ListVisibleAssetsRequest) returns (ListVisibleAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
 }
@@ -65,6 +69,30 @@ message CreateRoleBindingResponse { string id = 1; }
 
 message DeleteRoleBindingRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
 message DeleteRoleBindingResponse {}
+
+message RoleGrant { string id = 1; string role_id = 2; string source_role_id = 3; string via = 4; }
+
+message AddRoleGrantRequest {
+  string role_id        = 1 [(buf.validate.field).string.uuid = true];
+  string source_role_id = 2 [(buf.validate.field).string.uuid = true];
+  string via            = 3 [(buf.validate.field).string = {in: ["same_object", "parent"]}];
+}
+message AddRoleGrantResponse { RoleGrant grant = 1; }
+
+message RemoveRoleGrantRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message RemoveRoleGrantResponse {}
+
+message ListRoleGrantsRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListRoleGrantsResponse { repeated RoleGrant grants = 1; }
+
+message ExplainRoleRequest {
+  string user_id  = 1 [(buf.validate.field).string.uuid = true];
+  string role_id  = 2 [(buf.validate.field).string.uuid = true];
+  string asset_id = 3 [(buf.validate.field).string.uuid = true];
+}
+message RoleGrantPathStep { string role_id = 1; string object_kind = 2; string object_id = 3; string via = 4; }
+message ExplainRolePath { repeated RoleGrantPathStep steps = 1; string binding_id = 2; string subject = 3; }
+message ExplainRoleResponse { bool holds = 1; repeated ExplainRolePath paths = 2; }
 
 message VisibleAsset {
   string id = 1;

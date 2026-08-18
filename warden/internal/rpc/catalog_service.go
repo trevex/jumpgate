@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
@@ -15,15 +16,23 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
+// PostgreSQL SQLSTATE codes used to map DB constraint failures to Connect codes.
+const (
+	pgerrcodeUniqueViolation     = "23505"
+	pgerrcodeForeignKeyViolation = "23503"
+	pgerrcodeCheckViolation      = "23514"
+)
+
 // CatalogServer implements catalogv1connect.CatalogServiceHandler.
 type CatalogServer struct {
 	q          *gen.Queries
 	authorizer authz.Authorizer
+	roles      *authz.RoleResolver
 }
 
 // NewCatalogServer constructs the CatalogService implementation.
-func NewCatalogServer(q *gen.Queries, authorizer authz.Authorizer) *CatalogServer {
-	return &CatalogServer{q: q, authorizer: authorizer}
+func NewCatalogServer(q *gen.Queries, authorizer authz.Authorizer, roles *authz.RoleResolver) *CatalogServer {
+	return &CatalogServer{q: q, authorizer: authorizer, roles: roles}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {
@@ -45,6 +54,15 @@ func toRoleMsg(r gen.Role) *catalogv1.Role {
 	var caps []string
 	_ = json.Unmarshal(r.Capabilities, &caps)
 	return &catalogv1.Role{Id: r.ID.String(), Name: r.Name, ResourceType: r.ResourceType, Capabilities: caps}
+}
+
+func toRoleGrantMsg(g gen.RoleGrant) *catalogv1.RoleGrant {
+	return &catalogv1.RoleGrant{
+		Id:           g.ID.String(),
+		RoleId:       g.RoleID.String(),
+		SourceRoleId: g.SourceRoleID.String(),
+		Via:          g.Via,
+	}
 }
 
 // CreateFolder creates a folder (admin only).
@@ -250,6 +268,120 @@ func (s *CatalogServer) DeleteRoleBinding(ctx context.Context, req *connect.Requ
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&catalogv1.DeleteRoleBindingResponse{}), nil
+}
+
+// AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"
+// (admin only). Mirrors the DB constraints: same-object self-reference is
+// rejected; a duplicate rule is AlreadyExists; an unknown role is InvalidArgument.
+func (s *CatalogServer) AddRoleGrant(ctx context.Context, req *connect.Request[catalogv1.AddRoleGrantRequest]) (*connect.Response[catalogv1.AddRoleGrantResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	sourceRoleID, err := uuid.Parse(req.Msg.SourceRoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad source_role_id"))
+	}
+	if req.Msg.Via == "same_object" && roleID == sourceRoleID {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("same-object self-reference not allowed"))
+	}
+	g, err := s.q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: sourceRoleID, Via: req.Msg.Via})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case pgerrcodeUniqueViolation:
+				return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("role grant already exists"))
+			case pgerrcodeForeignKeyViolation:
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown role"))
+			case pgerrcodeCheckViolation:
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role grant violates constraint"))
+			}
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.AddRoleGrantResponse{Grant: toRoleGrantMsg(g)}), nil
+}
+
+// RemoveRoleGrant deletes a role-rewrite rule by id (admin only). Deleting a
+// non-existent id is a no-op.
+func (s *CatalogServer) RemoveRoleGrant(ctx context.Context, req *connect.Request[catalogv1.RemoveRoleGrantRequest]) (*connect.Response[catalogv1.RemoveRoleGrantResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	if err := s.q.DeleteRoleGrant(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.RemoveRoleGrantResponse{}), nil
+}
+
+// ListRoleGrants lists the rewrite rules conferring role_id (admin only).
+func (s *CatalogServer) ListRoleGrants(ctx context.Context, req *connect.Request[catalogv1.ListRoleGrantsRequest]) (*connect.Response[catalogv1.ListRoleGrantsResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	rows, err := s.q.ListRoleGrants(ctx, roleID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &catalogv1.ListRoleGrantsResponse{}
+	for i := range rows {
+		out.Grants = append(out.Grants, toRoleGrantMsg(rows[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ExplainRole enumerates every derivation by which a user holds a role on an
+// asset. Admins may explain anyone; a non-admin may only explain themselves.
+func (s *CatalogServer) ExplainRole(ctx context.Context, req *connect.Request[catalogv1.ExplainRoleRequest]) (*connect.Response[catalogv1.ExplainRoleResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if !caller.IsAdmin && req.Msg.UserId != caller.ID.String() {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
+	}
+	userID, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	holds, paths, err := s.roles.ExplainRole(ctx, userID, roleID, assetID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &catalogv1.ExplainRoleResponse{Holds: holds}
+	for _, p := range paths {
+		mp := &catalogv1.ExplainRolePath{BindingId: p.BindingID.String(), Subject: p.Subject}
+		for _, st := range p.Steps {
+			mp.Steps = append(mp.Steps, &catalogv1.RoleGrantPathStep{
+				RoleId:     st.RoleID.String(),
+				ObjectKind: st.ObjectKind,
+				ObjectId:   st.ObjectID.String(),
+				Via:        st.Via,
+			})
+		}
+		out.Paths = append(out.Paths, mp)
+	}
+	return connect.NewResponse(out), nil
 }
 
 // ListVisibleAssets returns the caller's visible assets (active or requestable).

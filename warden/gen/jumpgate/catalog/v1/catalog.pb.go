@@ -1010,6 +1010,586 @@ func (*DeleteRoleBindingResponse) Descriptor() ([]byte, []int) {
 	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{18}
 }
 
+type RoleGrant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RoleId        string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	SourceRoleId  string                 `protobuf:"bytes,3,opt,name=source_role_id,json=sourceRoleId,proto3" json:"source_role_id,omitempty"`
+	Via           string                 `protobuf:"bytes,4,opt,name=via,proto3" json:"via,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleGrant) Reset() {
+	*x = RoleGrant{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleGrant) ProtoMessage() {}
+
+func (x *RoleGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleGrant.ProtoReflect.Descriptor instead.
+func (*RoleGrant) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RoleGrant) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RoleGrant) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *RoleGrant) GetSourceRoleId() string {
+	if x != nil {
+		return x.SourceRoleId
+	}
+	return ""
+}
+
+func (x *RoleGrant) GetVia() string {
+	if x != nil {
+		return x.Via
+	}
+	return ""
+}
+
+type AddRoleGrantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleId        string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	SourceRoleId  string                 `protobuf:"bytes,2,opt,name=source_role_id,json=sourceRoleId,proto3" json:"source_role_id,omitempty"`
+	Via           string                 `protobuf:"bytes,3,opt,name=via,proto3" json:"via,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddRoleGrantRequest) Reset() {
+	*x = AddRoleGrantRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddRoleGrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddRoleGrantRequest) ProtoMessage() {}
+
+func (x *AddRoleGrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddRoleGrantRequest.ProtoReflect.Descriptor instead.
+func (*AddRoleGrantRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *AddRoleGrantRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *AddRoleGrantRequest) GetSourceRoleId() string {
+	if x != nil {
+		return x.SourceRoleId
+	}
+	return ""
+}
+
+func (x *AddRoleGrantRequest) GetVia() string {
+	if x != nil {
+		return x.Via
+	}
+	return ""
+}
+
+type AddRoleGrantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grant         *RoleGrant             `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddRoleGrantResponse) Reset() {
+	*x = AddRoleGrantResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddRoleGrantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddRoleGrantResponse) ProtoMessage() {}
+
+func (x *AddRoleGrantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddRoleGrantResponse.ProtoReflect.Descriptor instead.
+func (*AddRoleGrantResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AddRoleGrantResponse) GetGrant() *RoleGrant {
+	if x != nil {
+		return x.Grant
+	}
+	return nil
+}
+
+type RemoveRoleGrantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveRoleGrantRequest) Reset() {
+	*x = RemoveRoleGrantRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveRoleGrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveRoleGrantRequest) ProtoMessage() {}
+
+func (x *RemoveRoleGrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveRoleGrantRequest.ProtoReflect.Descriptor instead.
+func (*RemoveRoleGrantRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *RemoveRoleGrantRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type RemoveRoleGrantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveRoleGrantResponse) Reset() {
+	*x = RemoveRoleGrantResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveRoleGrantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveRoleGrantResponse) ProtoMessage() {}
+
+func (x *RemoveRoleGrantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveRoleGrantResponse.ProtoReflect.Descriptor instead.
+func (*RemoveRoleGrantResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{23}
+}
+
+type ListRoleGrantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleId        string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRoleGrantsRequest) Reset() {
+	*x = ListRoleGrantsRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRoleGrantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRoleGrantsRequest) ProtoMessage() {}
+
+func (x *ListRoleGrantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRoleGrantsRequest.ProtoReflect.Descriptor instead.
+func (*ListRoleGrantsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListRoleGrantsRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+type ListRoleGrantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*RoleGrant           `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRoleGrantsResponse) Reset() {
+	*x = ListRoleGrantsResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRoleGrantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRoleGrantsResponse) ProtoMessage() {}
+
+func (x *ListRoleGrantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRoleGrantsResponse.ProtoReflect.Descriptor instead.
+func (*ListRoleGrantsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListRoleGrantsResponse) GetGrants() []*RoleGrant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+type ExplainRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoleId        string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	AssetId       string                 `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainRoleRequest) Reset() {
+	*x = ExplainRoleRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainRoleRequest) ProtoMessage() {}
+
+func (x *ExplainRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainRoleRequest.ProtoReflect.Descriptor instead.
+func (*ExplainRoleRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ExplainRoleRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ExplainRoleRequest) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *ExplainRoleRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+type RoleGrantPathStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoleId        string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	ObjectKind    string                 `protobuf:"bytes,2,opt,name=object_kind,json=objectKind,proto3" json:"object_kind,omitempty"`
+	ObjectId      string                 `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	Via           string                 `protobuf:"bytes,4,opt,name=via,proto3" json:"via,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleGrantPathStep) Reset() {
+	*x = RoleGrantPathStep{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleGrantPathStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleGrantPathStep) ProtoMessage() {}
+
+func (x *RoleGrantPathStep) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleGrantPathStep.ProtoReflect.Descriptor instead.
+func (*RoleGrantPathStep) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RoleGrantPathStep) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *RoleGrantPathStep) GetObjectKind() string {
+	if x != nil {
+		return x.ObjectKind
+	}
+	return ""
+}
+
+func (x *RoleGrantPathStep) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *RoleGrantPathStep) GetVia() string {
+	if x != nil {
+		return x.Via
+	}
+	return ""
+}
+
+type ExplainRolePath struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Steps         []*RoleGrantPathStep   `protobuf:"bytes,1,rep,name=steps,proto3" json:"steps,omitempty"`
+	BindingId     string                 `protobuf:"bytes,2,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	Subject       string                 `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainRolePath) Reset() {
+	*x = ExplainRolePath{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainRolePath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainRolePath) ProtoMessage() {}
+
+func (x *ExplainRolePath) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainRolePath.ProtoReflect.Descriptor instead.
+func (*ExplainRolePath) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ExplainRolePath) GetSteps() []*RoleGrantPathStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *ExplainRolePath) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *ExplainRolePath) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+type ExplainRoleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Holds         bool                   `protobuf:"varint,1,opt,name=holds,proto3" json:"holds,omitempty"`
+	Paths         []*ExplainRolePath     `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainRoleResponse) Reset() {
+	*x = ExplainRoleResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainRoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainRoleResponse) ProtoMessage() {}
+
+func (x *ExplainRoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainRoleResponse.ProtoReflect.Descriptor instead.
+func (*ExplainRoleResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ExplainRoleResponse) GetHolds() bool {
+	if x != nil {
+		return x.Holds
+	}
+	return false
+}
+
+func (x *ExplainRoleResponse) GetPaths() []*ExplainRolePath {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
 type VisibleAsset struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1022,7 +1602,7 @@ type VisibleAsset struct {
 
 func (x *VisibleAsset) Reset() {
 	*x = VisibleAsset{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1034,7 +1614,7 @@ func (x *VisibleAsset) String() string {
 func (*VisibleAsset) ProtoMessage() {}
 
 func (x *VisibleAsset) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1047,7 +1627,7 @@ func (x *VisibleAsset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VisibleAsset.ProtoReflect.Descriptor instead.
 func (*VisibleAsset) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{19}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *VisibleAsset) GetId() string {
@@ -1086,7 +1666,7 @@ type ListVisibleAssetsRequest struct {
 
 func (x *ListVisibleAssetsRequest) Reset() {
 	*x = ListVisibleAssetsRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1098,7 +1678,7 @@ func (x *ListVisibleAssetsRequest) String() string {
 func (*ListVisibleAssetsRequest) ProtoMessage() {}
 
 func (x *ListVisibleAssetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1111,7 +1691,7 @@ func (x *ListVisibleAssetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVisibleAssetsRequest.ProtoReflect.Descriptor instead.
 func (*ListVisibleAssetsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{20}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{31}
 }
 
 type ListVisibleAssetsResponse struct {
@@ -1123,7 +1703,7 @@ type ListVisibleAssetsResponse struct {
 
 func (x *ListVisibleAssetsResponse) Reset() {
 	*x = ListVisibleAssetsResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1135,7 +1715,7 @@ func (x *ListVisibleAssetsResponse) String() string {
 func (*ListVisibleAssetsResponse) ProtoMessage() {}
 
 func (x *ListVisibleAssetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1148,7 +1728,7 @@ func (x *ListVisibleAssetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVisibleAssetsResponse.ProtoReflect.Descriptor instead.
 func (*ListVisibleAssetsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{21}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ListVisibleAssetsResponse) GetAssets() []*VisibleAsset {
@@ -1167,7 +1747,7 @@ type GetAssetAccessRequest struct {
 
 func (x *GetAssetAccessRequest) Reset() {
 	*x = GetAssetAccessRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1179,7 +1759,7 @@ func (x *GetAssetAccessRequest) String() string {
 func (*GetAssetAccessRequest) ProtoMessage() {}
 
 func (x *GetAssetAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1192,7 +1772,7 @@ func (x *GetAssetAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetAccessRequest.ProtoReflect.Descriptor instead.
 func (*GetAssetAccessRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{22}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetAssetAccessRequest) GetAssetId() string {
@@ -1212,7 +1792,7 @@ type GetAssetAccessResponse struct {
 
 func (x *GetAssetAccessResponse) Reset() {
 	*x = GetAssetAccessResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1804,7 @@ func (x *GetAssetAccessResponse) String() string {
 func (*GetAssetAccessResponse) ProtoMessage() {}
 
 func (x *GetAssetAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1817,7 @@ func (x *GetAssetAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetAccessResponse.ProtoReflect.Descriptor instead.
 func (*GetAssetAccessResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{23}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetAssetAccessResponse) GetActiveRoleIds() []string {
@@ -1320,7 +1900,43 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x18DeleteRoleBindingRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1b\n" +
-	"\x19DeleteRoleBindingResponse\"e\n" +
+	"\x19DeleteRoleBindingResponse\"l\n" +
+	"\tRoleGrant\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12$\n" +
+	"\x0esource_role_id\x18\x03 \x01(\tR\fsourceRoleId\x12\x10\n" +
+	"\x03via\x18\x04 \x01(\tR\x03via\"\x96\x01\n" +
+	"\x13AddRoleGrantRequest\x12!\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12.\n" +
+	"\x0esource_role_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\fsourceRoleId\x12,\n" +
+	"\x03via\x18\x03 \x01(\tB\x1a\xbaH\x17r\x15R\vsame_objectR\x06parentR\x03via\"L\n" +
+	"\x14AddRoleGrantResponse\x124\n" +
+	"\x05grant\x18\x01 \x01(\v2\x1e.jumpgate.catalog.v1.RoleGrantR\x05grant\"2\n" +
+	"\x16RemoveRoleGrantRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x19\n" +
+	"\x17RemoveRoleGrantResponse\":\n" +
+	"\x15ListRoleGrantsRequest\x12!\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"P\n" +
+	"\x16ListRoleGrantsResponse\x126\n" +
+	"\x06grants\x18\x01 \x03(\v2\x1e.jumpgate.catalog.v1.RoleGrantR\x06grants\"\x7f\n" +
+	"\x12ExplainRoleRequest\x12!\n" +
+	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\x12!\n" +
+	"\arole_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12#\n" +
+	"\basset_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"|\n" +
+	"\x11RoleGrantPathStep\x12\x17\n" +
+	"\arole_id\x18\x01 \x01(\tR\x06roleId\x12\x1f\n" +
+	"\vobject_kind\x18\x02 \x01(\tR\n" +
+	"objectKind\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12\x10\n" +
+	"\x03via\x18\x04 \x01(\tR\x03via\"\x88\x01\n" +
+	"\x0fExplainRolePath\x12<\n" +
+	"\x05steps\x18\x01 \x03(\v2&.jumpgate.catalog.v1.RoleGrantPathStepR\x05steps\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x02 \x01(\tR\tbindingId\x12\x18\n" +
+	"\asubject\x18\x03 \x01(\tR\asubject\"g\n" +
+	"\x13ExplainRoleResponse\x12\x14\n" +
+	"\x05holds\x18\x01 \x01(\bR\x05holds\x12:\n" +
+	"\x05paths\x18\x02 \x03(\v2$.jumpgate.catalog.v1.ExplainRolePathR\x05paths\"e\n" +
 	"\fVisibleAsset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1333,7 +1949,7 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"r\n" +
 	"\x16GetAssetAccessResponse\x12&\n" +
 	"\x0factive_role_ids\x18\x01 \x03(\tR\ractiveRoleIds\x120\n" +
-	"\x14requestable_role_ids\x18\x02 \x03(\tR\x12requestableRoleIds2\xc6\b\n" +
+	"\x14requestable_role_ids\x18\x02 \x03(\tR\x12requestableRoleIds2\xee\v\n" +
 	"\x0eCatalogService\x12e\n" +
 	"\fCreateFolder\x12(.jumpgate.catalog.v1.CreateFolderRequest\x1a).jumpgate.catalog.v1.CreateFolderResponse\"\x00\x12b\n" +
 	"\vListFolders\x12'.jumpgate.catalog.v1.ListFoldersRequest\x1a(.jumpgate.catalog.v1.ListFoldersResponse\"\x00\x12b\n" +
@@ -1343,7 +1959,11 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"CreateRole\x12&.jumpgate.catalog.v1.CreateRoleRequest\x1a'.jumpgate.catalog.v1.CreateRoleResponse\"\x00\x12\\\n" +
 	"\tListRoles\x12%.jumpgate.catalog.v1.ListRolesRequest\x1a&.jumpgate.catalog.v1.ListRolesResponse\"\x00\x12t\n" +
 	"\x11CreateRoleBinding\x12-.jumpgate.catalog.v1.CreateRoleBindingRequest\x1a..jumpgate.catalog.v1.CreateRoleBindingResponse\"\x00\x12t\n" +
-	"\x11DeleteRoleBinding\x12-.jumpgate.catalog.v1.DeleteRoleBindingRequest\x1a..jumpgate.catalog.v1.DeleteRoleBindingResponse\"\x00\x12t\n" +
+	"\x11DeleteRoleBinding\x12-.jumpgate.catalog.v1.DeleteRoleBindingRequest\x1a..jumpgate.catalog.v1.DeleteRoleBindingResponse\"\x00\x12e\n" +
+	"\fAddRoleGrant\x12(.jumpgate.catalog.v1.AddRoleGrantRequest\x1a).jumpgate.catalog.v1.AddRoleGrantResponse\"\x00\x12n\n" +
+	"\x0fRemoveRoleGrant\x12+.jumpgate.catalog.v1.RemoveRoleGrantRequest\x1a,.jumpgate.catalog.v1.RemoveRoleGrantResponse\"\x00\x12k\n" +
+	"\x0eListRoleGrants\x12*.jumpgate.catalog.v1.ListRoleGrantsRequest\x1a+.jumpgate.catalog.v1.ListRoleGrantsResponse\"\x00\x12b\n" +
+	"\vExplainRole\x12'.jumpgate.catalog.v1.ExplainRoleRequest\x1a(.jumpgate.catalog.v1.ExplainRoleResponse\"\x00\x12t\n" +
 	"\x11ListVisibleAssets\x12-.jumpgate.catalog.v1.ListVisibleAssetsRequest\x1a..jumpgate.catalog.v1.ListVisibleAssetsResponse\"\x00\x12k\n" +
 	"\x0eGetAssetAccess\x12*.jumpgate.catalog.v1.GetAssetAccessRequest\x1a+.jumpgate.catalog.v1.GetAssetAccessResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1;catalogv1b\x06proto3"
 
@@ -1359,7 +1979,7 @@ func file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP() []byte {
 	return file_jumpgate_catalog_v1_catalog_proto_rawDescData
 }
 
-var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*Folder)(nil),                     // 0: jumpgate.catalog.v1.Folder
 	(*Asset)(nil),                      // 1: jumpgate.catalog.v1.Asset
@@ -1380,11 +2000,22 @@ var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*CreateRoleBindingResponse)(nil),  // 16: jumpgate.catalog.v1.CreateRoleBindingResponse
 	(*DeleteRoleBindingRequest)(nil),   // 17: jumpgate.catalog.v1.DeleteRoleBindingRequest
 	(*DeleteRoleBindingResponse)(nil),  // 18: jumpgate.catalog.v1.DeleteRoleBindingResponse
-	(*VisibleAsset)(nil),               // 19: jumpgate.catalog.v1.VisibleAsset
-	(*ListVisibleAssetsRequest)(nil),   // 20: jumpgate.catalog.v1.ListVisibleAssetsRequest
-	(*ListVisibleAssetsResponse)(nil),  // 21: jumpgate.catalog.v1.ListVisibleAssetsResponse
-	(*GetAssetAccessRequest)(nil),      // 22: jumpgate.catalog.v1.GetAssetAccessRequest
-	(*GetAssetAccessResponse)(nil),     // 23: jumpgate.catalog.v1.GetAssetAccessResponse
+	(*RoleGrant)(nil),                  // 19: jumpgate.catalog.v1.RoleGrant
+	(*AddRoleGrantRequest)(nil),        // 20: jumpgate.catalog.v1.AddRoleGrantRequest
+	(*AddRoleGrantResponse)(nil),       // 21: jumpgate.catalog.v1.AddRoleGrantResponse
+	(*RemoveRoleGrantRequest)(nil),     // 22: jumpgate.catalog.v1.RemoveRoleGrantRequest
+	(*RemoveRoleGrantResponse)(nil),    // 23: jumpgate.catalog.v1.RemoveRoleGrantResponse
+	(*ListRoleGrantsRequest)(nil),      // 24: jumpgate.catalog.v1.ListRoleGrantsRequest
+	(*ListRoleGrantsResponse)(nil),     // 25: jumpgate.catalog.v1.ListRoleGrantsResponse
+	(*ExplainRoleRequest)(nil),         // 26: jumpgate.catalog.v1.ExplainRoleRequest
+	(*RoleGrantPathStep)(nil),          // 27: jumpgate.catalog.v1.RoleGrantPathStep
+	(*ExplainRolePath)(nil),            // 28: jumpgate.catalog.v1.ExplainRolePath
+	(*ExplainRoleResponse)(nil),        // 29: jumpgate.catalog.v1.ExplainRoleResponse
+	(*VisibleAsset)(nil),               // 30: jumpgate.catalog.v1.VisibleAsset
+	(*ListVisibleAssetsRequest)(nil),   // 31: jumpgate.catalog.v1.ListVisibleAssetsRequest
+	(*ListVisibleAssetsResponse)(nil),  // 32: jumpgate.catalog.v1.ListVisibleAssetsResponse
+	(*GetAssetAccessRequest)(nil),      // 33: jumpgate.catalog.v1.GetAssetAccessRequest
+	(*GetAssetAccessResponse)(nil),     // 34: jumpgate.catalog.v1.GetAssetAccessResponse
 }
 var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	0,  // 0: jumpgate.catalog.v1.CreateFolderResponse.folder:type_name -> jumpgate.catalog.v1.Folder
@@ -1393,32 +2024,44 @@ var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	1,  // 3: jumpgate.catalog.v1.ListAssetsByFolderResponse.assets:type_name -> jumpgate.catalog.v1.Asset
 	2,  // 4: jumpgate.catalog.v1.CreateRoleResponse.role:type_name -> jumpgate.catalog.v1.Role
 	2,  // 5: jumpgate.catalog.v1.ListRolesResponse.roles:type_name -> jumpgate.catalog.v1.Role
-	19, // 6: jumpgate.catalog.v1.ListVisibleAssetsResponse.assets:type_name -> jumpgate.catalog.v1.VisibleAsset
-	3,  // 7: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
-	5,  // 8: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
-	7,  // 9: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
-	9,  // 10: jumpgate.catalog.v1.CatalogService.ListAssetsByFolder:input_type -> jumpgate.catalog.v1.ListAssetsByFolderRequest
-	11, // 11: jumpgate.catalog.v1.CatalogService.CreateRole:input_type -> jumpgate.catalog.v1.CreateRoleRequest
-	13, // 12: jumpgate.catalog.v1.CatalogService.ListRoles:input_type -> jumpgate.catalog.v1.ListRolesRequest
-	15, // 13: jumpgate.catalog.v1.CatalogService.CreateRoleBinding:input_type -> jumpgate.catalog.v1.CreateRoleBindingRequest
-	17, // 14: jumpgate.catalog.v1.CatalogService.DeleteRoleBinding:input_type -> jumpgate.catalog.v1.DeleteRoleBindingRequest
-	20, // 15: jumpgate.catalog.v1.CatalogService.ListVisibleAssets:input_type -> jumpgate.catalog.v1.ListVisibleAssetsRequest
-	22, // 16: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
-	4,  // 17: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
-	6,  // 18: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
-	8,  // 19: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
-	10, // 20: jumpgate.catalog.v1.CatalogService.ListAssetsByFolder:output_type -> jumpgate.catalog.v1.ListAssetsByFolderResponse
-	12, // 21: jumpgate.catalog.v1.CatalogService.CreateRole:output_type -> jumpgate.catalog.v1.CreateRoleResponse
-	14, // 22: jumpgate.catalog.v1.CatalogService.ListRoles:output_type -> jumpgate.catalog.v1.ListRolesResponse
-	16, // 23: jumpgate.catalog.v1.CatalogService.CreateRoleBinding:output_type -> jumpgate.catalog.v1.CreateRoleBindingResponse
-	18, // 24: jumpgate.catalog.v1.CatalogService.DeleteRoleBinding:output_type -> jumpgate.catalog.v1.DeleteRoleBindingResponse
-	21, // 25: jumpgate.catalog.v1.CatalogService.ListVisibleAssets:output_type -> jumpgate.catalog.v1.ListVisibleAssetsResponse
-	23, // 26: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
-	17, // [17:27] is the sub-list for method output_type
-	7,  // [7:17] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	19, // 6: jumpgate.catalog.v1.AddRoleGrantResponse.grant:type_name -> jumpgate.catalog.v1.RoleGrant
+	19, // 7: jumpgate.catalog.v1.ListRoleGrantsResponse.grants:type_name -> jumpgate.catalog.v1.RoleGrant
+	27, // 8: jumpgate.catalog.v1.ExplainRolePath.steps:type_name -> jumpgate.catalog.v1.RoleGrantPathStep
+	28, // 9: jumpgate.catalog.v1.ExplainRoleResponse.paths:type_name -> jumpgate.catalog.v1.ExplainRolePath
+	30, // 10: jumpgate.catalog.v1.ListVisibleAssetsResponse.assets:type_name -> jumpgate.catalog.v1.VisibleAsset
+	3,  // 11: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
+	5,  // 12: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
+	7,  // 13: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
+	9,  // 14: jumpgate.catalog.v1.CatalogService.ListAssetsByFolder:input_type -> jumpgate.catalog.v1.ListAssetsByFolderRequest
+	11, // 15: jumpgate.catalog.v1.CatalogService.CreateRole:input_type -> jumpgate.catalog.v1.CreateRoleRequest
+	13, // 16: jumpgate.catalog.v1.CatalogService.ListRoles:input_type -> jumpgate.catalog.v1.ListRolesRequest
+	15, // 17: jumpgate.catalog.v1.CatalogService.CreateRoleBinding:input_type -> jumpgate.catalog.v1.CreateRoleBindingRequest
+	17, // 18: jumpgate.catalog.v1.CatalogService.DeleteRoleBinding:input_type -> jumpgate.catalog.v1.DeleteRoleBindingRequest
+	20, // 19: jumpgate.catalog.v1.CatalogService.AddRoleGrant:input_type -> jumpgate.catalog.v1.AddRoleGrantRequest
+	22, // 20: jumpgate.catalog.v1.CatalogService.RemoveRoleGrant:input_type -> jumpgate.catalog.v1.RemoveRoleGrantRequest
+	24, // 21: jumpgate.catalog.v1.CatalogService.ListRoleGrants:input_type -> jumpgate.catalog.v1.ListRoleGrantsRequest
+	26, // 22: jumpgate.catalog.v1.CatalogService.ExplainRole:input_type -> jumpgate.catalog.v1.ExplainRoleRequest
+	31, // 23: jumpgate.catalog.v1.CatalogService.ListVisibleAssets:input_type -> jumpgate.catalog.v1.ListVisibleAssetsRequest
+	33, // 24: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
+	4,  // 25: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
+	6,  // 26: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
+	8,  // 27: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
+	10, // 28: jumpgate.catalog.v1.CatalogService.ListAssetsByFolder:output_type -> jumpgate.catalog.v1.ListAssetsByFolderResponse
+	12, // 29: jumpgate.catalog.v1.CatalogService.CreateRole:output_type -> jumpgate.catalog.v1.CreateRoleResponse
+	14, // 30: jumpgate.catalog.v1.CatalogService.ListRoles:output_type -> jumpgate.catalog.v1.ListRolesResponse
+	16, // 31: jumpgate.catalog.v1.CatalogService.CreateRoleBinding:output_type -> jumpgate.catalog.v1.CreateRoleBindingResponse
+	18, // 32: jumpgate.catalog.v1.CatalogService.DeleteRoleBinding:output_type -> jumpgate.catalog.v1.DeleteRoleBindingResponse
+	21, // 33: jumpgate.catalog.v1.CatalogService.AddRoleGrant:output_type -> jumpgate.catalog.v1.AddRoleGrantResponse
+	23, // 34: jumpgate.catalog.v1.CatalogService.RemoveRoleGrant:output_type -> jumpgate.catalog.v1.RemoveRoleGrantResponse
+	25, // 35: jumpgate.catalog.v1.CatalogService.ListRoleGrants:output_type -> jumpgate.catalog.v1.ListRoleGrantsResponse
+	29, // 36: jumpgate.catalog.v1.CatalogService.ExplainRole:output_type -> jumpgate.catalog.v1.ExplainRoleResponse
+	32, // 37: jumpgate.catalog.v1.CatalogService.ListVisibleAssets:output_type -> jumpgate.catalog.v1.ListVisibleAssetsResponse
+	34, // 38: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
+	25, // [25:39] is the sub-list for method output_type
+	11, // [11:25] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_catalog_v1_catalog_proto_init() }
@@ -1432,7 +2075,7 @@ func file_jumpgate_catalog_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_catalog_v1_catalog_proto_rawDesc), len(file_jumpgate_catalog_v1_catalog_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
