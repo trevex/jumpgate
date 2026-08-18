@@ -13,6 +13,14 @@
 // commits — appending inside the domain tx (while holding request row locks)
 // would risk lock-ordering deadlocks against the audit advisory lock. The domain
 // write is the source of truth; the audit entry follows the committed fact.
+//
+// KNOWN LIMITATION: because the audit append is post-commit, a crash in the
+// window between the domain commit and the append leaves a durable action with
+// no audit entry — a gap in the tamper-evident trail. An audit-append failure is
+// logged loudly (slog.Error) but does NOT fail the RPC (the action already
+// committed; failing would falsely report failure to the client). Closing the
+// crash window fully needs a transactional audit outbox (write the event inside
+// the domain tx, drain it with a worker) — deferred to a later milestone.
 package accessrequest
 
 import (
@@ -20,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -482,12 +491,16 @@ func (s *Service) append(ctx context.Context, eventType string, actor uuid.UUID,
 		details[k] = v
 	}
 	raw, _ := json.Marshal(details)
-	_ = s.audit.Append(ctx, audit.Event{
+	if err := s.audit.Append(ctx, audit.Event{
 		Type:    eventType,
 		ActorID: actor,
 		Subject: "access_request:" + req.ID.String(),
 		Details: raw,
-	})
+	}); err != nil {
+		// The action already committed; do not fail the RPC. Log loudly — a
+		// dropped audit event is a hole in the tamper-evident trail.
+		slog.Error("audit append failed", "event", eventType, "request_id", req.ID.String(), "err", err)
+	}
 }
 
 // appendGrant writes the grant-activation audit event.
@@ -503,10 +516,12 @@ func (s *Service) appendGrant(ctx context.Context, actor uuid.UUID, req gen.Acce
 		"subject":    req.RequesterUserID.String(),
 	}
 	raw, _ := json.Marshal(details)
-	_ = s.audit.Append(ctx, audit.Event{
+	if err := s.audit.Append(ctx, audit.Event{
 		Type:    EventGrantActivated,
 		ActorID: actor,
 		Subject: "access_grant:" + grantID.String(),
 		Details: raw,
-	})
+	}); err != nil {
+		slog.Error("audit append failed", "event", EventGrantActivated, "grant_id", grantID.String(), "err", err)
+	}
 }
