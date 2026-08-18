@@ -8,6 +8,7 @@ package gen
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,6 +19,51 @@ SELECT pg_advisory_xact_lock(4919)
 func (q *Queries) AcquireAuditLock(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, acquireAuditLock)
 	return err
+}
+
+const countOutbox = `-- name: CountOutbox :one
+SELECT count(*) FROM audit_outbox
+`
+
+func (q *Queries) CountOutbox(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countOutbox)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteOutboxEvent = `-- name: DeleteOutboxEvent :exec
+DELETE FROM audit_outbox WHERE id = $1
+`
+
+func (q *Queries) DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOutboxEvent, id)
+	return err
+}
+
+const enqueueAuditEvent = `-- name: EnqueueAuditEvent :one
+INSERT INTO audit_outbox (event_type, actor_user_id, subject, details)
+VALUES ($1, $2, $3, $4)
+RETURNING id
+`
+
+type EnqueueAuditEventParams struct {
+	EventType   string      `json:"event_type"`
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+	Subject     string      `json:"subject"`
+	Details     []byte      `json:"details"`
+}
+
+func (q *Queries) EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, enqueueAuditEvent,
+		arg.EventType,
+		arg.ActorUserID,
+		arg.Subject,
+		arg.Details,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getLastAuditEntry = `-- name: GetLastAuditEntry :one
@@ -103,6 +149,47 @@ func (q *Queries) ListAuditEntries(ctx context.Context) ([]AuditLog, error) {
 			&i.PrevHash,
 			&i.EntryHash,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUndrainedOutbox = `-- name: ListUndrainedOutbox :many
+SELECT id, event_type, actor_user_id, subject, details
+FROM audit_outbox
+ORDER BY seq
+LIMIT $1
+`
+
+type ListUndrainedOutboxRow struct {
+	ID          uuid.UUID   `json:"id"`
+	EventType   string      `json:"event_type"`
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+	Subject     string      `json:"subject"`
+	Details     []byte      `json:"details"`
+}
+
+func (q *Queries) ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error) {
+	rows, err := q.db.Query(ctx, listUndrainedOutbox, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUndrainedOutboxRow
+	for rows.Next() {
+		var i ListUndrainedOutboxRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.ActorUserID,
+			&i.Subject,
+			&i.Details,
 		); err != nil {
 			return nil, err
 		}

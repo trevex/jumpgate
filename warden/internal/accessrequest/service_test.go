@@ -226,8 +226,24 @@ func (h *harness) activeGrant(t *testing.T, userID uuid.UUID, expires time.Durat
 	return g.ID
 }
 
+// drainAudit chains all queued outbox events into the audit_log so tests can
+// assert on the tamper-evident chain (no background drainer runs in tests).
+func (h *harness) drainAudit(t *testing.T) {
+	t.Helper()
+	for {
+		n, err := audit.New(h.pool).DrainOnce(h.ctx, 256)
+		if err != nil {
+			t.Fatalf("DrainOnce: %v", err)
+		}
+		if n < 256 {
+			return
+		}
+	}
+}
+
 func (h *harness) auditEventCount(t *testing.T, eventType string) int {
 	t.Helper()
+	h.drainAudit(t)
 	rows, err := h.q.ListAuditEntries(h.ctx)
 	if err != nil {
 		t.Fatalf("ListAuditEntries: %v", err)
@@ -761,6 +777,8 @@ func TestAuditChain(t *testing.T) {
 		t.Fatalf("Approve: %v", err)
 	}
 
+	h.drainAudit(t)
+
 	log := audit.New(h.pool)
 	if err := log.Verify(h.ctx); err != nil {
 		t.Fatalf("audit Verify: %v", err)
@@ -783,5 +801,53 @@ func TestAuditChain(t *testing.T) {
 		if !got[want] {
 			t.Fatalf("missing audit event %q; got %v", want, got)
 		}
+	}
+}
+
+// TestRequestAccessEnqueuesBeforeDrain proves audit events ride the outbox: after
+// a self-service RequestAccess the hash-chained audit_log is still empty, and only
+// after an explicit drain do the events appear (and the chain verifies).
+func TestRequestAccessEnqueuesBeforeDrain(t *testing.T) {
+	h := setup(t, 0, pgtype.Interval{})
+	requester := h.mkUser(t, "req@x")
+	h.bindStanding(t, requester, h.requesterRole)
+
+	req, err := h.svc.RequestAccess(h.ctx, requester, h.role, h.asset, time.Hour, "self")
+	if err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+	if req.Status != "granted" {
+		t.Fatalf("status = %q, want granted", req.Status)
+	}
+
+	// The events are in the outbox, NOT yet in the hash-chained log.
+	rows, err := h.q.ListAuditEntries(h.ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("audit_log should be empty before drain; got %d entries", len(rows))
+	}
+
+	// Drain the outbox into the chain, then the events must be present.
+	h.drainAudit(t)
+	got := map[string]bool{}
+	rows, err = h.q.ListAuditEntries(h.ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	for _, r := range rows {
+		got[r.EventType] = true
+	}
+	for _, want := range []string{
+		accessrequest.EventRequestCreated,
+		accessrequest.EventGrantActivated,
+	} {
+		if !got[want] {
+			t.Fatalf("missing audit event %q after drain; got %v", want, got)
+		}
+	}
+	if err := audit.New(h.pool).Verify(h.ctx); err != nil {
+		t.Fatalf("audit verify: %v", err)
 	}
 }

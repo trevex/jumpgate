@@ -8,19 +8,15 @@
 // grants. UNIQUE(request_id) on access_grants is the backstop; UNIQUE(request_id,
 // approver_user_id) blocks double-voting.
 //
-// AUDIT: audit.Logger.Append opens its own advisory-locked tx and therefore
-// cannot join the domain tx. Audit events are appended AFTER the domain tx
-// commits — appending inside the domain tx (while holding request row locks)
-// would risk lock-ordering deadlocks against the audit advisory lock. The domain
-// write is the source of truth; the audit entry follows the committed fact.
-//
-// KNOWN LIMITATION: because the audit append is post-commit, a crash in the
-// window between the domain commit and the append leaves a durable action with
-// no audit entry — a gap in the tamper-evident trail. An audit-append failure is
-// logged loudly (slog.Error) but does NOT fail the RPC (the action already
-// committed; failing would falsely report failure to the client). Closing the
-// crash window fully needs a transactional audit outbox (write the event inside
-// the domain tx, drain it with a worker) — deferred to a later milestone.
+// AUDIT: audit events are enqueued into the audit_outbox WITHIN the domain tx
+// via audit.Logger.Enqueue (a plain insert on the caller's tx-bound querier), so
+// each event becomes durable ATOMICALLY with the state change it records — either
+// both commit or neither does. An enqueue failure rolls back the domain action
+// (the RPC fails), because a durable action with no audit entry is not acceptable.
+// A background drainer (audit.Logger.RunDrainer/DrainOnce) later moves outbox rows
+// into the hash-linked, tamper-evident audit_log in seq order. Terminator
+// notification (live-session teardown) stays POST-COMMIT: it must not fire for a
+// change that then rolls back.
 package accessrequest
 
 import (
@@ -250,13 +246,17 @@ func (s *Service) RequestAccess(ctx context.Context, requester, roleID, assetID 
 			return Request{}, fmt.Errorf("resolve self-service request: %w", err)
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return Request{}, fmt.Errorf("commit: %w", err)
+	if err := s.enqueue(ctx, q, EventRequestCreated, requester, req, nil); err != nil {
+		return Request{}, err
+	}
+	if selfService {
+		if err := s.enqueueGrant(ctx, q, requester, req, grantID); err != nil {
+			return Request{}, err
+		}
 	}
 
-	s.append(ctx, EventRequestCreated, requester, req, nil)
-	if selfService {
-		s.appendGrant(ctx, requester, req, grantID)
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("commit: %w", err)
 	}
 
 	approvalsSoFar := 0
@@ -357,17 +357,23 @@ func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decis
 		return Request{}, fmt.Errorf("count approvals: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return Request{}, fmt.Errorf("commit: %w", err)
+	if decision == "deny" {
+		if err := s.enqueue(ctx, q, EventRequestDenied, approver, req, nil); err != nil {
+			return Request{}, err
+		}
+	} else {
+		if err := s.enqueue(ctx, q, EventRequestApproved, approver, req, nil); err != nil {
+			return Request{}, err
+		}
+		if granted {
+			if err := s.enqueueGrant(ctx, q, approver, req, grantID); err != nil {
+				return Request{}, err
+			}
+		}
 	}
 
-	if decision == "deny" {
-		s.append(ctx, EventRequestDenied, approver, req, nil)
-	} else {
-		s.append(ctx, EventRequestApproved, approver, req, nil)
-		if granted {
-			s.appendGrant(ctx, approver, req, grantID)
-		}
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("commit: %w", err)
 	}
 	return toRequest(req, int(approvalsSoFar), grantID), nil
 }
@@ -401,11 +407,13 @@ func (s *Service) Cancel(ctx context.Context, requester, requestID uuid.UUID) er
 	}); err != nil {
 		return fmt.Errorf("cancel request: %w", err)
 	}
+	req.Status = "cancelled"
+	if err := s.enqueue(ctx, q, EventRequestCancelled, requester, req, nil); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
-	req.Status = "cancelled"
-	s.append(ctx, EventRequestCancelled, requester, req, nil)
 	return nil
 }
 
@@ -497,10 +505,12 @@ func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRe
 	return gr.ID
 }
 
-// append writes a request-lifecycle audit event (best-effort, post-commit).
-func (s *Service) append(ctx context.Context, eventType string, actor uuid.UUID, req gen.AccessRequest, extra map[string]any) {
+// enqueue writes a request-lifecycle audit event into the outbox on the caller's
+// tx-bound querier, so it commits atomically with the domain write. Returns an
+// error so an enqueue failure rolls back the domain action.
+func (s *Service) enqueue(ctx context.Context, q *gen.Queries, eventType string, actor uuid.UUID, req gen.AccessRequest, extra map[string]any) error {
 	if s.audit == nil {
-		return
+		return nil
 	}
 	details := map[string]any{
 		"request_id": req.ID.String(),
@@ -513,22 +523,19 @@ func (s *Service) append(ctx context.Context, eventType string, actor uuid.UUID,
 		details[k] = v
 	}
 	raw, _ := json.Marshal(details)
-	if err := s.audit.Append(ctx, audit.Event{
+	return s.audit.Enqueue(ctx, q, audit.Event{
 		Type:    eventType,
 		ActorID: actor,
 		Subject: "access_request:" + req.ID.String(),
 		Details: raw,
-	}); err != nil {
-		// The action already committed; do not fail the RPC. Log loudly — a
-		// dropped audit event is a hole in the tamper-evident trail.
-		slog.Error("audit append failed", "event", eventType, "request_id", req.ID.String(), "err", err)
-	}
+	})
 }
 
-// appendGrant writes the grant-activation audit event.
-func (s *Service) appendGrant(ctx context.Context, actor uuid.UUID, req gen.AccessRequest, grantID uuid.UUID) {
+// enqueueGrant writes the grant-activation audit event into the outbox on the
+// caller's tx-bound querier (atomic with the domain write).
+func (s *Service) enqueueGrant(ctx context.Context, q *gen.Queries, actor uuid.UUID, req gen.AccessRequest, grantID uuid.UUID) error {
 	if s.audit == nil {
-		return
+		return nil
 	}
 	details := map[string]any{
 		"request_id": req.ID.String(),
@@ -538,14 +545,12 @@ func (s *Service) appendGrant(ctx context.Context, actor uuid.UUID, req gen.Acce
 		"subject":    req.RequesterUserID.String(),
 	}
 	raw, _ := json.Marshal(details)
-	if err := s.audit.Append(ctx, audit.Event{
+	return s.audit.Enqueue(ctx, q, audit.Event{
 		Type:    EventGrantActivated,
 		ActorID: actor,
 		Subject: "access_grant:" + grantID.String(),
 		Details: raw,
-	}); err != nil {
-		slog.Error("audit append failed", "event", EventGrantActivated, "grant_id", grantID.String(), "err", err)
-	}
+	})
 }
 
 // RevokeGrant revokes a single access_grant. The caller may revoke if they are an
@@ -574,7 +579,14 @@ func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, gran
 		return gen.AccessGrant{}, ErrRevokeForbidden
 	}
 
-	revoked, err := gen.New(s.pool).RevokeGrant(ctx, gen.RevokeGrantParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return gen.AccessGrant{}, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	revoked, err := q.RevokeGrant(ctx, gen.RevokeGrantParams{
 		ID:            grantID,
 		RevokedBy:     pgtype.UUID{Bytes: caller.ID, Valid: true},
 		RevokedReason: pgtype.Text{String: reason, Valid: true},
@@ -587,7 +599,13 @@ func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, gran
 		return gen.AccessGrant{}, fmt.Errorf("revoke grant: %w", err)
 	}
 
-	s.appendRevoked(ctx, caller.ID, revoked)
+	if err := s.enqueueRevoked(ctx, q, caller.ID, revoked); err != nil {
+		return gen.AccessGrant{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return gen.AccessGrant{}, fmt.Errorf("commit: %w", err)
+	}
+
 	s.terminate(ctx, revoked.ID)
 	return revoked, nil
 }
@@ -596,7 +614,14 @@ func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, gran
 // deactivation cascade). Each revoked grant is audited and its sessions
 // terminated. Returns the number of grants revoked.
 func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UUID, reason string) (int, error) {
-	revoked, err := gen.New(s.pool).RevokeActiveGrantsForUser(ctx, gen.RevokeActiveGrantsForUserParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	revoked, err := q.RevokeActiveGrantsForUser(ctx, gen.RevokeActiveGrantsForUserParams{
 		SubjectUserID: userID,
 		RevokedBy:     pgtype.UUID{Bytes: actor, Valid: true},
 		RevokedReason: pgtype.Text{String: reason, Valid: true},
@@ -605,7 +630,15 @@ func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UU
 		return 0, fmt.Errorf("revoke grants for user: %w", err)
 	}
 	for _, g := range revoked {
-		s.appendRevoked(ctx, actor, g)
+		if err := s.enqueueRevoked(ctx, q, actor, g); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
+	}
+
+	for _, g := range revoked {
 		s.terminate(ctx, g.ID)
 	}
 	return len(revoked), nil
@@ -683,10 +716,11 @@ func (s *Service) terminate(ctx context.Context, grantID uuid.UUID) {
 	}
 }
 
-// appendRevoked writes the grant-revocation audit event (best-effort, post-commit).
-func (s *Service) appendRevoked(ctx context.Context, actor uuid.UUID, g gen.AccessGrant) {
+// enqueueRevoked writes the grant-revocation audit event into the outbox on the
+// caller's tx-bound querier (atomic with the domain write).
+func (s *Service) enqueueRevoked(ctx context.Context, q *gen.Queries, actor uuid.UUID, g gen.AccessGrant) error {
 	if s.audit == nil {
-		return
+		return nil
 	}
 	reason := ""
 	if g.RevokedReason.Valid {
@@ -701,12 +735,10 @@ func (s *Service) appendRevoked(ctx context.Context, actor uuid.UUID, g gen.Acce
 		"reason":     reason,
 	}
 	raw, _ := json.Marshal(details)
-	if err := s.audit.Append(ctx, audit.Event{
+	return s.audit.Enqueue(ctx, q, audit.Event{
 		Type:    EventGrantRevoked,
 		ActorID: actor,
 		Subject: "access_grant:" + g.ID.String(),
 		Details: raw,
-	}); err != nil {
-		slog.Error("audit append failed", "event", EventGrantRevoked, "grant_id", g.ID.String(), "err", err)
-	}
+	})
 }

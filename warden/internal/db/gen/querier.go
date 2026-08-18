@@ -18,6 +18,7 @@ type Querier interface {
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
+	CountOutbox(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error)
 	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
@@ -37,10 +38,12 @@ type Querier interface {
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
@@ -82,6 +85,7 @@ type Querier interface {
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
