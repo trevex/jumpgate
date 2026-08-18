@@ -33,6 +33,14 @@ CREATE TABLE folders (
     name       text NOT NULL,
     parent_id  uuid REFERENCES folders(id) ON DELETE CASCADE,
     created_at timestamptz NOT NULL DEFAULT now(),
+    -- INVARIANT (folder acyclicity): the recursive CTEs (HoldsRole / held /
+    -- applicable) assume the folder graph is a forest. no_self_parent blocks only
+    -- DIRECT self-parenting (A->A); it does NOT prevent multi-node cycles
+    -- (A->B->A). Today that is safe purely because folders are created leaf-only
+    -- and there is no reparent/move endpoint. If a reparent/move-folder endpoint
+    -- is ever added it MUST enforce acyclicity (ancestor check on the new parent).
+    -- The CTEs would still terminate under a cycle (UNION dedup), but membership
+    -- results would be surprising.
     CONSTRAINT no_self_parent CHECK (parent_id IS DISTINCT FROM id)
 );
 CREATE INDEX idx_folders_parent ON folders(parent_id);

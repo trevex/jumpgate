@@ -149,6 +149,7 @@ SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, userI
 	if err := activeRows.Err(); err != nil {
 		return nil, err
 	}
+	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
 	activeRows.Close()
 
 	// Requestable tier: assets reachable via requestable bindings (folder cascade
@@ -202,6 +203,7 @@ SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
 	if err := activeRows.Err(); err != nil {
 		return AssetRoles{}, err
 	}
+	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
 	activeRows.Close()
 
 	// Requestable: roles reachable via requestable bindings (folder cascade retained).
