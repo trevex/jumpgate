@@ -21,8 +21,8 @@ INSERT INTO roles (name, resource_type, capabilities) VALUES ($1, $2, $3) RETURN
 
 -- name: CreateRoleBinding :one
 INSERT INTO role_bindings
-  (role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+  (role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: GetAsset :one

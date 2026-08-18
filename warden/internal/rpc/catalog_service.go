@@ -245,7 +245,7 @@ func (s *CatalogServer) CreateRoleBinding(ctx context.Context, req *connect.Requ
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
 	}
 	rb, err := s.q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: roleID, Kind: req.Msg.Kind,
+		RoleID:        roleID,
 		ScopeFolderID: scopeFolder, ScopeAssetID: scopeAsset,
 		SubjectUserID: subjUser, SubjectGroupID: subjGroup,
 	})

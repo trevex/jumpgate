@@ -36,7 +36,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 
 	// valid: group -> role STANDING on folder
 	rb, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
+		RoleId: role.Msg.Role.Id, ScopeFolderId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
 	}), tok))
 	if err != nil {
 		t.Fatalf("create binding: %v", err)
@@ -47,7 +47,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 
 	// invalid: two scopes set
 	_, err = cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: f.Msg.Folder.Id, ScopeAssetId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
+		RoleId: role.Msg.Role.Id, ScopeFolderId: f.Msg.Folder.Id, ScopeAssetId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("two-scope binding = %v, want InvalidArgument", connect.CodeOf(err))
@@ -55,7 +55,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 
 	// invalid: no subject
 	_, err = cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: f.Msg.Folder.Id,
+		RoleId: role.Msg.Role.Id, ScopeFolderId: f.Msg.Folder.Id,
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("no-subject binding = %v, want InvalidArgument", connect.CodeOf(err))
@@ -70,7 +70,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 	seedUser(t, pool, "user@x", "password123", false)
 	utok := authClient(t, url, "user@x", "password123")
 	_, err = cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
+		RoleId: role.Msg.Role.Id, ScopeFolderId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
 	}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin binding = %v, want PermissionDenied", connect.CodeOf(err))

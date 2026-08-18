@@ -115,7 +115,6 @@ func TestHoldsRole(t *testing.T) {
 	// ── binding: sre → owner STANDING on folder prod ─────────────────────────
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:         owner,
-		Kind:           "standing",
 		ScopeFolderID:  pg(prod.ID),
 		SubjectGroupID: pg(sre.ID),
 	}); err != nil {
@@ -178,7 +177,6 @@ func TestHoldsRole(t *testing.T) {
 	// ── direct on asset ───────────────────────────────────────────────────────
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        admin,
-		Kind:          "standing",
 		ScopeAssetID:  pg(pgAsset.ID),
 		SubjectUserID: pg(bob.ID),
 	}); err != nil {
@@ -201,21 +199,4 @@ func TestHoldsRole(t *testing.T) {
 		t.Fatalf("AddUserToGroup alice→teamA: %v", err)
 	}
 	check("alice owner folder/prod via nested teamA∈sre", true, alice.ID, owner, "folder", prod.ID)
-
-	// ── requestable does NOT confer membership ────────────────────────────────
-	// A requestable binding of admin to carol on asset pg must not make carol hold
-	// admin (HoldsRole matches only kind='standing').
-	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
-	if err != nil {
-		t.Fatalf("CreateUser carol: %v", err)
-	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID:        admin,
-		Kind:          "requestable",
-		ScopeAssetID:  pg(pgAsset.ID),
-		SubjectUserID: pg(carol.ID),
-	}); err != nil {
-		t.Fatalf("CreateRoleBinding carol/admin/requestable: %v", err)
-	}
-	check("carol admin asset/pg requestable does not confer", false, carol.ID, admin, "asset", pgAsset.ID)
 }

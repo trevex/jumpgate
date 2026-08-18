@@ -15,11 +15,11 @@ import (
 // AssetVisibility describes a user's relationship to one asset.
 type AssetVisibility struct {
 	AssetID uuid.UUID
-	// Active is true when the user has at least one standing binding on the asset
-	// (directly or via folder inheritance / group nesting). If false but the asset
-	// appears in VisibleAssets, the user is Requestable-only.
+	// Active is true when the user holds at least one Active (standing) role on the
+	// asset (directly or via the role_grants rewrite graph / group nesting). If
+	// false but the asset appears in VisibleAssets, the user is Requestable-only.
 	Active bool
-	// RoleIDs are the roles granting the user access to this asset (standing and/or
+	// RoleIDs are the roles granting the user access to this asset (active and/or
 	// requestable), deduplicated.
 	RoleIDs []uuid.UUID
 }
@@ -36,9 +36,10 @@ type Authorizer interface {
 	// active (standing) role. Requestable eligibility does NOT grant capabilities.
 	Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error)
 
-	// VisibleAssets returns every asset the user can see — those with at least one
-	// standing OR requestable binding applicable to them. Assets with no applicable
-	// binding are omitted entirely (they must not be disclosed).
+	// VisibleAssets returns every asset the user can see — those on which the user
+	// holds at least one Active (standing) role OR has at least one Requestable role
+	// (an effective request_policy for which the user is an eligible requester).
+	// Assets with neither are omitted entirely (they must not be disclosed).
 	VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error)
 
 	// RolesOnAsset returns the user's active and requestable roles on one asset.

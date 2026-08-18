@@ -91,7 +91,6 @@ type Role struct {
 type RoleBinding struct {
 	ID             uuid.UUID   `json:"id"`
 	RoleID         uuid.UUID   `json:"role_id"`
-	Kind           string      `json:"kind"`
 	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
 	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
 	SubjectUserID  pgtype.UUID `json:"subject_user_id"`

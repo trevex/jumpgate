@@ -151,7 +151,7 @@ func TestExplainRole(t *testing.T) {
 		t.Fatalf("add to group: %v", err)
 	}
 	if _, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: ownerID, Kind: "standing", ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
+		RoleId: ownerID, ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
 	}), tok)); err != nil {
 		t.Fatalf("binding: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestExplainRole(t *testing.T) {
 	// owner on the asset itself (subject = alice). She now holds owner@pg via both
 	// the prod folder-cascade path and this direct-on-asset path.
 	if _, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: ownerID, Kind: "standing", ScopeAssetId: pgID, SubjectUserId: aliceID,
+		RoleId: ownerID, ScopeAssetId: pgID, SubjectUserId: aliceID,
 	}), tok)); err != nil {
 		t.Fatalf("direct asset binding: %v", err)
 	}

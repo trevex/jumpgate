@@ -130,7 +130,6 @@ func TestApprovalResolver(t *testing.T) {
 	// Standing role binding: alice -> owner on folder prod (inherited to pg)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        owner.ID,
-		Kind:          "standing",
 		ScopeFolderID: pg(prod.ID),
 		SubjectUserID: pg(alice.ID),
 	}); err != nil {
@@ -195,7 +194,6 @@ func TestApprovalResolver(t *testing.T) {
 		// keeper STANDING on folder prod; pgAsset lives in prod/db (a descendant).
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 			RoleID:        keeper.ID,
-			Kind:          "standing",
 			ScopeFolderID: pg(prod.ID),
 			SubjectUserID: pg(dave.ID),
 		}); err != nil {
@@ -400,7 +398,6 @@ func TestIsEligibleRequester(t *testing.T) {
 	// alice: standing `requester` on the asset → eligible via requester_role.
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        requester.ID,
-		Kind:          "standing",
 		ScopeAssetID:  pg(pgAsset.ID),
 		SubjectUserID: pg(alice.ID),
 	}); err != nil {
