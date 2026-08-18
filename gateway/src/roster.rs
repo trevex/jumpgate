@@ -75,8 +75,6 @@ impl Roster {
 /// Connect to warden's GatewayService over mesh mTLS and stream roster updates into
 /// `roster` forever, reconnecting with backoff. On each successful connect it also
 /// fetches the session verification key and hands the bytes to `on_key`.
-// Wired into `main` in Task 13; until then only its unit-tested `Roster` map is used.
-#[allow(dead_code)]
 pub async fn run(
     roster: Roster,
     warden_addr: String,
@@ -102,7 +100,6 @@ pub async fn run(
 
 /// Build a mesh-mTLS tonic `Channel`, fetch the session verification key once,
 /// then stream `WatchWorkers` into `roster` until the stream ends or errors.
-#[allow(dead_code)] // wired in Task 13
 async fn connect_and_stream(
     roster: &Roster,
     warden_addr: &str,
@@ -152,7 +149,6 @@ async fn connect_and_stream(
 /// We can't use tonic's `ClientTlsConfig` because warden's mesh cert has no DNS
 /// SAN (URI-only). Instead we drive the rustls handshake ourselves inside a
 /// custom connector and hand the resulting stream to tonic.
-#[allow(dead_code)] // wired in Task 13
 async fn mesh_channel(
     warden_addr: &str,
     mesh_client_config: Arc<rustls::ClientConfig>,
