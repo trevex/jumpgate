@@ -14,8 +14,10 @@ import (
 type Querier interface {
 	AcquireAuditLock(ctx context.Context) error
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
+	AddRuleApprover(ctx context.Context, arg AddRuleApproverParams) (ApprovalRuleApprover, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	CountUsers(ctx context.Context) (int64, error)
+	CreateApprovalRule(ctx context.Context, arg CreateApprovalRuleParams) (ApprovalRule, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
@@ -24,18 +26,23 @@ type Querier interface {
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
+	DeleteApprovalRule(ctx context.Context, id uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
+	DeleteRuleApprover(ctx context.Context, id uuid.UUID) error
+	GetApprovalRule(ctx context.Context, id uuid.UUID) (ApprovalRule, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
+	GetRoleDefaultRule(ctx context.Context, roleID uuid.UUID) (ApprovalRule, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
+	ListApprovalRulesForRole(ctx context.Context, roleID uuid.UUID) ([]ApprovalRule, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
@@ -44,6 +51,7 @@ type Querier interface {
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListRuleApprovers(ctx context.Context, ruleID uuid.UUID) ([]ApprovalRuleApprover, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
