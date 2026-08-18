@@ -37,6 +37,11 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 	if err != nil || !ok {
 		return nil, unauth
 	}
+	// A deactivated account cannot acquire new credentials (deactivation is a
+	// revocation trigger). Return the generic error to avoid disclosing state.
+	if u.DeactivatedAt.Valid {
+		return nil, unauth
+	}
 	tok, err := s.tokens.Issue(ctx, u.ID, tokenTTL)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

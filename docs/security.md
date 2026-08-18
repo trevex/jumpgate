@@ -14,11 +14,14 @@ treatments elsewhere ([access-model.md](access-model.md),
 ## Posture — what we defend
 
 - **Least privilege by construction.** Access is **requestable + approval-gated +
-  JIT time-boxed**: nothing is standing unless an admin binds it, and powerful
-  roles are reachable only through an approval flow that travels with the role
-  (see [access-model.md](access-model.md#approval--how-a-requestable-role-gets-activated)).
-  🟡 Approval **policy** resolution implemented (M3b); the request→grant→expiry
-  **workflow** is M3c.
+  JIT time-boxed**: nothing is standing unless an admin binds it, and a role is
+  requestable only where a **RequestPolicy** exists and the caller is *eligible*
+  for it (holds a `requester_role` on the scope, or is a named `requester`
+  subject) — the approval gate travels with the role
+  (see [access-model.md](access-model.md#approval--who-signs-off-and-how-a-request-activates-m3c-workflow)).
+  🟡 Request-policy resolution + eligibility/approver predicates implemented (M3b +
+  Access-Model v2); the request→grant→expiry **workflow** (and the `access_grants`
+  table) is M3c.
 - **Agentless L7 gateway.** No software is installed on target hosts; the proxy
   terminates the protocol and injects credentials at the edge
   ([decisions.md](decisions.md)). ⬜ Data plane planned (M4/M5).
@@ -49,6 +52,39 @@ signed token to expire. **Implemented** (M2b).
 > grant are a **separate** mechanism (PASETO v4, planned with the token minter /
 > M4) — see [decisions.md](decisions.md) and
 > [architecture.md](architecture.md).
+
+## Account deactivation
+
+`users.deactivated_at` (NULL = active) is an **immediate off-switch** for a
+principal, enforced at **two** points:
+
+- **Login** (`AuthService.Login`): a deactivated account **cannot mint a new
+  token** — login fails with `CodeUnauthenticated`.
+- **Auth interceptor** (`Lookup.Load`): on every authenticated RPC the resolved
+  user is re-checked; if `deactivated_at` is set the load fails, the interceptor
+  leaves no user on the context, and the call fails with `CodeUnauthenticated`
+  **even with an otherwise-valid, unexpired token**.
+
+So deactivation stops the principal from **authenticating or acting**, without
+deleting their bindings, memberships, or audit history (they can be reactivated
+with `ReactivateUser`; the account can also be hard-`DeleteUser`d, FKs cascading).
+It is one of the [continuous-revocation](#continuous-enforcement--revocation-tears-down-live-sessions)
+triggers that must, once teardown lands (M3c/M4), terminate the user's live
+sessions.
+
+> **Residual limitation (explicit).** Deactivation blocks the deactivated user's
+> **own** actions, but the user **still counts in *other* users' authz sets**: they
+> remain a valid **approver** / `requester_role`- or `approver_role`-holder and
+> still contribute to others' `HoldsRole` closure via group membership or as a
+> named policy subject — until their `role_bindings`/memberships are removed or the
+> account is deleted. **Full exclusion** — a `deactivated_at IS NULL` filter inside
+> the `HoldsRole` / requestable / approver CTEs so a deactivated user vanishes from
+> everyone's resolution — is **deferred** (a follow-up). Today, revoke access by
+> removing the binding/membership (or deleting the account), not by deactivation
+> alone. **Implemented** (deactivation off-switch, M-v2); full authz-set exclusion
+> **planned**.
+
+**Implemented** (Access-Model v2).
 
 ## Capability enforcement boundary
 
@@ -95,6 +131,7 @@ to a worker for a live, authorized session. **Planned** (M3d).
 | Privilege creep / broad standing access | Requestable + approval-gated + JIT time-boxed; approval gate travels with the role | Policy: M3b ✅ · workflow: M3c ⬜ |
 | Over-broad capability grant slips in unnoticed | Grammar validation at role creation; `**` is the explicit, auditable "whole scope"; `CapMatch` fails closed | Implemented (this branch) |
 | Access revoked but live session continues | Continuous revocation → forced session teardown (push/pull re-eval of `HoldsRole`/grant) | Planned (M3c/M4) |
+| Compromised/departed user keeps acting | `deactivated_at` off-switch: rejected at Login **and** the auth interceptor (`Unauthenticated`) on any authenticated RPC | Implemented (M-v2); residual: still counts in others' authz sets until unbound/deleted (full CTE exclusion deferred) |
 | Credential exposed on a compromised target | Agentless: no credential/software on targets; worker holds it only for a live session | Planned (M4/M5) |
 | Audit log tampered to hide activity | Hash-chained append-only log; independently verifiable | Primitive: M3a ✅ · full wiring ongoing |
 | Secrets (CA keys, target creds) read at rest | Envelope encryption (NaCl secretbox master key; KMS pluggable) | Planned (M3d) |

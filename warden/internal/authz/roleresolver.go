@@ -76,7 +76,7 @@ goals(role_id, object_kind, object_id) AS (
 SELECT EXISTS (
     SELECT 1
     FROM goals g
-    JOIN role_bindings rb ON rb.role_id = g.role_id AND rb.kind = 'standing'
+    JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
          OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
       AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
@@ -168,7 +168,7 @@ goals(role_id, object_kind, object_id, path) AS (
 )
 SELECT g.path, rb.id, rb.subject_user_id, rb.subject_group_id
 FROM goals g
-JOIN role_bindings rb ON rb.role_id = g.role_id AND rb.kind = 'standing'
+JOIN role_bindings rb ON rb.role_id = g.role_id
   AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
     OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
   AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))

@@ -108,7 +108,7 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Role-level DEFAULT rule for dba: required_approvals=1, approver_role_id=owner
-	defaultRule, err := q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+	defaultRule, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 		ApproverRoleID:    pg(owner.ID),
@@ -119,8 +119,9 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Explicit approver on the default rule: group leads
-	if _, err := q.AddRuleApprover(ctx, gen.AddRuleApproverParams{
-		RuleID:         defaultRule.ID,
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:       defaultRule.ID,
+		Kind:           "approver",
 		SubjectGroupID: pg(leads.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -129,7 +130,6 @@ func TestApprovalResolver(t *testing.T) {
 	// Standing role binding: alice -> owner on folder prod (inherited to pg)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        owner.ID,
-		Kind:          "standing",
 		ScopeFolderID: pg(prod.ID),
 		SubjectUserID: pg(alice.ID),
 	}); err != nil {
@@ -180,7 +180,7 @@ func TestApprovalResolver(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Role-default rule for custodian whose approver-role is keeper.
-		if _, err := q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 			RoleID:            custodian.ID,
 			RequiredApprovals: 1,
 			ApproverRoleID:    pg(keeper.ID),
@@ -194,7 +194,6 @@ func TestApprovalResolver(t *testing.T) {
 		// keeper STANDING on folder prod; pgAsset lives in prod/db (a descendant).
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 			RoleID:        keeper.ID,
-			Kind:          "standing",
 			ScopeFolderID: pg(prod.ID),
 			SubjectUserID: pg(dave.ID),
 		}); err != nil {
@@ -247,7 +246,7 @@ func TestApprovalResolver(t *testing.T) {
 
 	// --- Assertion 5: Asset-override rule beats role default ---
 	// Add asset-override for dba on pg: required_approvals=3, no approver_role
-	assetOverride, err := q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+	assetOverride, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		ScopeAssetID:      pg(pgAsset.ID),
 		RequiredApprovals: 3,
@@ -314,10 +313,10 @@ func TestApprovalResolver(t *testing.T) {
 
 	// --- Assertion 7: Folder-override precedence ---
 	// Delete asset override; add folder override on prod/db required=2
-	if err := q.DeleteApprovalRule(ctx, assetOverride.ID); err != nil {
+	if err := q.DeleteRequestPolicy(ctx, assetOverride.ID); err != nil {
 		t.Fatal(err)
 	}
-	folderOverride, err := q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+	folderOverride, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		ScopeFolderID:     pg(proddb.ID),
 		RequiredApprovals: 2,
@@ -337,6 +336,132 @@ func TestApprovalResolver(t *testing.T) {
 		}
 		if rule.RequiredApprovals != 2 {
 			t.Fatalf("RequiredApprovals = %d; want 2 (nearest ancestor folder prod/db)", rule.RequiredApprovals)
+		}
+	})
+}
+
+// TestIsEligibleRequester covers the new (not-yet-wired) requester-eligibility
+// path: eligibility = holds the policy's requester_role on the asset (via the
+// explicit role-rewrite graph) OR is an explicit kind='requester' subject.
+func TestIsEligibleRequester(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	r := approvals.New(pool)
+
+	// Roles: dba (the requestable role) and requester (the standing role that
+	// confers requester eligibility).
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Folder + asset.
+	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: prod.ID, Name: "pg", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Users: alice holds `requester` standing, bob holds nothing, dave is an
+	// explicit requester subject.
+	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Role-default policy for dba with requester_role_id = requester.
+	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            dba.ID,
+		RequiredApprovals: 1,
+		RequesterRoleID:   pg(requester.ID),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// alice: standing `requester` on the asset → eligible via requester_role.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        requester.ID,
+		ScopeAssetID:  pg(pgAsset.ID),
+		SubjectUserID: pg(alice.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// dave: explicit kind='requester' subject on the policy.
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:      policy.ID,
+		Kind:          "requester",
+		SubjectUserID: pg(dave.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("requester-role-standing", func(t *testing.T) {
+		ok, err := r.IsEligibleRequester(ctx, alice.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester(alice) error: %v", err)
+		}
+		if !ok {
+			t.Fatal("IsEligibleRequester(alice) = false; want true (holds requester standing on asset)")
+		}
+	})
+
+	t.Run("no-eligibility", func(t *testing.T) {
+		ok, err := r.IsEligibleRequester(ctx, bob.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester(bob) error: %v", err)
+		}
+		if ok {
+			t.Fatal("IsEligibleRequester(bob) = true; want false (no requester role, not a requester subject)")
+		}
+	})
+
+	t.Run("explicit-requester-subject", func(t *testing.T) {
+		ok, err := r.IsEligibleRequester(ctx, dave.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester(dave) error: %v", err)
+		}
+		if !ok {
+			t.Fatal("IsEligibleRequester(dave) = false; want true (explicit kind='requester' subject)")
+		}
+	})
+
+	t.Run("approver-subject-is-not-a-requester", func(t *testing.T) {
+		// An approver-kind subject must NOT be treated as an eligible requester.
+		erin, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "erin@x", DisplayName: "Erin"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+			PolicyID:      policy.ID,
+			Kind:          "approver",
+			SubjectUserID: pg(erin.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := r.IsEligibleRequester(ctx, erin.ID, dba.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsEligibleRequester(erin) error: %v", err)
+		}
+		if ok {
+			t.Fatal("IsEligibleRequester(erin) = true; want false (approver subject, not requester)")
 		}
 	})
 }

@@ -8,6 +8,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
@@ -20,6 +22,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	tok := adminToken(t, url)
 	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
 
@@ -56,7 +59,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	secret := mustF("secret", "")
 	topsecret := mustA(secret, "top-secret")
 
-	role, err := cat.CreateRole(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleRequest{Name: "readonly", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+	role, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "readonly", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +70,8 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	// STANDING binding: sre -> readonly on folder prod
-	if _, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
+	if _, err := access.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: role.Msg.Role.Id, ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
 	}), tok)); err != nil {
 		t.Fatal(err)
 	}

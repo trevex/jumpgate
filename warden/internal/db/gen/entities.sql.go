@@ -120,14 +120,13 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 
 const createRoleBinding = `-- name: CreateRoleBinding :one
 INSERT INTO role_bindings
-  (role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at
+  (role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at
 `
 
 type CreateRoleBindingParams struct {
 	RoleID         uuid.UUID   `json:"role_id"`
-	Kind           string      `json:"kind"`
 	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
 	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
 	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
@@ -137,7 +136,6 @@ type CreateRoleBindingParams struct {
 func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error) {
 	row := q.db.QueryRow(ctx, createRoleBinding,
 		arg.RoleID,
-		arg.Kind,
 		arg.ScopeFolderID,
 		arg.ScopeAssetID,
 		arg.SubjectUserID,
@@ -147,7 +145,6 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 	err := row.Scan(
 		&i.ID,
 		&i.RoleID,
-		&i.Kind,
 		&i.ScopeFolderID,
 		&i.ScopeAssetID,
 		&i.SubjectUserID,
@@ -158,7 +155,7 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
 `
 
 type CreateUserParams struct {
@@ -176,12 +173,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
 }
 
 const createUserFull = `-- name: CreateUserFull :one
-INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin
+INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
 `
 
 type CreateUserFullParams struct {
@@ -200,8 +198,36 @@ func (q *Queries) CreateUserFull(ctx context.Context, arg CreateUserFullParams) 
 		&i.CreatedAt,
 		&i.PasswordHash,
 		&i.IsAdmin,
+		&i.DeactivatedAt,
 	)
 	return i, err
+}
+
+const deactivateUser = `-- name: DeactivateUser :exec
+UPDATE users SET deactivated_at = now() WHERE id = $1 AND deactivated_at IS NULL
+`
+
+func (q *Queries) DeactivateUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deactivateUser, id)
+	return err
+}
+
+const deleteGroup = `-- name: DeleteGroup :exec
+DELETE FROM groups WHERE id = $1
+`
+
+func (q *Queries) DeleteGroup(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteGroup, id)
+	return err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
 }
 
 const getAsset = `-- name: GetAsset :one
@@ -219,6 +245,68 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listGroupMemberGroups = `-- name: ListGroupMemberGroups :many
+SELECT g.id, g.name, g.created_at FROM groups g
+JOIN group_memberships gm ON gm.member_group_id = g.id
+WHERE gm.group_id = $1
+ORDER BY g.id
+`
+
+func (q *Queries) ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error) {
+	rows, err := q.db.Query(ctx, listGroupMemberGroups, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupMemberUsers = `-- name: ListGroupMemberUsers :many
+SELECT u.id, u.email, u.display_name, u.created_at, u.password_hash, u.is_admin, u.deactivated_at FROM users u
+JOIN group_memberships gm ON gm.member_user_id = u.id
+WHERE gm.group_id = $1
+ORDER BY u.id
+`
+
+func (q *Queries) ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error) {
+	rows, err := q.db.Query(ctx, listGroupMemberUsers, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+			&i.PasswordHash,
+			&i.IsAdmin,
+			&i.DeactivatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGroupsPaged = `-- name: ListGroupsPaged :many
@@ -254,7 +342,7 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, display_name, created_at, password_hash, is_admin FROM users
+SELECT id, email, display_name, created_at, password_hash, is_admin, deactivated_at FROM users
 WHERE ($1::uuid IS NULL OR id > $1)
 ORDER BY id
 LIMIT $2
@@ -281,6 +369,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.CreatedAt,
 			&i.PasswordHash,
 			&i.IsAdmin,
+			&i.DeactivatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -290,4 +379,41 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const reactivateUser = `-- name: ReactivateUser :exec
+UPDATE users SET deactivated_at = NULL WHERE id = $1
+`
+
+func (q *Queries) ReactivateUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, reactivateUser, id)
+	return err
+}
+
+const removeGroupFromGroup = `-- name: RemoveGroupFromGroup :exec
+DELETE FROM group_memberships WHERE group_id = $1 AND member_group_id = $2
+`
+
+type RemoveGroupFromGroupParams struct {
+	GroupID       uuid.UUID   `json:"group_id"`
+	MemberGroupID pgtype.UUID `json:"member_group_id"`
+}
+
+func (q *Queries) RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error {
+	_, err := q.db.Exec(ctx, removeGroupFromGroup, arg.GroupID, arg.MemberGroupID)
+	return err
+}
+
+const removeUserFromGroup = `-- name: RemoveUserFromGroup :exec
+DELETE FROM group_memberships WHERE group_id = $1 AND member_user_id = $2
+`
+
+type RemoveUserFromGroupParams struct {
+	GroupID      uuid.UUID   `json:"group_id"`
+	MemberUserID pgtype.UUID `json:"member_user_id"`
+}
+
+func (q *Queries) RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error {
+	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.GroupID, arg.MemberUserID)
+	return err
 }

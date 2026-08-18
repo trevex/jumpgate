@@ -14,51 +14,60 @@ import (
 type Querier interface {
 	AcquireAuditLock(ctx context.Context) error
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
-	AddRuleApprover(ctx context.Context, arg AddRuleApproverParams) (ApprovalRuleApprover, error)
+	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	CountUsers(ctx context.Context) (int64, error)
-	CreateApprovalRule(ctx context.Context, arg CreateApprovalRuleParams) (ApprovalRule, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, name string) (Group, error)
+	CreateRequestPolicy(ctx context.Context, arg CreateRequestPolicyParams) (RequestPolicy, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
 	CreateRoleGrant(ctx context.Context, arg CreateRoleGrantParams) (RoleGrant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
-	DeleteApprovalRule(ctx context.Context, id uuid.UUID) error
+	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
-	DeleteRuleApprover(ctx context.Context, id uuid.UUID) error
-	GetApprovalRule(ctx context.Context, id uuid.UUID) (ApprovalRule, error)
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
-	GetRoleDefaultRule(ctx context.Context, roleID uuid.UUID) (ApprovalRule, error)
+	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
-	ListApprovalRulesForRole(ctx context.Context, roleID uuid.UUID) ([]ApprovalRule, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
+	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
+	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
+	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
+	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
-	ListRuleApprovers(ctx context.Context, ruleID uuid.UUID) ([]ApprovalRuleApprover, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
+	ReactivateUser(ctx context.Context, id uuid.UUID) error
+	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
+	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
+	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -19,49 +19,8 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 	return &sqlAuthorizer{pool: pool}
 }
 
-// applicableCTE computes, for a user ($1), every asset reachable via a
-// REQUESTABLE binding, tagged with the role. It expands transitive group
-// membership, folder-subtree inheritance, and both asset- and folder-scoped
-// bindings for user- or (nested) group-subjects.
-//
-// NOTE (M3-roles): only requestable bindings flow through applicable. The
-// folder_tree implicit cascade is intentionally retained for the requestable
-// tier (documented deferral: no rewrite-over-requestable). Active/standing
-// access is now resolved explicitly through the role_grants graph (heldCTE).
-const applicableCTE = `
-WITH RECURSIVE user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id
-    FROM group_memberships gm
-    JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
-folder_tree(root_id, folder_id) AS (
-    SELECT id, id FROM folders
-  UNION
-    SELECT ft.root_id, f.id
-    FROM folders f JOIN folder_tree ft ON f.parent_id = ft.folder_id
-),
-applicable(asset_id, role_id) AS (
-    SELECT rb.scope_asset_id, rb.role_id
-    FROM role_bindings rb
-    WHERE rb.kind = 'requestable'
-      AND rb.scope_asset_id IS NOT NULL
-      AND ( rb.subject_user_id = $1
-            OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
-  UNION ALL
-    SELECT a.id, rb.role_id
-    FROM role_bindings rb
-    JOIN folder_tree ft ON ft.root_id = rb.scope_folder_id
-    JOIN assets a ON a.folder_id = ft.folder_id
-    WHERE rb.kind = 'requestable'
-      AND rb.scope_folder_id IS NOT NULL
-      AND ( rb.subject_user_id = $1
-            OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
-)`
-
 // heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
-// a user ($1), every (role, object) the user holds via direct STANDING bindings
+// a user ($1), every (role, object) the user holds via direct standing bindings
 // and the explicit role_grants rewrite graph (same_object + parent). It is
 // group-aware and cycle-safe (UNION dedup over the finite roles × objects set
 // guarantees termination — no depth column needed).
@@ -69,6 +28,14 @@ applicable(asset_id, role_id) AS (
 // PostgreSQL permits the recursive self-reference exactly once, so the three
 // expansion branches are combined via a LATERAL subquery referencing the current
 // row h (not the recursive relation).
+//
+// SECURITY — SINGLE SOURCE OF TRUTH: the `user_groups` + `held` forward-closure
+// below is duplicated in requestable.go (requestableRolesCTE,
+// visibleRequestableCTE). Check's grant decision and the Requestable-tier
+// eligibility MUST resolve membership identically. If you change a role_grants
+// expansion arm or the base case here, change ALL copies or eligibility silently
+// diverges from Check. (Kept as copies because each query wraps it in different
+// trailing CTEs; keep the closure semantics identical.)
 const heldCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -77,13 +44,12 @@ user_groups(group_id) AS (
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),
 held(role_id, object_kind, object_id) AS (
-    -- base: direct STANDING bindings for the user or a (nested) group
+    -- base: direct standing bindings for the user or a (nested) group
     SELECT rb.role_id,
            (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
-    WHERE rb.kind = 'standing'
-      AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
@@ -153,23 +119,14 @@ SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, userI
 	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
 	activeRows.Close()
 
-	// Requestable tier: assets reachable via requestable bindings (folder cascade
-	// retained per the documented deferral).
-	reqRows, err := s.pool.Query(ctx, applicableCTE+`
-SELECT asset_id, role_id FROM applicable`, userID)
+	// Requestable tier: assets with ≥1 role requestable-but-not-active under the
+	// request_policy eligibility model.
+	req, err := s.visibleRequestable(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("visible assets (requestable): %w", err)
 	}
-	defer reqRows.Close()
-	for reqRows.Next() {
-		var assetID, roleID uuid.UUID
-		if err := reqRows.Scan(&assetID, &roleID); err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
-		}
-		addRole(get(assetID), roleID)
-	}
-	if err := reqRows.Err(); err != nil {
-		return nil, err
+	for _, ra := range req {
+		addRole(get(ra.AssetID), ra.RoleID)
 	}
 
 	out := make([]AssetVisibility, 0, len(order))
@@ -207,27 +164,13 @@ SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
 	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
 	activeRows.Close()
 
-	// Requestable: roles reachable via requestable bindings (folder cascade retained).
-	reqRows, err := s.pool.Query(ctx, applicableCTE+`
-SELECT role_id FROM applicable WHERE asset_id = $2`, userID, assetID)
+	// Requestable: roles requestable-but-not-active under the request_policy
+	// eligibility model (active-exclusion is already applied inside the query).
+	req, err := s.requestableRoles(ctx, userID, assetID)
 	if err != nil {
 		return AssetRoles{}, fmt.Errorf("roles on asset (requestable): %w", err)
 	}
-	defer reqRows.Close()
-	reqSeen := map[uuid.UUID]struct{}{}
-	for reqRows.Next() {
-		var roleID uuid.UUID
-		if err := reqRows.Scan(&roleID); err != nil {
-			return AssetRoles{}, fmt.Errorf("scan: %w", err)
-		}
-		if _, ok := reqSeen[roleID]; !ok {
-			reqSeen[roleID] = struct{}{}
-			r.Requestable = append(r.Requestable, roleID)
-		}
-	}
-	if err := reqRows.Err(); err != nil {
-		return AssetRoles{}, err
-	}
+	r.Requestable = append(r.Requestable, req...)
 	return r, nil
 }
 

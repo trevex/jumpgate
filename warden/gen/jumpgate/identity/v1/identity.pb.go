@@ -814,6 +814,598 @@ func (*AddGroupToGroupResponse) Descriptor() ([]byte, []int) {
 	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{15}
 }
 
+type RemoveUserFromGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveUserFromGroupRequest) Reset() {
+	*x = RemoveUserFromGroupRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveUserFromGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveUserFromGroupRequest) ProtoMessage() {}
+
+func (x *RemoveUserFromGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveUserFromGroupRequest.ProtoReflect.Descriptor instead.
+func (*RemoveUserFromGroupRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RemoveUserFromGroupRequest) GetGroupId() string {
+	if x != nil {
+		return x.GroupId
+	}
+	return ""
+}
+
+func (x *RemoveUserFromGroupRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type RemoveUserFromGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveUserFromGroupResponse) Reset() {
+	*x = RemoveUserFromGroupResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveUserFromGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveUserFromGroupResponse) ProtoMessage() {}
+
+func (x *RemoveUserFromGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveUserFromGroupResponse.ProtoReflect.Descriptor instead.
+func (*RemoveUserFromGroupResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{17}
+}
+
+type RemoveGroupFromGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	MemberGroupId string                 `protobuf:"bytes,2,opt,name=member_group_id,json=memberGroupId,proto3" json:"member_group_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveGroupFromGroupRequest) Reset() {
+	*x = RemoveGroupFromGroupRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveGroupFromGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveGroupFromGroupRequest) ProtoMessage() {}
+
+func (x *RemoveGroupFromGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveGroupFromGroupRequest.ProtoReflect.Descriptor instead.
+func (*RemoveGroupFromGroupRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RemoveGroupFromGroupRequest) GetGroupId() string {
+	if x != nil {
+		return x.GroupId
+	}
+	return ""
+}
+
+func (x *RemoveGroupFromGroupRequest) GetMemberGroupId() string {
+	if x != nil {
+		return x.MemberGroupId
+	}
+	return ""
+}
+
+type RemoveGroupFromGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveGroupFromGroupResponse) Reset() {
+	*x = RemoveGroupFromGroupResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveGroupFromGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveGroupFromGroupResponse) ProtoMessage() {}
+
+func (x *RemoveGroupFromGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveGroupFromGroupResponse.ProtoReflect.Descriptor instead.
+func (*RemoveGroupFromGroupResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{19}
+}
+
+type ListGroupMembersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGroupMembersRequest) Reset() {
+	*x = ListGroupMembersRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGroupMembersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGroupMembersRequest) ProtoMessage() {}
+
+func (x *ListGroupMembersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGroupMembersRequest.ProtoReflect.Descriptor instead.
+func (*ListGroupMembersRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListGroupMembersRequest) GetGroupId() string {
+	if x != nil {
+		return x.GroupId
+	}
+	return ""
+}
+
+type ListGroupMembersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Users         []*User                `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	Groups        []*Group               `protobuf:"bytes,2,rep,name=groups,proto3" json:"groups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGroupMembersResponse) Reset() {
+	*x = ListGroupMembersResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGroupMembersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGroupMembersResponse) ProtoMessage() {}
+
+func (x *ListGroupMembersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGroupMembersResponse.ProtoReflect.Descriptor instead.
+func (*ListGroupMembersResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ListGroupMembersResponse) GetUsers() []*User {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+func (x *ListGroupMembersResponse) GetGroups() []*Group {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+type DeactivateUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeactivateUserRequest) Reset() {
+	*x = DeactivateUserRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeactivateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeactivateUserRequest) ProtoMessage() {}
+
+func (x *DeactivateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeactivateUserRequest.ProtoReflect.Descriptor instead.
+func (*DeactivateUserRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeactivateUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type DeactivateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeactivateUserResponse) Reset() {
+	*x = DeactivateUserResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeactivateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeactivateUserResponse) ProtoMessage() {}
+
+func (x *DeactivateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeactivateUserResponse.ProtoReflect.Descriptor instead.
+func (*DeactivateUserResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{23}
+}
+
+type ReactivateUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReactivateUserRequest) Reset() {
+	*x = ReactivateUserRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReactivateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReactivateUserRequest) ProtoMessage() {}
+
+func (x *ReactivateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReactivateUserRequest.ProtoReflect.Descriptor instead.
+func (*ReactivateUserRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReactivateUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type ReactivateUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReactivateUserResponse) Reset() {
+	*x = ReactivateUserResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReactivateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReactivateUserResponse) ProtoMessage() {}
+
+func (x *ReactivateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReactivateUserResponse.ProtoReflect.Descriptor instead.
+func (*ReactivateUserResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{25}
+}
+
+type DeleteUserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserRequest) Reset() {
+	*x = DeleteUserRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserRequest) ProtoMessage() {}
+
+func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserRequest.ProtoReflect.Descriptor instead.
+func (*DeleteUserRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *DeleteUserRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type DeleteUserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserResponse) Reset() {
+	*x = DeleteUserResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserResponse) ProtoMessage() {}
+
+func (x *DeleteUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserResponse.ProtoReflect.Descriptor instead.
+func (*DeleteUserResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{27}
+}
+
+type DeleteGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGroupRequest) Reset() {
+	*x = DeleteGroupRequest{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGroupRequest) ProtoMessage() {}
+
+func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGroupRequest.ProtoReflect.Descriptor instead.
+func (*DeleteGroupRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DeleteGroupRequest) GetGroupId() string {
+	if x != nil {
+		return x.GroupId
+	}
+	return ""
+}
+
+type DeleteGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGroupResponse) Reset() {
+	*x = DeleteGroupResponse{}
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGroupResponse) ProtoMessage() {}
+
+func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_identity_v1_identity_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGroupResponse.ProtoReflect.Descriptor instead.
+func (*DeleteGroupResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_identity_v1_identity_proto_rawDescGZIP(), []int{29}
+}
+
 var File_jumpgate_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
@@ -865,7 +1457,32 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x16AddGroupToGroupRequest\x12#\n" +
 	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x120\n" +
 	"\x0fmember_group_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\rmemberGroupId\"\x19\n" +
-	"\x17AddGroupToGroupResponse2\xd8\x05\n" +
+	"\x17AddGroupToGroupResponse\"d\n" +
+	"\x1aRemoveUserFromGroupRequest\x12#\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x12!\n" +
+	"\auser_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\"\x1d\n" +
+	"\x1bRemoveUserFromGroupResponse\"t\n" +
+	"\x1bRemoveGroupFromGroupRequest\x12#\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x120\n" +
+	"\x0fmember_group_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\rmemberGroupId\"\x1e\n" +
+	"\x1cRemoveGroupFromGroupResponse\">\n" +
+	"\x17ListGroupMembersRequest\x12#\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\"\x81\x01\n" +
+	"\x18ListGroupMembersResponse\x120\n" +
+	"\x05users\x18\x01 \x03(\v2\x1a.jumpgate.identity.v1.UserR\x05users\x123\n" +
+	"\x06groups\x18\x02 \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\":\n" +
+	"\x15DeactivateUserRequest\x12!\n" +
+	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\"\x18\n" +
+	"\x16DeactivateUserResponse\":\n" +
+	"\x15ReactivateUserRequest\x12!\n" +
+	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\"\x18\n" +
+	"\x16ReactivateUserResponse\"6\n" +
+	"\x11DeleteUserRequest\x12!\n" +
+	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\"\x14\n" +
+	"\x12DeleteUserResponse\"9\n" +
+	"\x12DeleteGroupRequest\x12#\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\"\x15\n" +
+	"\x13DeleteGroupResponse2\xf3\v\n" +
 	"\x0fIdentityService\x12a\n" +
 	"\n" +
 	"CreateUser\x12'.jumpgate.identity.v1.CreateUserRequest\x1a(.jumpgate.identity.v1.CreateUserResponse\"\x00\x12X\n" +
@@ -875,7 +1492,15 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
 	"ListGroups\x12'.jumpgate.identity.v1.ListGroupsRequest\x1a(.jumpgate.identity.v1.ListGroupsResponse\"\x00\x12m\n" +
 	"\x0eAddUserToGroup\x12+.jumpgate.identity.v1.AddUserToGroupRequest\x1a,.jumpgate.identity.v1.AddUserToGroupResponse\"\x00\x12p\n" +
-	"\x0fAddGroupToGroup\x12,.jumpgate.identity.v1.AddGroupToGroupRequest\x1a-.jumpgate.identity.v1.AddGroupToGroupResponse\"\x00BGZEgithub.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1;identityv1b\x06proto3"
+	"\x0fAddGroupToGroup\x12,.jumpgate.identity.v1.AddGroupToGroupRequest\x1a-.jumpgate.identity.v1.AddGroupToGroupResponse\"\x00\x12|\n" +
+	"\x13RemoveUserFromGroup\x120.jumpgate.identity.v1.RemoveUserFromGroupRequest\x1a1.jumpgate.identity.v1.RemoveUserFromGroupResponse\"\x00\x12\x7f\n" +
+	"\x14RemoveGroupFromGroup\x121.jumpgate.identity.v1.RemoveGroupFromGroupRequest\x1a2.jumpgate.identity.v1.RemoveGroupFromGroupResponse\"\x00\x12s\n" +
+	"\x10ListGroupMembers\x12-.jumpgate.identity.v1.ListGroupMembersRequest\x1a..jumpgate.identity.v1.ListGroupMembersResponse\"\x00\x12m\n" +
+	"\x0eDeactivateUser\x12+.jumpgate.identity.v1.DeactivateUserRequest\x1a,.jumpgate.identity.v1.DeactivateUserResponse\"\x00\x12m\n" +
+	"\x0eReactivateUser\x12+.jumpgate.identity.v1.ReactivateUserRequest\x1a,.jumpgate.identity.v1.ReactivateUserResponse\"\x00\x12a\n" +
+	"\n" +
+	"DeleteUser\x12'.jumpgate.identity.v1.DeleteUserRequest\x1a(.jumpgate.identity.v1.DeleteUserResponse\"\x00\x12d\n" +
+	"\vDeleteGroup\x12(.jumpgate.identity.v1.DeleteGroupRequest\x1a).jumpgate.identity.v1.DeleteGroupResponse\"\x00BGZEgithub.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1;identityv1b\x06proto3"
 
 var (
 	file_jumpgate_identity_v1_identity_proto_rawDescOnce sync.Once
@@ -889,24 +1514,38 @@ func file_jumpgate_identity_v1_identity_proto_rawDescGZIP() []byte {
 	return file_jumpgate_identity_v1_identity_proto_rawDescData
 }
 
-var file_jumpgate_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_jumpgate_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_jumpgate_identity_v1_identity_proto_goTypes = []any{
-	(*User)(nil),                    // 0: jumpgate.identity.v1.User
-	(*Group)(nil),                   // 1: jumpgate.identity.v1.Group
-	(*CreateUserResponse)(nil),      // 2: jumpgate.identity.v1.CreateUserResponse
-	(*GetUserResponse)(nil),         // 3: jumpgate.identity.v1.GetUserResponse
-	(*CreateGroupResponse)(nil),     // 4: jumpgate.identity.v1.CreateGroupResponse
-	(*CreateUserRequest)(nil),       // 5: jumpgate.identity.v1.CreateUserRequest
-	(*GetUserRequest)(nil),          // 6: jumpgate.identity.v1.GetUserRequest
-	(*ListUsersRequest)(nil),        // 7: jumpgate.identity.v1.ListUsersRequest
-	(*ListUsersResponse)(nil),       // 8: jumpgate.identity.v1.ListUsersResponse
-	(*CreateGroupRequest)(nil),      // 9: jumpgate.identity.v1.CreateGroupRequest
-	(*ListGroupsRequest)(nil),       // 10: jumpgate.identity.v1.ListGroupsRequest
-	(*ListGroupsResponse)(nil),      // 11: jumpgate.identity.v1.ListGroupsResponse
-	(*AddUserToGroupRequest)(nil),   // 12: jumpgate.identity.v1.AddUserToGroupRequest
-	(*AddUserToGroupResponse)(nil),  // 13: jumpgate.identity.v1.AddUserToGroupResponse
-	(*AddGroupToGroupRequest)(nil),  // 14: jumpgate.identity.v1.AddGroupToGroupRequest
-	(*AddGroupToGroupResponse)(nil), // 15: jumpgate.identity.v1.AddGroupToGroupResponse
+	(*User)(nil),                         // 0: jumpgate.identity.v1.User
+	(*Group)(nil),                        // 1: jumpgate.identity.v1.Group
+	(*CreateUserResponse)(nil),           // 2: jumpgate.identity.v1.CreateUserResponse
+	(*GetUserResponse)(nil),              // 3: jumpgate.identity.v1.GetUserResponse
+	(*CreateGroupResponse)(nil),          // 4: jumpgate.identity.v1.CreateGroupResponse
+	(*CreateUserRequest)(nil),            // 5: jumpgate.identity.v1.CreateUserRequest
+	(*GetUserRequest)(nil),               // 6: jumpgate.identity.v1.GetUserRequest
+	(*ListUsersRequest)(nil),             // 7: jumpgate.identity.v1.ListUsersRequest
+	(*ListUsersResponse)(nil),            // 8: jumpgate.identity.v1.ListUsersResponse
+	(*CreateGroupRequest)(nil),           // 9: jumpgate.identity.v1.CreateGroupRequest
+	(*ListGroupsRequest)(nil),            // 10: jumpgate.identity.v1.ListGroupsRequest
+	(*ListGroupsResponse)(nil),           // 11: jumpgate.identity.v1.ListGroupsResponse
+	(*AddUserToGroupRequest)(nil),        // 12: jumpgate.identity.v1.AddUserToGroupRequest
+	(*AddUserToGroupResponse)(nil),       // 13: jumpgate.identity.v1.AddUserToGroupResponse
+	(*AddGroupToGroupRequest)(nil),       // 14: jumpgate.identity.v1.AddGroupToGroupRequest
+	(*AddGroupToGroupResponse)(nil),      // 15: jumpgate.identity.v1.AddGroupToGroupResponse
+	(*RemoveUserFromGroupRequest)(nil),   // 16: jumpgate.identity.v1.RemoveUserFromGroupRequest
+	(*RemoveUserFromGroupResponse)(nil),  // 17: jumpgate.identity.v1.RemoveUserFromGroupResponse
+	(*RemoveGroupFromGroupRequest)(nil),  // 18: jumpgate.identity.v1.RemoveGroupFromGroupRequest
+	(*RemoveGroupFromGroupResponse)(nil), // 19: jumpgate.identity.v1.RemoveGroupFromGroupResponse
+	(*ListGroupMembersRequest)(nil),      // 20: jumpgate.identity.v1.ListGroupMembersRequest
+	(*ListGroupMembersResponse)(nil),     // 21: jumpgate.identity.v1.ListGroupMembersResponse
+	(*DeactivateUserRequest)(nil),        // 22: jumpgate.identity.v1.DeactivateUserRequest
+	(*DeactivateUserResponse)(nil),       // 23: jumpgate.identity.v1.DeactivateUserResponse
+	(*ReactivateUserRequest)(nil),        // 24: jumpgate.identity.v1.ReactivateUserRequest
+	(*ReactivateUserResponse)(nil),       // 25: jumpgate.identity.v1.ReactivateUserResponse
+	(*DeleteUserRequest)(nil),            // 26: jumpgate.identity.v1.DeleteUserRequest
+	(*DeleteUserResponse)(nil),           // 27: jumpgate.identity.v1.DeleteUserResponse
+	(*DeleteGroupRequest)(nil),           // 28: jumpgate.identity.v1.DeleteGroupRequest
+	(*DeleteGroupResponse)(nil),          // 29: jumpgate.identity.v1.DeleteGroupResponse
 }
 var file_jumpgate_identity_v1_identity_proto_depIdxs = []int32{
 	0,  // 0: jumpgate.identity.v1.CreateUserResponse.user:type_name -> jumpgate.identity.v1.User
@@ -914,25 +1553,41 @@ var file_jumpgate_identity_v1_identity_proto_depIdxs = []int32{
 	1,  // 2: jumpgate.identity.v1.CreateGroupResponse.group:type_name -> jumpgate.identity.v1.Group
 	0,  // 3: jumpgate.identity.v1.ListUsersResponse.users:type_name -> jumpgate.identity.v1.User
 	1,  // 4: jumpgate.identity.v1.ListGroupsResponse.groups:type_name -> jumpgate.identity.v1.Group
-	5,  // 5: jumpgate.identity.v1.IdentityService.CreateUser:input_type -> jumpgate.identity.v1.CreateUserRequest
-	6,  // 6: jumpgate.identity.v1.IdentityService.GetUser:input_type -> jumpgate.identity.v1.GetUserRequest
-	7,  // 7: jumpgate.identity.v1.IdentityService.ListUsers:input_type -> jumpgate.identity.v1.ListUsersRequest
-	9,  // 8: jumpgate.identity.v1.IdentityService.CreateGroup:input_type -> jumpgate.identity.v1.CreateGroupRequest
-	10, // 9: jumpgate.identity.v1.IdentityService.ListGroups:input_type -> jumpgate.identity.v1.ListGroupsRequest
-	12, // 10: jumpgate.identity.v1.IdentityService.AddUserToGroup:input_type -> jumpgate.identity.v1.AddUserToGroupRequest
-	14, // 11: jumpgate.identity.v1.IdentityService.AddGroupToGroup:input_type -> jumpgate.identity.v1.AddGroupToGroupRequest
-	2,  // 12: jumpgate.identity.v1.IdentityService.CreateUser:output_type -> jumpgate.identity.v1.CreateUserResponse
-	3,  // 13: jumpgate.identity.v1.IdentityService.GetUser:output_type -> jumpgate.identity.v1.GetUserResponse
-	8,  // 14: jumpgate.identity.v1.IdentityService.ListUsers:output_type -> jumpgate.identity.v1.ListUsersResponse
-	4,  // 15: jumpgate.identity.v1.IdentityService.CreateGroup:output_type -> jumpgate.identity.v1.CreateGroupResponse
-	11, // 16: jumpgate.identity.v1.IdentityService.ListGroups:output_type -> jumpgate.identity.v1.ListGroupsResponse
-	13, // 17: jumpgate.identity.v1.IdentityService.AddUserToGroup:output_type -> jumpgate.identity.v1.AddUserToGroupResponse
-	15, // 18: jumpgate.identity.v1.IdentityService.AddGroupToGroup:output_type -> jumpgate.identity.v1.AddGroupToGroupResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	0,  // 5: jumpgate.identity.v1.ListGroupMembersResponse.users:type_name -> jumpgate.identity.v1.User
+	1,  // 6: jumpgate.identity.v1.ListGroupMembersResponse.groups:type_name -> jumpgate.identity.v1.Group
+	5,  // 7: jumpgate.identity.v1.IdentityService.CreateUser:input_type -> jumpgate.identity.v1.CreateUserRequest
+	6,  // 8: jumpgate.identity.v1.IdentityService.GetUser:input_type -> jumpgate.identity.v1.GetUserRequest
+	7,  // 9: jumpgate.identity.v1.IdentityService.ListUsers:input_type -> jumpgate.identity.v1.ListUsersRequest
+	9,  // 10: jumpgate.identity.v1.IdentityService.CreateGroup:input_type -> jumpgate.identity.v1.CreateGroupRequest
+	10, // 11: jumpgate.identity.v1.IdentityService.ListGroups:input_type -> jumpgate.identity.v1.ListGroupsRequest
+	12, // 12: jumpgate.identity.v1.IdentityService.AddUserToGroup:input_type -> jumpgate.identity.v1.AddUserToGroupRequest
+	14, // 13: jumpgate.identity.v1.IdentityService.AddGroupToGroup:input_type -> jumpgate.identity.v1.AddGroupToGroupRequest
+	16, // 14: jumpgate.identity.v1.IdentityService.RemoveUserFromGroup:input_type -> jumpgate.identity.v1.RemoveUserFromGroupRequest
+	18, // 15: jumpgate.identity.v1.IdentityService.RemoveGroupFromGroup:input_type -> jumpgate.identity.v1.RemoveGroupFromGroupRequest
+	20, // 16: jumpgate.identity.v1.IdentityService.ListGroupMembers:input_type -> jumpgate.identity.v1.ListGroupMembersRequest
+	22, // 17: jumpgate.identity.v1.IdentityService.DeactivateUser:input_type -> jumpgate.identity.v1.DeactivateUserRequest
+	24, // 18: jumpgate.identity.v1.IdentityService.ReactivateUser:input_type -> jumpgate.identity.v1.ReactivateUserRequest
+	26, // 19: jumpgate.identity.v1.IdentityService.DeleteUser:input_type -> jumpgate.identity.v1.DeleteUserRequest
+	28, // 20: jumpgate.identity.v1.IdentityService.DeleteGroup:input_type -> jumpgate.identity.v1.DeleteGroupRequest
+	2,  // 21: jumpgate.identity.v1.IdentityService.CreateUser:output_type -> jumpgate.identity.v1.CreateUserResponse
+	3,  // 22: jumpgate.identity.v1.IdentityService.GetUser:output_type -> jumpgate.identity.v1.GetUserResponse
+	8,  // 23: jumpgate.identity.v1.IdentityService.ListUsers:output_type -> jumpgate.identity.v1.ListUsersResponse
+	4,  // 24: jumpgate.identity.v1.IdentityService.CreateGroup:output_type -> jumpgate.identity.v1.CreateGroupResponse
+	11, // 25: jumpgate.identity.v1.IdentityService.ListGroups:output_type -> jumpgate.identity.v1.ListGroupsResponse
+	13, // 26: jumpgate.identity.v1.IdentityService.AddUserToGroup:output_type -> jumpgate.identity.v1.AddUserToGroupResponse
+	15, // 27: jumpgate.identity.v1.IdentityService.AddGroupToGroup:output_type -> jumpgate.identity.v1.AddGroupToGroupResponse
+	17, // 28: jumpgate.identity.v1.IdentityService.RemoveUserFromGroup:output_type -> jumpgate.identity.v1.RemoveUserFromGroupResponse
+	19, // 29: jumpgate.identity.v1.IdentityService.RemoveGroupFromGroup:output_type -> jumpgate.identity.v1.RemoveGroupFromGroupResponse
+	21, // 30: jumpgate.identity.v1.IdentityService.ListGroupMembers:output_type -> jumpgate.identity.v1.ListGroupMembersResponse
+	23, // 31: jumpgate.identity.v1.IdentityService.DeactivateUser:output_type -> jumpgate.identity.v1.DeactivateUserResponse
+	25, // 32: jumpgate.identity.v1.IdentityService.ReactivateUser:output_type -> jumpgate.identity.v1.ReactivateUserResponse
+	27, // 33: jumpgate.identity.v1.IdentityService.DeleteUser:output_type -> jumpgate.identity.v1.DeleteUserResponse
+	29, // 34: jumpgate.identity.v1.IdentityService.DeleteGroup:output_type -> jumpgate.identity.v1.DeleteGroupResponse
+	21, // [21:35] is the sub-list for method output_type
+	7,  // [7:21] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_identity_v1_identity_proto_init() }
@@ -946,7 +1601,7 @@ func file_jumpgate_identity_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_identity_v1_identity_proto_rawDesc), len(file_jumpgate_identity_v1_identity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

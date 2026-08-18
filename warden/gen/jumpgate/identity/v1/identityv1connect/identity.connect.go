@@ -53,6 +53,27 @@ const (
 	// IdentityServiceAddGroupToGroupProcedure is the fully-qualified name of the IdentityService's
 	// AddGroupToGroup RPC.
 	IdentityServiceAddGroupToGroupProcedure = "/jumpgate.identity.v1.IdentityService/AddGroupToGroup"
+	// IdentityServiceRemoveUserFromGroupProcedure is the fully-qualified name of the IdentityService's
+	// RemoveUserFromGroup RPC.
+	IdentityServiceRemoveUserFromGroupProcedure = "/jumpgate.identity.v1.IdentityService/RemoveUserFromGroup"
+	// IdentityServiceRemoveGroupFromGroupProcedure is the fully-qualified name of the IdentityService's
+	// RemoveGroupFromGroup RPC.
+	IdentityServiceRemoveGroupFromGroupProcedure = "/jumpgate.identity.v1.IdentityService/RemoveGroupFromGroup"
+	// IdentityServiceListGroupMembersProcedure is the fully-qualified name of the IdentityService's
+	// ListGroupMembers RPC.
+	IdentityServiceListGroupMembersProcedure = "/jumpgate.identity.v1.IdentityService/ListGroupMembers"
+	// IdentityServiceDeactivateUserProcedure is the fully-qualified name of the IdentityService's
+	// DeactivateUser RPC.
+	IdentityServiceDeactivateUserProcedure = "/jumpgate.identity.v1.IdentityService/DeactivateUser"
+	// IdentityServiceReactivateUserProcedure is the fully-qualified name of the IdentityService's
+	// ReactivateUser RPC.
+	IdentityServiceReactivateUserProcedure = "/jumpgate.identity.v1.IdentityService/ReactivateUser"
+	// IdentityServiceDeleteUserProcedure is the fully-qualified name of the IdentityService's
+	// DeleteUser RPC.
+	IdentityServiceDeleteUserProcedure = "/jumpgate.identity.v1.IdentityService/DeleteUser"
+	// IdentityServiceDeleteGroupProcedure is the fully-qualified name of the IdentityService's
+	// DeleteGroup RPC.
+	IdentityServiceDeleteGroupProcedure = "/jumpgate.identity.v1.IdentityService/DeleteGroup"
 )
 
 // IdentityServiceClient is a client for the jumpgate.identity.v1.IdentityService service.
@@ -64,6 +85,13 @@ type IdentityServiceClient interface {
 	ListGroups(context.Context, *connect.Request[v1.ListGroupsRequest]) (*connect.Response[v1.ListGroupsResponse], error)
 	AddUserToGroup(context.Context, *connect.Request[v1.AddUserToGroupRequest]) (*connect.Response[v1.AddUserToGroupResponse], error)
 	AddGroupToGroup(context.Context, *connect.Request[v1.AddGroupToGroupRequest]) (*connect.Response[v1.AddGroupToGroupResponse], error)
+	RemoveUserFromGroup(context.Context, *connect.Request[v1.RemoveUserFromGroupRequest]) (*connect.Response[v1.RemoveUserFromGroupResponse], error)
+	RemoveGroupFromGroup(context.Context, *connect.Request[v1.RemoveGroupFromGroupRequest]) (*connect.Response[v1.RemoveGroupFromGroupResponse], error)
+	ListGroupMembers(context.Context, *connect.Request[v1.ListGroupMembersRequest]) (*connect.Response[v1.ListGroupMembersResponse], error)
+	DeactivateUser(context.Context, *connect.Request[v1.DeactivateUserRequest]) (*connect.Response[v1.DeactivateUserResponse], error)
+	ReactivateUser(context.Context, *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error)
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error)
+	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 }
 
 // NewIdentityServiceClient constructs a client for the jumpgate.identity.v1.IdentityService
@@ -119,18 +147,67 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("AddGroupToGroup")),
 			connect.WithClientOptions(opts...),
 		),
+		removeUserFromGroup: connect.NewClient[v1.RemoveUserFromGroupRequest, v1.RemoveUserFromGroupResponse](
+			httpClient,
+			baseURL+IdentityServiceRemoveUserFromGroupProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("RemoveUserFromGroup")),
+			connect.WithClientOptions(opts...),
+		),
+		removeGroupFromGroup: connect.NewClient[v1.RemoveGroupFromGroupRequest, v1.RemoveGroupFromGroupResponse](
+			httpClient,
+			baseURL+IdentityServiceRemoveGroupFromGroupProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("RemoveGroupFromGroup")),
+			connect.WithClientOptions(opts...),
+		),
+		listGroupMembers: connect.NewClient[v1.ListGroupMembersRequest, v1.ListGroupMembersResponse](
+			httpClient,
+			baseURL+IdentityServiceListGroupMembersProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ListGroupMembers")),
+			connect.WithClientOptions(opts...),
+		),
+		deactivateUser: connect.NewClient[v1.DeactivateUserRequest, v1.DeactivateUserResponse](
+			httpClient,
+			baseURL+IdentityServiceDeactivateUserProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("DeactivateUser")),
+			connect.WithClientOptions(opts...),
+		),
+		reactivateUser: connect.NewClient[v1.ReactivateUserRequest, v1.ReactivateUserResponse](
+			httpClient,
+			baseURL+IdentityServiceReactivateUserProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ReactivateUser")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteUser: connect.NewClient[v1.DeleteUserRequest, v1.DeleteUserResponse](
+			httpClient,
+			baseURL+IdentityServiceDeleteUserProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("DeleteUser")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteGroup: connect.NewClient[v1.DeleteGroupRequest, v1.DeleteGroupResponse](
+			httpClient,
+			baseURL+IdentityServiceDeleteGroupProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("DeleteGroup")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // identityServiceClient implements IdentityServiceClient.
 type identityServiceClient struct {
-	createUser      *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
-	getUser         *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
-	listUsers       *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
-	createGroup     *connect.Client[v1.CreateGroupRequest, v1.CreateGroupResponse]
-	listGroups      *connect.Client[v1.ListGroupsRequest, v1.ListGroupsResponse]
-	addUserToGroup  *connect.Client[v1.AddUserToGroupRequest, v1.AddUserToGroupResponse]
-	addGroupToGroup *connect.Client[v1.AddGroupToGroupRequest, v1.AddGroupToGroupResponse]
+	createUser           *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
+	getUser              *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
+	listUsers            *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
+	createGroup          *connect.Client[v1.CreateGroupRequest, v1.CreateGroupResponse]
+	listGroups           *connect.Client[v1.ListGroupsRequest, v1.ListGroupsResponse]
+	addUserToGroup       *connect.Client[v1.AddUserToGroupRequest, v1.AddUserToGroupResponse]
+	addGroupToGroup      *connect.Client[v1.AddGroupToGroupRequest, v1.AddGroupToGroupResponse]
+	removeUserFromGroup  *connect.Client[v1.RemoveUserFromGroupRequest, v1.RemoveUserFromGroupResponse]
+	removeGroupFromGroup *connect.Client[v1.RemoveGroupFromGroupRequest, v1.RemoveGroupFromGroupResponse]
+	listGroupMembers     *connect.Client[v1.ListGroupMembersRequest, v1.ListGroupMembersResponse]
+	deactivateUser       *connect.Client[v1.DeactivateUserRequest, v1.DeactivateUserResponse]
+	reactivateUser       *connect.Client[v1.ReactivateUserRequest, v1.ReactivateUserResponse]
+	deleteUser           *connect.Client[v1.DeleteUserRequest, v1.DeleteUserResponse]
+	deleteGroup          *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
 }
 
 // CreateUser calls jumpgate.identity.v1.IdentityService.CreateUser.
@@ -168,6 +245,41 @@ func (c *identityServiceClient) AddGroupToGroup(ctx context.Context, req *connec
 	return c.addGroupToGroup.CallUnary(ctx, req)
 }
 
+// RemoveUserFromGroup calls jumpgate.identity.v1.IdentityService.RemoveUserFromGroup.
+func (c *identityServiceClient) RemoveUserFromGroup(ctx context.Context, req *connect.Request[v1.RemoveUserFromGroupRequest]) (*connect.Response[v1.RemoveUserFromGroupResponse], error) {
+	return c.removeUserFromGroup.CallUnary(ctx, req)
+}
+
+// RemoveGroupFromGroup calls jumpgate.identity.v1.IdentityService.RemoveGroupFromGroup.
+func (c *identityServiceClient) RemoveGroupFromGroup(ctx context.Context, req *connect.Request[v1.RemoveGroupFromGroupRequest]) (*connect.Response[v1.RemoveGroupFromGroupResponse], error) {
+	return c.removeGroupFromGroup.CallUnary(ctx, req)
+}
+
+// ListGroupMembers calls jumpgate.identity.v1.IdentityService.ListGroupMembers.
+func (c *identityServiceClient) ListGroupMembers(ctx context.Context, req *connect.Request[v1.ListGroupMembersRequest]) (*connect.Response[v1.ListGroupMembersResponse], error) {
+	return c.listGroupMembers.CallUnary(ctx, req)
+}
+
+// DeactivateUser calls jumpgate.identity.v1.IdentityService.DeactivateUser.
+func (c *identityServiceClient) DeactivateUser(ctx context.Context, req *connect.Request[v1.DeactivateUserRequest]) (*connect.Response[v1.DeactivateUserResponse], error) {
+	return c.deactivateUser.CallUnary(ctx, req)
+}
+
+// ReactivateUser calls jumpgate.identity.v1.IdentityService.ReactivateUser.
+func (c *identityServiceClient) ReactivateUser(ctx context.Context, req *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error) {
+	return c.reactivateUser.CallUnary(ctx, req)
+}
+
+// DeleteUser calls jumpgate.identity.v1.IdentityService.DeleteUser.
+func (c *identityServiceClient) DeleteUser(ctx context.Context, req *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error) {
+	return c.deleteUser.CallUnary(ctx, req)
+}
+
+// DeleteGroup calls jumpgate.identity.v1.IdentityService.DeleteGroup.
+func (c *identityServiceClient) DeleteGroup(ctx context.Context, req *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error) {
+	return c.deleteGroup.CallUnary(ctx, req)
+}
+
 // IdentityServiceHandler is an implementation of the jumpgate.identity.v1.IdentityService service.
 type IdentityServiceHandler interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
@@ -177,6 +289,13 @@ type IdentityServiceHandler interface {
 	ListGroups(context.Context, *connect.Request[v1.ListGroupsRequest]) (*connect.Response[v1.ListGroupsResponse], error)
 	AddUserToGroup(context.Context, *connect.Request[v1.AddUserToGroupRequest]) (*connect.Response[v1.AddUserToGroupResponse], error)
 	AddGroupToGroup(context.Context, *connect.Request[v1.AddGroupToGroupRequest]) (*connect.Response[v1.AddGroupToGroupResponse], error)
+	RemoveUserFromGroup(context.Context, *connect.Request[v1.RemoveUserFromGroupRequest]) (*connect.Response[v1.RemoveUserFromGroupResponse], error)
+	RemoveGroupFromGroup(context.Context, *connect.Request[v1.RemoveGroupFromGroupRequest]) (*connect.Response[v1.RemoveGroupFromGroupResponse], error)
+	ListGroupMembers(context.Context, *connect.Request[v1.ListGroupMembersRequest]) (*connect.Response[v1.ListGroupMembersResponse], error)
+	DeactivateUser(context.Context, *connect.Request[v1.DeactivateUserRequest]) (*connect.Response[v1.DeactivateUserResponse], error)
+	ReactivateUser(context.Context, *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error)
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error)
+	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -228,6 +347,48 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("AddGroupToGroup")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceRemoveUserFromGroupHandler := connect.NewUnaryHandler(
+		IdentityServiceRemoveUserFromGroupProcedure,
+		svc.RemoveUserFromGroup,
+		connect.WithSchema(identityServiceMethods.ByName("RemoveUserFromGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceRemoveGroupFromGroupHandler := connect.NewUnaryHandler(
+		IdentityServiceRemoveGroupFromGroupProcedure,
+		svc.RemoveGroupFromGroup,
+		connect.WithSchema(identityServiceMethods.ByName("RemoveGroupFromGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceListGroupMembersHandler := connect.NewUnaryHandler(
+		IdentityServiceListGroupMembersProcedure,
+		svc.ListGroupMembers,
+		connect.WithSchema(identityServiceMethods.ByName("ListGroupMembers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceDeactivateUserHandler := connect.NewUnaryHandler(
+		IdentityServiceDeactivateUserProcedure,
+		svc.DeactivateUser,
+		connect.WithSchema(identityServiceMethods.ByName("DeactivateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceReactivateUserHandler := connect.NewUnaryHandler(
+		IdentityServiceReactivateUserProcedure,
+		svc.ReactivateUser,
+		connect.WithSchema(identityServiceMethods.ByName("ReactivateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceDeleteUserHandler := connect.NewUnaryHandler(
+		IdentityServiceDeleteUserProcedure,
+		svc.DeleteUser,
+		connect.WithSchema(identityServiceMethods.ByName("DeleteUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceDeleteGroupHandler := connect.NewUnaryHandler(
+		IdentityServiceDeleteGroupProcedure,
+		svc.DeleteGroup,
+		connect.WithSchema(identityServiceMethods.ByName("DeleteGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.identity.v1.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceCreateUserProcedure:
@@ -244,6 +405,20 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceAddUserToGroupHandler.ServeHTTP(w, r)
 		case IdentityServiceAddGroupToGroupProcedure:
 			identityServiceAddGroupToGroupHandler.ServeHTTP(w, r)
+		case IdentityServiceRemoveUserFromGroupProcedure:
+			identityServiceRemoveUserFromGroupHandler.ServeHTTP(w, r)
+		case IdentityServiceRemoveGroupFromGroupProcedure:
+			identityServiceRemoveGroupFromGroupHandler.ServeHTTP(w, r)
+		case IdentityServiceListGroupMembersProcedure:
+			identityServiceListGroupMembersHandler.ServeHTTP(w, r)
+		case IdentityServiceDeactivateUserProcedure:
+			identityServiceDeactivateUserHandler.ServeHTTP(w, r)
+		case IdentityServiceReactivateUserProcedure:
+			identityServiceReactivateUserHandler.ServeHTTP(w, r)
+		case IdentityServiceDeleteUserProcedure:
+			identityServiceDeleteUserHandler.ServeHTTP(w, r)
+		case IdentityServiceDeleteGroupProcedure:
+			identityServiceDeleteGroupHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -279,4 +454,32 @@ func (UnimplementedIdentityServiceHandler) AddUserToGroup(context.Context, *conn
 
 func (UnimplementedIdentityServiceHandler) AddGroupToGroup(context.Context, *connect.Request[v1.AddGroupToGroupRequest]) (*connect.Response[v1.AddGroupToGroupResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.AddGroupToGroup is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) RemoveUserFromGroup(context.Context, *connect.Request[v1.RemoveUserFromGroupRequest]) (*connect.Response[v1.RemoveUserFromGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.RemoveUserFromGroup is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) RemoveGroupFromGroup(context.Context, *connect.Request[v1.RemoveGroupFromGroupRequest]) (*connect.Response[v1.RemoveGroupFromGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.RemoveGroupFromGroup is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) ListGroupMembers(context.Context, *connect.Request[v1.ListGroupMembersRequest]) (*connect.Response[v1.ListGroupMembersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.ListGroupMembers is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) DeactivateUser(context.Context, *connect.Request[v1.DeactivateUserRequest]) (*connect.Response[v1.DeactivateUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.DeactivateUser is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) ReactivateUser(context.Context, *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.ReactivateUser is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.DeleteUser is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.DeleteGroup is not implemented"))
 }
