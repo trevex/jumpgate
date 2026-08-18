@@ -28,6 +28,7 @@ message Register {
   repeated string protocols = 2;
   int32 capacity = 3;
   repeated string live_session_ids = 4; // reconnect reconciliation
+  string dataplane_address = 5; // data-plane listen address the gateway dials
 }
 message Heartbeat {}
 message SessionEnded {
