@@ -27,3 +27,4 @@ node_modules/
 # Generated Go protobuf stubs ARE committed (warden/gen) so consumers
 # build without a codegen step. Rust protobuf stubs are generated into target/
 # by build.rs (already ignored above).
+warden/warden-meshcert
