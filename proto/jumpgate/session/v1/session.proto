@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package jumpgate.session.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1";
+
+// SessionService is the CLI-facing entrypoint to open a data-plane session. It is
+// authenticated by the standard bearer-token interceptor.
+service SessionService {
+  // CreateSession authorizes the caller to reach the asset (held-closure SSH-login
+  // check) and returns a short-lived admission token plus the gateway to dial.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {}
+}
+
+message CreateSessionRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  bytes client_ssh_public_key = 2 [(buf.validate.field).bytes.min_len = 1];
+}
+
+message CreateSessionResponse {
+  string session_token = 1;
+  string gateway_endpoint = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}

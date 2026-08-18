@@ -25,6 +25,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
 
 func main() {
@@ -119,9 +121,25 @@ func run() error {
 		}
 	}
 
+	// Build the CLI-facing session admission service. It requires the vault (to
+	// unseal the signing key) and an initialized active session signing key; absent
+	// either, CreateSession is disabled (nil service → SessionService not mounted).
+	var sessionSvc *session.Service
+	if sealer != nil {
+		ks := session.NewKeyStore(gen.New(pool), sealer)
+		priv, _, err := ks.LoadActive(ctx)
+		if errors.Is(err, session.ErrNoActiveKey) {
+			slog.Warn("no active session signing key; CreateSession disabled until initialized")
+		} else if err != nil {
+			return err
+		} else {
+			sessionSvc = session.NewService(gen.New(pool), authz.NewSQLAuthorizer(pool), sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc, sealer); err != nil {
+	if err := rpc.Register(mux, pool, arSvc, sealer, sessionSvc); err != nil {
 		return err
 	}
 
