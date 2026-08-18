@@ -34,7 +34,8 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool) error {
 	mux.Handle(idPath, idHandler)
 
 	authorizer := authz.NewSQLAuthorizer(pool)
-	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, authorizer), opts)
+	roles := authz.NewRoleResolver(pool)
+	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, authorizer, roles), opts)
 	mux.Handle(catPath, catHandler)
 
 	resolver := approvals.New(pool)

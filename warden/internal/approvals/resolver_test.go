@@ -62,6 +62,12 @@ func TestApprovalResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// owner cascades down folders via an explicit parent self-rule (IsApprover now
+	// resolves the approver-role through the explicit role-rewrite graph).
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: owner.ID, SourceRoleID: owner.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Folders: prod (root), prod/db (parent=prod)
 	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
 	if err != nil {
@@ -154,6 +160,66 @@ func TestApprovalResolver(t *testing.T) {
 		}
 		if !ok {
 			t.Fatal("IsApprover(alice) = false; want true (owner standing on prod → pg)")
+		}
+	})
+
+	// --- Assertion 2b: approver-role requires an explicit `parent` role_grant to cascade ---
+	// The approver-role branch of IsApprover resolves via HoldsRole (explicit
+	// role_grants), NOT the implicit folder cascade. A folder-scoped standing
+	// binding of an approver-role with NO `parent` rule must NOT confer approver
+	// status on descendant assets; adding the `parent` self-rule flips it.
+	// Uses fresh roles/users (custodian/keeper/dave) so existing assertions are
+	// untouched.
+	t.Run("approver-role-requires-explicit-parent-rule", func(t *testing.T) {
+		custodian, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "custodian", ResourceType: "asset", Capabilities: caps()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		keeper, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "keeper", ResourceType: "asset", Capabilities: caps()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Role-default rule for custodian whose approver-role is keeper.
+		if _, err := q.CreateApprovalRule(ctx, gen.CreateApprovalRuleParams{
+			RoleID:            custodian.ID,
+			RequiredApprovals: 1,
+			ApproverRoleID:    pg(keeper.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// keeper STANDING on folder prod; pgAsset lives in prod/db (a descendant).
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID:        keeper.ID,
+			Kind:          "standing",
+			ScopeFolderID: pg(prod.ID),
+			SubjectUserID: pg(dave.ID),
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		// Without a `parent` rule, keeper does not cascade prod → prod/db → pg.
+		ok, err := r.IsApprover(ctx, dave.ID, custodian.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsApprover(dave) error: %v", err)
+		}
+		if ok {
+			t.Fatal("IsApprover(dave) = true; want false (keeper has no `parent` role_grant, no implicit cascade)")
+		}
+
+		// Add the explicit parent self-rule; keeper now cascades to descendants.
+		if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: keeper.ID, SourceRoleID: keeper.ID, Via: "parent"}); err != nil {
+			t.Fatal(err)
+		}
+		ok, err = r.IsApprover(ctx, dave.ID, custodian.ID, pgAsset.ID)
+		if err != nil {
+			t.Fatalf("IsApprover(dave) after parent rule error: %v", err)
+		}
+		if !ok {
+			t.Fatal("IsApprover(dave) = false; want true (keeper ⊇ keeper via parent cascades prod → pg)")
 		}
 	})
 

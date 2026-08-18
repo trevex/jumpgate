@@ -114,6 +114,11 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 		t.Fatal(err)
 	}
 
+	// operator cascades down folders via an explicit parent self-rule.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: op.ID, Kind: "standing", ScopeFolderID: pgUUID(prod.ID), SubjectGroupID: pgUUID(platform.ID),
 	}); err != nil {
@@ -215,6 +220,10 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// op3 cascades down folders via an explicit parent self-rule.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
 	// standing binding on the GRANDPARENT folder
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, Kind: "standing", ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(grp.ID),
@@ -241,6 +250,179 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("deepAsset should be visible via 3-level folder inheritance")
+	}
+}
+
+// TestCheckExplicitFolderCascade pins the security-critical invariant that
+// heldCTE's forward closure honors ONLY the explicit role_grants graph: a
+// STANDING binding on a folder does NOT reach a descendant asset unless an
+// explicit `parent` self-rule exists. This asserts the negative first, then adds
+// the rule and asserts the flip — a regression reintroducing an implicit folder
+// walk in heldCTE would make the negative assertion fail.
+func TestCheckExplicitFolderCascade(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cascade@x", DisplayName: "Cascade"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grp, err := q.CreateGroup(ctx, "cascade-grp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	parent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cascade-parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cascade-child", ParentID: pgUUID(parent.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "cascade-asset", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", ResourceType: "asset", Capabilities: caps("read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// STANDING binding of op to the group on the PARENT folder. No role_grant yet.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: op.ID, Kind: "standing", ScopeFolderID: pgUUID(parent.ID), SubjectGroupID: pgUUID(grp.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewSQLAuthorizer(pool)
+
+	// Negative: without an explicit `parent` rule the folder binding must NOT
+	// reach the descendant asset.
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || ok {
+		t.Fatalf("Check(read, asset) before grant = %v, %v; want false (no implicit folder walk)", ok, err)
+	}
+	// Pin the visibility path too: asset must not be Active.
+	vis, err := a.VisibleAssets(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vis {
+		if v.AssetID == asset.ID && v.Active {
+			t.Fatal("asset must NOT be active before grant")
+		}
+	}
+	roles, err := a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles.Active) != 0 {
+		t.Fatalf("RolesOnAsset.Active before grant = %v, want none", roles.Active)
+	}
+
+	// Add the explicit op ⊇ op via parent rule.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Positive: the flip proves heldCTE honors the explicit-only cascade.
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || !ok {
+		t.Fatalf("Check(read, asset) after grant = %v, %v; want true", ok, err)
+	}
+	vis2, err := a.VisibleAssets(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeNow := false
+	for _, v := range vis2 {
+		if v.AssetID == asset.ID {
+			activeNow = v.Active
+		}
+	}
+	if !activeNow {
+		t.Fatal("asset must be active after grant")
+	}
+	roles2, err := a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles2.Active) != 1 || roles2.Active[0] != op.ID {
+		t.Fatalf("RolesOnAsset.Active after grant = %v, want [op]", roles2.Active)
+	}
+}
+
+// TestCheckSameObjectComposition pins that a `same_object` rewrite confers a
+// source role's capabilities on the SAME object: holding `super` on an asset,
+// with rule (super ⊇ base same_object), yields base's capability there. This
+// proves Check's held ⋈ roles.capabilities join picks up rewrite-conferred
+// roles, not just the directly-bound one.
+func TestCheckSameObjectComposition(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "compose@x", DisplayName: "Compose"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grp, err := q.CreateGroup(ctx, "compose-grp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "compose-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "compose-asset", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", ResourceType: "asset", Capabilities: caps("read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", ResourceType: "asset", Capabilities: caps("write")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rule: holding super on O confers base on O. In role_grants terms the goal
+	// `base` reduces to source `super` (role_id=base, source_role_id=super), so the
+	// forward closure adds base whenever super is held. (This is the (base ⊇ super)
+	// direction — "base is conferred by super" — matching the goal-expansion engine
+	// where WHERE rg.source_role_id = h.role_id SELECT rg.role_id.)
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: base.ID, SourceRoleID: super.ID, Via: "same_object"}); err != nil {
+		t.Fatal(err)
+	}
+	// STANDING binding of super to the group on the asset.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: super.ID, Kind: "standing", ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewSQLAuthorizer(pool)
+
+	// super's own capability holds directly.
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "write"); err != nil || !ok {
+		t.Fatalf("Check(write, asset) = %v, %v; want true (super's own cap)", ok, err)
+	}
+	// read comes from base, reachable via the same_object rewrite from super.
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "read"); err != nil || !ok {
+		t.Fatalf("Check(read, asset) = %v, %v; want true (base via same_object)", ok, err)
+	}
+	// guard: a capability neither role has → false.
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "admin"); err != nil || ok {
+		t.Fatalf("Check(admin, asset) = %v, %v; want false", ok, err)
 	}
 }
 
