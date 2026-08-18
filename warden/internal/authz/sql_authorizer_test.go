@@ -114,6 +114,11 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 		t.Fatal(err)
 	}
 
+	// operator cascades down folders via an explicit parent self-rule.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: op.ID, Kind: "standing", ScopeFolderID: pgUUID(prod.ID), SubjectGroupID: pgUUID(platform.ID),
 	}); err != nil {
@@ -213,6 +218,10 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", ResourceType: "asset", Capabilities: caps("read")})
 	if err != nil {
+		t.Fatal(err)
+	}
+	// op3 cascades down folders via an explicit parent self-rule.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	// standing binding on the GRANDPARENT folder

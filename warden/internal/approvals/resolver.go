@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/authz"
 )
 
 // Rule is an effective approval rule for activating a role on an asset.
@@ -25,8 +27,6 @@ type Resolver struct{ pool *pgxpool.Pool }
 
 // New constructs a Resolver.
 func New(pool *pgxpool.Pool) *Resolver { return &Resolver{pool: pool} }
-
-func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
 // EffectiveRule returns the most-specific approval rule for activating roleID on
 // assetID: asset override > nearest ancestor folder override > role-level default
@@ -66,8 +66,9 @@ SELECT id, required_approvals, approver_role_id FROM candidates ORDER BY spec AS
 }
 
 // IsApprover reports whether approverUserID may approve activating requestRoleID
-// on assetID, per the effective rule (explicit approver subjects ∪ holders of the
-// rule's approver_role as a standing binding on the asset or an ancestor folder).
+// on assetID, per the effective rule: explicit approver subjects (from
+// approval_rule_approvers) ∪ holders of the rule's approver_role on the asset,
+// resolved through the explicit role-rewrite graph (HoldsRole).
 func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID, assetID uuid.UUID) (bool, error) {
 	rule, err := r.EffectiveRule(ctx, requestRoleID, assetID)
 	if err != nil {
@@ -76,38 +77,36 @@ func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID
 	if rule == nil {
 		return false, nil
 	}
+
+	// Explicit approver subjects (unchanged): direct user or (nested) group match.
 	const sql = `
 WITH RECURSIVE user_groups(group_id) AS (
     SELECT group_id FROM group_memberships WHERE member_user_id = $1
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
-ancestors(folder_id) AS (
-    SELECT folder_id FROM assets WHERE id = $3
-  UNION ALL
-    SELECT f.parent_id FROM folders f JOIN ancestors a ON f.id = a.folder_id WHERE f.parent_id IS NOT NULL
 )
-SELECT
-  EXISTS (
+SELECT EXISTS (
     SELECT 1 FROM approval_rule_approvers ara
     WHERE ara.rule_id = $2
       AND (ara.subject_user_id = $1 OR ara.subject_group_id IN (SELECT group_id FROM user_groups))
-  )
-  OR (
-    $4::uuid IS NOT NULL AND EXISTS (
-      SELECT 1 FROM role_bindings rb
-      WHERE rb.role_id = $4 AND rb.kind = 'standing'
-        AND (rb.scope_asset_id = $3 OR rb.scope_folder_id IN (SELECT folder_id FROM ancestors))
-        AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-    )
-  )`
-	var approverRole pgtype.UUID
+)`
+	var explicit bool
+	if err := r.pool.QueryRow(ctx, sql, approverUserID, rule.ID).Scan(&explicit); err != nil {
+		return false, fmt.Errorf("is approver (explicit): %w", err)
+	}
+	if explicit {
+		return true, nil
+	}
+
+	// Approver-role branch: the approver qualifies if they hold the rule's
+	// approver_role on the asset via the explicit role-rewrite graph (including
+	// rewrites), not just a direct standing binding.
 	if rule.ApproverRoleID != uuid.Nil {
-		approverRole = pgUUID(rule.ApproverRoleID)
+		holds, err := authz.NewRoleResolver(r.pool).HoldsRole(ctx, approverUserID, rule.ApproverRoleID, "asset", assetID)
+		if err != nil {
+			return false, fmt.Errorf("is approver (role): %w", err)
+		}
+		return holds, nil
 	}
-	var ok bool
-	if err := r.pool.QueryRow(ctx, sql, approverUserID, rule.ID, assetID, approverRole).Scan(&ok); err != nil {
-		return false, fmt.Errorf("is approver: %w", err)
-	}
-	return ok, nil
+	return false, nil
 }
