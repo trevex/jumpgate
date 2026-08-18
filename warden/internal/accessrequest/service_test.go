@@ -118,7 +118,7 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}")})
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}

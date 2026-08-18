@@ -52,6 +52,15 @@ type Asset struct {
 	Name      string    `json:"name"`
 	Labels    []byte    `json:"labels"`
 	CreatedAt time.Time `json:"created_at"`
+	Kind      string    `json:"kind"`
+}
+
+type AssetSecret struct {
+	ID        uuid.UUID `json:"id"`
+	AssetID   uuid.UUID `json:"asset_id"`
+	Name      string    `json:"name"`
+	Sealed    []byte    `json:"sealed"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type AuditLog struct {
@@ -72,6 +81,15 @@ type AuthToken struct {
 	TokenHash []byte    `json:"token_hash"`
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type CaKey struct {
+	ID             uuid.UUID `json:"id"`
+	Kind           string    `json:"kind"`
+	Sealed         []byte    `json:"sealed"`
+	PublicMaterial string    `json:"public_material"`
+	CreatedAt      time.Time `json:"created_at"`
+	Active         bool      `json:"active"`
 }
 
 type Folder struct {
@@ -140,6 +158,13 @@ type RoleGrant struct {
 	SourceRoleID uuid.UUID `json:"source_role_id"`
 	Via          string    `json:"via"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type SshAssetConfig struct {
+	AssetID        uuid.UUID   `json:"asset_id"`
+	AllowedLogins  []string    `json:"allowed_logins"`
+	AuthMethod     string      `json:"auth_method"`
+	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
 }
 
 type User struct {

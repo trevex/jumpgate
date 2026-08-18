@@ -23,6 +23,7 @@ type Querier interface {
 	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
+	CreateCAKey(ctx context.Context, arg CreateCAKeyParams) (CaKey, error)
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, name string) (Group, error)
 	CreateRequestPolicy(ctx context.Context, arg CreateRequestPolicyParams) (RequestPolicy, error)
@@ -32,6 +33,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
 	DeactivateUser(ctx context.Context, id uuid.UUID) error
+	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
@@ -41,7 +43,9 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
+	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
+	GetAssetSecret(ctx context.Context, id uuid.UUID) (AssetSecret, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
@@ -50,10 +54,12 @@ type Querier interface {
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
+	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
+	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
@@ -88,8 +94,10 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
+	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
+	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
 }
 
 var _ Querier = (*Queries)(nil)
