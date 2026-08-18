@@ -46,6 +46,18 @@ type Config struct {
 	// backstop only: teardown handles in-session revocation, so the cert TTL need
 	// not be short — it just caps a session that outlives all warden signals.
 	SSHCertMaxTTL time.Duration `env:"SSH_CERT_MAX_TTL" envDefault:"8h"`
+
+	// MeshListenAddr is the address of warden's second, mTLS "mesh" listener that
+	// serves the worker/gateway-facing services (Dataplane + Gateway). Empty means
+	// the mesh listener is disabled (workers/gateway cannot connect — a degraded but
+	// acceptable boot mode; the user-facing bearer API still serves).
+	MeshListenAddr string `env:"MESH_LISTEN_ADDR"`
+	// MeshCertFile / MeshKeyFile / MeshCAFile are the PEM files for warden's mesh
+	// server leaf keypair and the mesh CA bundle it verifies worker/gateway client
+	// certs against. All three must load for the mesh listener to start.
+	MeshCertFile string `env:"MESH_CERT_FILE"`
+	MeshKeyFile  string `env:"MESH_KEY_FILE"`
+	MeshCAFile   string `env:"MESH_CA_FILE"`
 }
 
 // Load reads configuration from environment variables.

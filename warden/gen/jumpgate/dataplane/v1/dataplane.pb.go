@@ -121,13 +121,14 @@ func (*WorkerMessage_Heartbeat) isWorkerMessage_Msg() {}
 func (*WorkerMessage_SessionEnded) isWorkerMessage_Msg() {}
 
 type Register struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	WorkerId       string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	Protocols      []string               `protobuf:"bytes,2,rep,name=protocols,proto3" json:"protocols,omitempty"`
-	Capacity       int32                  `protobuf:"varint,3,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	LiveSessionIds []string               `protobuf:"bytes,4,rep,name=live_session_ids,json=liveSessionIds,proto3" json:"live_session_ids,omitempty"` // reconnect reconciliation
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	WorkerId         string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	Protocols        []string               `protobuf:"bytes,2,rep,name=protocols,proto3" json:"protocols,omitempty"`
+	Capacity         int32                  `protobuf:"varint,3,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	LiveSessionIds   []string               `protobuf:"bytes,4,rep,name=live_session_ids,json=liveSessionIds,proto3" json:"live_session_ids,omitempty"`     // reconnect reconciliation
+	DataplaneAddress string                 `protobuf:"bytes,5,opt,name=dataplane_address,json=dataplaneAddress,proto3" json:"dataplane_address,omitempty"` // data-plane listen address the gateway dials
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Register) Reset() {
@@ -186,6 +187,13 @@ func (x *Register) GetLiveSessionIds() []string {
 		return x.LiveSessionIds
 	}
 	return nil
+}
+
+func (x *Register) GetDataplaneAddress() string {
+	if x != nil {
+		return x.DataplaneAddress
+	}
+	return ""
 }
 
 type Heartbeat struct {
@@ -567,12 +575,13 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\bregister\x18\x01 \x01(\v2\x1f.jumpgate.dataplane.v1.RegisterH\x00R\bregister\x12@\n" +
 	"\theartbeat\x18\x02 \x01(\v2 .jumpgate.dataplane.v1.HeartbeatH\x00R\theartbeat\x12J\n" +
 	"\rsession_ended\x18\x03 \x01(\v2#.jumpgate.dataplane.v1.SessionEndedH\x00R\fsessionEndedB\x05\n" +
-	"\x03msg\"\x94\x01\n" +
+	"\x03msg\"\xc1\x01\n" +
 	"\bRegister\x12$\n" +
 	"\tworker_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12\x1c\n" +
 	"\tprotocols\x18\x02 \x03(\tR\tprotocols\x12\x1a\n" +
 	"\bcapacity\x18\x03 \x01(\x05R\bcapacity\x12(\n" +
-	"\x10live_session_ids\x18\x04 \x03(\tR\x0eliveSessionIds\"\v\n" +
+	"\x10live_session_ids\x18\x04 \x03(\tR\x0eliveSessionIds\x12+\n" +
+	"\x11dataplane_address\x18\x05 \x01(\tR\x10dataplaneAddress\"\v\n" +
 	"\tHeartbeat\"O\n" +
 	"\fSessionEnded\x12'\n" +
 	"\n" +

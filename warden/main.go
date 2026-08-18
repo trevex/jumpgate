@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
@@ -23,6 +26,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
+	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
@@ -148,6 +152,7 @@ func run() error {
 	}()
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
+	var sessionPubKey ed25519.PublicKey
 	if sealer != nil {
 		ks := session.NewKeyStore(gen.New(pool), sealer)
 		priv, pub, err := ks.LoadActive(ctx)
@@ -156,6 +161,7 @@ func run() error {
 		} else if err != nil {
 			return err
 		} else {
+			sessionPubKey = pub
 			sessionSvc = session.NewService(gen.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)
@@ -163,9 +169,11 @@ func run() error {
 		}
 	}
 
+	// User-facing (bearer) mux + server: Auth/Identity/Catalog/Access/AccessRequest/
+	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc, sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc); err != nil {
 		return err
 	}
 
@@ -179,6 +187,12 @@ func run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// Second, mTLS "mesh" listener: serves Dataplane + Gateway to workers/gateway.
+	// Peer identity is the mTLS client cert URI SAN (mesh.Middleware). Degraded boot:
+	// if MESH_LISTEN_ADDR is unset or the cert files are missing/unreadable, warden
+	// logs a warning and serves only the user API (workers/gateway cannot connect).
+	meshSrv := buildMeshServer(cfg, pool, auditLog, setupSvc, registry, sessionPubKey)
+
 	serveErr := make(chan error, 1)
 	go func() {
 		slog.Info("warden listening", "addr", cfg.ListenAddr)
@@ -186,6 +200,14 @@ func run() error {
 			serveErr <- err
 		}
 	}()
+	if meshSrv != nil {
+		go func() {
+			slog.Info("warden mesh listening", "addr", meshSrv.Addr)
+			if err := meshSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serveErr <- err
+			}
+		}()
+	}
 
 	select {
 	case err := <-serveErr:
@@ -196,8 +218,65 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
+	if meshSrv != nil {
+		if err := meshSrv.Shutdown(shutdownCtx); err != nil {
+			slog.Error("mesh server shutdown", "err", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
 	return nil
+}
+
+// buildMeshServer constructs warden's mTLS mesh HTTP server (Dataplane + Gateway
+// behind mesh.Middleware), or returns nil for a degraded boot when the mesh
+// listener is disabled (MESH_LISTEN_ADDR unset) or its cert files cannot be loaded.
+func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey) *http.Server {
+	if cfg.MeshListenAddr == "" {
+		slog.Warn("mesh listener disabled: MESH_LISTEN_ADDR unset (workers/gateway cannot connect)")
+		return nil
+	}
+	certPEM, keyPEM, caPEM, err := readMeshCerts(cfg)
+	if err != nil {
+		slog.Warn("mesh listener disabled: cert files unreadable", "err", err)
+		return nil
+	}
+	tlsCfg, err := mesh.ServerTLSConfig(certPEM, keyPEM, caPEM)
+	if err != nil {
+		slog.Warn("mesh listener disabled: invalid TLS material", "err", err)
+		return nil
+	}
+	// Advertise h2 via ALPN so the bidi/server-streaming mesh RPCs negotiate HTTP/2.
+	tlsCfg.NextProtos = []string{"h2", "http/1.1"}
+
+	meshMux := http.NewServeMux()
+	if err := rpc.RegisterMeshServices(meshMux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, sessionPubKey)); err != nil {
+		slog.Warn("mesh listener disabled: service registration failed", "err", err)
+		return nil
+	}
+	return &http.Server{
+		Addr:              cfg.MeshListenAddr,
+		Handler:           mesh.Middleware(meshMux),
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+}
+
+// readMeshCerts loads warden's mesh leaf cert/key and the mesh CA bundle from the
+// configured PEM files. All three must be present and readable.
+func readMeshCerts(cfg config.Config) (certPEM, keyPEM, caPEM []byte, err error) {
+	if cfg.MeshCertFile == "" || cfg.MeshKeyFile == "" || cfg.MeshCAFile == "" {
+		return nil, nil, nil, errors.New("MESH_CERT_FILE/MESH_KEY_FILE/MESH_CA_FILE must all be set")
+	}
+	if certPEM, err = os.ReadFile(cfg.MeshCertFile); err != nil {
+		return nil, nil, nil, err
+	}
+	if keyPEM, err = os.ReadFile(cfg.MeshKeyFile); err != nil {
+		return nil, nil, nil, err
+	}
+	if caPEM, err = os.ReadFile(cfg.MeshCAFile); err != nil {
+		return nil, nil, nil, err
+	}
+	return certPEM, keyPEM, caPEM, nil
 }
