@@ -29,18 +29,23 @@ type Querier interface {
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
+	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
+	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
+	LockLastAuditEntry(ctx context.Context) ([]byte, error)
+	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 }
 
