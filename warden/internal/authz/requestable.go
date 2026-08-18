@@ -27,6 +27,11 @@ import (
 // role_grants same_object + parent). Evaluating it ONCE serves both the
 // "already active" subtraction and the "holds requester_role on A" predicate,
 // so the requester predicate composes with groups + parent cascade for free.
+//
+// SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies here must remain
+// byte-identical to heldCTE in sql_authorizer.go (and to visibleRequestableCTE
+// below). Divergence would make Requestable eligibility disagree with Check's
+// grant decision. See the note on heldCTE.
 const requestableRolesCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -110,6 +115,9 @@ WHERE
 // not already active) across ALL assets. The eligibility and active-exclusion
 // semantics are identical; the ancestor/candidate/effective computation is
 // generalized per-asset (keyed on the asset id) rather than pinned to one asset.
+//
+// SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies must remain
+// byte-identical to heldCTE (sql_authorizer.go) and requestableRolesCTE above.
 const visibleRequestableCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
