@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
 func main() {
@@ -92,9 +93,26 @@ func run() error {
 	// down live sessions. Exits on ctx.Done() (graceful shutdown).
 	go arSvc.RunReaper(ctx, cfg.ReaperInterval)
 
+	// Build the vault sealer ONCE. An unset master key disables the vault (nil
+	// sealer): VaultService still mounts but its sealing write paths fail closed.
+	// A present-but-invalid key is a config error and is fatal.
+	var sealer *secrets.Sealer
+	key, err := secrets.MasterKeyFromConfig(cfg.VaultMasterKey)
+	switch {
+	case errors.Is(err, secrets.ErrNotConfigured):
+		slog.Warn("vault disabled: VAULT_MASTER_KEY unset")
+	case err != nil:
+		return err
+	default:
+		sealer, err = secrets.NewSealer(key)
+		if err != nil {
+			return err
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc); err != nil {
+	if err := rpc.Register(mux, pool, arSvc, sealer); err != nil {
 		return err
 	}
 

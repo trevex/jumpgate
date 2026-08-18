@@ -87,6 +87,7 @@ type Asset struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	FolderId      string                 `protobuf:"bytes,2,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -138,6 +139,13 @@ func (x *Asset) GetFolderId() string {
 func (x *Asset) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *Asset) GetKind() string {
+	if x != nil {
+		return x.Kind
 	}
 	return ""
 }
@@ -346,6 +354,7 @@ type CreateAssetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FolderId      string                 `protobuf:"bytes,1,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -390,6 +399,13 @@ func (x *CreateAssetRequest) GetFolderId() string {
 func (x *CreateAssetRequest) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateAssetRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
 	}
 	return ""
 }
@@ -778,11 +794,12 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x06Folder\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
-	"\tparent_id\x18\x03 \x01(\tR\bparentId\"H\n" +
+	"\tparent_id\x18\x03 \x01(\tR\bparentId\"\\\n" +
 	"\x05Asset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tfolder_id\x18\x02 \x01(\tR\bfolderId\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"R\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\"R\n" +
 	"\x13CreateFolderRequest\x12\x1e\n" +
 	"\x04name\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\x12\x1b\n" +
@@ -795,11 +812,12 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"t\n" +
 	"\x13ListFoldersResponse\x125\n" +
 	"\afolders\x18\x01 \x03(\v2\x1b.jumpgate.catalog.v1.FolderR\afolders\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"[\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8c\x01\n" +
 	"\x12CreateAssetRequest\x12%\n" +
 	"\tfolder_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bfolderId\x12\x1e\n" +
 	"\x04name\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\"G\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\x12/\n" +
+	"\x04kind\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16R\x03sshR\bpostgresR\x03k8sR\x00R\x04kind\"G\n" +
 	"\x13CreateAssetResponse\x120\n" +
 	"\x05asset\x18\x01 \x01(\v2\x1a.jumpgate.catalog.v1.AssetR\x05asset\"B\n" +
 	"\x19ListAssetsByFolderRequest\x12%\n" +
