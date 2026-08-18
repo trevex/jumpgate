@@ -1138,16 +1138,17 @@ func (x *ListRoleBindingsResponse) GetBindings() []*RoleBinding {
 }
 
 type RequestPolicy struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	RoleId            string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	ScopeFolderId     string                 `protobuf:"bytes,3,opt,name=scope_folder_id,json=scopeFolderId,proto3" json:"scope_folder_id,omitempty"` // empty = not folder-scoped
-	ScopeAssetId      string                 `protobuf:"bytes,4,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`    // empty = not asset-scoped ; both empty = role-level default
-	RequiredApprovals int32                  `protobuf:"varint,5,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
-	RequesterRoleId   string                 `protobuf:"bytes,6,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"` // empty = no requester-role source
-	ApproverRoleId    string                 `protobuf:"bytes,7,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`    // empty = no approver-role source
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RoleId             string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	ScopeFolderId      string                 `protobuf:"bytes,3,opt,name=scope_folder_id,json=scopeFolderId,proto3" json:"scope_folder_id,omitempty"` // empty = not folder-scoped
+	ScopeAssetId       string                 `protobuf:"bytes,4,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`    // empty = not asset-scoped ; both empty = role-level default
+	RequiredApprovals  int32                  `protobuf:"varint,5,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
+	RequesterRoleId    string                 `protobuf:"bytes,6,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"`           // empty = no requester-role source
+	ApproverRoleId     string                 `protobuf:"bytes,7,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`              // empty = no approver-role source
+	MaxDurationSeconds int64                  `protobuf:"varint,8,opt,name=max_duration_seconds,json=maxDurationSeconds,proto3" json:"max_duration_seconds,omitempty"` // 0 = no per-scope duration cap (NULL)
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *RequestPolicy) Reset() {
@@ -1229,16 +1230,24 @@ func (x *RequestPolicy) GetApproverRoleId() string {
 	return ""
 }
 
+func (x *RequestPolicy) GetMaxDurationSeconds() int64 {
+	if x != nil {
+		return x.MaxDurationSeconds
+	}
+	return 0
+}
+
 type CreateRequestPolicyRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	RoleId            string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	ScopeFolderId     string                 `protobuf:"bytes,2,opt,name=scope_folder_id,json=scopeFolderId,proto3" json:"scope_folder_id,omitempty"` // optional; empty for role-default or asset scope
-	ScopeAssetId      string                 `protobuf:"bytes,3,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`    // optional
-	RequiredApprovals int32                  `protobuf:"varint,4,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
-	RequesterRoleId   string                 `protobuf:"bytes,5,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"` // optional
-	ApproverRoleId    string                 `protobuf:"bytes,6,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`    // optional
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	RoleId             string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	ScopeFolderId      string                 `protobuf:"bytes,2,opt,name=scope_folder_id,json=scopeFolderId,proto3" json:"scope_folder_id,omitempty"` // optional; empty for role-default or asset scope
+	ScopeAssetId       string                 `protobuf:"bytes,3,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`    // optional
+	RequiredApprovals  int32                  `protobuf:"varint,4,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
+	RequesterRoleId    string                 `protobuf:"bytes,5,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"`           // optional
+	ApproverRoleId     string                 `protobuf:"bytes,6,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`              // optional
+	MaxDurationSeconds int64                  `protobuf:"varint,7,opt,name=max_duration_seconds,json=maxDurationSeconds,proto3" json:"max_duration_seconds,omitempty"` // 0 = no per-scope cap (NULL)
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CreateRequestPolicyRequest) Reset() {
@@ -1313,6 +1322,13 @@ func (x *CreateRequestPolicyRequest) GetApproverRoleId() string {
 	return ""
 }
 
+func (x *CreateRequestPolicyRequest) GetMaxDurationSeconds() int64 {
+	if x != nil {
+		return x.MaxDurationSeconds
+	}
+	return 0
+}
+
 type CreateRequestPolicyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Policy        *RequestPolicy         `protobuf:"bytes,1,opt,name=policy,proto3" json:"policy,omitempty"`
@@ -1358,13 +1374,14 @@ func (x *CreateRequestPolicyResponse) GetPolicy() *RequestPolicy {
 }
 
 type UpdateRequestPolicyRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	RequiredApprovals int32                  `protobuf:"varint,2,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
-	RequesterRoleId   string                 `protobuf:"bytes,3,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"` // optional
-	ApproverRoleId    string                 `protobuf:"bytes,4,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`    // optional
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RequiredApprovals  int32                  `protobuf:"varint,2,opt,name=required_approvals,json=requiredApprovals,proto3" json:"required_approvals,omitempty"`
+	RequesterRoleId    string                 `protobuf:"bytes,3,opt,name=requester_role_id,json=requesterRoleId,proto3" json:"requester_role_id,omitempty"`           // optional
+	ApproverRoleId     string                 `protobuf:"bytes,4,opt,name=approver_role_id,json=approverRoleId,proto3" json:"approver_role_id,omitempty"`              // optional
+	MaxDurationSeconds int64                  `protobuf:"varint,5,opt,name=max_duration_seconds,json=maxDurationSeconds,proto3" json:"max_duration_seconds,omitempty"` // 0 = no per-scope cap (NULL)
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UpdateRequestPolicyRequest) Reset() {
@@ -1423,6 +1440,13 @@ func (x *UpdateRequestPolicyRequest) GetApproverRoleId() string {
 		return x.ApproverRoleId
 	}
 	return ""
+}
+
+func (x *UpdateRequestPolicyRequest) GetMaxDurationSeconds() int64 {
+	if x != nil {
+		return x.MaxDurationSeconds
+	}
+	return 0
 }
 
 type UpdateRequestPolicyResponse struct {
@@ -2304,7 +2328,7 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x0fsubject_user_id\x18\x04 \x01(\tR\rsubjectUserId\x12(\n" +
 	"\x10subject_group_id\x18\x05 \x01(\tR\x0esubjectGroupId\"W\n" +
 	"\x18ListRoleBindingsResponse\x12;\n" +
-	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\"\x8b\x02\n" +
+	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\"\xbd\x02\n" +
 	"\rRequestPolicy\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12&\n" +
@@ -2312,21 +2336,24 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x0escope_asset_id\x18\x04 \x01(\tR\fscopeAssetId\x12-\n" +
 	"\x12required_approvals\x18\x05 \x01(\x05R\x11requiredApprovals\x12*\n" +
 	"\x11requester_role_id\x18\x06 \x01(\tR\x0frequesterRoleId\x12(\n" +
-	"\x10approver_role_id\x18\a \x01(\tR\x0eapproverRoleId\"\x9d\x02\n" +
+	"\x10approver_role_id\x18\a \x01(\tR\x0eapproverRoleId\x120\n" +
+	"\x14max_duration_seconds\x18\b \x01(\x03R\x12maxDurationSeconds\"\xd8\x02\n" +
 	"\x1aCreateRequestPolicyRequest\x12!\n" +
 	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12&\n" +
 	"\x0fscope_folder_id\x18\x02 \x01(\tR\rscopeFolderId\x12$\n" +
 	"\x0escope_asset_id\x18\x03 \x01(\tR\fscopeAssetId\x128\n" +
-	"\x12required_approvals\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x14(\x01R\x11requiredApprovals\x12*\n" +
+	"\x12required_approvals\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x14(\x00R\x11requiredApprovals\x12*\n" +
 	"\x11requester_role_id\x18\x05 \x01(\tR\x0frequesterRoleId\x12(\n" +
-	"\x10approver_role_id\x18\x06 \x01(\tR\x0eapproverRoleId\"X\n" +
+	"\x10approver_role_id\x18\x06 \x01(\tR\x0eapproverRoleId\x129\n" +
+	"\x14max_duration_seconds\x18\a \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x12maxDurationSeconds\"X\n" +
 	"\x1bCreateRequestPolicyResponse\x129\n" +
-	"\x06policy\x18\x01 \x01(\v2!.jumpgate.access.v1.RequestPolicyR\x06policy\"\xc6\x01\n" +
+	"\x06policy\x18\x01 \x01(\v2!.jumpgate.access.v1.RequestPolicyR\x06policy\"\x81\x02\n" +
 	"\x1aUpdateRequestPolicyRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x128\n" +
-	"\x12required_approvals\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x14(\x01R\x11requiredApprovals\x12*\n" +
+	"\x12required_approvals\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x14(\x00R\x11requiredApprovals\x12*\n" +
 	"\x11requester_role_id\x18\x03 \x01(\tR\x0frequesterRoleId\x12(\n" +
-	"\x10approver_role_id\x18\x04 \x01(\tR\x0eapproverRoleId\"X\n" +
+	"\x10approver_role_id\x18\x04 \x01(\tR\x0eapproverRoleId\x129\n" +
+	"\x14max_duration_seconds\x18\x05 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x12maxDurationSeconds\"X\n" +
 	"\x1bUpdateRequestPolicyResponse\x129\n" +
 	"\x06policy\x18\x01 \x01(\v2!.jumpgate.access.v1.RequestPolicyR\x06policy\"6\n" +
 	"\x1aDeleteRequestPolicyRequest\x12\x18\n" +

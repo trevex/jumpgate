@@ -16,6 +16,16 @@ type Config struct {
 
 	BootstrapAdminEmail    string `env:"BOOTSTRAP_ADMIN_EMAIL"`
 	BootstrapAdminPassword string `env:"BOOTSTRAP_ADMIN_PASSWORD"`
+
+	// MaxGrantTTL is the hard ceiling on a JIT access grant's lifetime. It clamps
+	// both the requested duration and any per-policy max_duration cap.
+	MaxGrantTTL time.Duration `env:"MAX_GRANT_TTL" envDefault:"8h"`
+
+	// ReaperInterval is how often the expiry reaper sweeps for grants whose window
+	// has elapsed, marking them revoked ('expired'), auditing, and tearing down any
+	// live sessions. Authorization already excludes expired grants; the reaper only
+	// drives the side effects (audit + teardown).
+	ReaperInterval time.Duration `env:"REAPER_INTERVAL" envDefault:"30s"`
 }
 
 // Load reads configuration from environment variables.

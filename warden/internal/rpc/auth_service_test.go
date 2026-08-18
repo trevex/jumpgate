@@ -31,7 +31,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	t.Cleanup(pool.Close)
 
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

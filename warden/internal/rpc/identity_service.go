@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -13,15 +14,25 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
-// IdentityServer implements identityv1connect.IdentityServiceHandler.
-type IdentityServer struct {
-	q      *gen.Queries
-	tokens *auth.TokenService
+// grantRevoker revokes a user's active JIT grants. Satisfied by
+// accessrequest.Service; declared here as a narrow interface so the identity
+// handler depends only on the capability it needs (and to keep the seam obvious).
+type grantRevoker interface {
+	RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UUID, reason string) (int, error)
 }
 
-// NewIdentityServer constructs the IdentityService implementation.
-func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService) *IdentityServer {
-	return &IdentityServer{q: q, tokens: tokens}
+// IdentityServer implements identityv1connect.IdentityServiceHandler.
+type IdentityServer struct {
+	q       *gen.Queries
+	tokens  *auth.TokenService
+	revoker grantRevoker
+}
+
+// NewIdentityServer constructs the IdentityService implementation. revoker is
+// used by DeactivateUser to cascade grant revocation; may be nil in tests that
+// don't exercise deactivation.
+func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker) *IdentityServer {
+	return &IdentityServer{q: q, tokens: tokens, revoker: revoker}
 }
 
 func toUserMsg(u gen.User) *identityv1.User {
@@ -262,6 +273,15 @@ func (s *IdentityServer) DeactivateUser(ctx context.Context, req *connect.Reques
 	}
 	if err := s.q.DeactivateUser(ctx, uid); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	// Cascade: revoke the user's active JIT grants so live access ends with the
+	// account. Best-effort — the deactivation already stands and the user can no
+	// longer authenticate, so a revoke error is logged, not fatal.
+	if s.revoker != nil {
+		caller, _ := auth.UserFromContext(ctx)
+		if _, err := s.revoker.RevokeGrantsForUser(ctx, caller.ID, uid, "user_deactivated"); err != nil {
+			slog.Error("deactivation grant-revoke cascade failed", "user_id", uid.String(), "err", err)
+		}
 	}
 	return connect.NewResponse(&identityv1.DeactivateUserResponse{}), nil
 }

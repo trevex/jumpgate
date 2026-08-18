@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -56,14 +57,35 @@ func toRoleBindingMsg(b gen.RoleBinding) *accessv1.RoleBinding {
 
 func toRequestPolicyMsg(r gen.RequestPolicy) *accessv1.RequestPolicy {
 	return &accessv1.RequestPolicy{
-		Id:                r.ID.String(),
-		RoleId:            r.RoleID.String(),
-		ScopeFolderId:     pgUUIDToString(r.ScopeFolderID),
-		ScopeAssetId:      pgUUIDToString(r.ScopeAssetID),
-		RequiredApprovals: r.RequiredApprovals,
-		RequesterRoleId:   pgUUIDToString(r.RequesterRoleID),
-		ApproverRoleId:    pgUUIDToString(r.ApproverRoleID),
+		Id:                 r.ID.String(),
+		RoleId:             r.RoleID.String(),
+		ScopeFolderId:      pgUUIDToString(r.ScopeFolderID),
+		ScopeAssetId:       pgUUIDToString(r.ScopeAssetID),
+		RequiredApprovals:  r.RequiredApprovals,
+		RequesterRoleId:    pgUUIDToString(r.RequesterRoleID),
+		ApproverRoleId:     pgUUIDToString(r.ApproverRoleID),
+		MaxDurationSeconds: intervalToSeconds(r.MaxDuration),
 	}
+}
+
+// secondsToInterval maps a non-negative seconds count to a pgtype.Interval.
+// 0 → invalid (NULL); else a Microseconds-valued interval.
+func secondsToInterval(seconds int64) pgtype.Interval {
+	if seconds <= 0 {
+		return pgtype.Interval{Valid: false}
+	}
+	return pgtype.Interval{Microseconds: seconds * 1_000_000, Valid: true}
+}
+
+// intervalToSeconds maps a pgtype.Interval back to whole seconds; invalid → 0.
+// Months/Days are folded in using civil-day approximations (30d month, 24h day)
+// so admin-configured caps expressed in those units round-trip sensibly.
+func intervalToSeconds(iv pgtype.Interval) int64 {
+	if !iv.Valid {
+		return 0
+	}
+	const secPerDay = 86400
+	return int64(iv.Months)*30*secPerDay + int64(iv.Days)*secPerDay + iv.Microseconds/1_000_000
 }
 
 func toPolicySubjectMsg(s gen.RequestPolicySubject) *accessv1.PolicySubject {
@@ -346,6 +368,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 		RequiredApprovals: req.Msg.RequiredApprovals,
 		ApproverRoleID:    approverRole,
 		RequesterRoleID:   requesterRole,
+		MaxDuration:       secondsToInterval(req.Msg.MaxDurationSeconds),
 	})
 	if err != nil {
 		return nil, mapWriteErr(err)
@@ -375,6 +398,7 @@ func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Req
 		RequiredApprovals: req.Msg.RequiredApprovals,
 		ApproverRoleID:    approverRole,
 		RequesterRoleID:   requesterRole,
+		MaxDuration:       secondsToInterval(req.Msg.MaxDurationSeconds),
 	})
 	if err != nil {
 		return nil, mapWriteErr(err)

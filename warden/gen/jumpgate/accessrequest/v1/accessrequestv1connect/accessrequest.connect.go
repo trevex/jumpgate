@@ -36,6 +36,33 @@ const (
 	// AccessRequestServiceResolveApprovalProcedure is the fully-qualified name of the
 	// AccessRequestService's ResolveApproval RPC.
 	AccessRequestServiceResolveApprovalProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ResolveApproval"
+	// AccessRequestServiceRequestAccessProcedure is the fully-qualified name of the
+	// AccessRequestService's RequestAccess RPC.
+	AccessRequestServiceRequestAccessProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/RequestAccess"
+	// AccessRequestServiceCancelRequestProcedure is the fully-qualified name of the
+	// AccessRequestService's CancelRequest RPC.
+	AccessRequestServiceCancelRequestProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/CancelRequest"
+	// AccessRequestServiceApproveRequestProcedure is the fully-qualified name of the
+	// AccessRequestService's ApproveRequest RPC.
+	AccessRequestServiceApproveRequestProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ApproveRequest"
+	// AccessRequestServiceDenyRequestProcedure is the fully-qualified name of the
+	// AccessRequestService's DenyRequest RPC.
+	AccessRequestServiceDenyRequestProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/DenyRequest"
+	// AccessRequestServiceListMyRequestsProcedure is the fully-qualified name of the
+	// AccessRequestService's ListMyRequests RPC.
+	AccessRequestServiceListMyRequestsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListMyRequests"
+	// AccessRequestServiceListPendingApprovalsProcedure is the fully-qualified name of the
+	// AccessRequestService's ListPendingApprovals RPC.
+	AccessRequestServiceListPendingApprovalsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListPendingApprovals"
+	// AccessRequestServiceRevokeGrantProcedure is the fully-qualified name of the
+	// AccessRequestService's RevokeGrant RPC.
+	AccessRequestServiceRevokeGrantProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/RevokeGrant"
+	// AccessRequestServiceListMyGrantsProcedure is the fully-qualified name of the
+	// AccessRequestService's ListMyGrants RPC.
+	AccessRequestServiceListMyGrantsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListMyGrants"
+	// AccessRequestServiceListGrantsProcedure is the fully-qualified name of the AccessRequestService's
+	// ListGrants RPC.
+	AccessRequestServiceListGrantsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListGrants"
 )
 
 // AccessRequestServiceClient is a client for the jumpgate.accessrequest.v1.AccessRequestService
@@ -43,6 +70,27 @@ const (
 type AccessRequestServiceClient interface {
 	// ResolveApproval returns the effective request policy for a (role, asset) pair.
 	ResolveApproval(context.Context, *connect.Request[v1.ResolveApprovalRequest]) (*connect.Response[v1.ResolveApprovalResponse], error)
+	// RequestAccess opens a JIT access request for a role on an asset. A
+	// self-service policy (required_approvals=0) grants immediately.
+	RequestAccess(context.Context, *connect.Request[v1.RequestAccessRequest]) (*connect.Response[v1.RequestAccessResponse], error)
+	// CancelRequest cancels the caller's own pending request.
+	CancelRequest(context.Context, *connect.Request[v1.CancelRequestRequest]) (*connect.Response[v1.CancelRequestResponse], error)
+	// ApproveRequest records the caller's approval; the Nth distinct approval mints the grant.
+	ApproveRequest(context.Context, *connect.Request[v1.ApproveRequestRequest]) (*connect.Response[v1.ApproveRequestResponse], error)
+	// DenyRequest records the caller's denial, immediately denying the request.
+	DenyRequest(context.Context, *connect.Request[v1.DenyRequestRequest]) (*connect.Response[v1.DenyRequestResponse], error)
+	// ListMyRequests lists the caller's own access requests, newest first.
+	ListMyRequests(context.Context, *connect.Request[v1.ListMyRequestsRequest]) (*connect.Response[v1.ListMyRequestsResponse], error)
+	// ListPendingApprovals lists pending requests the caller is eligible to approve.
+	ListPendingApprovals(context.Context, *connect.Request[v1.ListPendingApprovalsRequest]) (*connect.Response[v1.ListPendingApprovalsResponse], error)
+	// RevokeGrant revokes an active access grant. Permitted for an admin, the
+	// grant's subject (self-revoke), or a standing approver for the grant's
+	// (role, asset).
+	RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error)
+	// ListMyGrants lists the caller's own access grants (active + past).
+	ListMyGrants(context.Context, *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error)
+	// ListGrants lists access grants for admin introspection (active + past).
+	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
 }
 
 // NewAccessRequestServiceClient constructs a client for the
@@ -63,12 +111,75 @@ func NewAccessRequestServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(accessRequestServiceMethods.ByName("ResolveApproval")),
 			connect.WithClientOptions(opts...),
 		),
+		requestAccess: connect.NewClient[v1.RequestAccessRequest, v1.RequestAccessResponse](
+			httpClient,
+			baseURL+AccessRequestServiceRequestAccessProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("RequestAccess")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelRequest: connect.NewClient[v1.CancelRequestRequest, v1.CancelRequestResponse](
+			httpClient,
+			baseURL+AccessRequestServiceCancelRequestProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("CancelRequest")),
+			connect.WithClientOptions(opts...),
+		),
+		approveRequest: connect.NewClient[v1.ApproveRequestRequest, v1.ApproveRequestResponse](
+			httpClient,
+			baseURL+AccessRequestServiceApproveRequestProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ApproveRequest")),
+			connect.WithClientOptions(opts...),
+		),
+		denyRequest: connect.NewClient[v1.DenyRequestRequest, v1.DenyRequestResponse](
+			httpClient,
+			baseURL+AccessRequestServiceDenyRequestProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("DenyRequest")),
+			connect.WithClientOptions(opts...),
+		),
+		listMyRequests: connect.NewClient[v1.ListMyRequestsRequest, v1.ListMyRequestsResponse](
+			httpClient,
+			baseURL+AccessRequestServiceListMyRequestsProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ListMyRequests")),
+			connect.WithClientOptions(opts...),
+		),
+		listPendingApprovals: connect.NewClient[v1.ListPendingApprovalsRequest, v1.ListPendingApprovalsResponse](
+			httpClient,
+			baseURL+AccessRequestServiceListPendingApprovalsProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ListPendingApprovals")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeGrant: connect.NewClient[v1.RevokeGrantRequest, v1.RevokeGrantResponse](
+			httpClient,
+			baseURL+AccessRequestServiceRevokeGrantProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("RevokeGrant")),
+			connect.WithClientOptions(opts...),
+		),
+		listMyGrants: connect.NewClient[v1.ListMyGrantsRequest, v1.ListMyGrantsResponse](
+			httpClient,
+			baseURL+AccessRequestServiceListMyGrantsProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ListMyGrants")),
+			connect.WithClientOptions(opts...),
+		),
+		listGrants: connect.NewClient[v1.ListGrantsRequest, v1.ListGrantsResponse](
+			httpClient,
+			baseURL+AccessRequestServiceListGrantsProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ListGrants")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // accessRequestServiceClient implements AccessRequestServiceClient.
 type accessRequestServiceClient struct {
-	resolveApproval *connect.Client[v1.ResolveApprovalRequest, v1.ResolveApprovalResponse]
+	resolveApproval      *connect.Client[v1.ResolveApprovalRequest, v1.ResolveApprovalResponse]
+	requestAccess        *connect.Client[v1.RequestAccessRequest, v1.RequestAccessResponse]
+	cancelRequest        *connect.Client[v1.CancelRequestRequest, v1.CancelRequestResponse]
+	approveRequest       *connect.Client[v1.ApproveRequestRequest, v1.ApproveRequestResponse]
+	denyRequest          *connect.Client[v1.DenyRequestRequest, v1.DenyRequestResponse]
+	listMyRequests       *connect.Client[v1.ListMyRequestsRequest, v1.ListMyRequestsResponse]
+	listPendingApprovals *connect.Client[v1.ListPendingApprovalsRequest, v1.ListPendingApprovalsResponse]
+	revokeGrant          *connect.Client[v1.RevokeGrantRequest, v1.RevokeGrantResponse]
+	listMyGrants         *connect.Client[v1.ListMyGrantsRequest, v1.ListMyGrantsResponse]
+	listGrants           *connect.Client[v1.ListGrantsRequest, v1.ListGrantsResponse]
 }
 
 // ResolveApproval calls jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval.
@@ -76,11 +187,77 @@ func (c *accessRequestServiceClient) ResolveApproval(ctx context.Context, req *c
 	return c.resolveApproval.CallUnary(ctx, req)
 }
 
+// RequestAccess calls jumpgate.accessrequest.v1.AccessRequestService.RequestAccess.
+func (c *accessRequestServiceClient) RequestAccess(ctx context.Context, req *connect.Request[v1.RequestAccessRequest]) (*connect.Response[v1.RequestAccessResponse], error) {
+	return c.requestAccess.CallUnary(ctx, req)
+}
+
+// CancelRequest calls jumpgate.accessrequest.v1.AccessRequestService.CancelRequest.
+func (c *accessRequestServiceClient) CancelRequest(ctx context.Context, req *connect.Request[v1.CancelRequestRequest]) (*connect.Response[v1.CancelRequestResponse], error) {
+	return c.cancelRequest.CallUnary(ctx, req)
+}
+
+// ApproveRequest calls jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest.
+func (c *accessRequestServiceClient) ApproveRequest(ctx context.Context, req *connect.Request[v1.ApproveRequestRequest]) (*connect.Response[v1.ApproveRequestResponse], error) {
+	return c.approveRequest.CallUnary(ctx, req)
+}
+
+// DenyRequest calls jumpgate.accessrequest.v1.AccessRequestService.DenyRequest.
+func (c *accessRequestServiceClient) DenyRequest(ctx context.Context, req *connect.Request[v1.DenyRequestRequest]) (*connect.Response[v1.DenyRequestResponse], error) {
+	return c.denyRequest.CallUnary(ctx, req)
+}
+
+// ListMyRequests calls jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests.
+func (c *accessRequestServiceClient) ListMyRequests(ctx context.Context, req *connect.Request[v1.ListMyRequestsRequest]) (*connect.Response[v1.ListMyRequestsResponse], error) {
+	return c.listMyRequests.CallUnary(ctx, req)
+}
+
+// ListPendingApprovals calls jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals.
+func (c *accessRequestServiceClient) ListPendingApprovals(ctx context.Context, req *connect.Request[v1.ListPendingApprovalsRequest]) (*connect.Response[v1.ListPendingApprovalsResponse], error) {
+	return c.listPendingApprovals.CallUnary(ctx, req)
+}
+
+// RevokeGrant calls jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant.
+func (c *accessRequestServiceClient) RevokeGrant(ctx context.Context, req *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error) {
+	return c.revokeGrant.CallUnary(ctx, req)
+}
+
+// ListMyGrants calls jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants.
+func (c *accessRequestServiceClient) ListMyGrants(ctx context.Context, req *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error) {
+	return c.listMyGrants.CallUnary(ctx, req)
+}
+
+// ListGrants calls jumpgate.accessrequest.v1.AccessRequestService.ListGrants.
+func (c *accessRequestServiceClient) ListGrants(ctx context.Context, req *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error) {
+	return c.listGrants.CallUnary(ctx, req)
+}
+
 // AccessRequestServiceHandler is an implementation of the
 // jumpgate.accessrequest.v1.AccessRequestService service.
 type AccessRequestServiceHandler interface {
 	// ResolveApproval returns the effective request policy for a (role, asset) pair.
 	ResolveApproval(context.Context, *connect.Request[v1.ResolveApprovalRequest]) (*connect.Response[v1.ResolveApprovalResponse], error)
+	// RequestAccess opens a JIT access request for a role on an asset. A
+	// self-service policy (required_approvals=0) grants immediately.
+	RequestAccess(context.Context, *connect.Request[v1.RequestAccessRequest]) (*connect.Response[v1.RequestAccessResponse], error)
+	// CancelRequest cancels the caller's own pending request.
+	CancelRequest(context.Context, *connect.Request[v1.CancelRequestRequest]) (*connect.Response[v1.CancelRequestResponse], error)
+	// ApproveRequest records the caller's approval; the Nth distinct approval mints the grant.
+	ApproveRequest(context.Context, *connect.Request[v1.ApproveRequestRequest]) (*connect.Response[v1.ApproveRequestResponse], error)
+	// DenyRequest records the caller's denial, immediately denying the request.
+	DenyRequest(context.Context, *connect.Request[v1.DenyRequestRequest]) (*connect.Response[v1.DenyRequestResponse], error)
+	// ListMyRequests lists the caller's own access requests, newest first.
+	ListMyRequests(context.Context, *connect.Request[v1.ListMyRequestsRequest]) (*connect.Response[v1.ListMyRequestsResponse], error)
+	// ListPendingApprovals lists pending requests the caller is eligible to approve.
+	ListPendingApprovals(context.Context, *connect.Request[v1.ListPendingApprovalsRequest]) (*connect.Response[v1.ListPendingApprovalsResponse], error)
+	// RevokeGrant revokes an active access grant. Permitted for an admin, the
+	// grant's subject (self-revoke), or a standing approver for the grant's
+	// (role, asset).
+	RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error)
+	// ListMyGrants lists the caller's own access grants (active + past).
+	ListMyGrants(context.Context, *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error)
+	// ListGrants lists access grants for admin introspection (active + past).
+	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
 }
 
 // NewAccessRequestServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -96,10 +273,82 @@ func NewAccessRequestServiceHandler(svc AccessRequestServiceHandler, opts ...con
 		connect.WithSchema(accessRequestServiceMethods.ByName("ResolveApproval")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accessRequestServiceRequestAccessHandler := connect.NewUnaryHandler(
+		AccessRequestServiceRequestAccessProcedure,
+		svc.RequestAccess,
+		connect.WithSchema(accessRequestServiceMethods.ByName("RequestAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceCancelRequestHandler := connect.NewUnaryHandler(
+		AccessRequestServiceCancelRequestProcedure,
+		svc.CancelRequest,
+		connect.WithSchema(accessRequestServiceMethods.ByName("CancelRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceApproveRequestHandler := connect.NewUnaryHandler(
+		AccessRequestServiceApproveRequestProcedure,
+		svc.ApproveRequest,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ApproveRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceDenyRequestHandler := connect.NewUnaryHandler(
+		AccessRequestServiceDenyRequestProcedure,
+		svc.DenyRequest,
+		connect.WithSchema(accessRequestServiceMethods.ByName("DenyRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceListMyRequestsHandler := connect.NewUnaryHandler(
+		AccessRequestServiceListMyRequestsProcedure,
+		svc.ListMyRequests,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ListMyRequests")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceListPendingApprovalsHandler := connect.NewUnaryHandler(
+		AccessRequestServiceListPendingApprovalsProcedure,
+		svc.ListPendingApprovals,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ListPendingApprovals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceRevokeGrantHandler := connect.NewUnaryHandler(
+		AccessRequestServiceRevokeGrantProcedure,
+		svc.RevokeGrant,
+		connect.WithSchema(accessRequestServiceMethods.ByName("RevokeGrant")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceListMyGrantsHandler := connect.NewUnaryHandler(
+		AccessRequestServiceListMyGrantsProcedure,
+		svc.ListMyGrants,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ListMyGrants")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessRequestServiceListGrantsHandler := connect.NewUnaryHandler(
+		AccessRequestServiceListGrantsProcedure,
+		svc.ListGrants,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ListGrants")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.accessrequest.v1.AccessRequestService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccessRequestServiceResolveApprovalProcedure:
 			accessRequestServiceResolveApprovalHandler.ServeHTTP(w, r)
+		case AccessRequestServiceRequestAccessProcedure:
+			accessRequestServiceRequestAccessHandler.ServeHTTP(w, r)
+		case AccessRequestServiceCancelRequestProcedure:
+			accessRequestServiceCancelRequestHandler.ServeHTTP(w, r)
+		case AccessRequestServiceApproveRequestProcedure:
+			accessRequestServiceApproveRequestHandler.ServeHTTP(w, r)
+		case AccessRequestServiceDenyRequestProcedure:
+			accessRequestServiceDenyRequestHandler.ServeHTTP(w, r)
+		case AccessRequestServiceListMyRequestsProcedure:
+			accessRequestServiceListMyRequestsHandler.ServeHTTP(w, r)
+		case AccessRequestServiceListPendingApprovalsProcedure:
+			accessRequestServiceListPendingApprovalsHandler.ServeHTTP(w, r)
+		case AccessRequestServiceRevokeGrantProcedure:
+			accessRequestServiceRevokeGrantHandler.ServeHTTP(w, r)
+		case AccessRequestServiceListMyGrantsProcedure:
+			accessRequestServiceListMyGrantsHandler.ServeHTTP(w, r)
+		case AccessRequestServiceListGrantsProcedure:
+			accessRequestServiceListGrantsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -111,4 +360,40 @@ type UnimplementedAccessRequestServiceHandler struct{}
 
 func (UnimplementedAccessRequestServiceHandler) ResolveApproval(context.Context, *connect.Request[v1.ResolveApprovalRequest]) (*connect.Response[v1.ResolveApprovalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) RequestAccess(context.Context, *connect.Request[v1.RequestAccessRequest]) (*connect.Response[v1.RequestAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.RequestAccess is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) CancelRequest(context.Context, *connect.Request[v1.CancelRequestRequest]) (*connect.Response[v1.CancelRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.CancelRequest is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ApproveRequest(context.Context, *connect.Request[v1.ApproveRequestRequest]) (*connect.Response[v1.ApproveRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) DenyRequest(context.Context, *connect.Request[v1.DenyRequestRequest]) (*connect.Response[v1.DenyRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.DenyRequest is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ListMyRequests(context.Context, *connect.Request[v1.ListMyRequestsRequest]) (*connect.Response[v1.ListMyRequestsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ListPendingApprovals(context.Context, *connect.Request[v1.ListPendingApprovalsRequest]) (*connect.Response[v1.ListPendingApprovalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) RevokeGrant(context.Context, *connect.Request[v1.RevokeGrantRequest]) (*connect.Response[v1.RevokeGrantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ListMyGrants(context.Context, *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListGrants is not implemented"))
 }

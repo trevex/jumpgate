@@ -45,18 +45,19 @@ func (q *Queries) AddPolicySubject(ctx context.Context, arg AddPolicySubjectPara
 }
 
 const createRequestPolicy = `-- name: CreateRequestPolicy :one
-INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id
+INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id, max_duration)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration
 `
 
 type CreateRequestPolicyParams struct {
-	RoleID            uuid.UUID   `json:"role_id"`
-	ScopeFolderID     pgtype.UUID `json:"scope_folder_id"`
-	ScopeAssetID      pgtype.UUID `json:"scope_asset_id"`
-	RequiredApprovals int32       `json:"required_approvals"`
-	ApproverRoleID    pgtype.UUID `json:"approver_role_id"`
-	RequesterRoleID   pgtype.UUID `json:"requester_role_id"`
+	RoleID            uuid.UUID       `json:"role_id"`
+	ScopeFolderID     pgtype.UUID     `json:"scope_folder_id"`
+	ScopeAssetID      pgtype.UUID     `json:"scope_asset_id"`
+	RequiredApprovals int32           `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID     `json:"approver_role_id"`
+	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
+	MaxDuration       pgtype.Interval `json:"max_duration"`
 }
 
 func (q *Queries) CreateRequestPolicy(ctx context.Context, arg CreateRequestPolicyParams) (RequestPolicy, error) {
@@ -67,6 +68,7 @@ func (q *Queries) CreateRequestPolicy(ctx context.Context, arg CreateRequestPoli
 		arg.RequiredApprovals,
 		arg.ApproverRoleID,
 		arg.RequesterRoleID,
+		arg.MaxDuration,
 	)
 	var i RequestPolicy
 	err := row.Scan(
@@ -78,6 +80,7 @@ func (q *Queries) CreateRequestPolicy(ctx context.Context, arg CreateRequestPoli
 		&i.ApproverRoleID,
 		&i.CreatedAt,
 		&i.RequesterRoleID,
+		&i.MaxDuration,
 	)
 	return i, err
 }
@@ -92,7 +95,7 @@ func (q *Queries) DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error {
 }
 
 const getRoleDefaultPolicy = `-- name: GetRoleDefaultPolicy :one
-SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
 `
 
 func (q *Queries) GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error) {
@@ -107,6 +110,7 @@ func (q *Queries) GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (R
 		&i.ApproverRoleID,
 		&i.CreatedAt,
 		&i.RequesterRoleID,
+		&i.MaxDuration,
 	)
 	return i, err
 }
@@ -143,7 +147,7 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([
 }
 
 const listRequestPoliciesForRole = `-- name: ListRequestPoliciesForRole :many
-SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id FROM request_policies WHERE role_id = $1 ORDER BY id
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration FROM request_policies WHERE role_id = $1 ORDER BY id
 `
 
 func (q *Queries) ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error) {
@@ -164,6 +168,7 @@ func (q *Queries) ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UU
 			&i.ApproverRoleID,
 			&i.CreatedAt,
 			&i.RequesterRoleID,
+			&i.MaxDuration,
 		); err != nil {
 			return nil, err
 		}
@@ -186,16 +191,17 @@ func (q *Queries) RemovePolicySubject(ctx context.Context, id uuid.UUID) error {
 
 const updateRequestPolicy = `-- name: UpdateRequestPolicy :one
 UPDATE request_policies
-SET required_approvals = $2, approver_role_id = $3, requester_role_id = $4
+SET required_approvals = $2, approver_role_id = $3, requester_role_id = $4, max_duration = $5
 WHERE id = $1
-RETURNING id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id
+RETURNING id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration
 `
 
 type UpdateRequestPolicyParams struct {
-	ID                uuid.UUID   `json:"id"`
-	RequiredApprovals int32       `json:"required_approvals"`
-	ApproverRoleID    pgtype.UUID `json:"approver_role_id"`
-	RequesterRoleID   pgtype.UUID `json:"requester_role_id"`
+	ID                uuid.UUID       `json:"id"`
+	RequiredApprovals int32           `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID     `json:"approver_role_id"`
+	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
+	MaxDuration       pgtype.Interval `json:"max_duration"`
 }
 
 func (q *Queries) UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error) {
@@ -204,6 +210,7 @@ func (q *Queries) UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPoli
 		arg.RequiredApprovals,
 		arg.ApproverRoleID,
 		arg.RequesterRoleID,
+		arg.MaxDuration,
 	)
 	var i RequestPolicy
 	err := row.Scan(
@@ -215,6 +222,7 @@ func (q *Queries) UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPoli
 		&i.ApproverRoleID,
 		&i.CreatedAt,
 		&i.RequesterRoleID,
+		&i.MaxDuration,
 	)
 	return i, err
 }
