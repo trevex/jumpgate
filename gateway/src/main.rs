@@ -1,46 +1,17 @@
 //! jumpgate gateway: the single externally exposed data-plane entrypoint.
 //!
-//! M4b bootstrap: load [`Config`] from the environment, serve `/healthz` on its
-//! own port, and run the external TLS listener. The per-connection handler is a
-//! stub for now (complete handshake, log, close); CONNECT parsing, token
-//! verification, load-balancing and the worker proxy land in later tasks.
+//! Thin process wrapper over the `gateway` library crate: install the crypto
+//! provider, load [`Config`], build the shared [`GatewayState`], spawn the roster
+//! client and the health server, and run the external TLS accept loop, handing each
+//! TLS-terminated connection to [`gateway::handle_connection`].
 
-mod config;
-mod connect;
-mod health;
-// Worker selection (Task 11) is wired into the connection handler in Task 13;
-// until then it is only exercised by its own tests.
-#[allow(dead_code)]
-mod lb;
-// The gateway→worker proxy leg (Task 12): exercised by its own tests until the
-// connection handler is wired in Task 13.
-#[allow(dead_code)]
-mod proxy;
-// The roster client (Task 10) is wired into `main` in Task 13; for now only its
-// unit-tested `Roster` map is exercised.
-#[allow(dead_code)]
-mod roster;
-mod tls;
-// Wired into the connection handler in a later task (Task 13); until then the
-// verifier is only exercised by its own tests.
-#[allow(dead_code)]
-mod token;
+use std::sync::{Arc, RwLock};
 
-/// Generated tonic clients + prost messages for the jumpgate protos. The gateway
-/// consumes `jumpgate.gateway.v1.GatewayService` over the internal mesh.
-pub mod pb {
-    pub mod jumpgate {
-        pub mod gateway {
-            pub mod v1 {
-                tonic::include_proto!("jumpgate.gateway.v1");
-            }
-        }
-    }
-}
-
-use std::sync::Arc;
-
-use config::Config;
+use gateway::config::Config;
+use gateway::lb::LoadCounters;
+use gateway::roster::Roster;
+use gateway::tls::{self, MeshClientCerts};
+use gateway::{health, roster, GatewayState};
 use tokio_rustls::TlsAcceptor;
 
 #[tokio::main]
@@ -71,11 +42,36 @@ async fn main() -> anyhow::Result<()> {
         "gateway starting",
     );
 
+    // Read the mesh PEM material once; fail fast on bad/missing files.
+    let mesh_certs =
+        match MeshClientCerts::from_files(&config.mesh_cert, &config.mesh_key, &config.mesh_ca) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to load mesh client certificates");
+                return Err(e);
+            }
+        };
     let server_config = tls::server_config(&config.tls_cert, &config.tls_key)?;
-    // Built here to fail fast on bad mesh material; wired to the roster client
-    // and worker proxy in later tasks.
-    let _mesh_config =
-        tls::mesh_client_config(&config.mesh_cert, &config.mesh_key, &config.mesh_ca)?;
+
+    let state = GatewayState {
+        roster: Roster::default(),
+        counters: LoadCounters::default(),
+        mesh_certs,
+        verification_key: Arc::new(RwLock::new(None)),
+    };
+
+    // Roster client: stream worker updates + fetch the session verification key.
+    tokio::spawn(roster::run(
+        state.roster.clone(),
+        config.warden_mesh_addr.clone(),
+        state.mesh_certs.clone(),
+        {
+            let vk = state.verification_key.clone();
+            move |k| {
+                *vk.write().unwrap() = Some(k);
+            }
+        },
+    ));
 
     // Health server on its own port.
     let health_addr = config.health_listen.clone();
@@ -87,7 +83,11 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // External TLS listener.
-    let external = tokio::spawn(run_external_listener(config.listen.clone(), server_config));
+    let external = tokio::spawn(run_external_listener(
+        config.listen.clone(),
+        server_config,
+        state,
+    ));
 
     tokio::select! {
         r = health => r.map_err(anyhow::Error::from).and_then(|r| r)?,
@@ -97,17 +97,19 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Bind the external TLS listener and handle connections until failure.
+/// Bind the external TLS listener and dispatch each accepted connection to the
+/// library's per-connection handler until failure.
 async fn run_external_listener(
     addr: String,
     server_config: Arc<rustls::ServerConfig>,
+    state: GatewayState,
 ) -> anyhow::Result<()> {
     let acceptor = TlsAcceptor::from(server_config);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "gateway external TLS listener ready");
 
     loop {
-        let (stream, peer) = match listener.accept().await {
+        let (tcp, peer) = match listener.accept().await {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!(error = %e, "accept failed");
@@ -115,26 +117,12 @@ async fn run_external_listener(
             }
         };
         let acceptor = acceptor.clone();
+        let st = state.clone();
         tokio::spawn(async move {
-            handle_conn(acceptor, stream, peer).await;
+            match acceptor.accept(tcp).await {
+                Ok(tls) => gateway::handle_connection(st, tls).await,
+                Err(e) => tracing::warn!(%peer, error = %e, "tls handshake failed"),
+            }
         });
-    }
-}
-
-/// Per-connection handler stub: complete the TLS handshake, log, and close.
-/// Replaced by the real CONNECT→verify→pick→pump handler in a later task.
-async fn handle_conn(
-    acceptor: TlsAcceptor,
-    stream: tokio::net::TcpStream,
-    peer: std::net::SocketAddr,
-) {
-    match acceptor.accept(stream).await {
-        Ok(_tls_stream) => {
-            tracing::info!(%peer, "accepted TLS connection");
-            // Stub: drop the stream to close the connection.
-        }
-        Err(e) => {
-            tracing::warn!(%peer, error = %e, "TLS handshake failed");
-        }
     }
 }

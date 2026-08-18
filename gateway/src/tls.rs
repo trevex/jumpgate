@@ -76,8 +76,6 @@ pub struct MeshClientCerts {
 
 impl MeshClientCerts {
     /// Read the mesh PEM material from disk once.
-    // Wired into `main` in Task 13; until then only its tests exercise it.
-    #[allow(dead_code)]
     pub fn from_files(
         cert_pem_path: &str,
         key_pem_path: &str,
