@@ -120,14 +120,13 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 
 const createRoleBinding = `-- name: CreateRoleBinding :one
 INSERT INTO role_bindings
-  (role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, role_id, kind, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at
+  (role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at
 `
 
 type CreateRoleBindingParams struct {
 	RoleID         uuid.UUID   `json:"role_id"`
-	Kind           string      `json:"kind"`
 	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
 	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
 	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
@@ -137,7 +136,6 @@ type CreateRoleBindingParams struct {
 func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error) {
 	row := q.db.QueryRow(ctx, createRoleBinding,
 		arg.RoleID,
-		arg.Kind,
 		arg.ScopeFolderID,
 		arg.ScopeAssetID,
 		arg.SubjectUserID,
@@ -147,7 +145,6 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 	err := row.Scan(
 		&i.ID,
 		&i.RoleID,
-		&i.Kind,
 		&i.ScopeFolderID,
 		&i.ScopeAssetID,
 		&i.SubjectUserID,

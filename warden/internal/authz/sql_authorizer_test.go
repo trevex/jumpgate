@@ -42,17 +42,21 @@ func newPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// seed builds:
+// seed builds (access-model v2: role_bindings are standing-only; the Requestable
+// tier comes from request_policy eligibility, never from bindings):
 //
 //	alice ∈ sre ∈ platform
 //	folder prod ⊃ prod-db; asset pgprod ∈ prod-db; asset apiprod ∈ prod
 //	folder staging; asset pgstaging ∈ staging
 //	folder secret; asset topsecret ∈ secret
-//	role operator(caps connect,read,write); role viewer(caps read)
-//	binding: platform -> operator STANDING on folder prod  (⇒ pgprod, apiprod active)
-//	binding: sre -> viewer REQUESTABLE on asset pgstaging   (⇒ pgstaging requestable-only)
-//	(topsecret: no binding ⇒ invisible to alice)
-func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, topsecret, operatorRole, viewerRole uuid.UUID) {
+//	role operator(caps connect,read,write); role viewer(caps read); role dba(caps admin)
+//	operator + viewer cascade down folders via `parent` self-rules.
+//	binding: platform -> operator STANDING on folder prod    (⇒ pgprod, apiprod active)
+//	binding: sre      -> viewer   STANDING on folder staging (⇒ alice holds viewer on pgstaging via cascade)
+//	request_policy(dba, scope_asset=pgstaging, requester_role=viewer, approvals=1)
+//	  ⇒ pgstaging Requestable-for-dba to alice (holds viewer requester role), NOT active.
+//	(topsecret: no binding, no policy ⇒ invisible to alice)
+func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, topsecret, operatorRole, viewerRole, dbaRole uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
@@ -113,29 +117,44 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps("db:admin")})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// operator cascades down folders via an explicit parent self-rule.
+	// operator + viewer cascade down folders via explicit parent self-rules.
 	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: op.ID, Kind: "standing", ScopeFolderID: pgUUID(prod.ID), SubjectGroupID: pgUUID(platform.ID),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: vw.ID, Kind: "requestable", ScopeAssetID: pgUUID(pgstaging), SubjectGroupID: pgUUID(sre.ID),
-	}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: vw.ID, SourceRoleID: vw.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 
-	return au.ID, pgprod, apiprod, pgstaging, topsecret, op.ID, vw.ID
+	// STANDING: platform -> operator on prod (⇒ pgprod, apiprod active for alice).
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: op.ID, ScopeFolderID: pgUUID(prod.ID), SubjectGroupID: pgUUID(platform.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// STANDING: sre -> viewer on staging (⇒ alice holds viewer on pgstaging via cascade).
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: vw.ID, ScopeFolderID: pgUUID(staging.ID), SubjectGroupID: pgUUID(sre.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// request_policy: dba requestable on pgstaging, requester_role=viewer.
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: dba.ID, ScopeAssetID: pgUUID(pgstaging), RequiredApprovals: 1, RequesterRoleID: pgUUID(vw.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	return au.ID, pgprod, apiprod, pgstaging, topsecret, op.ID, vw.ID, dba.ID
 }
 
 func TestVisibleAssetsTiers(t *testing.T) {
 	pool := newPool(t)
-	alice, pgprod, apiprod, pgstaging, topsecret, _, _ := seed(t, pool)
+	alice, pgprod, apiprod, pgstaging, topsecret, _, viewerRole, dbaRole := seed(t, pool)
 	a := NewSQLAuthorizer(pool)
 
 	vis, err := a.VisibleAssets(context.Background(), alice)
@@ -143,27 +162,233 @@ func TestVisibleAssetsTiers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := map[uuid.UUID]bool{}
+	type asset struct {
+		active bool
+		roles  map[uuid.UUID]bool
+	}
+	got := map[uuid.UUID]asset{}
 	for _, v := range vis {
-		got[v.AssetID] = v.Active
+		roles := map[uuid.UUID]bool{}
+		for _, rid := range v.RoleIDs {
+			roles[rid] = true
+		}
+		got[v.AssetID] = asset{active: v.Active, roles: roles}
 	}
-	if active, ok := got[pgprod]; !ok || !active {
-		t.Fatalf("pgprod: want visible+active, got ok=%v active=%v", ok, active)
+	if a, ok := got[pgprod]; !ok || !a.active {
+		t.Fatalf("pgprod: want visible+active, got ok=%v active=%v", ok, a.active)
 	}
-	if active, ok := got[apiprod]; !ok || !active {
-		t.Fatalf("apiprod: want visible+active, got ok=%v active=%v", ok, active)
+	if a, ok := got[apiprod]; !ok || !a.active {
+		t.Fatalf("apiprod: want visible+active, got ok=%v active=%v", ok, a.active)
 	}
-	if active, ok := got[pgstaging]; !ok || active {
-		t.Fatalf("pgstaging: want visible+requestable, got ok=%v active=%v", ok, active)
+	// pgstaging: alice holds `viewer` Active (sre→staging standing + parent cascade),
+	// so the asset is Active. `dba` is Requestable there (policy names viewer as the
+	// requester_role, which alice holds) — so RoleIDs must include BOTH.
+	psa, ok := got[pgstaging]
+	if !ok {
+		t.Fatalf("pgstaging must be visible")
+	}
+	if !psa.active {
+		t.Fatalf("pgstaging: want Active=true (viewer held Active via cascade), got false")
+	}
+	if !psa.roles[viewerRole] || !psa.roles[dbaRole] {
+		t.Fatalf("pgstaging RoleIDs = %v, want to include viewer(%v)+dba(%v)", psa.roles, viewerRole, dbaRole)
 	}
 	if _, ok := got[topsecret]; ok {
 		t.Fatalf("topsecret must be invisible")
 	}
 }
 
+// TestRequestableViaExplicitSubject pins the Requestable-only (Active=false) path
+// through an explicit kind='requester' subject with NO prerequisite standing role:
+// a policy (breakglass on some asset, no requester_role) names group `contractors`
+// as a requester subject; member carol — who holds NO standing role on that asset
+// — sees the asset Requestable-only (visible, Active=false, dba/breakglass in
+// .Requestable, .Active empty). A non-member/non-holder (bob) sees it invisible.
+func TestRequestableViaExplicitSubject(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// carol ∈ subteam ∈ contractors (nested group, group-aware subject matching).
+	contractors, err := q.CreateGroup(ctx, "contractors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subteam, err := q.CreateGroup(ctx, "subteam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: subteam.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: contractors.ID, MemberGroupID: pgUUID(subteam.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "bg-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "bg-asset", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	breakglass, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "breakglass", ResourceType: "asset", Capabilities: caps("db:admin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Policy with NO requester_role — eligibility is ONLY via explicit subjects.
+	pol, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: breakglass.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID: pol.ID, Kind: "requester", SubjectGroupID: pgUUID(contractors.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// carol: Requestable-only (Active=false), .Requestable == [breakglass], .Active empty.
+	vis, err := a.VisibleAssets(ctx, carol.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *AssetVisibility
+	for i := range vis {
+		if vis[i].AssetID == asset.ID {
+			found = &vis[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("carol: bg-asset must be visible (Requestable via explicit subject)")
+	}
+	if found.Active {
+		t.Fatal("carol: bg-asset must be Active=false (no standing role)")
+	}
+	roles, err := a.RolesOnAsset(ctx, carol.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles.Active) != 0 {
+		t.Fatalf("carol RolesOnAsset.Active = %v, want none", roles.Active)
+	}
+	if len(roles.Requestable) != 1 || roles.Requestable[0] != breakglass.ID {
+		t.Fatalf("carol RolesOnAsset.Requestable = %v, want [breakglass]", roles.Requestable)
+	}
+
+	// bob: not a subject, holds nothing → invisible, empty roles.
+	visB, err := a.VisibleAssets(ctx, bob.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range visB {
+		if v.AssetID == asset.ID {
+			t.Fatal("bob: bg-asset must be invisible")
+		}
+	}
+	rolesB, err := a.RolesOnAsset(ctx, bob.ID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rolesB.Active) != 0 || len(rolesB.Requestable) != 0 {
+		t.Fatalf("bob RolesOnAsset = %+v, want empty", rolesB)
+	}
+}
+
+// TestRequestableIneligibleNoRequesterMatch pins that a user who does NOT hold the
+// policy's requester_role and is NOT a requester subject gets NO requestable role,
+// and the asset stays invisible — i.e. a NULL/unmatched requester never means
+// "anyone". bob is such a user against the seed's dba@pgstaging policy.
+func TestRequestableIneligibleNoRequesterMatch(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	_, _, _, pgstaging, _, _, _, _ := seed(t, pool)
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob-ineligible@x", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vis, err := a.VisibleAssets(ctx, bob.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vis {
+		if v.AssetID == pgstaging {
+			t.Fatalf("bob: pgstaging must be invisible (holds no viewer, not a requester subject); got %+v", v)
+		}
+	}
+	roles, err := a.RolesOnAsset(ctx, bob.ID, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles.Active) != 0 || len(roles.Requestable) != 0 {
+		t.Fatalf("bob RolesOnAsset(pgstaging) = %+v, want empty", roles)
+	}
+}
+
+// TestActiveExcludesRequestable pins that a role the user already holds Active
+// (standing) on an asset is NEVER also reported Requestable there, even if a
+// request_policy would otherwise make it eligible. Give alice a standing `dba`
+// binding on pgstaging: dba must move to .Active and vanish from .Requestable.
+func TestActiveExcludesRequestable(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	// Pre-condition: dba is Requestable (not Active) for alice on pgstaging.
+	pre, err := a.RolesOnAsset(ctx, alice, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pre.Requestable) != 1 || pre.Requestable[0] != dbaRole {
+		t.Fatalf("pre: pgstaging requestable = %v, want [dba]", pre.Requestable)
+	}
+
+	// Grant alice a standing dba binding directly on pgstaging.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: dbaRole, ScopeAssetID: pgUUID(pgstaging), SubjectUserID: pgUUID(alice),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	post, err := a.RolesOnAsset(ctx, alice, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeHasDBA := false
+	for _, r := range post.Active {
+		if r == dbaRole {
+			activeHasDBA = true
+		}
+	}
+	if !activeHasDBA {
+		t.Fatalf("post: dba must be Active, got .Active=%v", post.Active)
+	}
+	for _, r := range post.Requestable {
+		if r == dbaRole {
+			t.Fatalf("post: dba must NOT be Requestable once Active; got .Requestable=%v", post.Requestable)
+		}
+	}
+}
+
 func TestCheckCapability(t *testing.T) {
 	pool := newPool(t)
-	alice, pgprod, _, pgstaging, topsecret, _, _ := seed(t, pool)
+	alice, pgprod, _, pgstaging, topsecret, _, _, _ := seed(t, pool)
 	a := NewSQLAuthorizer(pool)
 	ctx := context.Background()
 
@@ -173,8 +398,15 @@ func TestCheckCapability(t *testing.T) {
 	if ok, err := a.Check(ctx, alice, pgprod, "db:admin"); err != nil || ok {
 		t.Fatalf("Check(db:admin, pgprod) = %v, %v; want false", ok, err)
 	}
-	if ok, err := a.Check(ctx, alice, pgstaging, "db:read"); err != nil || ok {
-		t.Fatalf("Check(db:read, pgstaging) = %v, %v; want false (requestable != active)", ok, err)
+	// alice holds `viewer` Active on pgstaging (sre→staging standing + cascade),
+	// so viewer's db:read is granted there.
+	if ok, err := a.Check(ctx, alice, pgstaging, "db:read"); err != nil || !ok {
+		t.Fatalf("Check(db:read, pgstaging) = %v, %v; want true (viewer active via cascade)", ok, err)
+	}
+	// dba (db:admin) is only Requestable on pgstaging — requestable != active, so
+	// its capability must NOT be granted.
+	if ok, err := a.Check(ctx, alice, pgstaging, "db:admin"); err != nil || ok {
+		t.Fatalf("Check(db:admin, pgstaging) = %v, %v; want false (dba requestable != active)", ok, err)
 	}
 	if ok, err := a.Check(ctx, alice, topsecret, "db:read"); err != nil || ok {
 		t.Fatalf("Check(db:read, topsecret) = %v, %v; want false", ok, err)
@@ -226,7 +458,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 	}
 	// standing binding on the GRANDPARENT folder
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: role.ID, Kind: "standing", ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(grp.ID),
+		RoleID: role.ID, ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +527,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 	}
 	// STANDING binding of op to the group on the PARENT folder. No role_grant yet.
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: op.ID, Kind: "standing", ScopeFolderID: pgUUID(parent.ID), SubjectGroupID: pgUUID(grp.ID),
+		RoleID: op.ID, ScopeFolderID: pgUUID(parent.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +637,7 @@ func TestCheckSameObjectComposition(t *testing.T) {
 	}
 	// STANDING binding of super to the group on the asset.
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID: super.ID, Kind: "standing", ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
+		RoleID: super.ID, ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +689,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-			RoleID: role.ID, Kind: "standing", ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
+			RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -512,7 +744,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 
 func TestRolesOnAsset(t *testing.T) {
 	pool := newPool(t)
-	alice, pgprod, _, pgstaging, _, operatorRole, viewerRole := seed(t, pool)
+	alice, pgprod, _, pgstaging, _, operatorRole, viewerRole, dbaRole := seed(t, pool)
 	a := NewSQLAuthorizer(pool)
 	ctx := context.Background()
 
@@ -527,14 +759,106 @@ func TestRolesOnAsset(t *testing.T) {
 		t.Fatalf("pgprod requestable = %v, want none", r.Requestable)
 	}
 
+	// pgstaging: alice holds `viewer` Active (via the sre→staging standing binding
+	// + parent cascade), and `dba` is Requestable (request_policy names viewer as
+	// requester_role, and alice holds viewer). dba is NOT active.
 	r2, err := a.RolesOnAsset(ctx, alice, pgstaging)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r2.Active) != 0 {
-		t.Fatalf("pgstaging active = %v, want none", r2.Active)
+	if len(r2.Active) != 1 || r2.Active[0] != viewerRole {
+		t.Fatalf("pgstaging active = %v, want [viewer]", r2.Active)
 	}
-	if len(r2.Requestable) != 1 || r2.Requestable[0] != viewerRole {
-		t.Fatalf("pgstaging requestable = %v, want [viewer]", r2.Requestable)
+	if len(r2.Requestable) != 1 || r2.Requestable[0] != dbaRole {
+		t.Fatalf("pgstaging requestable = %v, want [dba]", r2.Requestable)
+	}
+}
+
+// TestRequestableRequesterRoleViaNestedGroupCascade pins that the requester-role
+// eligibility predicate honors BOTH nested-group membership AND the parent-folder
+// cascade at once: the requester_role is bound to an OUTER group on a GRANDPARENT
+// folder, the user is a member only via a doubly-nested group, and the target
+// asset is two folders below the binding — reachable only through the role's
+// `parent` self-grant. If either the group closure or the cascade were dropped,
+// the role would not be requestable.
+func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// dave ∈ inner ∈ outer (doubly nested).
+	outer, err := q.CreateGroup(ctx, "outer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, err := q.CreateGroup(ctx, "inner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(dave.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	// gp ⊃ mid ⊃ leaf; asset deep ∈ leaf.
+	gp, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-gp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-mid", ParentID: pgUUID(gp.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-leaf", ParentID: pgUUID(mid.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deep, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: leaf.ID, Name: "casc-deep", Labels: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prereq, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-prereq", ResourceType: "asset", Capabilities: caps("db:read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-target", ResourceType: "asset", Capabilities: caps("db:admin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// prereq cascades down folders → dave holds prereq on `deep`.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: prereq.ID, SourceRoleID: prereq.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+	// STANDING prereq → outer group on the GRANDPARENT folder.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: prereq.ID, ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(outer.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Policy: target requestable on `deep`, requester_role = prereq.
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: target.ID, ScopeAssetID: pgUUID(deep.ID), RequiredApprovals: 1, RequesterRoleID: pgUUID(prereq.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	roles, err := a.RolesOnAsset(ctx, dave.ID, deep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// dave holds prereq Active on deep (via nested group + cascade) → target Requestable.
+	if len(roles.Active) != 1 || roles.Active[0] != prereq.ID {
+		t.Fatalf("deep active = %v, want [prereq]", roles.Active)
+	}
+	if len(roles.Requestable) != 1 || roles.Requestable[0] != target.ID {
+		t.Fatalf("deep requestable = %v, want [target] (requester_role held via nested group + cascade)", roles.Requestable)
 	}
 }

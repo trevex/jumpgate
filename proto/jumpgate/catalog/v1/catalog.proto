@@ -65,7 +65,8 @@ message ListRolesResponse { repeated Role roles = 1; string next_page_token = 2;
 
 message CreateRoleBindingRequest {
   string role_id = 1 [(buf.validate.field).string.uuid = true];
-  string kind    = 2 [(buf.validate.field).string = {in: ["standing", "requestable"]}];
+  reserved 2;  // was `kind` — role_bindings are standing-only (access-model v2)
+  reserved "kind";
   string scope_folder_id  = 3;
   string scope_asset_id   = 4;
   string subject_user_id  = 5;

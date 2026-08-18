@@ -811,7 +811,6 @@ func (x *ListRolesResponse) GetNextPageToken() string {
 type CreateRoleBindingRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	RoleId         string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	Kind           string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	ScopeFolderId  string                 `protobuf:"bytes,3,opt,name=scope_folder_id,json=scopeFolderId,proto3" json:"scope_folder_id,omitempty"`
 	ScopeAssetId   string                 `protobuf:"bytes,4,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`
 	SubjectUserId  string                 `protobuf:"bytes,5,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"`
@@ -853,13 +852,6 @@ func (*CreateRoleBindingRequest) Descriptor() ([]byte, []int) {
 func (x *CreateRoleBindingRequest) GetRoleId() string {
 	if x != nil {
 		return x.RoleId
-	}
-	return ""
-}
-
-func (x *CreateRoleBindingRequest) GetKind() string {
-	if x != nil {
-		return x.Kind
 	}
 	return ""
 }
@@ -1894,14 +1886,13 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"l\n" +
 	"\x11ListRolesResponse\x12/\n" +
 	"\x05roles\x18\x01 \x03(\v2\x19.jumpgate.catalog.v1.RoleR\x05roles\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8f\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xe9\x01\n" +
 	"\x18CreateRoleBindingRequest\x12!\n" +
-	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x120\n" +
-	"\x04kind\x18\x02 \x01(\tB\x1c\xbaH\x19r\x17R\bstandingR\vrequestableR\x04kind\x12&\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12&\n" +
 	"\x0fscope_folder_id\x18\x03 \x01(\tR\rscopeFolderId\x12$\n" +
 	"\x0escope_asset_id\x18\x04 \x01(\tR\fscopeAssetId\x12&\n" +
 	"\x0fsubject_user_id\x18\x05 \x01(\tR\rsubjectUserId\x12(\n" +
-	"\x10subject_group_id\x18\x06 \x01(\tR\x0esubjectGroupId\"+\n" +
+	"\x10subject_group_id\x18\x06 \x01(\tR\x0esubjectGroupIdJ\x04\b\x02\x10\x03R\x04kind\"+\n" +
 	"\x19CreateRoleBindingResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x18DeleteRoleBindingRequest\x12\x18\n" +

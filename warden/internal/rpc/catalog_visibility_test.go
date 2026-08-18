@@ -68,7 +68,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	}
 	// STANDING binding: sre -> readonly on folder prod
 	if _, err := cat.CreateRoleBinding(ctx, withToken(connect.NewRequest(&catalogv1.CreateRoleBindingRequest{
-		RoleId: role.Msg.Role.Id, Kind: "standing", ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
+		RoleId: role.Msg.Role.Id, ScopeFolderId: prod, SubjectGroupId: sre.Msg.Group.Id,
 	}), tok)); err != nil {
 		t.Fatal(err)
 	}
