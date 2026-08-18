@@ -34,13 +34,16 @@ func (q *Queries) CreateSessionSigningKey(ctx context.Context, arg CreateSession
 	return i, err
 }
 
-const deleteLiveSession = `-- name: DeleteLiveSession :exec
+const deleteLiveSession = `-- name: DeleteLiveSession :execrows
 DELETE FROM live_sessions WHERE id = $1
 `
 
-func (q *Queries) DeleteLiveSession(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteLiveSession, id)
-	return err
+func (q *Queries) DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLiveSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getActiveSessionSigningKey = `-- name: GetActiveSessionSigningKey :one

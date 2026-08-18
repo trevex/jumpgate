@@ -153,7 +153,7 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc, sealer, sessionSvc, setupSvc, registry); err != nil {
+	if err := rpc.Register(mux, pool, arSvc, sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
 		return err
 	}
 

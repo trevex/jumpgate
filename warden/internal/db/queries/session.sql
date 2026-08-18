@@ -9,7 +9,7 @@ INSERT INTO live_sessions (id, user_id, asset_id, worker_id, grant_id, protocol,
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
--- name: DeleteLiveSession :exec
+-- name: DeleteLiveSession :execrows
 DELETE FROM live_sessions WHERE id = $1;
 
 -- name: GetLiveSession :one
