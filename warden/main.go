@@ -13,6 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -73,9 +77,24 @@ func run() error {
 		}
 	}()
 
+	// Build the access-request Service ONCE and share it: the RPC handlers and the
+	// expiry reaper must use the same terminator + audit instance.
+	// NoopTerminator until M4 wires live-session teardown against the gateway.
+	arSvc := accessrequest.NewService(
+		pool,
+		audit.New(pool),
+		approvals.New(pool),
+		authz.NewRoleResolver(pool),
+		accessrequest.NoopTerminator{},
+		cfg.MaxGrantTTL,
+	)
+	// Expiry reaper: sweeps expired grants, audits access_grant.expired, and tears
+	// down live sessions. Exits on ctx.Done() (graceful shutdown).
+	go arSvc.RunReaper(ctx, cfg.ReaperInterval)
+
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, cfg.MaxGrantTTL); err != nil {
+	if err := rpc.Register(mux, pool, arSvc); err != nil {
 		return err
 	}
 
