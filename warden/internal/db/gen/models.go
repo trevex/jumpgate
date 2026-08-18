@@ -123,6 +123,19 @@ type GroupMembership struct {
 	CreatedAt     time.Time   `json:"created_at"`
 }
 
+type LiveSession struct {
+	ID                   uuid.UUID          `json:"id"`
+	UserID               uuid.UUID          `json:"user_id"`
+	AssetID              uuid.UUID          `json:"asset_id"`
+	WorkerID             string             `json:"worker_id"`
+	GrantID              pgtype.UUID        `json:"grant_id"`
+	Protocol             string             `json:"protocol"`
+	Principals           []string           `json:"principals"`
+	ClientKeyFp          string             `json:"client_key_fp"`
+	StartedAt            time.Time          `json:"started_at"`
+	TerminateRequestedAt pgtype.Timestamptz `json:"terminate_requested_at"`
+}
+
 type RequestPolicy struct {
 	ID                uuid.UUID       `json:"id"`
 	RoleID            uuid.UUID       `json:"role_id"`
@@ -183,6 +196,7 @@ type SshAssetConfig struct {
 	AllowedLogins  []string    `json:"allowed_logins"`
 	AuthMethod     string      `json:"auth_method"`
 	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
+	TargetAddress  string      `json:"target_address"`
 }
 
 type User struct {
