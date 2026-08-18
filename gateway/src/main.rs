@@ -9,6 +9,10 @@ mod config;
 mod connect;
 mod health;
 mod tls;
+// Wired into the connection handler in a later task (Task 13); until then the
+// verifier is only exercised by its own tests.
+#[allow(dead_code)]
+mod token;
 
 use std::sync::Arc;
 
