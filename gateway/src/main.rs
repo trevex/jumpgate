@@ -64,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(roster::run(
         state.roster.clone(),
         config.warden_mesh_addr.clone(),
+        config.warden_spiffe.clone(),
         state.mesh_certs.clone(),
         {
             let vk = state.verification_key.clone();

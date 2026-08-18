@@ -76,6 +76,11 @@ mTLS uses a **warden-rooted `mesh` CA**; component identity is a URI SAN, and
 warden derives the authoritative `worker_id` from the peer cert (closing the M4a
 self-asserted-identity gap). Bootstrap: `warden mesh-cert` provisions component
 certs; the gateway fetches the token verification key via `GetSessionVerificationKey`.
+Mesh identities are the 3-part form `spiffe://jumpgate/<role>/<id>` — workers
+`spiffe://jumpgate/worker/<worker_id>`, gateway `spiffe://jumpgate/gateway/<id>`,
+and warden **must** be minted with the SPIFFE id the gateway pins: canonical
+default `spiffe://jumpgate/warden/warden` (override via `WARDEN_MESH_SPIFFE`),
+minted with `warden-meshcert -spiffe spiffe://jumpgate/warden/warden`.
 The real ssh-proxy worker + `jumpgate connect` CLI are **M4c** (M4b tests against a
 stub worker).
 

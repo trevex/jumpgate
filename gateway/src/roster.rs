@@ -4,7 +4,8 @@
 //! ## mTLS to warden (URI-SAN certs)
 //!
 //! warden's mesh server certificate carries only a SPIFFE URI SAN
-//! (`spiffe://jumpgate/warden`) and no DNS SAN, so tonic's built-in
+//! (`spiffe://jumpgate/warden/<id>`, canonically `spiffe://jumpgate/warden/warden`)
+//! and no DNS SAN, so tonic's built-in
 //! `ClientTlsConfig` (which always does webpki hostname verification against the
 //! configured `domain_name`) cannot be used — it would reject the cert with
 //! `NotValidForName`. Instead we build a custom hyper-util based connector that
@@ -20,10 +21,6 @@ use std::sync::{Arc, RwLock};
 use tonic::transport::{Endpoint, Uri};
 
 use crate::tls::MeshClientCerts;
-
-/// The SPIFFE identity the warden mesh peer must present (URI SAN). Pinned by the
-/// mesh client verifier on the roster dial.
-const WARDEN_SPIFFE: &str = "spiffe://jumpgate/warden";
 
 use crate::pb::jumpgate::gateway::v1::{
     gateway_service_client::GatewayServiceClient, roster_event::Kind,
@@ -78,11 +75,13 @@ impl Roster {
 pub async fn run(
     roster: Roster,
     warden_addr: String,
+    warden_spiffe: String,
     certs: MeshClientCerts,
     on_key: impl Fn(Vec<u8>) + Send + Sync + 'static,
 ) {
-    // Build the warden-pinned mesh config once (URI SAN == spiffe://jumpgate/warden).
-    let mesh_client_config = match certs.client_config(WARDEN_SPIFFE) {
+    // Build the warden-pinned mesh config once (URI SAN == the configured warden id,
+    // canonically spiffe://jumpgate/warden/warden).
+    let mesh_client_config = match certs.client_config(&warden_spiffe) {
         Ok(c) => c,
         Err(e) => {
             tracing::error!(error = %e, "failed to build warden mesh client config");
