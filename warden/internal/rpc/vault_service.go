@@ -125,7 +125,9 @@ func (s *VaultServer) DeleteAssetSecret(ctx context.Context, req *connect.Reques
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
 	}
 	if err := s.q.DeleteAssetSecret(ctx, id); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		// A secret still referenced by an ssh_asset_config (ON DELETE RESTRICT) is a
+		// client-fixable precondition, not an Internal error.
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&vaultv1.DeleteAssetSecretResponse{}), nil
 }
