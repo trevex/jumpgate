@@ -3,6 +3,7 @@ package rpc
 
 import (
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
@@ -13,14 +14,17 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
-// Register mounts all warden RPC services onto mux with auth + validation interceptors.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool) error {
+// Register mounts all warden RPC services onto mux with auth + validation
+// interceptors. maxGrantTTL is the hard ceiling on a minted JIT grant's lifetime.
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, maxGrantTTL time.Duration) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -43,7 +47,9 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool) error {
 	mux.Handle(accessPath, accessHandler)
 
 	resolver := approvals.New(pool)
-	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver), opts)
+	auditLog := audit.New(pool)
+	arSvc := accessrequest.NewService(pool, auditLog, resolver, roles, maxGrantTTL)
+	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc), opts)
 	mux.Handle(arPath, arHandler)
 
 	return nil

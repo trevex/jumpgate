@@ -12,6 +12,12 @@ UPDATE access_requests SET status = $1, resolved_at = $2 WHERE id = $3;
 -- name: ListAccessRequestsByRequester :many
 SELECT * FROM access_requests WHERE requester_user_id = $1 ORDER BY created_at DESC;
 
+-- name: ListPendingRequests :many
+SELECT * FROM access_requests WHERE status = 'pending' ORDER BY created_at DESC;
+
+-- name: GetGrantByRequest :one
+SELECT * FROM access_grants WHERE request_id = $1;
+
 -- name: CountApprovals :one
 SELECT count(*) FROM access_request_approvals WHERE request_id = $1 AND decision = 'approve';
 

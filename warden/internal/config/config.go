@@ -16,6 +16,10 @@ type Config struct {
 
 	BootstrapAdminEmail    string `env:"BOOTSTRAP_ADMIN_EMAIL"`
 	BootstrapAdminPassword string `env:"BOOTSTRAP_ADMIN_PASSWORD"`
+
+	// MaxGrantTTL is the hard ceiling on a JIT access grant's lifetime. It clamps
+	// both the requested duration and any per-policy max_duration cap.
+	MaxGrantTTL time.Duration `env:"MAX_GRANT_TTL" envDefault:"8h"`
 }
 
 // Load reads configuration from environment variables.
