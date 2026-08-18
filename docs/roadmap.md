@@ -43,9 +43,22 @@ grant cascade.
 `GrantTerminator`** (closure re-eval + **`LISTEN/NOTIFY`** to the owning worker
 stream). The signing key is initialized via the admin `InitSessionKey` RPC (loaded
 once at boot — restart warden after init to enable `CreateSession`/`SetupSession`).
-Remaining: **M4b** gateway (routing + mTLS), **M4c** ssh-proxy worker + `jumpgate
-connect` CLI, **M4d** eligibility cascade + pull-sweep + orphan-GC, **M4e**
-recording.
+Remaining: **M4c** ssh-proxy worker + `jumpgate connect` CLI, **M4d** eligibility
+cascade + pull-sweep + orphan-GC, **M4e** recording.
+
+**M4b — Rust gateway + mesh mTLS ✅.** The gateway ships: external TLS →
+**HTTP CONNECT** (token in `Authorization: Bearer`) → **offline PASETO verify**
+(sig/exp; reads `proto`) → least-loaded worker pick → **mTLS dial + CONNECT** →
+`copy_bidirectional` pinned byte pump (teardown propagates as EOF; the gateway is
+teardown-unaware). warden grew a **warden-rooted `mesh` CA** (`InitMeshCA` +
+`IssueMeshCert` CSR-signing + the `warden-meshcert` CLI), a **second mTLS listener**
+serving `Dataplane`+`Gateway`, and a **`GatewayService`** (`WatchWorkers` roster +
+`GetSessionVerificationKey`). The **M4a self-asserted-`worker_id` gap is CLOSED**:
+warden derives the authoritative `worker_id` from the mTLS peer-cert URI SAN
+(`spiffe://jumpgate/<role>/<id>`), and the gateway pins each peer's SPIFFE identity
+(chain-to-mesh-CA **and** URI-SAN==expected) on both the worker and warden dials.
+Go↔Rust PASETO interop is locked by a fixture test. Deferred: boot-time cert
+auto-enrollment, global multi-replica LB, k8s discovery, a real public external cert.
 
 **Next:** M4 (gateway + ssh-proxy + CLI — **live credential injection** wiring the
 broker to a session, the real `GrantTerminator` session-kill path, and the
