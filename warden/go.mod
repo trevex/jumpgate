@@ -3,6 +3,7 @@ module github.com/trevex/jumpgate/warden
 go 1.26
 
 require (
+	aidanwoods.dev/go-paseto v1.6.0
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260709200747-435963d16310.1
 	connectrpc.com/connect v1.20.0
 	connectrpc.com/validate v0.6.0
@@ -17,6 +18,7 @@ require (
 )
 
 require (
+	aidanwoods.dev/go-result v0.3.1 // indirect
 	buf.build/go/protovalidate v1.0.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect

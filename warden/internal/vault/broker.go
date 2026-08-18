@@ -184,15 +184,9 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 // and returns an "ssh-cert" credential. The principals are the intersection of
 // the asset's allowed_logins and the user's ssh:login:<login> capabilities.
 func (b *Broker) issueSSHCert(ctx context.Context, userID, assetID uuid.UUID, cfg gen.SshAssetConfig, req IssueRequest) ([]Credential, error) {
-	var principals []string
-	for _, login := range cfg.AllowedLogins {
-		ok, err := b.authz.Check(ctx, userID, assetID, "ssh:login:"+login)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			principals = append(principals, login)
-		}
+	principals, err := authz.EntitledLogins(ctx, b.authz, userID, assetID, cfg.AllowedLogins)
+	if err != nil {
+		return nil, err
 	}
 	if len(principals) == 0 {
 		return nil, ErrNoLoginEntitlement

@@ -1,0 +1,58 @@
+syntax = "proto3";
+package jumpgate.dataplane.v1;
+import "buf/validate/validate.proto";
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1";
+
+// DataplaneService is the worker↔warden control contract. It is worker-facing and
+// (in M4a) assumes a trusted network; mTLS worker identity lands in M4b.
+service DataplaneService {
+  // WorkerStream is the worker's lifeline: it registers, heartbeats, and reports
+  // session ends (client→server); warden pushes teardown signals (server→client).
+  // The stream's lifetime is the worker's liveness.
+  rpc WorkerStream(stream WorkerMessage) returns (stream ServerMessage) {}
+
+  // SetupSession redeems a session token: warden re-checks authorization, records
+  // the live session, and returns the target address + a JIT SSH certificate.
+  rpc SetupSession(SetupSessionRequest) returns (SetupSessionResponse) {}
+}
+
+message WorkerMessage {
+  oneof msg {
+    Register register = 1;
+    Heartbeat heartbeat = 2;
+    SessionEnded session_ended = 3;
+  }
+}
+message Register {
+  string worker_id = 1 [(buf.validate.field).string.min_len = 1];
+  repeated string protocols = 2;
+  int32 capacity = 3;
+  repeated string live_session_ids = 4; // reconnect reconciliation
+}
+message Heartbeat {}
+message SessionEnded {
+  string session_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message ServerMessage {
+  oneof msg {
+    RegisterAck ack = 1;
+    Teardown teardown = 2;
+  }
+}
+message RegisterAck {}
+message Teardown {
+  string session_id = 1;
+  string reason = 2;
+}
+
+message SetupSessionRequest {
+  string session_token = 1 [(buf.validate.field).string.min_len = 1];
+  string worker_id = 2 [(buf.validate.field).string.min_len = 1];
+  bytes client_ssh_public_key = 3 [(buf.validate.field).bytes.min_len = 1];
+}
+message SetupSessionResponse {
+  string target_address = 1;
+  bytes ssh_certificate = 2;
+}

@@ -89,7 +89,7 @@ func (q *Queries) GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) 
 }
 
 const getSSHAssetConfig = `-- name: GetSSHAssetConfig :one
-SELECT asset_id, allowed_logins, auth_method, stored_secret_id FROM ssh_asset_config WHERE asset_id = $1
+SELECT asset_id, allowed_logins, auth_method, stored_secret_id, target_address FROM ssh_asset_config WHERE asset_id = $1
 `
 
 func (q *Queries) GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error) {
@@ -100,6 +100,7 @@ func (q *Queries) GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (Ssh
 		&i.AllowedLogins,
 		&i.AuthMethod,
 		&i.StoredSecretID,
+		&i.TargetAddress,
 	)
 	return i, err
 }
@@ -172,7 +173,7 @@ ON CONFLICT (asset_id) DO UPDATE SET
   allowed_logins = EXCLUDED.allowed_logins,
   auth_method = EXCLUDED.auth_method,
   stored_secret_id = EXCLUDED.stored_secret_id
-RETURNING asset_id, allowed_logins, auth_method, stored_secret_id
+RETURNING asset_id, allowed_logins, auth_method, stored_secret_id, target_address
 `
 
 type UpsertSSHAssetConfigParams struct {
@@ -195,6 +196,7 @@ func (q *Queries) UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetCo
 		&i.AllowedLogins,
 		&i.AuthMethod,
 		&i.StoredSecretID,
+		&i.TargetAddress,
 	)
 	return i, err
 }

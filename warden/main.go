@@ -19,12 +19,16 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
 func main() {
@@ -88,14 +92,18 @@ func run() error {
 	go auditLog.RunDrainer(ctx, cfg.AuditDrainInterval)
 
 	// Build the access-request Service ONCE and share it: the RPC handlers and the
-	// expiry reaper must use the same terminator + audit instance.
-	// NoopTerminator until M4 wires live-session teardown against the gateway.
+	// expiry reaper must use the same terminator + audit instance. The terminator is
+	// the real grant-keyed dataplane.Terminator (stateless): grant revocation/expiry/
+	// deactivation now re-evaluates closures and tears down live sessions via
+	// LISTEN/NOTIFY. (A second instance in rpc.Register for DataplaneServer is fine.)
+	authorizer := authz.NewSQLAuthorizer(pool)
+	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := accessrequest.NewService(
 		pool,
 		auditLog,
 		approvals.New(pool),
 		authz.NewRoleResolver(pool),
-		accessrequest.NoopTerminator{},
+		terminator,
 		cfg.MaxGrantTTL,
 	)
 	// Expiry reaper: sweeps expired grants, audits access_grant.expired, and tears
@@ -119,9 +127,45 @@ func run() error {
 		}
 	}
 
+	// Build the CLI-facing session admission service. It requires the vault (to
+	// unseal the signing key) and an initialized active session signing key; absent
+	// either, CreateSession is disabled (nil service → SessionService not mounted).
+	//
+	// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream); it is
+	// built alongside sessionSvc under the same preconditions and shares the active
+	// signing key (as a verifier). The worker registry is always created (it is
+	// rebuilt from reconnecting streams), but DataplaneService only mounts when
+	// setupSvc is non-nil.
+	registry := dataplane.NewRegistry()
+	// Start the teardown Listener on the lifecycle ctx, sharing the DataplaneService's
+	// Registry so grant-keyed teardown NOTIFYs reach locally-owned worker streams. It
+	// is cheap (one LISTEN conn) and a harmless no-op when no DataplaneService is
+	// mounted (no sinks registered).
+	go func() {
+		if err := dataplane.NewListener(pool, registry).Run(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("teardown listener stopped", "err", err)
+		}
+	}()
+	var sessionSvc *session.Service
+	var setupSvc *dataplane.SetupService
+	if sealer != nil {
+		ks := session.NewKeyStore(gen.New(pool), sealer)
+		priv, pub, err := ks.LoadActive(ctx)
+		if errors.Is(err, session.ErrNoActiveKey) {
+			slog.Warn("no active session signing key; CreateSession disabled until initialized")
+		} else if err != nil {
+			return err
+		} else {
+			sessionSvc = session.NewService(gen.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
+			verifier := sessiontoken.NewVerifier(pub)
+			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, cfg.SSHCertMaxTTL)
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, arSvc, sealer); err != nil {
+	if err := rpc.Register(mux, pool, arSvc, sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
 		return err
 	}
 

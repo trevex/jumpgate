@@ -49,12 +49,12 @@ Modules (all ⬜ except the HTTP skeleton):
 - **Access config (AccessService)** ✅ — all admin authorization config in one surface: custom **roles** (capability bundles), **role_grants** (the `same_object`/`parent` rewrite rules), **role_bindings** (standing-only), **request_policies** + requester/approver **subjects**, and `ExplainRole`.
 - **Resource catalog** ✅ folders/assets CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding. All role/authz config lives in AccessService.
 - **Credential vault / CredentialBroker** ✅ (M3d) — envelope-encrypted secrets at rest (per-secret AES-256-GCM DEK wrapped by a master KEK, KMS-ready), an SSH user CA + an X.509 client CA, and the **`CredentialBroker`** seam that mints a short-lived credential for a (user, asset) with **capability-driven SSH principals**. Admin surface is `VaultService`. **This completes M3.** The broker is built + tested but not yet wired to a live session — the worker calling `Issue` and live credential **injection** are **M4**. See [Vault / CredentialBroker](#vault--credentialbroker-m3d).
-- **JIT / request engine (AccessRequestService)** ✅ (M3c) — the full runtime lifecycle: `RequestAccess` (self-service at `required_approvals=0`), `Approve`/`Deny` (N-of-M, distinct approvers, one deny rejects, atomic mint under a row lock), `Cancel`, `RevokeGrant`, `ListMyRequests`/`ListPendingApprovals`/`ListMyGrants`/`ListGrants`. Approved requests mint a **time-boxed `access_grants` row** that joins the authorizer's held closure; an in-process **reaper** (`ReaperInterval`) expires grants. Live-session **teardown** is a wired **`GrantTerminator` seam** (no-op now; real gateway kill is M4).
+- **JIT / request engine (AccessRequestService)** ✅ (M3c) — the full runtime lifecycle: `RequestAccess` (self-service at `required_approvals=0`), `Approve`/`Deny` (N-of-M, distinct approvers, one deny rejects, atomic mint under a row lock), `Cancel`, `RevokeGrant`, `ListMyRequests`/`ListPendingApprovals`/`ListMyGrants`/`ListGrants`. Approved requests mint a **time-boxed `access_grants` row** that joins the authorizer's held closure; an in-process **reaper** (`ReaperInterval`) expires grants. Live-session **teardown** is a wired **`GrantTerminator` seam** — the real grant-keyed `dataplane.Terminator` as of M4a (`live_sessions` re-eval + `LISTEN/NOTIFY`); the standing-eligibility cascade and worker mTLS are M4b/M4d.
 - **Request policies** ✅ (M3b + Access-Model v2) one `request_policies` row per (role, scope) whose **existence makes the role requestable** there: role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override, most-specific wins. Symmetric eligibility — requester = holders of `requester_role` on the scope ∪ explicit `requester` subjects; approver = holders of `approver_role` ∪ explicit `approver` subjects; both resolved **standing-only** via `HoldsRoleStanding` (a JIT grant confers access but never governance). No policy ⇒ not requestable. A policy also carries `required_approvals` (`≥ 0`; `0` = self-service) and a nullable `max_duration` grant cap. CRUD in `AccessService`; resolver (`EffectiveRule`, `IsApprover`, `IsEligibleRequester`) + `ResolveApproval` in `AccessRequestService`.
 - **Audit log** 🟡 (M3a) hash-chained tamper-evident audit log (`entry_hash = sha256(prev_hash ‖ canonical(entry))`); append-only with advisory-lock genesis; chain independently verifiable (Append/Verify).
 - **Recording service** ⬜ — session blobs to object store; metadata + hashes in Postgres.
 - **Worker registry** ⬜ — watches k8s Endpoints; feeds the gateway its roster.
-- **Token minter** ⬜ — short-lived PASETO v4 session tokens bound to a grant.
+- **Token minter** ✅ (M4a) — short-lived Ed25519-signed session tokens bound to a grant, minted by `CreateSession`; the signing key is DB-backed (sealed at rest) and initialized via the admin `InitSessionKey` RPC. Each admitted session is recorded in the durable **`live_sessions`** ledger.
 
 Chosen for the Kubernetes operator ecosystem (kubebuilder/controller-runtime),
 mature ReBAC engines (OpenFGA), enterprise SSO breadth, and team velocity.
@@ -85,14 +85,18 @@ policy, grants) stays centralized in Go; the Rust data plane holds a credential
 only for the duration of a live, authorized session. Revocation is immediate
 (workers introspect the grant at session start; grant deletion tears sessions down).
 
-### Continuous revocation — live-session teardown 🟡 (M3c reaper ✅ + M4 gateway ⬜)
+### Continuous revocation — live-session teardown 🟡 (M3c reaper ✅ + M4a terminator ✅ + M4b/M4d gaps ⬜)
 
-> **Partly built.** The M3c side is done: grant revocation/expiry re-evaluates
+> **Largely built.** The M3c side is done: grant revocation/expiry re-evaluates
 > authorization (a revoked/expired grant stops conferring immediately, since the
 > held closure filters `revoked_at IS NULL AND expires_at > now()`), audits the
-> event, and calls a **`GrantTerminator` teardown seam** — wired to a **no-op**
-> today. The load-bearing part still missing is the **M4** gateway/worker session
-> registry and the real kill path that seam will drive.
+> event, and calls the **`GrantTerminator` teardown seam**. As of **M4a** that seam
+> is the **real** grant-keyed `dataplane.Terminator`: it re-evaluates the closure
+> and, for sessions in the durable **`live_sessions`** ledger whose authorization no
+> longer holds, pushes teardown to the owning worker stream via **`LISTEN/NOTIFY`**
+> (a warden-node fan-out to the in-memory session registry). The remaining gaps are
+> the **standing-eligibility cascade** (binding/membership/rewrite changes — **M4d**,
+> incl. the pull-sweep) and the worker **mTLS** transport (**M4b**).
 
 **Authorization is continuous, not connect-time only.** A session is authorized
 for its whole lifetime, not just at the handshake. When the authorization a live
@@ -104,7 +108,7 @@ access ends access *now*.
 
 | Source | Change |
 |---|---|
-| JIT grant | expires (the M3c reaper) or is revoked (manual · self · approver · deactivation) — **built**; teardown seam called (no-op until M4) |
+| JIT grant | expires (the M3c reaper) or is revoked (manual · self · approver · deactivation) — **built**; the real grant-keyed teardown fires (M4a `dataplane.Terminator`) |
 | Standing `role_binding` | deleted |
 | `role_grants` rewrite rule | changed so it no longer confers the role (`HoldsRole` flips to false) |
 | Group membership | a `group_memberships` row removed |
@@ -132,11 +136,19 @@ caused it.
 
 **Scope.** This spans **M3c** (reaper → teardown *signal*: **built** — the reaper,
 `RevokeGrant`, and the deactivation cascade all call the `GrantTerminator` seam
-after marking revoked + auditing) and **M4** (gateway / worker **session registry**
-+ kill path — the seam's real implementation, plus the eligibility-change cascade
-for standing bindings/memberships/rewrites). Keeping the **session ↔ grant/binding
-mapping** and the **teardown RPC** in scope for M4 is what makes this invariant real
-rather than aspirational.
+after marking revoked + auditing), **M4a** (the seam's **real** grant-keyed
+implementation: `live_sessions` ledger + closure re-eval + `LISTEN/NOTIFY` to the
+owning worker stream — **built**), and **M4b/M4d** (worker mTLS transport, plus the
+eligibility-change cascade + pull-sweep for standing bindings/memberships/rewrites).
+The **session ↔ grant mapping** (`live_sessions`) and the **teardown push** now
+exist, making this invariant real for grant-keyed revocation rather than
+aspirational.
+
+**First-boot key init.** The session-token signing key is loaded **once at boot**.
+On a fresh deploy the sequence is: start warden (sessions disabled — it logs a
+warning) → admin calls **`InitSessionKey`** (and `InitCA ssh`) → **restart warden**
+so it unseals the active key and enables `CreateSession` / `SetupSession`. A future
+task can hot-load the key; that is out of scope here.
 
 ## Access model
 

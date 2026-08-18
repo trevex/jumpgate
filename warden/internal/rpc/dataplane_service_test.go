@@ -1,0 +1,444 @@
+package rpc_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/rpc"
+	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/testsupport"
+	"github.com/trevex/jumpgate/warden/internal/vault"
+)
+
+// newDataplaneServer builds an rpc mux with the DataplaneService mounted over a
+// real SetupService (backed by the test sealer + an initialized session signing
+// key), returning the shared worker registry so tests can push teardown signals
+// into a connected stream.
+func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *dataplane.Registry) {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	p, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(p.Close)
+
+	sealer := testSealer(t)
+	sessionSvc, pub := testSessionService(t, p, sealer)
+
+	authorizer := authz.NewSQLAuthorizer(p)
+	auditLog := audit.New(p)
+	broker := vault.NewBroker(p, sealer, authorizer, auditLog)
+	verifier := sessiontoken.NewVerifier(pub)
+	setupSvc := dataplane.NewSetupService(p, verifier, authorizer, broker, auditLog, time.Hour)
+
+	registry := dataplane.NewRegistry()
+	mux := http.NewServeMux()
+	if err := rpc.Register(mux, p, testAccessRequestService(p), sealer, auditLog, sessionSvc, setupSvc, registry); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Bidi streaming requires HTTP/2; httptest defaults to HTTP/1.1. Enable
+	// unencrypted (h2c) HTTP/2 on both server and client, matching main.go's
+	// listener configuration.
+	var protos http.Protocols
+	protos.SetHTTP1(true)
+	protos.SetUnencryptedHTTP2(true)
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.Protocols = &protos
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return p, srv.URL, registry
+}
+
+// h2cClient is an HTTP client that speaks unencrypted HTTP/2 (h2c), required for
+// the worker bidi stream against the test server.
+func h2cClient() *http.Client {
+	var protos http.Protocols
+	protos.SetUnencryptedHTTP2(true)
+	return &http.Client{Transport: &http.Transport{Protocols: &protos}}
+}
+
+func TestWorkerStreamRegisterAck(t *testing.T) {
+	_, url, reg := newDataplaneServer(t)
+	ctx := context.Background()
+
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", Protocols: []string{"ssh"}, Capacity: 10},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+
+	msg, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if msg.GetAck() == nil {
+		t.Fatalf("first server frame is not a RegisterAck: %+v", msg)
+	}
+	waitConnected(t, reg, "w1", true)
+}
+
+func TestWorkerStreamTeardownPush(t *testing.T) {
+	_, url, reg := newDataplaneServer(t)
+	ctx := context.Background()
+
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1"},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+	waitConnected(t, reg, "w1", true)
+
+	if !reg.Push("w1", dataplane.Signal{SessionID: "s1", Reason: "revoked"}) {
+		t.Fatal("Push to connected worker reported not delivered")
+	}
+
+	td, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive teardown: %v", err)
+	}
+	teardown := td.GetTeardown()
+	if teardown == nil {
+		t.Fatalf("expected Teardown frame, got %+v", td)
+	}
+	if teardown.SessionId != "s1" || teardown.Reason != "revoked" {
+		t.Fatalf("unexpected teardown: %+v", teardown)
+	}
+
+	// Half-close the request: the handler's recv goroutine sees io.EOF, the handler
+	// returns, and the registry entry is removed.
+	if err := stream.CloseRequest(); err != nil {
+		t.Fatalf("close request: %v", err)
+	}
+	// Drain the response until the server closes it.
+	for {
+		if _, err := stream.Receive(); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			break
+		}
+	}
+	_ = stream.CloseResponse()
+	waitConnected(t, reg, "w1", false)
+}
+
+func TestSetupSessionRPCUnauthenticated(t *testing.T) {
+	_, url, _ := newDataplaneServer(t)
+	ctx := context.Background()
+
+	client := dataplanev1connect.NewDataplaneServiceClient(http.DefaultClient, url)
+	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
+		SessionToken:       "not-a-real-token",
+		WorkerId:           "w1",
+		ClientSshPublicKey: []byte("bogus"),
+	}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("bogus-token SetupSession = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// reconcileSeed is a minimal seed for the reconnect re-sync scenarios: an ssh asset
+// (allowed_logins {deploy}, target set), a role carrying ssh:login:deploy conferred
+// to a user via an active JIT grant, and a live_sessions row owned by "w1".
+type reconcileSeed struct {
+	user  uuid.UUID
+	asset uuid.UUID
+	grant uuid.UUID
+	sess  uuid.UUID
+}
+
+func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-recon-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-recon", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+		AssetID: asset.ID, AllowedLogins: []string{"deploy"}, AuthMethod: "ca-cert",
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetConfig: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE ssh_asset_config SET target_address = $1 WHERE asset_id = $2`, "10.0.0.5:22", asset.ID); err != nil {
+		t.Fatalf("set target_address: %v", err)
+	}
+
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`)})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+		RequesterUserID:   user.ID,
+		RoleID:            role.ID,
+		AssetID:           asset.ID,
+		Reason:            "seed",
+		RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		RequiredApprovals: 0,
+		GrantedDuration:   pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		Status:            "granted",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessRequest: %v", err)
+	}
+	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID, SubjectUserID: user.ID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessGrant: %v", err)
+	}
+
+	sess, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+		ID: uuid.New(), UserID: user.ID, AssetID: asset.ID, WorkerID: "w1",
+		GrantID: pgtype.UUID{Bytes: grant.ID, Valid: true}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
+	})
+	if err != nil {
+		t.Fatalf("InsertLiveSession: %v", err)
+	}
+	return reconcileSeed{user: user.ID, asset: asset.ID, grant: grant.ID, sess: sess.ID}
+}
+
+// registerWorker opens a WorkerStream, sends Register with the given live-session IDs,
+// and waits for the RegisterAck. The caller keeps the stream open (cleanup closes it).
+func registerWorker(t *testing.T, url string, liveIDs []string) {
+	t.Helper()
+	ctx := context.Background()
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: liveIDs},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+}
+
+// sessionEventCount drains the outbox and counts audit entries of the given type.
+func sessionEventCount(t *testing.T, pool *pgxpool.Pool, eventType string) int {
+	t.Helper()
+	ctx := context.Background()
+	log := audit.New(pool)
+	for {
+		n, err := log.DrainOnce(ctx, 256)
+		if err != nil {
+			t.Fatalf("DrainOnce: %v", err)
+		}
+		if n < 256 {
+			break
+		}
+	}
+	rows, err := gen.New(pool).ListAuditEntries(ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	n := 0
+	for _, r := range rows {
+		if r.EventType == eventType {
+			n++
+		}
+	}
+	return n
+}
+
+// TestReconcileMarksEndedWhenWorkerDroppedSession: a worker (re)registers reporting NO
+// live sessions, but warden has a DB row for it. The reconnect re-sync must mark that
+// session ended — delete the row and emit session.ended.
+func TestReconcileMarksEndedWhenWorkerDroppedSession(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool)
+
+	registerWorker(t, url, nil) // worker reports no sessions
+
+	ctx := context.Background()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+			t.Fatalf("count live_sessions: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reconcile did not delete the dropped session's live_sessions row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := sessionEventCount(t, pool, dataplane.EventSessionEnded); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1", n)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestReconcileTearsDownUnauthorizedRetainedSession: the worker still reports the
+// session, but its authorization was revoked while the stream was down. The reconnect
+// re-sync must re-evaluate and tear it down — mark terminating + emit session.terminated.
+func TestReconcileTearsDownUnauthorizedRetainedSession(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool)
+
+	ctx := context.Background()
+	// Revoke the sole login source before the worker reconnects.
+	if _, err := pool.Exec(ctx, `UPDATE access_grants SET revoked_at = now() WHERE id = $1`, seed.grant); err != nil {
+		t.Fatalf("revoke grant: %v", err)
+	}
+
+	registerWorker(t, url, []string{seed.sess.String()}) // worker still has it
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var ts pgtype.Timestamptz
+		if err := pool.QueryRow(ctx, `SELECT terminate_requested_at FROM live_sessions WHERE id = $1`, seed.sess).Scan(&ts); err != nil {
+			t.Fatalf("select terminate_requested_at: %v", err)
+		}
+		if ts.Valid {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reconcile did not set terminate_requested_at on the unauthorized retained session")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := sessionEventCount(t, pool, dataplane.EventSessionTerminated); n != 1 {
+		t.Fatalf("session.terminated events = %d, want 1", n)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestWorkerSessionEndedDeletesRow: a worker holds an authorized live session (its
+// login source is still active, so the reconnect re-sync keeps the row on Register).
+// When the worker then reports SessionEnded, warden deletes the live_sessions row and
+// audits exactly one session.ended.
+func TestWorkerSessionEndedDeletesRow(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool) // grant is active → still authorized at register time
+
+	ctx := context.Background()
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	// Register reporting the session as still live so reconcile re-evaluates and,
+	// finding it authorized, keeps the row — the SessionEnded frame is what deletes it.
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: []string{seed.sess.String()}},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+
+	// Row must still exist after Ack (reconcile kept the authorized session).
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+		t.Fatalf("count live_sessions after ack: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("live_sessions row missing after ack (reconcile pre-empted the test): count=%d", n)
+	}
+
+	// Worker reports the session ended.
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_SessionEnded{
+		SessionEnded: &dataplanev1.SessionEnded{SessionId: seed.sess.String(), Reason: "closed"},
+	}}); err != nil {
+		t.Fatalf("send session-ended: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, seed.sess).Scan(&n); err != nil {
+			t.Fatalf("count live_sessions: %v", err)
+		}
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("SessionEnded did not delete the live_sessions row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := sessionEventCount(t, pool, dataplane.EventSessionEnded); got != 1 {
+		t.Fatalf("session.ended events = %d, want 1", got)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// waitConnected polls the registry until worker's connected state matches want, or
+// fails after a short timeout (Add/Remove happen inside the handler goroutine).
+func waitConnected(t *testing.T, reg *dataplane.Registry, workerID string, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if reg.Connected(workerID) == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("registry.Connected(%q) never became %v", workerID, want)
+}
