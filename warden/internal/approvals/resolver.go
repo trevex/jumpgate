@@ -74,9 +74,13 @@ SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration
 
 // IsApprover reports whether approverUserID may approve activating requestRoleID
 // on assetID, per the effective policy: explicit approver subjects (from
-// request_policy_subjects with kind='approver') ∪ holders of the policy's
+// request_policy_subjects with kind='approver') ∪ STANDING holders of the policy's
 // approver_role on the asset, resolved through the explicit role-rewrite graph
-// (HoldsRole).
+// (HoldsRoleStanding).
+//
+// GOVERNANCE (M3c): the approver_role branch uses HoldsRoleStanding, NOT HoldsRole
+// — a role obtained via a JIT access_grant gives access but MUST NOT confer
+// approver eligibility. Only a standing binding of the approver_role qualifies.
 func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID, assetID uuid.UUID) (bool, error) {
 	rule, err := r.EffectiveRule(ctx, requestRoleID, assetID)
 	if err != nil {
@@ -110,9 +114,11 @@ SELECT EXISTS (
 
 	// Approver-role branch: the approver qualifies if they hold the policy's
 	// approver_role on the asset via the explicit role-rewrite graph (including
-	// rewrites), not just a direct standing binding.
+	// rewrites) THROUGH A STANDING BINDING. HoldsRoleStanding (not HoldsRole)
+	// excludes active JIT access_grants: a granted approver_role does NOT make you
+	// an approver.
 	if rule.ApproverRoleID != uuid.Nil {
-		holds, err := authz.NewRoleResolver(r.pool).HoldsRole(ctx, approverUserID, rule.ApproverRoleID, "asset", assetID)
+		holds, err := authz.NewRoleResolver(r.pool).HoldsRoleStanding(ctx, approverUserID, rule.ApproverRoleID, "asset", assetID)
 		if err != nil {
 			return false, fmt.Errorf("is approver (role): %w", err)
 		}
@@ -124,9 +130,13 @@ SELECT EXISTS (
 // IsEligibleRequester reports whether requesterUserID may request activating
 // requestRoleID on assetID, per the effective policy: eligibility holds when the
 // requester holds the policy's requester_role on the asset via the explicit
-// role-rewrite graph (HoldsRole) OR is an explicit requester subject (from
-// request_policy_subjects with kind='requester'). Mirrors IsApprover. This is
-// groundwork for a later task and is not yet wired into any RPC/visibility.
+// role-rewrite graph THROUGH A STANDING BINDING (HoldsRoleStanding) OR is an
+// explicit requester subject (from request_policy_subjects with kind='requester').
+// Mirrors IsApprover.
+//
+// GOVERNANCE (M3c): the requester_role branch uses HoldsRoleStanding, NOT HoldsRole
+// — a role obtained via a JIT access_grant gives access but MUST NOT confer
+// request eligibility. Only a standing binding of the requester_role qualifies.
 func (r *Resolver) IsEligibleRequester(ctx context.Context, requesterUserID, requestRoleID, assetID uuid.UUID) (bool, error) {
 	rule, err := r.EffectiveRule(ctx, requestRoleID, assetID)
 	if err != nil {
@@ -159,9 +169,11 @@ SELECT EXISTS (
 	}
 
 	// Requester-role branch: the requester qualifies if they hold the policy's
-	// requester_role on the asset via the explicit role-rewrite graph.
+	// requester_role on the asset via the explicit role-rewrite graph THROUGH A
+	// STANDING BINDING. HoldsRoleStanding (not HoldsRole) excludes active JIT
+	// access_grants: a granted requester_role does NOT make you an eligible requester.
 	if rule.RequesterRoleID != uuid.Nil {
-		holds, err := authz.NewRoleResolver(r.pool).HoldsRole(ctx, requesterUserID, rule.RequesterRoleID, "asset", assetID)
+		holds, err := authz.NewRoleResolver(r.pool).HoldsRoleStanding(ctx, requesterUserID, rule.RequesterRoleID, "asset", assetID)
 		if err != nil {
 			return false, fmt.Errorf("is eligible requester (role): %w", err)
 		}

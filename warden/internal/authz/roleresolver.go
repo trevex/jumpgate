@@ -16,17 +16,23 @@ type RoleResolver struct{ pool *pgxpool.Pool }
 // NewRoleResolver constructs a RoleResolver.
 func NewRoleResolver(pool *pgxpool.Pool) *RoleResolver { return &RoleResolver{pool: pool} }
 
-// HoldsRole reports whether userID is a member of roleID on the given object
-// (objectKind is "asset" or "folder"), resolving explicit role_grants rewrite
-// rules (same_object + parent) down to direct standing bindings. Group-aware and
-// cycle-safe (goals are deduped via UNION, so the finite goal set terminates).
-func (r *RoleResolver) HoldsRole(ctx context.Context, userID, roleID uuid.UUID, objectKind string, objectID uuid.UUID) (bool, error) {
-	// The goals CTE expands (role, object) pairs via role_grants rewrite rules.
-	// PostgreSQL requires the recursive reference to appear exactly once in the
-	// recursive term.  We achieve multi-branch expansion by first computing a
-	// "next_goals" derived table (one reference to goals, three UNION ALL branches)
-	// and then UNIONing that into the accumulator.
-	const sql = `
+// holdsRoleGoalsCTE is the shared backward goal-expansion prefix used by both
+// HoldsRole and HoldsRoleStanding. It expands (role, object) pairs via the
+// role_grants rewrite rules (same_object + parent) into the `goals` relation and
+// exposes a group-aware `user_groups` CTE. PostgreSQL requires the recursive
+// reference to appear exactly once in the recursive term; multi-branch expansion
+// is achieved with a LATERAL derived table (one reference to goals, three
+// UNION ALL branches) UNIONed into the accumulator. Cycle-safe: goals are deduped
+// via UNION, so the finite goal set terminates.
+//
+// The ONLY difference between HoldsRole and HoldsRoleStanding is the satisfaction
+// SELECT appended after this prefix (bindings∪grants vs bindings-only) — the goal
+// expansion itself is identical.
+//
+// SECURITY — KEEP IN SYNC: the three rewrite arms (same_object, parent-from-asset,
+// parent-from-folder) are duplicated in ExplainRole below — keep the traversal
+// semantics in sync (ExplainRole additionally emits via + path).
+const holdsRoleGoalsCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
     SELECT group_id FROM group_memberships WHERE member_user_id = $1
@@ -41,9 +47,6 @@ goals(role_id, object_kind, object_id) AS (
     SELECT ng.next_role_id, ng.next_kind, ng.next_object_id
     FROM goals g,
          LATERAL (
-             -- The same three rewrite arms (same_object, parent-from-asset,
-             -- parent-from-folder) are duplicated in ExplainRole below — keep the
-             -- traversal semantics in sync (ExplainRole additionally emits via + path).
              -- same_object: (R,O) → (S,O)
              SELECT rg.source_role_id AS next_role_id,
                     g.object_kind    AS next_kind,
@@ -72,28 +75,62 @@ goals(role_id, object_kind, object_id) AS (
                             AND f.parent_id IS NOT NULL
              WHERE rg.role_id = g.role_id AND rg.via = 'parent'
          ) ng
-)
-SELECT EXISTS (
+)`
+
+// holdsSatisfyBinding is the standing-binding satisfaction arm: a reached goal is
+// satisfied by a direct/nested-group standing role_binding on it.
+const holdsSatisfyBinding = `
     -- satisfaction via a standing role_binding on the reached goal.
     SELECT 1
     FROM goals g
     JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
          OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
-      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
-  UNION ALL
+      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )`
+
+// holdsSatisfyGrant is the active-JIT-grant satisfaction arm (access membership
+// only — NOT governance). SECURITY: mirror of the held-base grant arm (see
+// heldCTE). now() enforces expiry/revocation at query time — no reaper required.
+const holdsSatisfyGrant = `
     -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
-    -- SECURITY: mirror of the held-base grant arm (see heldCTE). now() enforces
-    -- expiry/revocation at query time — no reaper required.
     SELECT 1
     FROM goals g
     JOIN access_grants ag ON ag.role_id = g.role_id
       AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
-      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()`
+
+// HoldsRole reports whether userID holds roleID on the given object (objectKind is
+// "asset" or "folder") — i.e. whether the user holds it via a standing role_binding
+// OR an active JIT access_grant — resolving explicit role_grants rewrite rules
+// (same_object + parent). Group-aware and cycle-safe. This is the ACCESS-membership
+// predicate: a JIT-granted role counts. For the governance/eligibility predicate
+// (grants excluded) use HoldsRoleStanding.
+func (r *RoleResolver) HoldsRole(ctx context.Context, userID, roleID uuid.UUID, objectKind string, objectID uuid.UUID) (bool, error) {
+	sql := holdsRoleGoalsCTE + `
+SELECT EXISTS (` + holdsSatisfyBinding + `
+  UNION ALL` + holdsSatisfyGrant + `
 )`
 	var ok bool
 	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
 		return false, fmt.Errorf("holds role: %w", err)
+	}
+	return ok, nil
+}
+
+// HoldsRoleStanding reports whether userID holds roleID on the given object via a
+// STANDING role_binding only (governance predicate — active JIT access_grants are
+// EXCLUDED), resolving explicit role_grants rewrite rules (same_object + parent).
+// Same signature/semantics as HoldsRole except the satisfaction base is
+// role_bindings ONLY (the pre-T2 backward closure): a role obtained via a JIT
+// grant gives real access (HoldsRole) but MUST NOT confer governance eligibility,
+// so IsApprover/IsEligibleRequester resolve their role branch through THIS method.
+func (r *RoleResolver) HoldsRoleStanding(ctx context.Context, userID, roleID uuid.UUID, objectKind string, objectID uuid.UUID) (bool, error) {
+	sql := holdsRoleGoalsCTE + `
+SELECT EXISTS (` + holdsSatisfyBinding + `
+)`
+	var ok bool
+	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("holds role standing: %w", err)
 	}
 	return ok, nil
 }
