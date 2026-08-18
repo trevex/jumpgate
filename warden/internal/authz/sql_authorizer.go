@@ -18,10 +18,15 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 	return &sqlAuthorizer{pool: pool}
 }
 
-// applicableCTE computes, for a user ($1), every asset reachable via an applicable
-// binding, tagged with the binding kind and role. It expands transitive group
+// applicableCTE computes, for a user ($1), every asset reachable via a
+// REQUESTABLE binding, tagged with the role. It expands transitive group
 // membership, folder-subtree inheritance, and both asset- and folder-scoped
 // bindings for user- or (nested) group-subjects.
+//
+// NOTE (M3-roles): only requestable bindings flow through applicable. The
+// folder_tree implicit cascade is intentionally retained for the requestable
+// tier (documented deferral: no rewrite-over-requestable). Active/standing
+// access is now resolved explicitly through the role_grants graph (heldCTE).
 const applicableCTE = `
 WITH RECURSIVE user_groups(group_id) AS (
     SELECT group_id FROM group_memberships WHERE member_user_id = $1
@@ -36,30 +41,72 @@ folder_tree(root_id, folder_id) AS (
     SELECT ft.root_id, f.id
     FROM folders f JOIN folder_tree ft ON f.parent_id = ft.folder_id
 ),
-applicable(asset_id, kind, role_id) AS (
-    SELECT rb.scope_asset_id, rb.kind, rb.role_id
+applicable(asset_id, role_id) AS (
+    SELECT rb.scope_asset_id, rb.role_id
     FROM role_bindings rb
-    WHERE rb.scope_asset_id IS NOT NULL
+    WHERE rb.kind = 'requestable'
+      AND rb.scope_asset_id IS NOT NULL
       AND ( rb.subject_user_id = $1
             OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
   UNION ALL
-    SELECT a.id, rb.kind, rb.role_id
+    SELECT a.id, rb.role_id
     FROM role_bindings rb
     JOIN folder_tree ft ON ft.root_id = rb.scope_folder_id
     JOIN assets a ON a.folder_id = ft.folder_id
-    WHERE rb.scope_folder_id IS NOT NULL
+    WHERE rb.kind = 'requestable'
+      AND rb.scope_folder_id IS NOT NULL
       AND ( rb.subject_user_id = $1
             OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
 )`
 
-func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
-	rows, err := s.pool.Query(ctx, applicableCTE+`
-SELECT asset_id, kind, role_id FROM applicable`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("visible assets: %w", err)
-	}
-	defer rows.Close()
+// heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
+// a user ($1), every (role, object) the user holds via direct STANDING bindings
+// and the explicit role_grants rewrite graph (same_object + parent). It is
+// group-aware and cycle-safe (UNION dedup over the finite roles × objects set
+// guarantees termination — no depth column needed).
+//
+// PostgreSQL permits the recursive self-reference exactly once, so the three
+// expansion branches are combined via a LATERAL subquery referencing the current
+// row h (not the recursive relation).
+const heldCTE = `
+WITH RECURSIVE
+user_groups(group_id) AS (
+    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
+),
+held(role_id, object_kind, object_id) AS (
+    -- base: direct STANDING bindings for the user or a (nested) group
+    SELECT rb.role_id,
+           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
+           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
+    FROM role_bindings rb
+    WHERE rb.kind = 'standing'
+      AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    SELECT x.role_id, x.object_kind, x.object_id
+    FROM held h,
+    LATERAL (
+        -- same_object: hold S on O + rule (R ⊇ S same_object) ⇒ hold R on O
+        SELECT rg.role_id, h.object_kind, h.object_id
+        FROM role_grants rg
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
+      UNION ALL
+        -- parent → child folders of folder O
+        SELECT rg.role_id, 'folder'::text, cf.id
+        FROM role_grants rg
+        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+      UNION ALL
+        -- parent → child assets directly in folder O
+        SELECT rg.role_id, 'asset'::text, ca.id
+        FROM role_grants rg
+        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
+        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+    ) x
+)`
 
+func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {
 		active bool
 		seen   map[uuid.UUID]struct{}
@@ -67,27 +114,59 @@ SELECT asset_id, kind, role_id FROM applicable`, userID)
 	}
 	byAsset := map[uuid.UUID]*acc{}
 	var order []uuid.UUID
-	for rows.Next() {
-		var assetID, roleID uuid.UUID
-		var kind string
-		if err := rows.Scan(&assetID, &kind, &roleID); err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
-		}
+	get := func(assetID uuid.UUID) *acc {
 		a := byAsset[assetID]
 		if a == nil {
 			a = &acc{seen: map[uuid.UUID]struct{}{}}
 			byAsset[assetID] = a
 			order = append(order, assetID)
 		}
-		if kind == "standing" {
-			a.active = true
-		}
+		return a
+	}
+	addRole := func(a *acc, roleID uuid.UUID) {
 		if _, ok := a.seen[roleID]; !ok {
 			a.seen[roleID] = struct{}{}
 			a.roles = append(a.roles, roleID)
 		}
 	}
-	if err := rows.Err(); err != nil {
+
+	// Active tier: assets held via the explicit role-rewrite graph (standing).
+	activeRows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("visible assets (active): %w", err)
+	}
+	defer activeRows.Close()
+	for activeRows.Next() {
+		var assetID, roleID uuid.UUID
+		if err := activeRows.Scan(&assetID, &roleID); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		a := get(assetID)
+		a.active = true
+		addRole(a, roleID)
+	}
+	if err := activeRows.Err(); err != nil {
+		return nil, err
+	}
+	activeRows.Close()
+
+	// Requestable tier: assets reachable via requestable bindings (folder cascade
+	// retained per the documented deferral).
+	reqRows, err := s.pool.Query(ctx, applicableCTE+`
+SELECT asset_id, role_id FROM applicable`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("visible assets (requestable): %w", err)
+	}
+	defer reqRows.Close()
+	for reqRows.Next() {
+		var assetID, roleID uuid.UUID
+		if err := reqRows.Scan(&assetID, &roleID); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		addRole(get(assetID), roleID)
+	}
+	if err := reqRows.Err(); err != nil {
 		return nil, err
 	}
 
@@ -100,36 +179,50 @@ SELECT asset_id, kind, role_id FROM applicable`, userID)
 }
 
 func (s *sqlAuthorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error) {
-	rows, err := s.pool.Query(ctx, applicableCTE+`
-SELECT kind, role_id FROM applicable WHERE asset_id = $2`, userID, assetID)
-	if err != nil {
-		return AssetRoles{}, fmt.Errorf("roles on asset: %w", err)
-	}
-	defer rows.Close()
-
-	activeSeen := map[uuid.UUID]struct{}{}
-	reqSeen := map[uuid.UUID]struct{}{}
 	var r AssetRoles
-	for rows.Next() {
-		var kind string
+
+	// Active: roles held on the asset via the explicit role-rewrite graph.
+	activeRows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2`, userID, assetID)
+	if err != nil {
+		return AssetRoles{}, fmt.Errorf("roles on asset (active): %w", err)
+	}
+	defer activeRows.Close()
+	activeSeen := map[uuid.UUID]struct{}{}
+	for activeRows.Next() {
 		var roleID uuid.UUID
-		if err := rows.Scan(&kind, &roleID); err != nil {
+		if err := activeRows.Scan(&roleID); err != nil {
 			return AssetRoles{}, fmt.Errorf("scan: %w", err)
 		}
-		switch kind {
-		case "standing":
-			if _, ok := activeSeen[roleID]; !ok {
-				activeSeen[roleID] = struct{}{}
-				r.Active = append(r.Active, roleID)
-			}
-		case "requestable":
-			if _, ok := reqSeen[roleID]; !ok {
-				reqSeen[roleID] = struct{}{}
-				r.Requestable = append(r.Requestable, roleID)
-			}
+		if _, ok := activeSeen[roleID]; !ok {
+			activeSeen[roleID] = struct{}{}
+			r.Active = append(r.Active, roleID)
 		}
 	}
-	if err := rows.Err(); err != nil {
+	if err := activeRows.Err(); err != nil {
+		return AssetRoles{}, err
+	}
+	activeRows.Close()
+
+	// Requestable: roles reachable via requestable bindings (folder cascade retained).
+	reqRows, err := s.pool.Query(ctx, applicableCTE+`
+SELECT role_id FROM applicable WHERE asset_id = $2`, userID, assetID)
+	if err != nil {
+		return AssetRoles{}, fmt.Errorf("roles on asset (requestable): %w", err)
+	}
+	defer reqRows.Close()
+	reqSeen := map[uuid.UUID]struct{}{}
+	for reqRows.Next() {
+		var roleID uuid.UUID
+		if err := reqRows.Scan(&roleID); err != nil {
+			return AssetRoles{}, fmt.Errorf("scan: %w", err)
+		}
+		if _, ok := reqSeen[roleID]; !ok {
+			reqSeen[roleID] = struct{}{}
+			r.Requestable = append(r.Requestable, roleID)
+		}
+	}
+	if err := reqRows.Err(); err != nil {
 		return AssetRoles{}, err
 	}
 	return r, nil
@@ -137,13 +230,13 @@ SELECT kind, role_id FROM applicable WHERE asset_id = $2`, userID, assetID)
 
 func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	var ok bool
-	err := s.pool.QueryRow(ctx, applicableCTE+`
+	err := s.pool.QueryRow(ctx, heldCTE+`
 SELECT EXISTS (
     SELECT 1
-    FROM applicable ap
-    JOIN roles r ON r.id = ap.role_id
-    WHERE ap.asset_id = $2
-      AND ap.kind = 'standing'
+    FROM held h
+    JOIN roles r ON r.id = h.role_id
+    WHERE h.object_kind = 'asset'
+      AND h.object_id = $2
       AND jsonb_exists(r.capabilities, $3)
 )`, userID, assetID, capability).Scan(&ok)
 	if err != nil {

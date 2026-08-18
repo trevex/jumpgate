@@ -62,6 +62,12 @@ func TestApprovalResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// owner cascades down folders via an explicit parent self-rule (IsApprover now
+	// resolves the approver-role through the explicit role-rewrite graph).
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: owner.ID, SourceRoleID: owner.ID, Via: "parent"}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Folders: prod (root), prod/db (parent=prod)
 	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
 	if err != nil {

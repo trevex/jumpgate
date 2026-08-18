@@ -185,4 +185,37 @@ func TestHoldsRole(t *testing.T) {
 		t.Fatalf("CreateRoleBinding bob/admin/asset: %v", err)
 	}
 	check("bob admin asset/pg direct", true, bob.ID, admin, "asset", pgAsset.ID)
+
+	// ── nested-group membership ───────────────────────────────────────────────
+	// alice ∈ teamA ∈ sre. alice only holds owner@prod through the sre binding, so
+	// the extra nesting layer must still resolve.
+	teamA, err := q.CreateGroup(ctx, "teamA")
+	if err != nil {
+		t.Fatalf("CreateGroup teamA: %v", err)
+	}
+	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: sre.ID, MemberGroupID: pg(teamA.ID)}); err != nil {
+		t.Fatalf("AddGroupToGroup teamA→sre: %v", err)
+	}
+	// Move alice's membership one level deeper: alice ∈ teamA (teamA ∈ sre).
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: teamA.ID, MemberUserID: pg(alice.ID)}); err != nil {
+		t.Fatalf("AddUserToGroup alice→teamA: %v", err)
+	}
+	check("alice owner folder/prod via nested teamA∈sre", true, alice.ID, owner, "folder", prod.ID)
+
+	// ── requestable does NOT confer membership ────────────────────────────────
+	// A requestable binding of admin to carol on asset pg must not make carol hold
+	// admin (HoldsRole matches only kind='standing').
+	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
+	if err != nil {
+		t.Fatalf("CreateUser carol: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        admin,
+		Kind:          "requestable",
+		ScopeAssetID:  pg(pgAsset.ID),
+		SubjectUserID: pg(carol.ID),
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding carol/admin/requestable: %v", err)
+	}
+	check("carol admin asset/pg requestable does not confer", false, carol.ID, admin, "asset", pgAsset.ID)
 }
