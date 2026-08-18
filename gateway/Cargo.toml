@@ -10,9 +10,16 @@ axum.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-tonic = "0.12"
+tonic = { version = "0.12", features = ["tls"] }
 prost = "0.13"
 serde_json = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls-pemfile = "2"
+httparse = "1"
+x509-parser = "0.16"
+rand = "0.8"
+thiserror = "1"
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -20,3 +27,5 @@ tonic-build = "0.12"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+rcgen = "0.13"
+tempfile = "3"
