@@ -24,12 +24,14 @@ type Querier interface {
 	CreateGroup(ctx context.Context, name string) (Group, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
+	CreateRoleGrant(ctx context.Context, arg CreateRoleGrantParams) (RoleGrant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
 	DeleteApprovalRule(ctx context.Context, id uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
+	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
 	DeleteRuleApprover(ctx context.Context, id uuid.UUID) error
 	GetApprovalRule(ctx context.Context, id uuid.UUID) (ApprovalRule, error)
 	GetAsset(ctx context.Context, id uuid.UUID) (Asset, error)
@@ -49,6 +51,7 @@ type Querier interface {
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
+	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
 	ListRuleApprovers(ctx context.Context, ruleID uuid.UUID) ([]ApprovalRuleApprover, error)
