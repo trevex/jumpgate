@@ -42,6 +42,16 @@ func MasterKeyFromConfig(b64 string) ([]byte, error) {
 	return k, nil
 }
 
+// Sealed-blob layout widths. wrappedDEKLen = 32B DEK + 16B GCM tag. Open parses
+// these fixed widths, so gcmSeal asserts the GCM nonce size matches nonceLen —
+// otherwise Seal's output and Open's parse would silently desync.
+const (
+	sealVersion   = 1
+	nonceLen      = 12 // standard AES-GCM nonce size
+	wrappedDEKLen = 48
+	sealHeaderLen = 1 + nonceLen + wrappedDEKLen + nonceLen
+)
+
 func gcmSeal(key, pt []byte) (nonce, ct []byte, err error) {
 	blk, err := aes.NewCipher(key)
 	if err != nil {
@@ -50,6 +60,9 @@ func gcmSeal(key, pt []byte) (nonce, ct []byte, err error) {
 	g, err := cipher.NewGCM(blk)
 	if err != nil {
 		return nil, nil, err
+	}
+	if g.NonceSize() != nonceLen {
+		return nil, nil, fmt.Errorf("unexpected GCM nonce size %d (want %d)", g.NonceSize(), nonceLen)
 	}
 	nonce = make([]byte, g.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -85,13 +98,13 @@ func (s *Sealer) Seal(plaintext []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	dekNonce, wrapped, err := gcmSeal(s.kek, dek)
+	wrapNonce, wrapped, err := gcmSeal(s.kek, dek)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]byte, 0, 1+12+48+12+len(ct))
-	out = append(out, 1)
-	out = append(out, dekNonce...)
+	out := make([]byte, 0, sealHeaderLen+len(ct))
+	out = append(out, sealVersion)
+	out = append(out, wrapNonce...)
 	out = append(out, wrapped...)
 	out = append(out, ctNonce...)
 	out = append(out, ct...)
@@ -101,19 +114,18 @@ func (s *Sealer) Seal(plaintext []byte) ([]byte, error) {
 // Open reverses Seal. Fails (fail-closed) on a wrong KEK, a tampered blob, or a
 // malformed layout.
 func (s *Sealer) Open(sealed []byte) ([]byte, error) {
-	const hdr = 1 + 12 + 48 + 12
-	if len(sealed) < hdr || sealed[0] != 1 {
+	if len(sealed) < sealHeaderLen || sealed[0] != sealVersion {
 		return nil, errors.New("malformed sealed blob")
 	}
 	p := 1
-	dekNonce := sealed[p : p+12]
-	p += 12
-	wrapped := sealed[p : p+48]
-	p += 48
-	ctNonce := sealed[p : p+12]
-	p += 12
+	wrapNonce := sealed[p : p+nonceLen]
+	p += nonceLen
+	wrapped := sealed[p : p+wrappedDEKLen]
+	p += wrappedDEKLen
+	ctNonce := sealed[p : p+nonceLen]
+	p += nonceLen
 	ct := sealed[p:]
-	dek, err := gcmOpen(s.kek, dekNonce, wrapped)
+	dek, err := gcmOpen(s.kek, wrapNonce, wrapped)
 	if err != nil {
 		return nil, fmt.Errorf("unwrap DEK: %w", err)
 	}

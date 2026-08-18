@@ -63,6 +63,41 @@ func TestNewSealerRejectsShortKey(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsMalformed(t *testing.T) {
+	s, _ := NewSealer(testKey(t))
+	for n := 0; n < sealHeaderLen; n++ { // short blobs must fail closed, not panic
+		if _, err := s.Open(make([]byte, n)); err == nil {
+			t.Fatalf("len %d must fail", n)
+		}
+	}
+	good, _ := s.Seal([]byte("x"))
+	bad := append([]byte(nil), good...)
+	bad[0] = 2 // wrong version
+	if _, err := s.Open(bad); err == nil {
+		t.Fatal("wrong version must fail")
+	}
+	bad2 := append([]byte(nil), good...)
+	bad2[1+nonceLen] ^= 0xff // tamper the wrapped-DEK region, not just the ct
+	if _, err := s.Open(bad2); err == nil {
+		t.Fatal("tampered wrapped DEK must fail")
+	}
+}
+
+func TestEmptyPlaintextRoundTrips(t *testing.T) {
+	s, _ := NewSealer(testKey(t))
+	sealed, err := s.Seal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Open(sealed)
+	if err != nil {
+		t.Fatalf("empty round-trip: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("want empty, got %d bytes", len(got))
+	}
+}
+
 func TestMasterKeyFromConfig(t *testing.T) {
 	if _, err := MasterKeyFromConfig(""); !errors.Is(err, ErrNotConfigured) {
 		t.Fatalf("empty must be ErrNotConfigured, got %v", err)
