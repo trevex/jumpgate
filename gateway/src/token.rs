@@ -149,4 +149,36 @@ mod tests {
         bad.push('x');
         assert!(verify(&bad, &pk).is_err());
     }
+
+    /// Decode a hex string into bytes (two hex chars per byte). Dependency-free
+    /// helper so the interop fixture below needs no new crate.
+    fn hex_decode(s: &str) -> Vec<u8> {
+        assert!(
+            s.len().is_multiple_of(2),
+            "hex string must have even length"
+        );
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
+    #[test]
+    fn verifies_warden_go_minted_token() {
+        // Fixture minted by warden's Go sessiontoken.NewMinter (deterministic key,
+        // exp in the year ~2126). Regenerate via warden/cmd/_fixturegen if the token
+        // format ever changes. This locks Go(mint)↔Rust(verify) interop.
+        const PUB_HEX: &str = "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664";
+        const TOKEN: &str = "v4.public.eyJhc3NldCI6IjMzMzMzMzMzLTMzMzMtMzMzMy0zMzMzLTMzMzMzMzMzMzMzMyIsImNuZiI6IlNIQTI1Njp0ZXN0ZnAiLCJleHAiOiIyMTI2LTA3LTI2VDAwOjA2OjIzKzAyOjAwIiwiaWF0IjoiMjAyNi0wOC0xOVQwMDowNjoyMyswMjowMCIsImp0aSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsIm5iZiI6IjIwMjYtMDgtMTlUMDA6MDY6MjMrMDI6MDAiLCJwcm90byI6InNzaCIsInN1YiI6IjIyMjIyMjIyLTIyMjItMjIyMi0yMjIyLTIyMjIyMjIyMjIyMiJ918TzS_fvJksEalGIxAXrSnUNFsAyp7Xh_uHPRnPUt07eIVBIrgcDxXxHc_So3nXYb4BMoDPzIylhxGlX1VVOCA";
+        let pk = hex_decode(PUB_HEX);
+        let claims = verify(TOKEN, &pk).expect("warden-minted token must verify");
+        assert_eq!(claims.proto, "ssh");
+        assert_eq!(claims.session_id, "11111111-1111-1111-1111-111111111111");
+        assert_eq!(claims.user_id, "22222222-2222-2222-2222-222222222222");
+        assert_eq!(claims.asset_id, "33333333-3333-3333-3333-333333333333");
+        // Negative control: flip one pubkey byte → must fail.
+        let mut bad = pk.clone();
+        bad[0] ^= 0xff;
+        assert!(verify(TOKEN, &bad).is_err());
+    }
 }
