@@ -31,7 +31,9 @@ import (
 // SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies here must resolve
 // membership identically to heldCTE in sql_authorizer.go (and to
 // visibleRequestableCTE below). Divergence would make Requestable eligibility
-// disagree with Check's grant decision. See the note on heldCTE.
+// disagree with Check's grant decision. See the note on heldCTE. The `held` base
+// is `role_bindings ∪ active access_grants`; the active-grant arm must stay
+// byte-for-byte identical across all held-style copies.
 const requestableRolesCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -45,6 +47,12 @@ held(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
+    -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
+    SELECT g.role_id, 'asset'::text, g.scope_asset_id
+    FROM access_grants g
+    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
@@ -117,7 +125,9 @@ WHERE
 // generalized per-asset (keyed on the asset id) rather than pinned to one asset.
 //
 // SECURITY — KEEP IN SYNC: the `user_groups` + `held` bodies must resolve
-// membership identically to heldCTE (sql_authorizer.go) and requestableRolesCTE above.
+// membership identically to heldCTE (sql_authorizer.go) and requestableRolesCTE
+// above. The `held` base is `role_bindings ∪ active access_grants`; the
+// active-grant arm must stay byte-for-byte identical across all held-style copies.
 const visibleRequestableCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
@@ -131,6 +141,12 @@ held(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+  UNION
+    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
+    -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
+    SELECT g.role_id, 'asset'::text, g.scope_asset_id
+    FROM access_grants g
+    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
