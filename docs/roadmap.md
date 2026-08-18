@@ -57,6 +57,9 @@ serving `Dataplane`+`Gateway`, and a **`GatewayService`** (`WatchWorkers` roster
 warden derives the authoritative `worker_id` from the mTLS peer-cert URI SAN
 (`spiffe://jumpgate/<role>/<id>`), and the gateway pins each peer's SPIFFE identity
 (chain-to-mesh-CA **and** URI-SAN==expected) on both the worker and warden dials.
+warden's mesh cert must be minted with the SPIFFE id the gateway pins — canonical
+default `spiffe://jumpgate/warden/warden` (override via `WARDEN_MESH_SPIFFE`; mint
+with `warden-meshcert -spiffe spiffe://jumpgate/warden/warden`).
 Go↔Rust PASETO interop is locked by a fixture test. Deferred: boot-time cert
 auto-enrollment, global multi-replica LB, k8s discovery, a real public external cert.
 

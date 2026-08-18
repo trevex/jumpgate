@@ -11,6 +11,7 @@ pub struct Config {
     pub mesh_key: String,      // GATEWAY_MESH_KEY
     pub mesh_ca: String,       // GATEWAY_MESH_CA (mesh CA bundle PEM path)
     pub warden_mesh_addr: String, // WARDEN_MESH_ADDR (e.g. https://warden:8444)
+    pub warden_spiffe: String, // expected SPIFFE id of warden's mesh cert
 }
 
 impl Config {
@@ -30,6 +31,7 @@ impl Config {
             mesh_key: req("GATEWAY_MESH_KEY")?,
             mesh_ca: req("GATEWAY_MESH_CA")?,
             warden_mesh_addr: req("WARDEN_MESH_ADDR")?,
+            warden_spiffe: opt("WARDEN_MESH_SPIFFE", "spiffe://jumpgate/warden/warden"),
         })
     }
 }
