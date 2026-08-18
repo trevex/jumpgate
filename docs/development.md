@@ -89,7 +89,7 @@ Makefile            Task entrypoints
 
 ## API (ConnectRPC)
 
-- Three services are currently defined: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships — admin), `CatalogService` (folders/assets/roles/role-bindings admin CRUD + per-user `ListVisibleAssets`/`GetAssetAccess`).
+- Four services are currently defined: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships — admin), `CatalogService` (folders/assets/roles/role-bindings admin CRUD + per-user `ListVisibleAssets`/`GetAssetAccess`), `ApprovalService` (admin approval-rule CRUD + `ResolveApproval`).
 - Services are defined in `proto/` (buf) and generated to `warden/gen/...` — connect handlers live in the `*connect/` sub-packages. Run `make gen`.
 - Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
 - Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC guards (`RequireAdmin`) enforce access. Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
@@ -113,4 +113,4 @@ service. Implement those, register the pool, and the worker can be in any langua
 
 ## Current status
 
-Milestones **M1 (foundation)** and **M2 (access-model core)** are complete: devshell, workspaces, protobuf codegen, the control-plane data layer (Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a recursive-CTE backend, graceful shutdown, ConnectRPC with `AuthService` + `IdentityService` + `CatalogService`, admin bootstrap via env vars, expired-token GC, and green CI. See [roadmap.md](roadmap.md) for what's next.
+Milestones **M1 (foundation)** and **M2 (access-model core)** are complete. **M3 is in progress**: M3a (hash-chained audit log, Append/Verify) and M3b (ApprovalRule per (role, scope) — Resolver + ApprovalService) are done. Delivered so far: devshell, workspaces, protobuf codegen, the control-plane data layer (Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a recursive-CTE backend, graceful shutdown, ConnectRPC with `AuthService` + `IdentityService` + `CatalogService` + `ApprovalService`, admin bootstrap via env vars, expired-token GC, and green CI. See [roadmap.md](roadmap.md) for what's next.

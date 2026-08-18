@@ -50,7 +50,8 @@ Modules (all ⬜ except the HTTP skeleton):
 - **Resource catalog** ✅ folders/assets/roles/role-bindings CRUD + per-user visibility catalog (CatalogService): ListVisibleAssets / GetAssetAccess resolve the caller's Active/Requestable/Invisible tiers via the Authorizer, with CodeNotFound existence-hiding.
 - **Credential vault** ⬜ — target credentials, envelope-encrypted at rest.
 - **JIT / approval engine** ⬜ — access requests, approvals, time-boxed grants, reaper.
-- **Audit log** ⬜ — hash-chained, tamper-evident.
+- **Approvals** 🟡 (M3b) ApprovalRule per (role, scope): role-level default (set at role definition — gates custom roles like `cluster-admin` to approval-only) + per-scope override; approvers = holders of an approver-role on the requested scope ∪ explicit subjects; most-specific rule wins; no rule ⇒ not JIT-requestable. Resolver (`EffectiveRule`, `IsApprover`) + `ApprovalService` (admin CRUD + `ResolveApproval`).
+- **Audit log** 🟡 (M3a) hash-chained tamper-evident audit log (`entry_hash = sha256(prev_hash ‖ canonical(entry))`); append-only with advisory-lock genesis; chain independently verifiable (Append/Verify).
 - **Recording service** ⬜ — session blobs to object store; metadata + hashes in Postgres.
 - **Worker registry** ⬜ — watches k8s Endpoints; feeds the gateway its roster.
 - **Token minter** ⬜ — short-lived PASETO v4 session tokens bound to a grant.

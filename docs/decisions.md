@@ -23,6 +23,7 @@ when a decision changes or a new one is made.
 | Frontend | React + Vite SPA embedded in the backend binary | Matches the Teleport/hoop pattern; largest ecosystem for data-heavy admin UIs. |
 | Dev environment | Nix flake devshell + direnv | One pinned, reproducible toolchain across contributors and CI. |
 | Audit integrity | Hash-chained append-only log | Tamper-evident; standard, auditor-accepted mechanism. |
+| Approval model | ApprovalRule per (role, scope): role-level default + per-scope override; approver = holders of approver-role on requested scope ∪ explicit subjects; no rule ⇒ not requestable | Approval gate travels with the role (custom roles carry their own gate); folder vs asset are distinct scope flows; no org/manager graph dependency. |
 
 ## Notable non-choices (deferred by design)
 

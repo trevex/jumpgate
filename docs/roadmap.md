@@ -10,7 +10,7 @@ follow the MVP.
 |-----------|-------|--------|
 | **M1** | Foundation & scaffolding — Nix devshell, Go+Rust workspaces, protobuf codegen, warden (control plane) + gateway health binaries, CI | ✅ Done |
 | **M2** | Access-model core — users/groups/folders/assets, custom Role + RoleBinding over OpenFGA, visibility tiers, catalog/CRUD REST | ✅ Done (data, authorizer, ConnectRPC, auth, identity, catalog/visibility) |
-| **M3** | JIT + vault + audit — access requests, approval engine, time-boxed grants + reaper, credential vault, hash-chained audit | ⬜ |
+| **M3** | JIT + vault + audit — access requests, approval engine, time-boxed grants + reaper, credential vault, hash-chained audit | 🟡 In progress (M3a audit + M3b approval policy done; M3c JIT request/grant workflow + M3d vault/CA next) |
 | **M4** | Gateway + ssh-proxy + CLI — worker registry, session routing/LB, `jumpgate connect <ssh>` end-to-end with injection + recording | ⬜ |
 | **M5** | pg-proxy + inline step-up — Postgres access, per-statement approval, tiered `SET ROLE` step-up | ⬜ |
 | **M6** | Web UI — embedded SPA, admin console, approvals, xterm.js terminal, web SQL console | ⬜ |
