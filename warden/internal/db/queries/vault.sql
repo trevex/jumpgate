@@ -10,7 +10,9 @@ ON CONFLICT (asset_id, name) DO UPDATE SET sealed = EXCLUDED.sealed
 RETURNING *;
 
 -- name: GetAssetSecret :one
-SELECT * FROM asset_secrets WHERE id = $1;
+-- Scoped to the owning asset: a config referencing another asset's secret (admin
+-- misconfiguration) fails closed rather than leaking a secret cross-asset.
+SELECT * FROM asset_secrets WHERE id = $1 AND asset_id = $2;
 
 -- name: DeleteAssetSecret :exec
 DELETE FROM asset_secrets WHERE id = $1;
