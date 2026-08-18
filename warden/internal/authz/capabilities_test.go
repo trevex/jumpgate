@@ -46,6 +46,15 @@ func TestCapMatch(t *testing.T) {
 
 		// Requested longer than a concrete pattern → false.
 		{"requested-longer", "k8s:a", "k8s:a:b", false},
+
+		// Defense-in-depth: a malformed non-final '**' (grammar-rejected at the
+		// proto layer, but possible via direct sqlc / future writers) must fail
+		// CLOSED — it must not drop the segments after '**' and match broadly.
+		{"dstar-nonfinal-malformed", "k8s:**:x", "k8s:connect:x", false},
+		{"dstar-nonfinal-malformed-deep", "k8s:**:x", "k8s:a:b:c", false},
+		// A wildcard char in the (assumed-concrete) requested arg is treated
+		// literally — it cannot widen a grant.
+		{"literal-star-requested", "k8s:connect", "k8s:*", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -9,14 +9,24 @@ import "strings"
 // concrete (no wildcards); `pattern` may be concrete or a glob.
 //
 // The proto layer validates stored patterns against the capability grammar, so
-// '**' is guaranteed to appear only as the final segment. This function is the
-// single auditable home of the glob semantics used by Check.
+// '**' is normally only ever the final segment. CapMatch does NOT rely on that:
+// it enforces "'**' only as the final segment" defensively and fails CLOSED on a
+// malformed pattern, so a pattern reaching this function via a non-proto path
+// (direct sqlc, future writers) can never match more than its literal segments
+// intend. This function is the single auditable home of the glob semantics used
+// by Check.
 func CapMatch(pattern, requested string) bool {
 	ps := strings.Split(pattern, ":")
 	rs := strings.Split(requested, ":")
 	for i, p := range ps {
-		if p == "**" { // grammar guarantees this is the last segment; matches ≥1 remaining
-			return len(rs) > i
+		if p == "**" {
+			// '**' is only meaningful as the final segment. A non-final '**' is a
+			// malformed pattern; fail closed rather than silently dropping the
+			// segments after it (which would match far too broadly).
+			if i != len(ps)-1 {
+				return false
+			}
+			return len(rs) > i // matches ≥1 remaining segment
 		}
 		if i >= len(rs) {
 			return false // pattern longer than requested
