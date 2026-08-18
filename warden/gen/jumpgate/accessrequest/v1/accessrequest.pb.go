@@ -787,6 +787,387 @@ func (x *ListPendingApprovalsResponse) GetRequests() []*AccessRequest {
 	return nil
 }
 
+// Grant is an access_grant DTO.
+type Grant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RoleId        string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	AssetId       string                 `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	SubjectUserId string                 `protobuf:"bytes,4,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"`
+	GrantedAt     string                 `protobuf:"bytes,5,opt,name=granted_at,json=grantedAt,proto3" json:"granted_at,omitempty"`             // RFC3339
+	ExpiresAt     string                 `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`             // RFC3339
+	RevokedAt     string                 `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`             // RFC3339, empty if not revoked
+	RevokedReason string                 `protobuf:"bytes,8,opt,name=revoked_reason,json=revokedReason,proto3" json:"revoked_reason,omitempty"` // empty if not revoked
+	Active        bool                   `protobuf:"varint,9,opt,name=active,proto3" json:"active,omitempty"`                                   // revoked_at IS NULL AND expires_at > now()
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Grant) Reset() {
+	*x = Grant{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Grant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Grant) ProtoMessage() {}
+
+func (x *Grant) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Grant.ProtoReflect.Descriptor instead.
+func (*Grant) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Grant) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Grant) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *Grant) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *Grant) GetSubjectUserId() string {
+	if x != nil {
+		return x.SubjectUserId
+	}
+	return ""
+}
+
+func (x *Grant) GetGrantedAt() string {
+	if x != nil {
+		return x.GrantedAt
+	}
+	return ""
+}
+
+func (x *Grant) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *Grant) GetRevokedAt() string {
+	if x != nil {
+		return x.RevokedAt
+	}
+	return ""
+}
+
+func (x *Grant) GetRevokedReason() string {
+	if x != nil {
+		return x.RevokedReason
+	}
+	return ""
+}
+
+func (x *Grant) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+type RevokeGrantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GrantId       string                 `protobuf:"bytes,1,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeGrantRequest) Reset() {
+	*x = RevokeGrantRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeGrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeGrantRequest) ProtoMessage() {}
+
+func (x *RevokeGrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeGrantRequest.ProtoReflect.Descriptor instead.
+func (*RevokeGrantRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RevokeGrantRequest) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *RevokeGrantRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type RevokeGrantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grant         *Grant                 `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeGrantResponse) Reset() {
+	*x = RevokeGrantResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeGrantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeGrantResponse) ProtoMessage() {}
+
+func (x *RevokeGrantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeGrantResponse.ProtoReflect.Descriptor instead.
+func (*RevokeGrantResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RevokeGrantResponse) GetGrant() *Grant {
+	if x != nil {
+		return x.Grant
+	}
+	return nil
+}
+
+type ListMyGrantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyGrantsRequest) Reset() {
+	*x = ListMyGrantsRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyGrantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyGrantsRequest) ProtoMessage() {}
+
+func (x *ListMyGrantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyGrantsRequest.ProtoReflect.Descriptor instead.
+func (*ListMyGrantsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{18}
+}
+
+type ListMyGrantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*Grant               `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMyGrantsResponse) Reset() {
+	*x = ListMyGrantsResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMyGrantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMyGrantsResponse) ProtoMessage() {}
+
+func (x *ListMyGrantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMyGrantsResponse.ProtoReflect.Descriptor instead.
+func (*ListMyGrantsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListMyGrantsResponse) GetGrants() []*Grant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+type ListGrantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SubjectUserId string                 `protobuf:"bytes,1,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"` // optional; empty => any subject
+	ActiveOnly    bool                   `protobuf:"varint,2,opt,name=active_only,json=activeOnly,proto3" json:"active_only,omitempty"`           // optional; true => active grants only
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGrantsRequest) Reset() {
+	*x = ListGrantsRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGrantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGrantsRequest) ProtoMessage() {}
+
+func (x *ListGrantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGrantsRequest.ProtoReflect.Descriptor instead.
+func (*ListGrantsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListGrantsRequest) GetSubjectUserId() string {
+	if x != nil {
+		return x.SubjectUserId
+	}
+	return ""
+}
+
+func (x *ListGrantsRequest) GetActiveOnly() bool {
+	if x != nil {
+		return x.ActiveOnly
+	}
+	return false
+}
+
+type ListGrantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*Grant               `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListGrantsResponse) Reset() {
+	*x = ListGrantsResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListGrantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListGrantsResponse) ProtoMessage() {}
+
+func (x *ListGrantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListGrantsResponse.ProtoReflect.Descriptor instead.
+func (*ListGrantsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ListGrantsResponse) GetGrants() []*Grant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
 var File_jumpgate_accessrequest_v1_accessrequest_proto protoreflect.FileDescriptor
 
 const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
@@ -840,7 +1221,34 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\"\x1d\n" +
 	"\x1bListPendingApprovalsRequest\"d\n" +
 	"\x1cListPendingApprovalsResponse\x12D\n" +
-	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests2\xec\x06\n" +
+	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\"\x8f\x02\n" +
+	"\x05Grant\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12\x19\n" +
+	"\basset_id\x18\x03 \x01(\tR\aassetId\x12&\n" +
+	"\x0fsubject_user_id\x18\x04 \x01(\tR\rsubjectUserId\x12\x1d\n" +
+	"\n" +
+	"granted_at\x18\x05 \x01(\tR\tgrantedAt\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\tR\texpiresAt\x12\x1d\n" +
+	"\n" +
+	"revoked_at\x18\a \x01(\tR\trevokedAt\x12%\n" +
+	"\x0erevoked_reason\x18\b \x01(\tR\rrevokedReason\x12\x16\n" +
+	"\x06active\x18\t \x01(\bR\x06active\"Q\n" +
+	"\x12RevokeGrantRequest\x12#\n" +
+	"\bgrant_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agrantId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"M\n" +
+	"\x13RevokeGrantResponse\x126\n" +
+	"\x05grant\x18\x01 \x01(\v2 .jumpgate.accessrequest.v1.GrantR\x05grant\"\x15\n" +
+	"\x13ListMyGrantsRequest\"P\n" +
+	"\x14ListMyGrantsResponse\x128\n" +
+	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\"\\\n" +
+	"\x11ListGrantsRequest\x12&\n" +
+	"\x0fsubject_user_id\x18\x01 \x01(\tR\rsubjectUserId\x12\x1f\n" +
+	"\vactive_only\x18\x02 \x01(\bR\n" +
+	"activeOnly\"N\n" +
+	"\x12ListGrantsResponse\x128\n" +
+	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants2\xbc\t\n" +
 	"\x14AccessRequestService\x12z\n" +
 	"\x0fResolveApproval\x121.jumpgate.accessrequest.v1.ResolveApprovalRequest\x1a2.jumpgate.accessrequest.v1.ResolveApprovalResponse\"\x00\x12t\n" +
 	"\rRequestAccess\x12/.jumpgate.accessrequest.v1.RequestAccessRequest\x1a0.jumpgate.accessrequest.v1.RequestAccessResponse\"\x00\x12t\n" +
@@ -848,7 +1256,11 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\x0eApproveRequest\x120.jumpgate.accessrequest.v1.ApproveRequestRequest\x1a1.jumpgate.accessrequest.v1.ApproveRequestResponse\"\x00\x12n\n" +
 	"\vDenyRequest\x12-.jumpgate.accessrequest.v1.DenyRequestRequest\x1a..jumpgate.accessrequest.v1.DenyRequestResponse\"\x00\x12w\n" +
 	"\x0eListMyRequests\x120.jumpgate.accessrequest.v1.ListMyRequestsRequest\x1a1.jumpgate.accessrequest.v1.ListMyRequestsResponse\"\x00\x12\x89\x01\n" +
-	"\x14ListPendingApprovals\x126.jumpgate.accessrequest.v1.ListPendingApprovalsRequest\x1a7.jumpgate.accessrequest.v1.ListPendingApprovalsResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
+	"\x14ListPendingApprovals\x126.jumpgate.accessrequest.v1.ListPendingApprovalsRequest\x1a7.jumpgate.accessrequest.v1.ListPendingApprovalsResponse\"\x00\x12n\n" +
+	"\vRevokeGrant\x12-.jumpgate.accessrequest.v1.RevokeGrantRequest\x1a..jumpgate.accessrequest.v1.RevokeGrantResponse\"\x00\x12q\n" +
+	"\fListMyGrants\x12..jumpgate.accessrequest.v1.ListMyGrantsRequest\x1a/.jumpgate.accessrequest.v1.ListMyGrantsResponse\"\x00\x12k\n" +
+	"\n" +
+	"ListGrants\x12,.jumpgate.accessrequest.v1.ListGrantsRequest\x1a-.jumpgate.accessrequest.v1.ListGrantsResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
 
 var (
 	file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescOnce sync.Once
@@ -862,7 +1274,7 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP() []byte {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescData
 }
 
-var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_jumpgate_accessrequest_v1_accessrequest_proto_goTypes = []any{
 	(*ResolveApprovalRequest)(nil),       // 0: jumpgate.accessrequest.v1.ResolveApprovalRequest
 	(*ResolveApprovalResponse)(nil),      // 1: jumpgate.accessrequest.v1.ResolveApprovalResponse
@@ -879,6 +1291,13 @@ var file_jumpgate_accessrequest_v1_accessrequest_proto_goTypes = []any{
 	(*ListMyRequestsResponse)(nil),       // 12: jumpgate.accessrequest.v1.ListMyRequestsResponse
 	(*ListPendingApprovalsRequest)(nil),  // 13: jumpgate.accessrequest.v1.ListPendingApprovalsRequest
 	(*ListPendingApprovalsResponse)(nil), // 14: jumpgate.accessrequest.v1.ListPendingApprovalsResponse
+	(*Grant)(nil),                        // 15: jumpgate.accessrequest.v1.Grant
+	(*RevokeGrantRequest)(nil),           // 16: jumpgate.accessrequest.v1.RevokeGrantRequest
+	(*RevokeGrantResponse)(nil),          // 17: jumpgate.accessrequest.v1.RevokeGrantResponse
+	(*ListMyGrantsRequest)(nil),          // 18: jumpgate.accessrequest.v1.ListMyGrantsRequest
+	(*ListMyGrantsResponse)(nil),         // 19: jumpgate.accessrequest.v1.ListMyGrantsResponse
+	(*ListGrantsRequest)(nil),            // 20: jumpgate.accessrequest.v1.ListGrantsRequest
+	(*ListGrantsResponse)(nil),           // 21: jumpgate.accessrequest.v1.ListGrantsResponse
 }
 var file_jumpgate_accessrequest_v1_accessrequest_proto_depIdxs = []int32{
 	2,  // 0: jumpgate.accessrequest.v1.RequestAccessResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
@@ -886,25 +1305,34 @@ var file_jumpgate_accessrequest_v1_accessrequest_proto_depIdxs = []int32{
 	2,  // 2: jumpgate.accessrequest.v1.DenyRequestResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
 	2,  // 3: jumpgate.accessrequest.v1.ListMyRequestsResponse.requests:type_name -> jumpgate.accessrequest.v1.AccessRequest
 	2,  // 4: jumpgate.accessrequest.v1.ListPendingApprovalsResponse.requests:type_name -> jumpgate.accessrequest.v1.AccessRequest
-	0,  // 5: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
-	3,  // 6: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:input_type -> jumpgate.accessrequest.v1.RequestAccessRequest
-	5,  // 7: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:input_type -> jumpgate.accessrequest.v1.CancelRequestRequest
-	7,  // 8: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:input_type -> jumpgate.accessrequest.v1.ApproveRequestRequest
-	9,  // 9: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:input_type -> jumpgate.accessrequest.v1.DenyRequestRequest
-	11, // 10: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:input_type -> jumpgate.accessrequest.v1.ListMyRequestsRequest
-	13, // 11: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:input_type -> jumpgate.accessrequest.v1.ListPendingApprovalsRequest
-	1,  // 12: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
-	4,  // 13: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:output_type -> jumpgate.accessrequest.v1.RequestAccessResponse
-	6,  // 14: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:output_type -> jumpgate.accessrequest.v1.CancelRequestResponse
-	8,  // 15: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:output_type -> jumpgate.accessrequest.v1.ApproveRequestResponse
-	10, // 16: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:output_type -> jumpgate.accessrequest.v1.DenyRequestResponse
-	12, // 17: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:output_type -> jumpgate.accessrequest.v1.ListMyRequestsResponse
-	14, // 18: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:output_type -> jumpgate.accessrequest.v1.ListPendingApprovalsResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	15, // 5: jumpgate.accessrequest.v1.RevokeGrantResponse.grant:type_name -> jumpgate.accessrequest.v1.Grant
+	15, // 6: jumpgate.accessrequest.v1.ListMyGrantsResponse.grants:type_name -> jumpgate.accessrequest.v1.Grant
+	15, // 7: jumpgate.accessrequest.v1.ListGrantsResponse.grants:type_name -> jumpgate.accessrequest.v1.Grant
+	0,  // 8: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
+	3,  // 9: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:input_type -> jumpgate.accessrequest.v1.RequestAccessRequest
+	5,  // 10: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:input_type -> jumpgate.accessrequest.v1.CancelRequestRequest
+	7,  // 11: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:input_type -> jumpgate.accessrequest.v1.ApproveRequestRequest
+	9,  // 12: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:input_type -> jumpgate.accessrequest.v1.DenyRequestRequest
+	11, // 13: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:input_type -> jumpgate.accessrequest.v1.ListMyRequestsRequest
+	13, // 14: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:input_type -> jumpgate.accessrequest.v1.ListPendingApprovalsRequest
+	16, // 15: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:input_type -> jumpgate.accessrequest.v1.RevokeGrantRequest
+	18, // 16: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:input_type -> jumpgate.accessrequest.v1.ListMyGrantsRequest
+	20, // 17: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:input_type -> jumpgate.accessrequest.v1.ListGrantsRequest
+	1,  // 18: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
+	4,  // 19: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:output_type -> jumpgate.accessrequest.v1.RequestAccessResponse
+	6,  // 20: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:output_type -> jumpgate.accessrequest.v1.CancelRequestResponse
+	8,  // 21: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:output_type -> jumpgate.accessrequest.v1.ApproveRequestResponse
+	10, // 22: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:output_type -> jumpgate.accessrequest.v1.DenyRequestResponse
+	12, // 23: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:output_type -> jumpgate.accessrequest.v1.ListMyRequestsResponse
+	14, // 24: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:output_type -> jumpgate.accessrequest.v1.ListPendingApprovalsResponse
+	17, // 25: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:output_type -> jumpgate.accessrequest.v1.RevokeGrantResponse
+	19, // 26: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:output_type -> jumpgate.accessrequest.v1.ListMyGrantsResponse
+	21, // 27: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:output_type -> jumpgate.accessrequest.v1.ListGrantsResponse
+	18, // [18:28] is the sub-list for method output_type
+	8,  // [8:18] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_accessrequest_v1_accessrequest_proto_init() }
@@ -918,7 +1346,7 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc), len(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

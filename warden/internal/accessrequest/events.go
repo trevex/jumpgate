@@ -7,4 +7,6 @@ const (
 	EventRequestDenied    = "access_request.denied"
 	EventRequestCancelled = "access_request.cancelled"
 	EventGrantActivated   = "access_grant.activated"
+	EventGrantRevoked     = "access_grant.revoked"
+	EventGrantExpired     = "access_grant.expired"
 )

@@ -35,20 +35,22 @@ func Register(mux *http.ServeMux, pool *pgxpool.Pool, maxGrantTTL time.Duration)
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens), opts)
 	mux.Handle(authPath, authHandler)
 
-	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens), opts)
+	roles := authz.NewRoleResolver(pool)
+	resolver := approvals.New(pool)
+	auditLog := audit.New(pool)
+	// NoopTerminator until M4 wires live-session teardown against the gateway.
+	arSvc := accessrequest.NewService(pool, auditLog, resolver, roles, accessrequest.NoopTerminator{}, maxGrantTTL)
+
+	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc), opts)
 	mux.Handle(idPath, idHandler)
 
 	authorizer := authz.NewSQLAuthorizer(pool)
 	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, authorizer), opts)
 	mux.Handle(catPath, catHandler)
 
-	roles := authz.NewRoleResolver(pool)
 	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, roles), opts)
 	mux.Handle(accessPath, accessHandler)
 
-	resolver := approvals.New(pool)
-	auditLog := audit.New(pool)
-	arSvc := accessrequest.NewService(pool, auditLog, resolver, roles, maxGrantTTL)
 	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc), opts)
 	mux.Handle(arPath, arHandler)
 

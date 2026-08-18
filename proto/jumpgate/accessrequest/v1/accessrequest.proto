@@ -32,6 +32,17 @@ service AccessRequestService {
 
   // ListPendingApprovals lists pending requests the caller is eligible to approve.
   rpc ListPendingApprovals(ListPendingApprovalsRequest) returns (ListPendingApprovalsResponse) {}
+
+  // RevokeGrant revokes an active access grant. Permitted for an admin, the
+  // grant's subject (self-revoke), or a standing approver for the grant's
+  // (role, asset).
+  rpc RevokeGrant(RevokeGrantRequest) returns (RevokeGrantResponse) {}
+
+  // ListMyGrants lists the caller's own access grants (active + past).
+  rpc ListMyGrants(ListMyGrantsRequest) returns (ListMyGrantsResponse) {}
+
+  // ListGrants lists access grants for admin introspection (active + past).
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {}
 }
 
 message ResolveApprovalRequest {
@@ -103,4 +114,41 @@ message ListPendingApprovalsRequest {}
 
 message ListPendingApprovalsResponse {
   repeated AccessRequest requests = 1;
+}
+
+// Grant is an access_grant DTO.
+message Grant {
+  string id = 1;
+  string role_id = 2;
+  string asset_id = 3;
+  string subject_user_id = 4;
+  string granted_at = 5;      // RFC3339
+  string expires_at = 6;      // RFC3339
+  string revoked_at = 7;      // RFC3339, empty if not revoked
+  string revoked_reason = 8;  // empty if not revoked
+  bool active = 9;            // revoked_at IS NULL AND expires_at > now()
+}
+
+message RevokeGrantRequest {
+  string grant_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2;
+}
+
+message RevokeGrantResponse {
+  Grant grant = 1;
+}
+
+message ListMyGrantsRequest {}
+
+message ListMyGrantsResponse {
+  repeated Grant grants = 1;
+}
+
+message ListGrantsRequest {
+  string subject_user_id = 1; // optional; empty => any subject
+  bool active_only = 2;       // optional; true => active grants only
+}
+
+message ListGrantsResponse {
+  repeated Grant grants = 1;
 }
