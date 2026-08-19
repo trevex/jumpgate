@@ -33,10 +33,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 MESH_CA="${MESH_CA:-${REPO_ROOT}/jumpgate-mesh-ca.pem}"
 
-# Marker names used across the whole scenario.
-FOLDER_NAME="demo"
-ASSET_NAME="demo-box"
-ROLE_NAME="ssh-deploy"
+# Marker names used across the whole scenario. Set SMOKE_SUFFIX to run repeatedly
+# against the same (persistent) cluster without name collisions; the default
+# (empty) uses stable names, which is what `make kind-e2e` wants on a fresh cluster.
+SUF="${SMOKE_SUFFIX:+-${SMOKE_SUFFIX}}"
+FOLDER_NAME="demo${SUF}"
+ASSET_NAME="demo-box${SUF}"
+ROLE_NAME="ssh-deploy${SUF}"
 LOGIN="deploy"
 SSH_TARGET="ssh-target.default.svc.cluster.local:22"
 SMOKE_TOKEN="JUMPGATE_SMOKE_OK"
@@ -144,10 +147,12 @@ pass "role ${ROLE_NAME} (${ROLE_ID})"
 #    CLI resolves the user by email, the role by name, and the asset by name.
 # ---------------------------------------------------------------------------
 log "binding ${ROLE_NAME} -> ${ADMIN_EMAIL} @ ${ASSET_NAME}"
+# Resolve the asset by ID here: an admin creating the first binding has no access
+# to the asset yet, so it is not in their visible-asset list to resolve by name.
 "${JG}" bindings create \
   --role "${ROLE_NAME}" \
   --user "${ADMIN_EMAIL}" \
-  --asset "${ASSET_NAME}" >&2 \
+  --asset "${ASSET_ID}" >&2 \
   || fail "creating binding"
 pass "role bound to admin at asset scope"
 

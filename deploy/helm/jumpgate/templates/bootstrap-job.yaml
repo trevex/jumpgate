@@ -13,6 +13,14 @@ spec:
     spec:
       serviceAccountName: {{ include "jumpgate.fullname" . }}-bootstrap
       restartPolicy: Never
+      # Run every container as the same non-root uid (the warden image's distroless
+      # 'nonroot' user) so the kubectl container can read the 0600 mesh-ca.key the
+      # bootstrap container writes into the shared volume.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
       volumes:
         - name: work
           emptyDir: {}
@@ -59,7 +67,7 @@ spec:
               mountPath: /work
       containers:
         - name: apply
-          image: bitnami/kubectl:latest
+          image: {{ .Values.bootstrap.kubectlImage }}
           command: ["/bin/sh", "-c"]
           args:
             - |
