@@ -55,12 +55,6 @@ const (
 	// VaultServiceListAssetSecretsProcedure is the fully-qualified name of the VaultService's
 	// ListAssetSecrets RPC.
 	VaultServiceListAssetSecretsProcedure = "/jumpgate.vault.v1.VaultService/ListAssetSecrets"
-	// VaultServiceSetSSHAssetConfigProcedure is the fully-qualified name of the VaultService's
-	// SetSSHAssetConfig RPC.
-	VaultServiceSetSSHAssetConfigProcedure = "/jumpgate.vault.v1.VaultService/SetSSHAssetConfig"
-	// VaultServiceGetSSHAssetConfigProcedure is the fully-qualified name of the VaultService's
-	// GetSSHAssetConfig RPC.
-	VaultServiceGetSSHAssetConfigProcedure = "/jumpgate.vault.v1.VaultService/GetSSHAssetConfig"
 )
 
 // VaultServiceClient is a client for the jumpgate.vault.v1.VaultService service.
@@ -81,9 +75,6 @@ type VaultServiceClient interface {
 	SetAssetSecret(context.Context, *connect.Request[v1.SetAssetSecretRequest]) (*connect.Response[v1.SetAssetSecretResponse], error)
 	DeleteAssetSecret(context.Context, *connect.Request[v1.DeleteAssetSecretRequest]) (*connect.Response[v1.DeleteAssetSecretResponse], error)
 	ListAssetSecrets(context.Context, *connect.Request[v1.ListAssetSecretsRequest]) (*connect.Response[v1.ListAssetSecretsResponse], error)
-	// SSH asset credential config.
-	SetSSHAssetConfig(context.Context, *connect.Request[v1.SetSSHAssetConfigRequest]) (*connect.Response[v1.SetSSHAssetConfigResponse], error)
-	GetSSHAssetConfig(context.Context, *connect.Request[v1.GetSSHAssetConfigRequest]) (*connect.Response[v1.GetSSHAssetConfigResponse], error)
 }
 
 // NewVaultServiceClient constructs a client for the jumpgate.vault.v1.VaultService service. By
@@ -145,18 +136,6 @@ func NewVaultServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(vaultServiceMethods.ByName("ListAssetSecrets")),
 			connect.WithClientOptions(opts...),
 		),
-		setSSHAssetConfig: connect.NewClient[v1.SetSSHAssetConfigRequest, v1.SetSSHAssetConfigResponse](
-			httpClient,
-			baseURL+VaultServiceSetSSHAssetConfigProcedure,
-			connect.WithSchema(vaultServiceMethods.ByName("SetSSHAssetConfig")),
-			connect.WithClientOptions(opts...),
-		),
-		getSSHAssetConfig: connect.NewClient[v1.GetSSHAssetConfigRequest, v1.GetSSHAssetConfigResponse](
-			httpClient,
-			baseURL+VaultServiceGetSSHAssetConfigProcedure,
-			connect.WithSchema(vaultServiceMethods.ByName("GetSSHAssetConfig")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -170,8 +149,6 @@ type vaultServiceClient struct {
 	setAssetSecret    *connect.Client[v1.SetAssetSecretRequest, v1.SetAssetSecretResponse]
 	deleteAssetSecret *connect.Client[v1.DeleteAssetSecretRequest, v1.DeleteAssetSecretResponse]
 	listAssetSecrets  *connect.Client[v1.ListAssetSecretsRequest, v1.ListAssetSecretsResponse]
-	setSSHAssetConfig *connect.Client[v1.SetSSHAssetConfigRequest, v1.SetSSHAssetConfigResponse]
-	getSSHAssetConfig *connect.Client[v1.GetSSHAssetConfigRequest, v1.GetSSHAssetConfigResponse]
 }
 
 // InitCA calls jumpgate.vault.v1.VaultService.InitCA.
@@ -214,16 +191,6 @@ func (c *vaultServiceClient) ListAssetSecrets(ctx context.Context, req *connect.
 	return c.listAssetSecrets.CallUnary(ctx, req)
 }
 
-// SetSSHAssetConfig calls jumpgate.vault.v1.VaultService.SetSSHAssetConfig.
-func (c *vaultServiceClient) SetSSHAssetConfig(ctx context.Context, req *connect.Request[v1.SetSSHAssetConfigRequest]) (*connect.Response[v1.SetSSHAssetConfigResponse], error) {
-	return c.setSSHAssetConfig.CallUnary(ctx, req)
-}
-
-// GetSSHAssetConfig calls jumpgate.vault.v1.VaultService.GetSSHAssetConfig.
-func (c *vaultServiceClient) GetSSHAssetConfig(ctx context.Context, req *connect.Request[v1.GetSSHAssetConfigRequest]) (*connect.Response[v1.GetSSHAssetConfigResponse], error) {
-	return c.getSSHAssetConfig.CallUnary(ctx, req)
-}
-
 // VaultServiceHandler is an implementation of the jumpgate.vault.v1.VaultService service.
 type VaultServiceHandler interface {
 	// Certificate authorities.
@@ -242,9 +209,6 @@ type VaultServiceHandler interface {
 	SetAssetSecret(context.Context, *connect.Request[v1.SetAssetSecretRequest]) (*connect.Response[v1.SetAssetSecretResponse], error)
 	DeleteAssetSecret(context.Context, *connect.Request[v1.DeleteAssetSecretRequest]) (*connect.Response[v1.DeleteAssetSecretResponse], error)
 	ListAssetSecrets(context.Context, *connect.Request[v1.ListAssetSecretsRequest]) (*connect.Response[v1.ListAssetSecretsResponse], error)
-	// SSH asset credential config.
-	SetSSHAssetConfig(context.Context, *connect.Request[v1.SetSSHAssetConfigRequest]) (*connect.Response[v1.SetSSHAssetConfigResponse], error)
-	GetSSHAssetConfig(context.Context, *connect.Request[v1.GetSSHAssetConfigRequest]) (*connect.Response[v1.GetSSHAssetConfigResponse], error)
 }
 
 // NewVaultServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -302,18 +266,6 @@ func NewVaultServiceHandler(svc VaultServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(vaultServiceMethods.ByName("ListAssetSecrets")),
 		connect.WithHandlerOptions(opts...),
 	)
-	vaultServiceSetSSHAssetConfigHandler := connect.NewUnaryHandler(
-		VaultServiceSetSSHAssetConfigProcedure,
-		svc.SetSSHAssetConfig,
-		connect.WithSchema(vaultServiceMethods.ByName("SetSSHAssetConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
-	vaultServiceGetSSHAssetConfigHandler := connect.NewUnaryHandler(
-		VaultServiceGetSSHAssetConfigProcedure,
-		svc.GetSSHAssetConfig,
-		connect.WithSchema(vaultServiceMethods.ByName("GetSSHAssetConfig")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/jumpgate.vault.v1.VaultService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VaultServiceInitCAProcedure:
@@ -332,10 +284,6 @@ func NewVaultServiceHandler(svc VaultServiceHandler, opts ...connect.HandlerOpti
 			vaultServiceDeleteAssetSecretHandler.ServeHTTP(w, r)
 		case VaultServiceListAssetSecretsProcedure:
 			vaultServiceListAssetSecretsHandler.ServeHTTP(w, r)
-		case VaultServiceSetSSHAssetConfigProcedure:
-			vaultServiceSetSSHAssetConfigHandler.ServeHTTP(w, r)
-		case VaultServiceGetSSHAssetConfigProcedure:
-			vaultServiceGetSSHAssetConfigHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -375,12 +323,4 @@ func (UnimplementedVaultServiceHandler) DeleteAssetSecret(context.Context, *conn
 
 func (UnimplementedVaultServiceHandler) ListAssetSecrets(context.Context, *connect.Request[v1.ListAssetSecretsRequest]) (*connect.Response[v1.ListAssetSecretsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.vault.v1.VaultService.ListAssetSecrets is not implemented"))
-}
-
-func (UnimplementedVaultServiceHandler) SetSSHAssetConfig(context.Context, *connect.Request[v1.SetSSHAssetConfigRequest]) (*connect.Response[v1.SetSSHAssetConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.vault.v1.VaultService.SetSSHAssetConfig is not implemented"))
-}
-
-func (UnimplementedVaultServiceHandler) GetSSHAssetConfig(context.Context, *connect.Request[v1.GetSSHAssetConfigRequest]) (*connect.Response[v1.GetSSHAssetConfigResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.vault.v1.VaultService.GetSSHAssetConfig is not implemented"))
 }

@@ -795,250 +795,6 @@ func (x *ListAssetSecretsResponse) GetSecrets() []*AssetSecretMeta {
 	return nil
 }
 
-type SetSSHAssetConfigRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AssetId        string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	AllowedLogins  []string               `protobuf:"bytes,2,rep,name=allowed_logins,json=allowedLogins,proto3" json:"allowed_logins,omitempty"`
-	AuthMethod     string                 `protobuf:"bytes,3,opt,name=auth_method,json=authMethod,proto3" json:"auth_method,omitempty"`
-	StoredSecretId string                 `protobuf:"bytes,4,opt,name=stored_secret_id,json=storedSecretId,proto3" json:"stored_secret_id,omitempty"`
-	// Optional OpenSSH authorized_keys line (e.g. "ssh-ed25519 AAAA..."). When set,
-	// the ssh-proxy worker pins the target host key; empty = accept-and-log.
-	HostPublicKey string `protobuf:"bytes,5,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
-	// Optional host:port the ssh-proxy worker dials to reach the target. Empty is
-	// allowed (worker falls back to its default resolution).
-	TargetAddress string `protobuf:"bytes,6,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetSSHAssetConfigRequest) Reset() {
-	*x = SetSSHAssetConfigRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetSSHAssetConfigRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetSSHAssetConfigRequest) ProtoMessage() {}
-
-func (x *SetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetSSHAssetConfigRequest.ProtoReflect.Descriptor instead.
-func (*SetSSHAssetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *SetSSHAssetConfigRequest) GetAssetId() string {
-	if x != nil {
-		return x.AssetId
-	}
-	return ""
-}
-
-func (x *SetSSHAssetConfigRequest) GetAllowedLogins() []string {
-	if x != nil {
-		return x.AllowedLogins
-	}
-	return nil
-}
-
-func (x *SetSSHAssetConfigRequest) GetAuthMethod() string {
-	if x != nil {
-		return x.AuthMethod
-	}
-	return ""
-}
-
-func (x *SetSSHAssetConfigRequest) GetStoredSecretId() string {
-	if x != nil {
-		return x.StoredSecretId
-	}
-	return ""
-}
-
-func (x *SetSSHAssetConfigRequest) GetHostPublicKey() string {
-	if x != nil {
-		return x.HostPublicKey
-	}
-	return ""
-}
-
-func (x *SetSSHAssetConfigRequest) GetTargetAddress() string {
-	if x != nil {
-		return x.TargetAddress
-	}
-	return ""
-}
-
-type SetSSHAssetConfigResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetSSHAssetConfigResponse) Reset() {
-	*x = SetSSHAssetConfigResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetSSHAssetConfigResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetSSHAssetConfigResponse) ProtoMessage() {}
-
-func (x *SetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetSSHAssetConfigResponse.ProtoReflect.Descriptor instead.
-func (*SetSSHAssetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{18}
-}
-
-type GetSSHAssetConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetSSHAssetConfigRequest) Reset() {
-	*x = GetSSHAssetConfigRequest{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetSSHAssetConfigRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetSSHAssetConfigRequest) ProtoMessage() {}
-
-func (x *GetSSHAssetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetSSHAssetConfigRequest.ProtoReflect.Descriptor instead.
-func (*GetSSHAssetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *GetSSHAssetConfigRequest) GetAssetId() string {
-	if x != nil {
-		return x.AssetId
-	}
-	return ""
-}
-
-type GetSSHAssetConfigResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AllowedLogins  []string               `protobuf:"bytes,1,rep,name=allowed_logins,json=allowedLogins,proto3" json:"allowed_logins,omitempty"`
-	AuthMethod     string                 `protobuf:"bytes,2,opt,name=auth_method,json=authMethod,proto3" json:"auth_method,omitempty"`
-	StoredSecretId string                 `protobuf:"bytes,3,opt,name=stored_secret_id,json=storedSecretId,proto3" json:"stored_secret_id,omitempty"`
-	HostPublicKey  string                 `protobuf:"bytes,4,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
-	TargetAddress  string                 `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *GetSSHAssetConfigResponse) Reset() {
-	*x = GetSSHAssetConfigResponse{}
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetSSHAssetConfigResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetSSHAssetConfigResponse) ProtoMessage() {}
-
-func (x *GetSSHAssetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_vault_v1_vault_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetSSHAssetConfigResponse.ProtoReflect.Descriptor instead.
-func (*GetSSHAssetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_vault_v1_vault_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *GetSSHAssetConfigResponse) GetAllowedLogins() []string {
-	if x != nil {
-		return x.AllowedLogins
-	}
-	return nil
-}
-
-func (x *GetSSHAssetConfigResponse) GetAuthMethod() string {
-	if x != nil {
-		return x.AuthMethod
-	}
-	return ""
-}
-
-func (x *GetSSHAssetConfigResponse) GetStoredSecretId() string {
-	if x != nil {
-		return x.StoredSecretId
-	}
-	return ""
-}
-
-func (x *GetSSHAssetConfigResponse) GetHostPublicKey() string {
-	if x != nil {
-		return x.HostPublicKey
-	}
-	return ""
-}
-
-func (x *GetSSHAssetConfigResponse) GetTargetAddress() string {
-	if x != nil {
-		return x.TargetAddress
-	}
-	return ""
-}
-
 var File_jumpgate_vault_v1_vault_proto protoreflect.FileDescriptor
 
 const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
@@ -1082,26 +838,7 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x03 \x01(\tR\tcreatedAt\"X\n" +
 	"\x18ListAssetSecretsResponse\x12<\n" +
-	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets\"\x9c\x02\n" +
-	"\x18SetSSHAssetConfigRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12%\n" +
-	"\x0eallowed_logins\x18\x02 \x03(\tR\rallowedLogins\x12;\n" +
-	"\vauth_method\x18\x03 \x01(\tB\x1a\xbaH\x17r\x15R\aca-certR\n" +
-	"stored-keyR\n" +
-	"authMethod\x12(\n" +
-	"\x10stored_secret_id\x18\x04 \x01(\tR\x0estoredSecretId\x12&\n" +
-	"\x0fhost_public_key\x18\x05 \x01(\tR\rhostPublicKey\x12%\n" +
-	"\x0etarget_address\x18\x06 \x01(\tR\rtargetAddress\"\x1b\n" +
-	"\x19SetSSHAssetConfigResponse\"?\n" +
-	"\x18GetSSHAssetConfigRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xdc\x01\n" +
-	"\x19GetSSHAssetConfigResponse\x12%\n" +
-	"\x0eallowed_logins\x18\x01 \x03(\tR\rallowedLogins\x12\x1f\n" +
-	"\vauth_method\x18\x02 \x01(\tR\n" +
-	"authMethod\x12(\n" +
-	"\x10stored_secret_id\x18\x03 \x01(\tR\x0estoredSecretId\x12&\n" +
-	"\x0fhost_public_key\x18\x04 \x01(\tR\rhostPublicKey\x12%\n" +
-	"\x0etarget_address\x18\x05 \x01(\tR\rtargetAddress2\x99\b\n" +
+	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets2\xb5\x06\n" +
 	"\fVaultService\x12O\n" +
 	"\x06InitCA\x12 .jumpgate.vault.v1.InitCARequest\x1a!.jumpgate.vault.v1.InitCAResponse\"\x00\x12^\n" +
 	"\vGetCAPublic\x12%.jumpgate.vault.v1.GetCAPublicRequest\x1a&.jumpgate.vault.v1.GetCAPublicResponse\"\x00\x12[\n" +
@@ -1111,9 +848,7 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\x0eInitSessionKey\x12(.jumpgate.vault.v1.InitSessionKeyRequest\x1a).jumpgate.vault.v1.InitSessionKeyResponse\"\x00\x12g\n" +
 	"\x0eSetAssetSecret\x12(.jumpgate.vault.v1.SetAssetSecretRequest\x1a).jumpgate.vault.v1.SetAssetSecretResponse\"\x00\x12p\n" +
 	"\x11DeleteAssetSecret\x12+.jumpgate.vault.v1.DeleteAssetSecretRequest\x1a,.jumpgate.vault.v1.DeleteAssetSecretResponse\"\x00\x12m\n" +
-	"\x10ListAssetSecrets\x12*.jumpgate.vault.v1.ListAssetSecretsRequest\x1a+.jumpgate.vault.v1.ListAssetSecretsResponse\"\x00\x12p\n" +
-	"\x11SetSSHAssetConfig\x12+.jumpgate.vault.v1.SetSSHAssetConfigRequest\x1a,.jumpgate.vault.v1.SetSSHAssetConfigResponse\"\x00\x12p\n" +
-	"\x11GetSSHAssetConfig\x12+.jumpgate.vault.v1.GetSSHAssetConfigRequest\x1a,.jumpgate.vault.v1.GetSSHAssetConfigResponse\"\x00BAZ?github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1;vaultv1b\x06proto3"
+	"\x10ListAssetSecrets\x12*.jumpgate.vault.v1.ListAssetSecretsRequest\x1a+.jumpgate.vault.v1.ListAssetSecretsResponse\"\x00BAZ?github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1;vaultv1b\x06proto3"
 
 var (
 	file_jumpgate_vault_v1_vault_proto_rawDescOnce sync.Once
@@ -1127,7 +862,7 @@ func file_jumpgate_vault_v1_vault_proto_rawDescGZIP() []byte {
 	return file_jumpgate_vault_v1_vault_proto_rawDescData
 }
 
-var file_jumpgate_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_jumpgate_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_jumpgate_vault_v1_vault_proto_goTypes = []any{
 	(*InitCARequest)(nil),             // 0: jumpgate.vault.v1.InitCARequest
 	(*InitCAResponse)(nil),            // 1: jumpgate.vault.v1.InitCAResponse
@@ -1146,10 +881,6 @@ var file_jumpgate_vault_v1_vault_proto_goTypes = []any{
 	(*ListAssetSecretsRequest)(nil),   // 14: jumpgate.vault.v1.ListAssetSecretsRequest
 	(*AssetSecretMeta)(nil),           // 15: jumpgate.vault.v1.AssetSecretMeta
 	(*ListAssetSecretsResponse)(nil),  // 16: jumpgate.vault.v1.ListAssetSecretsResponse
-	(*SetSSHAssetConfigRequest)(nil),  // 17: jumpgate.vault.v1.SetSSHAssetConfigRequest
-	(*SetSSHAssetConfigResponse)(nil), // 18: jumpgate.vault.v1.SetSSHAssetConfigResponse
-	(*GetSSHAssetConfigRequest)(nil),  // 19: jumpgate.vault.v1.GetSSHAssetConfigRequest
-	(*GetSSHAssetConfigResponse)(nil), // 20: jumpgate.vault.v1.GetSSHAssetConfigResponse
 }
 var file_jumpgate_vault_v1_vault_proto_depIdxs = []int32{
 	15, // 0: jumpgate.vault.v1.ListAssetSecretsResponse.secrets:type_name -> jumpgate.vault.v1.AssetSecretMeta
@@ -1161,20 +892,16 @@ var file_jumpgate_vault_v1_vault_proto_depIdxs = []int32{
 	10, // 6: jumpgate.vault.v1.VaultService.SetAssetSecret:input_type -> jumpgate.vault.v1.SetAssetSecretRequest
 	12, // 7: jumpgate.vault.v1.VaultService.DeleteAssetSecret:input_type -> jumpgate.vault.v1.DeleteAssetSecretRequest
 	14, // 8: jumpgate.vault.v1.VaultService.ListAssetSecrets:input_type -> jumpgate.vault.v1.ListAssetSecretsRequest
-	17, // 9: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:input_type -> jumpgate.vault.v1.SetSSHAssetConfigRequest
-	19, // 10: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:input_type -> jumpgate.vault.v1.GetSSHAssetConfigRequest
-	1,  // 11: jumpgate.vault.v1.VaultService.InitCA:output_type -> jumpgate.vault.v1.InitCAResponse
-	3,  // 12: jumpgate.vault.v1.VaultService.GetCAPublic:output_type -> jumpgate.vault.v1.GetCAPublicResponse
-	5,  // 13: jumpgate.vault.v1.VaultService.InitMeshCA:output_type -> jumpgate.vault.v1.InitMeshCAResponse
-	7,  // 14: jumpgate.vault.v1.VaultService.IssueMeshCert:output_type -> jumpgate.vault.v1.IssueMeshCertResponse
-	9,  // 15: jumpgate.vault.v1.VaultService.InitSessionKey:output_type -> jumpgate.vault.v1.InitSessionKeyResponse
-	11, // 16: jumpgate.vault.v1.VaultService.SetAssetSecret:output_type -> jumpgate.vault.v1.SetAssetSecretResponse
-	13, // 17: jumpgate.vault.v1.VaultService.DeleteAssetSecret:output_type -> jumpgate.vault.v1.DeleteAssetSecretResponse
-	16, // 18: jumpgate.vault.v1.VaultService.ListAssetSecrets:output_type -> jumpgate.vault.v1.ListAssetSecretsResponse
-	18, // 19: jumpgate.vault.v1.VaultService.SetSSHAssetConfig:output_type -> jumpgate.vault.v1.SetSSHAssetConfigResponse
-	20, // 20: jumpgate.vault.v1.VaultService.GetSSHAssetConfig:output_type -> jumpgate.vault.v1.GetSSHAssetConfigResponse
-	11, // [11:21] is the sub-list for method output_type
-	1,  // [1:11] is the sub-list for method input_type
+	1,  // 9: jumpgate.vault.v1.VaultService.InitCA:output_type -> jumpgate.vault.v1.InitCAResponse
+	3,  // 10: jumpgate.vault.v1.VaultService.GetCAPublic:output_type -> jumpgate.vault.v1.GetCAPublicResponse
+	5,  // 11: jumpgate.vault.v1.VaultService.InitMeshCA:output_type -> jumpgate.vault.v1.InitMeshCAResponse
+	7,  // 12: jumpgate.vault.v1.VaultService.IssueMeshCert:output_type -> jumpgate.vault.v1.IssueMeshCertResponse
+	9,  // 13: jumpgate.vault.v1.VaultService.InitSessionKey:output_type -> jumpgate.vault.v1.InitSessionKeyResponse
+	11, // 14: jumpgate.vault.v1.VaultService.SetAssetSecret:output_type -> jumpgate.vault.v1.SetAssetSecretResponse
+	13, // 15: jumpgate.vault.v1.VaultService.DeleteAssetSecret:output_type -> jumpgate.vault.v1.DeleteAssetSecretResponse
+	16, // 16: jumpgate.vault.v1.VaultService.ListAssetSecrets:output_type -> jumpgate.vault.v1.ListAssetSecretsResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -1191,7 +918,7 @@ func file_jumpgate_vault_v1_vault_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_vault_v1_vault_proto_rawDesc), len(file_jumpgate_vault_v1_vault_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

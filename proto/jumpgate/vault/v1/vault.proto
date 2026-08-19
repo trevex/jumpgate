@@ -7,10 +7,10 @@ import "buf/validate/validate.proto";
 option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1;vaultv1";
 
 // VaultService is the admin API for the credential vault: certificate-authority
-// lifecycle (init + public-material retrieval), per-asset stored secrets, and
-// SSH asset credential config. Every RPC is admin-guarded. Sealed private
-// material (CA keys, stored secrets) is NEVER returned — only public material
-// and secret metadata leave the server.
+// lifecycle (init + public-material retrieval) and per-asset stored secrets. Every
+// RPC is admin-guarded. Sealed private material (CA keys, stored secrets) is NEVER
+// returned — only public material and secret metadata leave the server. (SSH asset
+// connection config lives on CatalogService, which owns the asset.)
 service VaultService {
   // Certificate authorities.
   rpc InitCA(InitCARequest) returns (InitCAResponse) {}
@@ -31,10 +31,6 @@ service VaultService {
   rpc SetAssetSecret(SetAssetSecretRequest) returns (SetAssetSecretResponse) {}
   rpc DeleteAssetSecret(DeleteAssetSecretRequest) returns (DeleteAssetSecretResponse) {}
   rpc ListAssetSecrets(ListAssetSecretsRequest) returns (ListAssetSecretsResponse) {}
-
-  // SSH asset credential config.
-  rpc SetSSHAssetConfig(SetSSHAssetConfigRequest) returns (SetSSHAssetConfigResponse) {}
-  rpc GetSSHAssetConfig(GetSSHAssetConfigRequest) returns (GetSSHAssetConfigResponse) {}
 }
 
 message InitCARequest {
@@ -86,28 +82,3 @@ message AssetSecretMeta {
   string created_at = 3;
 }
 message ListAssetSecretsResponse { repeated AssetSecretMeta secrets = 1; }
-
-message SetSSHAssetConfigRequest {
-  string asset_id = 1 [(buf.validate.field).string.uuid = true];
-  repeated string allowed_logins = 2;
-  string auth_method = 3 [(buf.validate.field).string = {in: ["ca-cert", "stored-key"]}];
-  string stored_secret_id = 4;
-  // Optional OpenSSH authorized_keys line (e.g. "ssh-ed25519 AAAA..."). When set,
-  // the ssh-proxy worker pins the target host key; empty = accept-and-log.
-  string host_public_key = 5;
-  // Optional host:port the ssh-proxy worker dials to reach the target. Empty is
-  // allowed (worker falls back to its default resolution).
-  string target_address = 6;
-}
-message SetSSHAssetConfigResponse {}
-
-message GetSSHAssetConfigRequest {
-  string asset_id = 1 [(buf.validate.field).string.uuid = true];
-}
-message GetSSHAssetConfigResponse {
-  repeated string allowed_logins = 1;
-  string auth_method = 2;
-  string stored_secret_id = 3;
-  string host_public_key = 4;
-  string target_address = 5;
-}
