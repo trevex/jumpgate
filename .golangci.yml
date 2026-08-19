@@ -18,8 +18,10 @@ linters:
       # The e2e harness is a black-box test driver: it deliberately execs the
       # jumpgate CLI and kubectl with variable args (gosec G204) and writes
       # fixture files/dirs, so gosec's subprocess/permission checks are noise here.
+      # unused is also excluded: harness helpers are added alongside the acts that
+      # call them, so a helper can be briefly unused between commits.
       - path: 'test/e2e/'
-        linters: [gosec]
+        linters: [gosec, unused]
 formatters:
   enable:
     - gofmt
