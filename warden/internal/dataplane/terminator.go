@@ -43,9 +43,9 @@ func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) erro
 }
 
 // Reevaluate re-checks the connect predicate for all live sessions of (user,asset)
-// and tears down those that no longer pass. Exported so the reconnect re-sync
-// (Task 11) and the M4d eligibility cascade can reuse it. Idempotent: safe to call
-// repeatedly — teardown of an already-terminating session is a no-op (see requestTeardown).
+// and tears down those that no longer pass. Exported so worker reconnect re-sync and
+// the periodic eligibility sweep can reuse it. Idempotent: safe to call repeatedly —
+// teardown of an already-terminating session is a no-op (see requestTeardown).
 func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) error {
 	q := gen.New(t.pool)
 	sessions, err := q.ListLiveSessionsByUserAsset(ctx, gen.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
