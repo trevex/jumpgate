@@ -4,7 +4,7 @@
 //! configuration, builds the shared [`GatewayState`], spawns the roster client and
 //! the health server, and drives the external TLS accept loop. Each accepted,
 //! TLS-terminated connection is handed to [`handle_connection`], which is also the
-//! seam the integration test (Task 14) drives directly.
+//! seam the integration tests drive directly.
 
 pub mod config;
 pub mod health;
