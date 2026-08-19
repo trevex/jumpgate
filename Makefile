@@ -35,6 +35,6 @@ ci: gen build test lint ## Full CI pipeline
 
 e2e-ssh: ## Opt-in full-stack SSH connect e2e (real warden+gateway+worker binaries; NOT in ci)
 	cargo build --workspace
-	cd warden && go build ./... && go build ./cmd/warden-meshcert
+	cd warden && go build ./... && go build ./cmd/warden-meshcert && go build ./cmd/warden-bootstrap
 	cd cli && go build ./...
 	cd warden && go test -tags e2e -count=1 -timeout 300s ./e2e/...
