@@ -146,15 +146,16 @@ func setup(t *testing.T) *fixture {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	// ssh_asset_config: allowed_logins {deploy}, ca-cert. UpsertSSHAssetConfig
-	// does not set target_address, so set it directly afterwards.
+	// ssh_asset_config carries host/target; the deploy login is a ca kind.
 	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
-		AssetID: asset.ID, AllowedLogins: []string{"deploy"}, AuthMethod: "ca-cert", StoredSecretID: pgtype.UUID{},
+		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE ssh_asset_config SET target_address = $1 WHERE asset_id = $2`, "10.0.0.5:22", asset.ID); err != nil {
-		t.Fatalf("set target_address: %v", err)
+	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
 	// Role carrying ssh:login:deploy, standing-bound to the user on the asset.
@@ -245,7 +246,7 @@ func TestSetupSessionHappyPath(t *testing.T) {
 	f := setup(t)
 	tok := f.mintToken(t, f.clientFp)
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub)
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -348,7 +349,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	}
 	sessionID := claims.SessionID.String()
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub)
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -377,7 +378,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	}
 
 	tok2 := f.mintToken(t, f.clientFp)
-	res2, err := f.svc.Setup(f.ctx, tok2, "worker-1", f.clientPub, f.workerPub)
+	res2, err := f.svc.Setup(f.ctx, tok2, "worker-1", "deploy", f.clientPub, f.workerPub)
 	if err != nil {
 		t.Fatalf("Setup(exempt): %v", err)
 	}
@@ -400,7 +401,7 @@ func TestSetupSessionCnfMismatch(t *testing.T) {
 	tok := f.mintToken(t, ssh.FingerprintSHA256(otherPub))
 
 	// Present OUR client key, which does not match the token's cnf. Kw is arbitrary.
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrKeyMismatch) {
+	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrKeyMismatch) {
 		t.Fatalf("Setup err = %v, want ErrKeyMismatch", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
@@ -417,7 +418,7 @@ func TestSetupSessionRevokedBeforeConnect(t *testing.T) {
 		t.Fatalf("delete role binding: %v", err)
 	}
 
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
+	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
 		t.Fatalf("Setup err = %v, want ErrNotAuthorized", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
@@ -429,11 +430,11 @@ func TestSetupSessionReplay(t *testing.T) {
 	f := setup(t)
 	tok := f.mintToken(t, f.clientFp)
 
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub); err != nil {
+	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); err != nil {
 		t.Fatalf("first Setup: %v", err)
 	}
 	// Replaying the same token+key → PK conflict → ErrReplay.
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrReplay) {
+	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrReplay) {
 		t.Fatalf("second Setup err = %v, want ErrReplay", err)
 	}
 	if n := f.liveSessionCount(t); n != 1 {
@@ -448,7 +449,7 @@ func TestSetupCertifiesWorkerKeyNotClient(t *testing.T) {
 	f := setup(t)
 	tok := f.mintToken(t, f.clientFp)
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub)
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -43,16 +42,21 @@ type Created struct {
 // closure) and mints a token bound to clientKeyFingerprint. Existence-hiding: an
 // unknown asset, a non-ssh asset, and a no-login asset all yield ErrNoAccess.
 func (s *Service) CreateSession(ctx context.Context, userID, assetID uuid.UUID, clientKeyFingerprint string) (Created, error) {
-	// GetSSHAssetConfig only exists for ssh assets with config; its absence (or the
-	// asset's absence) means no SSH login is possible → hide behind ErrNoAccess.
-	cfg, err := s.q.GetSSHAssetConfig(ctx, assetID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Created{}, ErrNoAccess
-	}
+	// The asset's configured SSH logins exist only for ssh assets; an empty set
+	// (non-ssh asset, unknown asset, or an ssh asset with no logins) means no SSH
+	// login is possible → hide behind ErrNoAccess.
+	rows, err := s.q.ListSSHAssetLogins(ctx, assetID)
 	if err != nil {
 		return Created{}, err
 	}
-	logins, err := authz.EntitledLogins(ctx, s.authz, userID, assetID, cfg.AllowedLogins)
+	if len(rows) == 0 {
+		return Created{}, ErrNoAccess
+	}
+	allowed := make([]string, 0, len(rows))
+	for _, r := range rows {
+		allowed = append(allowed, r.Login)
+	}
+	logins, err := authz.EntitledLogins(ctx, s.authz, userID, assetID, allowed)
 	if err != nil {
 		return Created{}, err
 	}

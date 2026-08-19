@@ -57,11 +57,15 @@ func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) 
 	if len(sessions) == 0 {
 		return nil
 	}
-	cfg, err := q.GetSSHAssetConfig(ctx, assetID)
+	loginRows, err := q.ListSSHAssetLogins(ctx, assetID)
 	if err != nil {
 		return err
 	}
-	logins, err := authz.EntitledLogins(ctx, t.authz, userID, assetID, cfg.AllowedLogins)
+	allowed := make([]string, 0, len(loginRows))
+	for _, r := range loginRows {
+		allowed = append(allowed, r.Login)
+	}
+	logins, err := authz.EntitledLogins(ctx, t.authz, userID, assetID, allowed)
 	if err != nil {
 		return err
 	}

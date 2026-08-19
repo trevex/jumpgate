@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/ssh"
 
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
@@ -16,8 +17,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
 
-// seedSSHAsset creates a folder + ssh asset with an ssh_asset_config whose
-// allowed_logins are as given, and returns the asset id.
+// seedSSHAsset creates a folder + ssh asset with a config row plus one ca login
+// per given name, and returns the asset id.
 func seedSSHAsset(t *testing.T, q *gen.Queries, allowedLogins []string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
@@ -30,9 +31,16 @@ func seedSSHAsset(t *testing.T, q *gen.Queries, allowedLogins []string) uuid.UUI
 		t.Fatalf("CreateAsset: %v", err)
 	}
 	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
-		AssetID: asset.ID, AllowedLogins: allowedLogins, AuthMethod: "ca-cert",
+		AssetID: asset.ID, TargetAddress: "10.0.0.9:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
+	}
+	for _, login := range allowedLogins {
+		if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+			AssetID: asset.ID, Login: login, Kind: "ca", SecretID: pgtype.UUID{},
+		}); err != nil {
+			t.Fatalf("UpsertSSHAssetLogin: %v", err)
+		}
 	}
 	return asset.ID
 }

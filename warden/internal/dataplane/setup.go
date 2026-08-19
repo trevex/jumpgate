@@ -54,10 +54,15 @@ func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a authz.Autho
 	return &SetupService{pool: pool, verifier: v, authz: a, broker: b, audit: log, certMaxTTL: certMaxTTL}
 }
 
-// SetupResult is the successful outcome.
+// SetupResult is the successful outcome. The credential is discriminated by
+// CredentialKind ("ssh-cert" | "ssh-password" | "ssh-key"); exactly one of the
+// credential fields is populated.
 type SetupResult struct {
 	TargetAddress      string
+	CredentialKind     string
 	SSHCertificate     []byte
+	Password           string
+	PrivateKey         []byte
 	SessionID          string
 	RecordingRequired  bool
 	RecordingObjectKey string
@@ -77,7 +82,7 @@ func recordingObjectKey(sessionID uuid.UUID, at time.Time) string {
 // the session.started audit event) in one tx, then issues the JIT SSH cert. The
 // re-check is defense-in-depth over the admission token; the live_sessions PK is
 // the replay guard.
-func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, clientPub, targetPub []byte) (SetupResult, error) {
+func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login string, clientPub, targetPub []byte) (SetupResult, error) {
 	claims, err := s.verifier.Verify(rawToken)
 	if err != nil {
 		return SetupResult{}, ErrBadToken
@@ -102,11 +107,21 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	if cfg.TargetAddress == "" {
 		return SetupResult{}, ErrNoTarget
 	}
-	logins, err := authz.EntitledLogins(ctx, s.authz, claims.UserID, claims.AssetID, cfg.AllowedLogins)
+	loginRows, err := gen.New(s.pool).ListSSHAssetLogins(ctx, claims.AssetID)
+	if err != nil {
+		return SetupResult{}, fmt.Errorf("list ssh asset logins: %w", err)
+	}
+	allowed := make([]string, 0, len(loginRows))
+	for _, r := range loginRows {
+		allowed = append(allowed, r.Login)
+	}
+	// Re-check the requested login against the live held-closure (defense in depth
+	// over the admission token). The broker independently re-enforces this too.
+	entitled, err := authz.EntitledLogins(ctx, s.authz, claims.UserID, claims.AssetID, allowed)
 	if err != nil {
 		return SetupResult{}, err
 	}
-	if len(logins) == 0 {
+	if !containsLogin(entitled, login) {
 		return SetupResult{}, ErrNotAuthorized
 	}
 
@@ -133,7 +148,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 		AssetID:     claims.AssetID,
 		WorkerID:    workerID,
 		Protocol:    "ssh",
-		Principals:  logins,
+		Principals:  []string{login},
 		ClientKeyFp: claims.ClientKeyFingerprint,
 	}); err != nil {
 		if pgerr.IsUniqueViolation(err) {
@@ -146,7 +161,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 		"user_id":    claims.UserID.String(),
 		"asset_id":   claims.AssetID.String(),
 		"worker_id":  workerID,
-		"principals": logins,
+		"login":      login,
 	})
 	// The session.started event rides the SAME tx as the live_sessions insert, so
 	// the session is recorded and audited atomically (via the outbox Enqueue).
@@ -165,7 +180,8 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	// Cert issuance is POST-COMMIT: the session is already recorded, so a
 	// cert-issue failure returns an error but leaves the recorded session in
 	// place — acceptable, the worker retry / teardown reconciles it.
-	creds, err := s.broker.Issue(ctx, claims.UserID, claims.AssetID, vault.IssueRequest{
+	cred, err := s.broker.Issue(ctx, claims.UserID, claims.AssetID, vault.IssueRequest{
+		Login:           login,
 		ClientSSHPubKey: targetPub,
 		ValidUntil:      time.Now().Add(s.certMaxTTL),
 		KeyID:           claims.SessionID.String(),
@@ -173,19 +189,34 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	if err != nil {
 		return SetupResult{}, fmt.Errorf("issue credential: %w", err)
 	}
-	var cert []byte
-	for _, c := range creds {
-		if c.Kind == "ssh-cert" {
-			cert = c.SSHCertificate
-		}
-	}
-	return SetupResult{
+	res := SetupResult{
 		TargetAddress:      cfg.TargetAddress,
-		SSHCertificate:     cert,
+		CredentialKind:     cred.Kind,
 		SessionID:          claims.SessionID.String(),
 		RecordingRequired:  recordingRequired,
 		RecordingObjectKey: recordingKey,
-	}, nil
+	}
+	switch cred.Kind {
+	case "ssh-cert":
+		res.SSHCertificate = cred.SSHCertificate
+	case "ssh-password":
+		res.Password = string(cred.Secret)
+	case "ssh-key":
+		res.PrivateKey = cred.Secret
+	default:
+		return SetupResult{}, fmt.Errorf("unexpected credential kind %q", cred.Kind)
+	}
+	return res, nil
+}
+
+// containsLogin reports whether xs contains s.
+func containsLogin(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // parseSSHPublicKey accepts authorized_keys text or raw wire form (copy of the
