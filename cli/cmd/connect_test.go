@@ -159,12 +159,12 @@ func TestRunConnectEstablishesTunnel(t *testing.T) {
 	}
 	wardenURL := startStubWarden(t, sw)
 
-	cfg := config.Config{WardenAddr: wardenURL, Token: testToken, CAFile: caFile}
+	cctx := config.Context{WardenAddr: wardenURL, Token: testToken, CAFile: caFile}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	res, err := runConnect(ctx, cfg, "root", "myhost")
+	res, err := runConnect(ctx, cctx, "root", "myhost")
 	if err != nil {
 		t.Fatalf("runConnect: %v", err)
 	}
@@ -194,8 +194,8 @@ func TestRunConnectEstablishesTunnel(t *testing.T) {
 }
 
 func TestRunConnectRequiresToken(t *testing.T) {
-	cfg := config.Config{WardenAddr: "http://localhost:1", Token: ""}
-	_, err := runConnect(context.Background(), cfg, "root", "myhost")
+	cctx := config.Context{WardenAddr: "http://localhost:1", Token: ""}
+	_, err := runConnect(context.Background(), cctx, "root", "myhost")
 	if err == nil || !strings.Contains(err.Error(), "login") {
 		t.Fatalf("want a login-required error, got %v", err)
 	}
