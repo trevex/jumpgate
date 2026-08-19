@@ -1,0 +1,19 @@
+# Helm values for the kind demo/e2e environment.
+#
+# These override the chart defaults so the stack is reachable from the host via
+# the kind extraPortMappings (see cluster.yaml): warden on localhost:8080,
+# gateway on localhost:8443.
+warden:
+  # What warden tells the CLI to dial for the data plane. Matches the gateway
+  # NodePort forwarded to the host by the kind cluster.
+  gatewayEndpoint: "localhost:8443"
+
+masterKey:
+  # STABLE base64-encoded 32-byte demo vault master key. Kept constant so that
+  # re-installs can still decrypt data sealed by a prior install.
+  # decodes to the 32-byte ASCII string "jumpgate-demo-master-key-32bytes".
+  value: "anVtcGdhdGUtZGVtby1tYXN0ZXIta2V5LTMyYnl0ZXM="
+
+bootstrapAdmin:
+  email: admin@demo.test
+  password: admin-password-1234

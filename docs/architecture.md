@@ -422,6 +422,44 @@ is protocol-partitioned (`recordings/ssh/<date>/<session_id>.cast`) so one bucke
 serve other protocols later. Postgres statement-log recording, other protocols, a
 web replay player, and SIEM export are later milestones.
 
+## Running on Kubernetes (kind)
+
+The whole stack runs on a local [kind](https://kind.sigs.k8s.io/) cluster from a
+Helm chart, so the control plane, gateway, and an ssh-proxy worker can be exercised
+end-to-end without any hand-wired certificates or processes.
+
+- **Chart — `deploy/helm/jumpgate`.** Renders warden, the gateway, and one
+  ssh-proxy worker, plus their Services, Secrets, and mesh Certificates. warden's
+  user API and the gateway's external listener are exposed as fixed NodePorts; the
+  kind cluster (`deploy/kind/cluster.yaml`) forwards them to `localhost:8080`
+  (warden) and `localhost:8443` (gateway) so the host CLI can reach them directly.
+- **Mesh certificates via cert-manager.** The chart provisions a cert-manager
+  `Issuer` rooted at warden's mesh CA and issues each mesh peer (gateway, worker,
+  warden's own data-plane listener) a certificate with its canonical
+  `spiffe://jumpgate/<role>/<id>` URI SAN — the same identity the gateway pins when
+  it dials. The gateway's **external** TLS is a separate cert whose CA
+  (`jumpgate-gateway-ext` secret, key `ca.crt`) the CLI must trust to verify the
+  data-plane tunnel; `make kind-demo` exports it to `./jumpgate-mesh-ca.pem`.
+- **`warden-bootstrap` pre-install Job.** A Helm pre-install hook Job initializes
+  the one-time cluster state the RPCs cannot bootstrap themselves: it seals the
+  vault master key, mints warden's mesh CA and session-signing key, creates the
+  bootstrap admin (`admin@demo.test` in the demo values), and publishes the SSH
+  user CA's public key as a Secret the ssh test workload mounts.
+- **Toggleable in-cluster dependencies.** `postgres.enabled` runs an in-cluster
+  Postgres for warden's data (set it false and point `warden.databaseUrl` at an
+  external database); `silo.enabled` runs an in-cluster S3-compatible object store
+  for session recordings (disable it to use any external S3 endpoint).
+- **Independent sshd test workload — `deploy/testworkload`.** A minimal sshd
+  Deployment (`ssh-target` Service) that trusts the bootstrap SSH user CA. It is a
+  *target*, not part of jumpgate, and is applied separately from the chart so the
+  chart stays deployment-agnostic.
+- **Make targets.** `make kind-up` creates the cluster, installs cert-manager and
+  the chart, and deploys the sshd workload; `make kind-demo` also exports the mesh
+  CA and prints the CLI setup; `make kind-e2e` runs the `deploy/kind/smoke.sh`
+  smoke test against the live stack (login -> onboard an SSH asset -> grant a role
+  -> `connect` and run a command -> assert a recording lands) and tears the cluster
+  down (`KEEP=1` to keep it).
+
 ## Key technology choices
 
 See [decisions.md](decisions.md) for the rationale behind Go+Rust, the two-tier

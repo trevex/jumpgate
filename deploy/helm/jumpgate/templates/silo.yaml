@@ -1,0 +1,122 @@
+{{- if .Values.silo.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-silo
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: silo
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: silo
+    spec:
+      containers:
+        - name: silo
+          image: {{ .Values.silo.image | quote }}
+          command: ["silo"]
+          args: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              value: {{ .Values.recording.s3.accessKey | quote }}
+            - name: MINIO_ROOT_PASSWORD
+              value: {{ .Values.recording.s3.secretKey | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.siloHost" . }}
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-silo-bucket
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: silo
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bucket-create
+          image: amazon/aws-cli:latest
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.recording.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.recording.s3.secretKey | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.recording.s3.region | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              endpoint="http://{{ include "jumpgate.siloHost" . }}:9000"
+              bucket="s3://{{ .Values.recording.bucket }}"
+              for i in $(seq 1 60); do
+                if aws --endpoint-url "$endpoint" s3 mb "$bucket"; then
+                  echo "created $bucket"
+                  exit 0
+                fi
+                # mb fails when the bucket already exists; treat that as success.
+                if aws --endpoint-url "$endpoint" s3 ls "$bucket" >/dev/null 2>&1; then
+                  echo "$bucket already exists"
+                  exit 0
+                fi
+                echo "silo not ready yet, retry $i"
+                sleep 3
+              done
+              echo "gave up waiting for silo" >&2
+              exit 1
+{{- end }}

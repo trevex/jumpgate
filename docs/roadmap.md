@@ -110,8 +110,18 @@ exempt session yields none; a store failure refuses the session. Deferred: abort
 orphaned multipart uploads is left to an object-store lifecycle rule (incomplete
 multipart expiration); other protocols and a web replay player are later.
 
-**Next:** a containerized e2e environment (docker-compose, then kind) is a near-term
-follow-on that also bootstraps M7 packaging.
+**Containerized environment (kind + Helm) ✅.** A local [kind](https://kind.sigs.k8s.io/)
+environment brings the whole stack up from a Helm chart (`deploy/helm/jumpgate`):
+warden, the gateway, and an ssh-proxy worker, with cert-manager-issued mesh certs
+under warden's CA, a `warden-bootstrap` pre-install Job (vault master key, mesh CA,
+session-signing key, bootstrap admin, SSH user CA), toggleable in-cluster
+Postgres + object store, and an independent sshd test workload. warden and the
+gateway are forwarded to fixed host ports so the CLI reaches them directly. Driven
+by `make kind-up` / `kind-demo` / `kind-e2e`; a `deploy/kind/smoke.sh` script drives
+the real CLI through login -> onboard -> grant -> `connect` -> recording against the
+live stack. This also bootstraps M7 packaging. **Remaining:** a scripted multi-user
+demo scenario (distinct requester/approver/admin) and a full-stack e2e that runs the
+smoke test in CI on every change.
 
 ## Beyond the MVP (later product sub-projects)
 
