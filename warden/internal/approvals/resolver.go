@@ -103,6 +103,8 @@ SELECT EXISTS (
     WHERE ara.policy_id = $2
       AND ara.kind = 'approver'
       AND (ara.subject_user_id = $1 OR ara.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user counts for nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
 )`
 	var explicit bool
 	if err := r.pool.QueryRow(ctx, sql, approverUserID, rule.ID).Scan(&explicit); err != nil {
@@ -159,6 +161,8 @@ SELECT EXISTS (
     WHERE rps.policy_id = $2
       AND rps.kind = 'requester'
       AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user counts for nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
 )`
 	var explicit bool
 	if err := r.pool.QueryRow(ctx, sql, requesterUserID, rule.ID).Scan(&explicit); err != nil {

@@ -163,6 +163,105 @@ func TestDeactivatedUserActiveGrant(t *testing.T) {
 	}
 }
 
+// TestDeactivatedUserExplicitRequesterSubject proves the guard also zeroes the
+// requestable tier reached purely through an explicit kind='requester' subject
+// entry on a request policy: while active the role is requestable on the asset
+// (visible via RolesOnAsset and VisibleAssets), once deactivated it disappears —
+// a deactivated user is not an eligible requester even when named explicitly.
+func TestDeactivatedUserExplicitRequesterSubject(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-requester@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "deact-req-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "deact-req-asset", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-req-role", ResourceType: "asset", Capabilities: caps("db:read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Role-default request policy for the role, with NO requester_role — the only
+	// path to eligibility is the explicit requester subject below.
+	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            role.ID,
+		RequiredApprovals: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:      policy.ID,
+		Kind:          "requester",
+		SubjectUserID: pgUUID(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// While active: the role is requestable on the asset (both single-asset and
+	// all-assets tiers).
+	roles, err := a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("active: RolesOnAsset error: %v", err)
+	}
+	if !containsRole(roles.Requestable, role.ID) {
+		t.Fatalf("active: RolesOnAsset.Requestable = %v; want to contain %v", roles.Requestable, role.ID)
+	}
+	if !assetRequestable(t, a, user.ID, asset.ID, role.ID) {
+		t.Fatal("active: asset must be requestable in VisibleAssets")
+	}
+
+	// Deactivate: the explicit requester subject must no longer make the role
+	// requestable.
+	deactivateUser(t, pool, user.ID)
+
+	roles, err = a.RolesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("deactivated: RolesOnAsset error: %v", err)
+	}
+	if containsRole(roles.Requestable, role.ID) {
+		t.Fatalf("deactivated: RolesOnAsset.Requestable = %v; want NOT to contain %v", roles.Requestable, role.ID)
+	}
+	if assetRequestable(t, a, user.ID, asset.ID, role.ID) {
+		t.Fatal("deactivated: asset must NOT be requestable in VisibleAssets")
+	}
+}
+
+// containsRole reports whether roleID appears in the slice.
+func containsRole(roles []uuid.UUID, roleID uuid.UUID) bool {
+	for _, r := range roles {
+		if r == roleID {
+			return true
+		}
+	}
+	return false
+}
+
+// assetRequestable reports whether (asset, role) appears as a requestable pair in
+// the user's VisibleAssets (i.e. the asset is listed with the role among RoleIDs).
+func assetRequestable(t *testing.T, a Authorizer, user, asset, role uuid.UUID) bool {
+	t.Helper()
+	vis, err := a.VisibleAssets(context.Background(), user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vis {
+		if v.AssetID == asset {
+			return containsRole(v.RoleIDs, role)
+		}
+	}
+	return false
+}
+
 // assetActive reports whether the asset appears as Active in the user's
 // VisibleAssets.
 func assetActive(t *testing.T, a Authorizer, user, asset uuid.UUID) bool {
