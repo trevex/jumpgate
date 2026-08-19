@@ -34,6 +34,17 @@ message Heartbeat {}
 message SessionEnded {
   string session_id = 1 [(buf.validate.field).string.uuid = true];
   string reason = 2;
+  RecordingInfo recording = 3; // present when the session was recorded (or a recording was attempted)
+}
+
+// RecordingInfo is the worker's report of a session recording's disposition.
+message RecordingInfo {
+  string object_key = 1; // recordings/ssh/<yyyy>/<mm>/<dd>/<session_id>.cast
+  int64 size_bytes = 2; // total bytes uploaded
+  string sha256 = 3; // hex sha256 over the exact uploaded bytes
+  int64 started_at_unix_ms = 4;
+  int64 ended_at_unix_ms = 5;
+  string status = 6; // "completed" | "failed" | "aborted"
 }
 
 message ServerMessage {
@@ -58,4 +69,6 @@ message SetupSessionResponse {
   string target_address = 1;
   bytes ssh_certificate = 2; // over Kw
   string session_id = 3; // token jti / live_sessions PK
+  bool recording_required = 4; // worker MUST record or refuse the session
+  string recording_object_key = 5; // object key warden assigns for this session's recording
 }
