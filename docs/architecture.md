@@ -127,8 +127,18 @@ performs an HTTP `CONNECT` carrying the token, and then runs an embedded SSH cli
 local terminal mode, window-resize forwarding, and the remote exit code propagated.
 The tunnel is already mutually authenticated all the way to the pinned worker
 (client→gateway TLS, gateway→worker mesh mTLS), so the inner SSH host-key check is a
-deliberate no-op. Config is a small hand-rolled file (`~/.config/jumpgate/`) with
-flag/env/file precedence.
+deliberate no-op.
+
+Beyond `connect`, the CLI covers the full product surface: **admin** (`users`,
+`groups`, `folders`, `assets onboard/list/get`, `roles`, `bindings`, `policies`),
+**access requests** (`access request/list/approve/deny/grants`), and **recordings**
+(`recordings list/get/download` — the last fetching a presigned URL to a local
+`.cast`). Every command maps to a warden ConnectRPC service and takes a global
+`-o table|json` (creates print the new object's id, so flows script cleanly). Config
+is a small hand-rolled file (`~/.config/jumpgate/config.json`) with **kubectl-style
+named contexts** (`login --context NAME`, `config use-context`) so multiple
+identities coexist; resolution is flag > env > current context. An old single-token
+config migrates transparently into a `default` context.
 
 ### Shared mesh library (`jumpgate-mesh`, Rust) ✅
 
