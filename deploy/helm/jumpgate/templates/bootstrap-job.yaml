@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-bootstrap
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-bootstrap
+      restartPolicy: Never
+      # Run every container as the same non-root uid (the warden image's distroless
+      # 'nonroot' user) so the kubectl container can read the 0600 mesh-ca.key the
+      # bootstrap container writes into the shared volume.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      volumes:
+        - name: work
+          emptyDir: {}
+      initContainers:
+        {{- if .Values.postgres.enabled }}
+        - name: wait-postgres
+          image: {{ .Values.postgres.image }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until pg_isready -h {{ include "jumpgate.postgresHost" . }} -p 5432 -U {{ .Values.postgres.user }}; do
+                echo "waiting for postgres..."; sleep 2
+              done
+        {{- end }}
+        - name: bootstrap
+          image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag }}"
+          imagePullPolicy: {{ .Values.images.warden.pullPolicy }}
+          command: ["/usr/local/bin/warden-bootstrap"]
+          args: ["--out", "/work"{{ if .Values.mesh.ca.existingSecret }}, "--skip-mesh-ca"{{ end }}]
+          env:
+            - name: DATABASE_URL
+              {{- if .Values.postgres.enabled }}
+              value: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "jumpgate.postgresHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=disable"
+              {{- else }}
+              value: {{ .Values.warden.databaseUrl | quote }}
+              {{- end }}
+            - name: VAULT_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.masterKeySecret" . }}
+                  key: VAULT_MASTER_KEY
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.adminSecret" . }}
+                  key: email
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.adminSecret" . }}
+                  key: password
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      containers:
+        - name: apply
+          image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+          imagePullPolicy: {{ .Values.images.kubectl.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              ns={{ .Release.Namespace }}
+              {{- if not .Values.mesh.ca.existingSecret }}
+              kubectl create secret tls {{ include "jumpgate.meshCASecret" . }} -n "$ns" \
+                --cert=/work/mesh-ca.crt --key=/work/mesh-ca.key \
+                --dry-run=client -o yaml | kubectl apply -f -
+              {{- end }}
+              kubectl create secret generic {{ include "jumpgate.fullname" . }}-ssh-ca-pub -n "$ns" \
+                --from-file=ssh-ca.pub=/work/ssh-ca.pub \
+                --dry-run=client -o yaml | kubectl apply -f -
+          volumeMounts:
+            - name: work
+              mountPath: /work

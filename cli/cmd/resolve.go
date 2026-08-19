@@ -21,7 +21,7 @@ func resolveUserID(ctx context.Context, cl *wardenclient.Client, s string) (stri
 		return s, nil
 	}
 
-	req := connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 1000})
+	req := connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 100})
 	cl.Authorize(req)
 	resp, err := cl.Identity().ListUsers(ctx, req)
 	if err != nil {
@@ -51,7 +51,7 @@ func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (str
 		return s, nil
 	}
 
-	req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 1000})
+	req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100})
 	cl.Authorize(req)
 	resp, err := cl.Identity().ListGroups(ctx, req)
 	if err != nil {
@@ -81,7 +81,7 @@ func resolveRoleID(ctx context.Context, cl *wardenclient.Client, s string) (stri
 		return s, nil
 	}
 
-	req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 1000})
+	req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 100})
 	cl.Authorize(req)
 	resp, err := cl.Access().ListRoles(ctx, req)
 	if err != nil {
@@ -111,7 +111,7 @@ func resolveFolderID(ctx context.Context, cl *wardenclient.Client, s string) (st
 		return s, nil
 	}
 
-	req := connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 1000})
+	req := connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100})
 	cl.Authorize(req)
 	resp, err := cl.Catalog().ListFolders(ctx, req)
 	if err != nil {
