@@ -431,7 +431,7 @@ end-to-end without any hand-wired certificates or processes.
 - **Chart — `deploy/helm/jumpgate`.** Renders warden, the gateway, and one
   ssh-proxy worker, plus their Services, Secrets, and mesh Certificates. warden's
   user API and the gateway's external listener are exposed as fixed NodePorts; the
-  kind cluster (`deploy/kind/cluster.yaml`) forwards them to `localhost:8080`
+  kind cluster (`test/env/cluster.yaml`) forwards them to `localhost:8080`
   (warden) and `localhost:8443` (gateway) so the host CLI can reach them directly.
 - **Mesh certificates via cert-manager.** The chart provisions a cert-manager
   `Issuer` rooted at warden's mesh CA and issues each mesh peer (gateway, worker,
@@ -449,7 +449,7 @@ end-to-end without any hand-wired certificates or processes.
   Postgres for warden's data (set it false and point `warden.databaseUrl` at an
   external database); `silo.enabled` runs an in-cluster S3-compatible object store
   for session recordings (disable it to use any external S3 endpoint).
-- **Independent sshd test workload — `deploy/testworkload`.** A minimal sshd
+- **Independent sshd test workload — `test/env/testworkload`.** A minimal sshd
   Deployment (`ssh-target` Service) that trusts the bootstrap SSH user CA. It is a
   *target*, not part of jumpgate, and is applied separately from the chart so the
   chart stays deployment-agnostic.

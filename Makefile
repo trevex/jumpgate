@@ -51,19 +51,19 @@ kind-images: ## Build the four container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/gateway.Dockerfile -t jumpgate/gateway:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/ssh-proxy.Dockerfile -t jumpgate/ssh-proxy:dev .
-	docker build $(DOCKER_BUILD_FLAGS) -f deploy/testworkload/sshd.Dockerfile -t jumpgate/testworkload-sshd:dev .
+	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd.Dockerfile -t jumpgate/testworkload-sshd:dev .
 
 kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the ssh test workload
-	kind create cluster --name $(KIND_CLUSTER) --config deploy/kind/cluster.yaml
+	kind create cluster --name $(KIND_CLUSTER) --config test/env/cluster.yaml
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml
 	kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 	$(MAKE) kind-images
 	docker pull $(KUBECTL_IMAGE)
 	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
-	helm install jumpgate deploy/helm/jumpgate -f deploy/kind/demo-values.yaml --wait --timeout 300s
+	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
-	kubectl apply -f deploy/testworkload/sshd.yaml
+	kubectl apply -f test/env/testworkload/sshd.yaml
 	kubectl rollout status deploy/ssh-target --timeout=120s
 
 kind-down: ## Delete the kind cluster
