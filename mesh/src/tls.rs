@@ -16,9 +16,11 @@ use anyhow::Context;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
+use rustls::server::WebPkiClientVerifier;
 use rustls::{
-    CertificateError, ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore,
-    ServerConfig, SignatureScheme,
+    CertificateError, ClientConfig, DigitallySignedStruct, DistinguishedName, Error as RustlsError,
+    RootCertStore, ServerConfig, SignatureScheme,
 };
 use x509_parser::extensions::GeneralName;
 
@@ -302,6 +304,140 @@ pub fn mesh_client_config_no_hostname(
     Ok(Arc::new(config))
 }
 
+/// A [`ClientCertVerifier`] (server-side mirror of [`MeshServerCertVerifier`])
+/// that verifies the CLIENT's certificate chains to the mesh CA and PINS the
+/// client to a specific SPIFFE identity via its URI SAN.
+///
+/// WHY: the ssh-proxy worker's data-plane front door accepts connections *only*
+/// from the gateway. mTLS proves the peer is a mesh member (chain-to-CA), but
+/// chain-to-CA alone does not pin *which* member — any mesh leaf would pass.
+/// The URI-SAN pin closes that gap so the worker provably accepts only the
+/// expected gateway identity (`spiffe://jumpgate/gateway/<id>`). We delegate
+/// chain + signature verification to rustls' [`WebPkiClientVerifier`] and then
+/// independently parse the client leaf, requiring exactly one URI SAN equal to
+/// `expected_client_spiffe`. Fails closed: no URI SAN, or a mismatch, is
+/// rejected. Unlike the server verifier there is no DNS/IP name check on the
+/// client side, so nothing needs tolerating there.
+#[derive(Debug)]
+struct MeshClientCertVerifier {
+    inner: Arc<dyn ClientCertVerifier>,
+    /// The SPIFFE URI the client's end-entity cert MUST carry as a URI SAN.
+    expected_spiffe: String,
+}
+
+impl MeshClientCertVerifier {
+    /// Fail-closed check that the end-entity cert carries exactly one URI SAN
+    /// equal to `self.expected_spiffe`.
+    fn verify_spiffe_identity(&self, end_entity: &CertificateDer<'_>) -> Result<(), RustlsError> {
+        let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
+            .map_err(|_| RustlsError::General("mesh peer certificate unparseable".into()))?;
+
+        let san = cert
+            .subject_alternative_name()
+            .map_err(|_| RustlsError::General("mesh peer SAN unparseable".into()))?
+            .ok_or_else(|| RustlsError::General("mesh peer has no SAN extension".into()))?;
+
+        let uris: Vec<&str> = san
+            .value
+            .general_names
+            .iter()
+            .filter_map(|gn| match gn {
+                GeneralName::URI(u) => Some(*u),
+                _ => None,
+            })
+            .collect();
+
+        if uris.len() == 1 && uris[0] == self.expected_spiffe {
+            Ok(())
+        } else {
+            Err(RustlsError::General("mesh peer identity mismatch".into()))
+        }
+    }
+}
+
+impl ClientCertVerifier for MeshClientCertVerifier {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        self.inner.root_hint_subjects()
+    }
+
+    fn verify_client_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        now: UnixTime,
+    ) -> Result<ClientCertVerified, RustlsError> {
+        // 1. Full chain + validity verification against the mesh CA. Client
+        //    certs carry no DNS/IP name check, so no tolerance is needed here.
+        self.inner
+            .verify_client_cert(end_entity, intermediates, now)?;
+        // 2. Pin the client's SPIFFE identity via its URI SAN (fail closed).
+        self.verify_spiffe_identity(end_entity)?;
+        Ok(ClientCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+/// Build a server-side rustls config that REQUIRES a client certificate chaining
+/// to the mesh CA and PINS the client's SPIFFE identity to
+/// `expected_client_spiffe` (e.g. `spiffe://jumpgate/gateway/<id>`) via its URI
+/// SAN (see [`MeshClientCertVerifier`]).
+///
+/// Used by the ssh-proxy worker's data-plane front door: it accepts the
+/// gateway's mesh mTLS connection and proves the peer is the expected gateway
+/// identity before reading the CONNECT preamble. Takes PEM *bytes* to mirror the
+/// client-side builders.
+pub fn server_config_mtls(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    ca_pem: &[u8],
+    expected_client_spiffe: &str,
+) -> anyhow::Result<Arc<ServerConfig>> {
+    let certs = certs_from_pem(cert_pem)?;
+    let key = key_from_pem(key_pem)?;
+
+    let ca_certs = certs_from_pem(ca_pem)?;
+    let mut roots = RootCertStore::empty();
+    for ca in ca_certs {
+        roots.add(ca).context("add mesh CA cert")?;
+    }
+
+    let webpki = WebPkiClientVerifier::builder(Arc::new(roots))
+        .build()
+        .context("build webpki mesh client verifier")?;
+    let verifier = Arc::new(MeshClientCertVerifier {
+        inner: webpki,
+        expected_spiffe: expected_client_spiffe.to_string(),
+    });
+
+    let config = ServerConfig::builder()
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(certs, key)
+        .context("build server mtls config")?;
+
+    Ok(Arc::new(config))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,6 +585,74 @@ mod tests {
         let v = build_verifier(&ca_pem, "spiffe://jumpgate/worker/w1");
         let der = CertificateDer::from(cert.der().to_vec());
         assert!(v.verify_spiffe_identity(&der).is_err());
+    }
+
+    fn build_client_verifier(ca_pem: &str, expected: &str) -> MeshClientCertVerifier {
+        let mut roots = RootCertStore::empty();
+        for c in certs_from_pem(ca_pem.as_bytes()).unwrap() {
+            roots.add(c).unwrap();
+        }
+        let webpki = WebPkiClientVerifier::builder(Arc::new(roots))
+            .build()
+            .unwrap();
+        MeshClientCertVerifier {
+            inner: webpki,
+            expected_spiffe: expected.to_string(),
+        }
+    }
+
+    #[test]
+    fn client_verifier_accepts_matching_gateway_spiffe() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        let leaf = spiffe_leaf(&ca, &ca_key, "spiffe://jumpgate/gateway/gw");
+        let v = build_client_verifier(&ca_pem, "spiffe://jumpgate/gateway/gw");
+        let der = CertificateDer::from(leaf.der().to_vec());
+        assert!(v.verify_spiffe_identity(&der).is_ok());
+    }
+
+    #[test]
+    fn client_verifier_rejects_wrong_role_spiffe() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        // A worker identity must NOT be accepted where a gateway is expected.
+        let leaf = spiffe_leaf(&ca, &ca_key, "spiffe://jumpgate/worker/w1");
+        let v = build_client_verifier(&ca_pem, "spiffe://jumpgate/gateway/gw");
+        let der = CertificateDer::from(leaf.der().to_vec());
+        assert!(v.verify_spiffe_identity(&der).is_err());
+    }
+
+    #[test]
+    fn client_verifier_rejects_wrong_ca() {
+        // Leaf minted under a DIFFERENT CA than the verifier trusts. Even with a
+        // matching SPIFFE id, the full verify_client_cert must fail at the chain
+        // step (the standalone identity check passes, so exercise the chain).
+        let (other_ca, other_ca_key, _other_ca_pem) = test_ca();
+        let leaf = spiffe_leaf(&other_ca, &other_ca_key, "spiffe://jumpgate/gateway/gw");
+        // Verifier trusts a fresh, unrelated CA.
+        let (_trusted_ca, _trusted_key, trusted_ca_pem) = test_ca();
+        let v = build_client_verifier(&trusted_ca_pem, "spiffe://jumpgate/gateway/gw");
+        let der = CertificateDer::from(leaf.der().to_vec());
+        let now = rustls::pki_types::UnixTime::now();
+        assert!(v.verify_client_cert(&der, &[], now).is_err());
+    }
+
+    #[test]
+    fn server_config_mtls_builds() {
+        let (ca, ca_key, ca_pem) = test_ca();
+        // The worker's own server leaf: matching cert + key signed by the CA.
+        let mut params = rcgen::CertificateParams::new(vec!["worker".to_string()]).unwrap();
+        params.subject_alt_names = vec![rcgen::SanType::URI(
+            "spiffe://jumpgate/worker/w1".try_into().unwrap(),
+        )];
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.signed_by(&key, &ca, &ca_key).unwrap();
+
+        let cfg = server_config_mtls(
+            cert.pem().as_bytes(),
+            key.serialize_pem().as_bytes(),
+            ca_pem.as_bytes(),
+            "spiffe://jumpgate/gateway/gw",
+        );
+        assert!(cfg.is_ok(), "server_config_mtls failed: {:?}", cfg.err());
     }
 
     #[test]

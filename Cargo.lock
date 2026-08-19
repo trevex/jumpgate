@@ -1256,6 +1256,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssh-proxy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jumpgate-mesh",
+ "rand",
+ "rcgen",
+ "rustls",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
