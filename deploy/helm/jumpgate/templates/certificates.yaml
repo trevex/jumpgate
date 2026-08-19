@@ -1,0 +1,92 @@
+# cert-manager PKI for the mesh mTLS legs and the gateway's external (CLI-facing)
+# listener. All leaves are issued by the mesh CA, whose cert+key live in the
+# tls Secret created by the bootstrap Job. The mesh verifiers pin the SPIFFE
+# URI SAN (spiffe://jumpgate/<role>/<id>); hostnames are not checked on the mesh
+# legs, so dnsNames are supplied only where a hostname leg exists.
+#
+# These are normal resources (not hooks): the pre-install bootstrap Job that
+# materializes the mesh-CA Secret runs before cert-manager reconciles them.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.certManager.issuerName }}
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ include "jumpgate.meshCASecret" . }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-warden-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-warden-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/warden/warden
+  uris:
+    - spiffe://jumpgate/warden/warden
+  dnsNames:
+    - {{ include "jumpgate.wardenMeshHost" . }}
+    - {{ include "jumpgate.wardenMeshHost" . }}.{{ .Release.Namespace }}.svc
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-gateway-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-gateway-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/gateway/gateway
+  uris:
+    - spiffe://jumpgate/gateway/gateway
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-gateway-ext
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-gateway-ext
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/gateway/gateway
+  uris:
+    - spiffe://jumpgate/gateway/gateway
+  dnsNames:
+    - localhost
+    - {{ include "jumpgate.fullname" . }}-gateway
+    - {{ include "jumpgate.fullname" . }}-gateway.{{ .Release.Namespace }}.svc
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-worker-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-worker-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/worker/{{ .Values.worker.id }}
+  uris:
+    - spiffe://jumpgate/worker/{{ .Values.worker.id }}
