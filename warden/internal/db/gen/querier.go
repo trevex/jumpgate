@@ -66,6 +66,7 @@ type Querier interface {
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
+	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
@@ -96,6 +97,7 @@ type Querier interface {
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error)
 	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
 	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
@@ -118,6 +120,7 @@ type Querier interface {
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
+	UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error
 	UpsertWorkerPresence(ctx context.Context, workerID string) error
 }
 
