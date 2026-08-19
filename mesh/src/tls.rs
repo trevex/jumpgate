@@ -1,12 +1,13 @@
-//! rustls TLS configuration loaders for the gateway.
+//! rustls TLS configuration for the internal service mesh, built from PEM files.
 //!
-//! Two configs are built from PEM files on disk:
-//!   * [`server_config`] — the external server TLS listener (no client auth).
-//!   * [`mesh_client_config`] — the internal mesh mTLS client, reused by the
-//!     tonic roster client (Task 10) and the worker proxy dial (Task 12).
+//!   * [`server_config`] — an external server TLS listener (no client auth).
+//!   * [`mesh_client_config`] / [`mesh_client_config_no_hostname`] — the internal
+//!     mesh mTLS client, used by the gRPC clients and the worker proxy dial.
+//!   * [`server_config_mtls`] — a mesh mTLS server that requires + pins a peer.
 //!
-//! The custom mesh certificate verifiers (mesh leaves carry URI SANs only, no
-//! DNS) land in Tasks 10/12; here we build the standard configs.
+//! Mesh leaves carry a SPIFFE URI SAN only (no DNS name), so the custom
+//! verifiers here verify the chain to the mesh CA and pin the peer's URI SAN
+//! rather than relying on hostname matching.
 
 use std::fs;
 use std::io::BufReader;
