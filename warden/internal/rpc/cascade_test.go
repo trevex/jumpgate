@@ -217,9 +217,9 @@ func TestCascadeDeleteRoleBindingTearsDownSession(t *testing.T) {
 
 // TestCascadeDeactivateUserTearsDownSession proves that deactivating a user through
 // the public IdentityService API — when their sole login on an asset is a standing
-// role binding — causes the sweeper to tear down their live session: the users
-// deactivation trigger fires authz_changed, and the re-evaluation now sees the
-// deactivated user as authorized-for-nothing.
+// role binding — force-evicts their live session as part of the RPC itself, WITHOUT
+// waiting for the background sweep. The handler's evictor (a real terminator wired
+// through newServer→RegisterUserServices) signals teardown synchronously.
 func TestCascadeDeactivateUserTearsDownSession(t *testing.T) {
 	f := setupCascade(t)
 	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, f.url)
@@ -228,8 +228,7 @@ func TestCascadeDeactivateUserTearsDownSession(t *testing.T) {
 	f.bindRoleOnAsset(t, roleID)
 	sess := f.seedSession(t)
 
-	// While the user is active, the sweep re-evaluates and leaves the session alone.
-	f.sweep(t)
+	// Baseline: the session is authorized and untouched before deactivation.
 	if f.terminateRequestedAt(t, sess).Valid {
 		t.Fatal("active user: terminate_requested_at must stay NULL before deactivation")
 	}
@@ -237,16 +236,16 @@ func TestCascadeDeactivateUserTearsDownSession(t *testing.T) {
 		t.Fatalf("session.terminated events = %d, want 0 before deactivation", n)
 	}
 
-	// Deactivate the user via the real admin-authed RPC, then sweep.
+	// Deactivate the user via the real admin-authed RPC. No sweep — the eviction
+	// must be an immediate, synchronous effect of the API call.
 	if _, err := id.DeactivateUser(f.ctx, withToken(connect.NewRequest(&identityv1.DeactivateUserRequest{
 		UserId: f.user.String(),
 	}), f.admin)); err != nil {
 		t.Fatalf("DeactivateUser: %v", err)
 	}
-	f.sweep(t)
 
 	if !f.terminateRequestedAt(t, sess).Valid {
-		t.Fatal("deactivated user: terminate_requested_at must be non-NULL after deactivation")
+		t.Fatal("deactivated user: terminate_requested_at must be non-NULL after the RPC alone")
 	}
 	if n := f.sessionTerminatedCount(t); n != 1 {
 		t.Fatalf("session.terminated events = %d, want 1", n)

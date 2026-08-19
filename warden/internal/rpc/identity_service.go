@@ -21,18 +21,27 @@ type grantRevoker interface {
 	RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UUID, reason string) (int, error)
 }
 
+// sessionEvictor force-terminates all of a user's live sessions. Satisfied by
+// *dataplane.Terminator; a narrow seam so the identity handler depends only on
+// the capability it needs.
+type sessionEvictor interface {
+	TerminateUser(ctx context.Context, userID uuid.UUID, reason string) (int, error)
+}
+
 // IdentityServer implements identityv1connect.IdentityServiceHandler.
 type IdentityServer struct {
 	q       *gen.Queries
 	tokens  *auth.TokenService
 	revoker grantRevoker
+	evictor sessionEvictor
 }
 
 // NewIdentityServer constructs the IdentityService implementation. revoker is
-// used by DeactivateUser to cascade grant revocation; may be nil in tests that
-// don't exercise deactivation.
-func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker) *IdentityServer {
-	return &IdentityServer{q: q, tokens: tokens, revoker: revoker}
+// used by DeactivateUser to cascade grant revocation and evictor to force-evict
+// the user's remaining live sessions; either may be nil in tests that don't
+// exercise deactivation teardown.
+func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor) *IdentityServer {
+	return &IdentityServer{q: q, tokens: tokens, revoker: revoker, evictor: evictor}
 }
 
 func toUserMsg(u gen.User) *identityv1.User {
@@ -281,6 +290,14 @@ func (s *IdentityServer) DeactivateUser(ctx context.Context, req *connect.Reques
 		caller, _ := auth.UserFromContext(ctx)
 		if _, err := s.revoker.RevokeGrantsForUser(ctx, caller.ID, uid, "user_deactivated"); err != nil {
 			slog.Error("deactivation grant-revoke cascade failed", "user_id", uid.String(), "err", err)
+		}
+	}
+	// Force-evict any remaining live sessions (e.g. those resting on a standing
+	// binding, which the grant revoke does not cover) so access ends immediately
+	// with the account rather than at the next background re-evaluation.
+	if s.evictor != nil {
+		if _, err := s.evictor.TerminateUser(ctx, uid, "user_deactivated"); err != nil {
+			slog.Error("deactivation session-evict cascade failed", "user_id", uid.String(), "err", err)
 		}
 	}
 	return connect.NewResponse(&identityv1.DeactivateUserResponse{}), nil
