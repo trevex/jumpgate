@@ -30,11 +30,19 @@ thiserror = "1"
 # rand 0.10 to match russh/ssh-key's rand_core 0.10 CryptoRng bound (key + cert
 # generation). `rand::rng()` yields a CryptoRng ThreadRng.
 rand = { version = "0.10", features = ["thread_rng"] }
-russh = "0.62.7"
+# russh defaults pull aws-lc-rs; switch to the ring provider so the whole
+# workspace stays on a single (ring) rustls CryptoProvider.
+russh = { version = "0.62.7", default-features = false, features = ["flate2", "ring", "rsa"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-aws-sdk-s3 = "1"
-aws-config = "1"
+# Object-storage upload: rusty-s3 is a sans-IO S3 request signer; reqwest does
+# the HTTP. reqwest uses `rustls-no-provider` so it pulls NO crypto provider —
+# we hand it a rustls::ClientConfig backed by the ring provider (see record.rs),
+# keeping aws-lc-rs out of the tree.
+rusty-s3 = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
+url = "2"
+webpki-roots = "1"
 sha2 = "0.10"
 hex = "0.4"
 async-trait = "0.1"

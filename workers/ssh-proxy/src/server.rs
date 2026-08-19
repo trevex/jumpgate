@@ -499,11 +499,10 @@ impl SshHandler {
         if self.recording.bucket.is_empty() {
             anyhow::bail!("recording bucket not configured");
         }
-        let client =
-            crate::record::build_s3_client(&self.recording.endpoint, &self.recording.region).await;
         let uploader = crate::record::S3Uploader::create(
-            client,
-            self.recording.bucket.clone(),
+            &self.recording.endpoint,
+            &self.recording.region,
+            &self.recording.bucket,
             state.recording_object_key.clone(),
         )
         .await?;
