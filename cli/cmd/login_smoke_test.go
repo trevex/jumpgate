@@ -50,6 +50,27 @@ func TestLoginSuccessStoresToken(t *testing.T) {
 	}
 }
 
+func TestLoginContextSelectsNamedContext(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	flagWardenAddr = newStub(t)
+	t.Cleanup(func() { flagWardenAddr = "" })
+	loginEmail, loginPassword = "good@x", "pw"
+	t.Cleanup(func() { loginContext = "default" })
+	loginContext = "bob"
+	loginCmd.SetContext(context.Background())
+	loginCmd.SetOut(&bytes.Buffer{})
+	if err := runLogin(loginCmd, nil); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	f, _ := config.LoadFile()
+	if f.CurrentContext != "bob" {
+		t.Fatalf("current=%q", f.CurrentContext)
+	}
+	if f.Contexts["bob"].Token != "tok-123" {
+		t.Fatalf("token not stored under bob: %q", f.Contexts["bob"].Token)
+	}
+}
+
 func TestLoginBadCredsCleanError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	flagWardenAddr = newStub(t)
