@@ -38,15 +38,29 @@ DELETE FROM role_bindings WHERE id = $1;
 SELECT * FROM role_bindings WHERE id = $1;
 
 -- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, allowed_logins, auth_method, stored_secret_id, host_public_key, target_address)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO ssh_asset_config (asset_id, host_public_key, target_address)
+VALUES ($1, $2, $3)
 ON CONFLICT (asset_id) DO UPDATE SET
-  allowed_logins = EXCLUDED.allowed_logins,
-  auth_method = EXCLUDED.auth_method,
-  stored_secret_id = EXCLUDED.stored_secret_id,
   host_public_key = EXCLUDED.host_public_key,
   target_address = EXCLUDED.target_address
 RETURNING *;
 
 -- name: GetSSHAssetConfig :one
 SELECT * FROM ssh_asset_config WHERE asset_id = $1;
+
+-- name: ListSSHAssetLogins :many
+SELECT * FROM ssh_asset_login WHERE asset_id = $1 ORDER BY login;
+
+-- name: GetSSHAssetLogin :one
+SELECT * FROM ssh_asset_login WHERE asset_id = $1 AND login = $2;
+
+-- name: UpsertSSHAssetLogin :one
+INSERT INTO ssh_asset_login (asset_id, login, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, login) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING *;
+
+-- name: DeleteSSHAssetLoginsForAsset :exec
+DELETE FROM ssh_asset_login WHERE asset_id = $1;
