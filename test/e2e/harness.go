@@ -8,7 +8,24 @@
 // main_test.go); `make kind-e2e` does exactly that.
 package e2e
 
-import "regexp"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// env holds process-wide handles shared by every actor: the built CLI binary, the
+// per-run config dir (one XDG_CONFIG_HOME holding all three contexts), and the
+// exported gateway mesh-CA path used by `connect`.
+type env struct {
+	jgBin     string // path to the built jumpgate binary
+	configDir string // XDG_CONFIG_HOME for all actor contexts
+	meshCA    string // exported gateway mesh CA PEM
+	wardenURL string // http://localhost:8080
+}
 
 var idRe = regexp.MustCompile(`"id":\s*"([^"]+)"`)
 
@@ -19,4 +36,57 @@ func jsonID(s string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// run executes name with args, returns combined stdout+stderr, and fails the test
+// on non-zero exit (with the output attached for diagnosis).
+func run(t *testing.T, extraEnv []string, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s\nexit: %v\noutput:\n%s", name, strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// asActor runs `jumpgate --context <ctx> <args...>` with the shared config dir.
+func (e *env) asActor(t *testing.T, ctx string, args ...string) string {
+	t.Helper()
+	full := append([]string{"--context", ctx}, args...)
+	return run(t, []string{"XDG_CONFIG_HOME=" + e.configDir}, e.jgBin, full...)
+}
+
+// kubectl runs kubectl with the ambient kubeconfig and returns stdout+stderr.
+func (e *env) kubectl(t *testing.T, args ...string) string {
+	t.Helper()
+	return run(t, nil, "kubectl", args...)
+}
+
+// exportMeshCA writes the gateway's mesh CA to e.meshCA (needed by `connect`).
+func (e *env) exportMeshCA(t *testing.T) {
+	t.Helper()
+	pem := e.kubectl(t, "get", "secret", "jumpgate-gateway-ext",
+		"-o", `go-template={{index .data "ca.crt" | base64decode}}`)
+	if strings.TrimSpace(pem) == "" {
+		t.Fatal("exported mesh CA is empty")
+	}
+	if err := os.WriteFile(e.meshCA, []byte(pem), 0o600); err != nil {
+		t.Fatalf("write mesh CA: %v", err)
+	}
+}
+
+// fixturesDir returns <repo>/test/fixtures, creating it. The suite runs with CWD
+// = test/e2e, so the repo root is two levels up.
+func fixturesDir(t *testing.T) string {
+	t.Helper()
+	d, err := filepath.Abs(filepath.Join("..", "fixtures"))
+	if err != nil {
+		t.Fatalf("abs fixtures: %v", err)
+	}
+	if err := os.MkdirAll(d, 0o750); err != nil {
+		t.Fatalf("mkdir fixtures: %v", err)
+	}
+	return d
 }
