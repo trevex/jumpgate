@@ -42,7 +42,8 @@ type meshServingHarness struct {
 	mca       *meshTestCA
 	url       string
 	token     string
-	clientPub []byte // authorized_keys form of the client's ephemeral key
+	clientPub []byte // authorized_keys form of the client's ephemeral key (Kc)
+	workerPub []byte // authorized_keys form of the worker's per-session key (Kw)
 	subject   uuid.UUID
 	asset     uuid.UUID
 }
@@ -158,6 +159,18 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	}
 	clientPub := ssh.MarshalAuthorizedKey(cpub)
 
+	// Worker per-session SSH keypair (Kw) — distinct from the client key; certified
+	// for the target hop by SetupSession.
+	_, wpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen worker key: %v", err)
+	}
+	wpub, err := ssh.NewPublicKey(wpriv.Public())
+	if err != nil {
+		t.Fatalf("ssh worker pub: %v", err)
+	}
+	workerPub := ssh.MarshalAuthorizedKey(wpub)
+
 	// Mint the admission token in-process (CreateSession authorizes + binds cnf).
 	created, err := sessionSvc.CreateSession(ctx, subject.ID, asset.ID, ssh.FingerprintSHA256(cpub))
 	if err != nil {
@@ -184,7 +197,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 
 	return &meshServingHarness{
 		pool: pool, mca: mca, url: srv.URL, token: created.Token,
-		clientPub: clientPub, subject: subject.ID, asset: asset.ID,
+		clientPub: clientPub, workerPub: workerPub, subject: subject.ID, asset: asset.ID,
 	}
 }
 
@@ -226,13 +239,16 @@ func TestMeshSetupSessionCertIdentityMatches(t *testing.T) {
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/worker/w1")
 	resp, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "w1", ClientSshPublicKey: h.clientPub,
+		SessionToken: h.token, WorkerId: "w1", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
 	}))
 	if err != nil {
 		t.Fatalf("SetupSession: %v", err)
 	}
 	if resp.Msg.TargetAddress != "10.0.0.7:22" {
 		t.Fatalf("TargetAddress = %q, want 10.0.0.7:22", resp.Msg.TargetAddress)
+	}
+	if resp.Msg.SessionId == "" {
+		t.Fatal("expected a non-empty session id")
 	}
 	// A live session row must now exist for the subject/asset (worker "w1").
 	var n int
@@ -253,7 +269,7 @@ func TestMeshSetupSessionCertIdentityMismatch(t *testing.T) {
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/worker/w1")
 	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "w2", ClientSshPublicKey: h.clientPub,
+		SessionToken: h.token, WorkerId: "w2", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
 	}))
 	assertPermissionDenied(t, err)
 }
@@ -266,7 +282,7 @@ func TestMeshSetupSessionGatewayRoleDenied(t *testing.T) {
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/gateway/g1")
 	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "g1", ClientSshPublicKey: h.clientPub,
+		SessionToken: h.token, WorkerId: "g1", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
 	}))
 	assertPermissionDenied(t, err)
 }
