@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/recording"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
@@ -180,10 +181,20 @@ func run() error {
 	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	// Recording download presigning is not yet wired (a later task supplies the
-	// object-store presign client); a nil presigner makes RecordingService's
-	// download path fail closed until then.
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, nil, 5*time.Minute); err != nil {
+	// Recording download presigning: with a bucket configured, RecordingService
+	// issues short-lived presigned GET URLs against the object store; without one,
+	// a nil presigner makes the download path fail closed.
+	var recordingPresign rpc.Presigner
+	if cfg.RecordingBucket != "" {
+		presign, err := recording.NewS3Presigner(ctx, cfg.RecordingBucket, cfg.RecordingS3Endpoint, cfg.RecordingS3Region)
+		if err != nil {
+			return err
+		}
+		recordingPresign = presign
+	} else {
+		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
+	}
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL); err != nil {
 		return err
 	}
 
