@@ -1260,7 +1260,9 @@ name = "ssh-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hyper-util",
  "jumpgate-mesh",
+ "prost",
  "rand",
  "rcgen",
  "rustls",
@@ -1268,6 +1270,9 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
 ]

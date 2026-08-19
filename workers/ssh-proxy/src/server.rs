@@ -8,13 +8,29 @@
 use std::fs;
 
 use anyhow::Context;
+use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
+use crate::control::SessionRegistry;
 
 /// Bind the data-plane mTLS listener and dispatch each accepted gateway
 /// connection: TLS-accept (gateway mTLS) → read CONNECT → log + close.
-pub async fn run_dataplane_server(config: &Config) -> anyhow::Result<()> {
+///
+/// `registry` and `session_ended_tx` are the control-plane seam shared with
+/// [`crate::control`]: the SSH server (Task 7) registers each live session in
+/// `registry` (so `Teardown` can force-close it) and reports finished sessions
+/// via `session_ended_tx`. They are threaded through here but unused until the
+/// SSH server lands.
+pub async fn run_dataplane_server(
+    config: &Config,
+    registry: SessionRegistry,
+    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+) -> anyhow::Result<()> {
+    // Task 7 will hand these to each accepted session; hold them for now so the
+    // control plane wiring in `main` is complete and type-checked.
+    let _ = (&registry, &session_ended_tx);
+
     let cert_pem = fs::read(&config.mesh_cert)
         .with_context(|| format!("read mesh cert {}", config.mesh_cert))?;
     let key_pem =

@@ -7,4 +7,5 @@
 //! [`config`] and [`server`] directly.
 
 pub mod config;
+pub mod control;
 pub mod server;

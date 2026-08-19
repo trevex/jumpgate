@@ -22,6 +22,9 @@ pub struct Config {
     /// GATEWAY_SPIFFE — the expected SPIFFE id of the gateway's mesh client
     /// cert, pinned by the data-plane mTLS verifier.
     pub gateway_spiffe: String,
+    /// WARDEN_SPIFFE — the expected SPIFFE id of warden's mesh server cert,
+    /// pinned by the WorkerStream control client (Task 6).
+    pub warden_spiffe: String,
 }
 
 impl Config {
@@ -47,6 +50,7 @@ impl Config {
             warden_mesh_addr: req("WARDEN_MESH_ADDR")?,
             capacity,
             gateway_spiffe: opt("GATEWAY_SPIFFE", "spiffe://jumpgate/gateway/gateway"),
+            warden_spiffe: opt("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
         })
     }
 }
