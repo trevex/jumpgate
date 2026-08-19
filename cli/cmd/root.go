@@ -7,9 +7,13 @@ import (
 	"github.com/trevex/jumpgate/cli/internal/config"
 )
 
-// flagCfg holds config values supplied via persistent flags. Empty fields mean
-// "unset" so they do not override env or file values during Overlay.
-var flagCfg config.Config
+var (
+	flagWardenAddr string
+	flagCAFile     string
+	flagToken      string
+	flagContext    string
+	flagOutput     string
+)
 
 // rootCmd is the base jumpgate command.
 var rootCmd = &cobra.Command{
@@ -21,9 +25,12 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flagCfg.WardenAddr, "warden-addr", "", "warden base URL (e.g. http://localhost:8080)")
-	rootCmd.PersistentFlags().StringVar(&flagCfg.CAFile, "ca", "", "path to a CA certificate for verifying warden's TLS")
-
+	pf := rootCmd.PersistentFlags()
+	pf.StringVar(&flagWardenAddr, "warden-addr", "", "warden base URL (e.g. http://localhost:8080)")
+	pf.StringVar(&flagCAFile, "ca", "", "path to a CA certificate for verifying warden's TLS")
+	pf.StringVar(&flagToken, "token", "", "bearer token (overrides the current context)")
+	pf.StringVar(&flagContext, "context", "", "config context to use (defaults to the current context)")
+	pf.StringVarP(&flagOutput, "output", "o", "table", "output format: table | json")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -33,12 +40,7 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// effectiveConfig resolves the persisted config layered with env and flags.
-// Precedence is flag > env > file.
-func effectiveConfig() (config.Config, error) {
-	c, err := config.Load()
-	if err != nil {
-		return config.Config{}, err
-	}
-	return c.Overlay(flagCfg), nil
+// resolveContext returns the effective context for a command (flag > env > file).
+func resolveContext() (config.Context, error) {
+	return config.Resolve(flagContext, config.Overrides{WardenAddr: flagWardenAddr, CAFile: flagCAFile, Token: flagToken})
 }
