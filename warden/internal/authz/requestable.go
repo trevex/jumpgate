@@ -162,6 +162,8 @@ WHERE
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          -- a deactivated user counts for nothing
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).
@@ -296,6 +298,8 @@ WHERE
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          -- a deactivated user counts for nothing
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).
