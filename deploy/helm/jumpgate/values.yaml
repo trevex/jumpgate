@@ -1,0 +1,59 @@
+nameOverride: ""
+fullnameOverride: ""
+
+images:
+  warden:   { repository: jumpgate/warden,    tag: dev, pullPolicy: IfNotPresent }
+  gateway:  { repository: jumpgate/gateway,   tag: dev, pullPolicy: IfNotPresent }
+  sshProxy: { repository: jumpgate/ssh-proxy, tag: dev, pullPolicy: IfNotPresent }
+
+warden:
+  databaseUrl: ""          # used when postgres.enabled=false
+  gatewayEndpoint: ""      # external addr the CLI dials; default localhost:<gateway nodePort>
+  logLevel: info
+
+masterKey:
+  existingSecret: ""       # Secret containing key VAULT_MASTER_KEY; else generated
+  value: ""                # optional inline base64 32-byte key (demo); else random-generated
+
+mesh:
+  ca:
+    existingSecret: ""     # Secret with tls.crt/tls.key of the mesh CA; else bootstrap generates
+
+bootstrapAdmin:
+  existingSecret: ""       # Secret with keys: email, password
+  email: admin@demo.test
+  password: admin-password-1234
+
+worker:
+  id: worker-0
+  capacity: 10
+
+recording:
+  bucket: jumpgate-recordings
+  s3:
+    endpoint: ""           # default http://<release>-silo:9000 when silo.enabled
+    region: us-east-1
+    accessKey: minioadmin
+    secretKey: minioadmin-demo-secret
+
+postgres:
+  enabled: true
+  image: postgres:17
+  user: jumpgate
+  password: jumpgate
+  database: jumpgate
+
+silo:
+  enabled: true
+  image: pgsty/silo:latest
+
+certManager:
+  issuerName: jumpgate-mesh-ca
+  duration: 2160h          # 90d
+  renewBefore: 360h        # 15d
+
+service:
+  warden:  { nodePort: 30080 }
+  gateway: { nodePort: 30443 }
+
+resources: {}
