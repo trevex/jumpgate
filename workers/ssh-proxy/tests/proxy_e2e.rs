@@ -95,6 +95,8 @@ fn stub_setup(
                 session_id: "sess-1".into(),
                 target_address,
                 ssh_certificate: cert.to_openssh().unwrap().into_bytes(),
+                recording_required: false,
+                recording_object_key: String::new(),
             })
         })
     })

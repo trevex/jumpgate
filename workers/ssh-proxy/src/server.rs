@@ -657,6 +657,8 @@ mod tests {
                     session_id: "sess-1".into(),
                     target_address: "10.0.0.5:22".into(),
                     ssh_certificate: cert,
+                    recording_required: false,
+                    recording_object_key: String::new(),
                 })
             })
         })
@@ -758,6 +760,8 @@ mod tests {
                     session_id: "sess-x".into(),
                     target_address: "t:22".into(),
                     ssh_certificate: cert,
+                    recording_required: false,
+                    recording_object_key: String::new(),
                 })
             })
         });
@@ -777,6 +781,8 @@ mod tests {
                     session_id: "s".into(),
                     target_address: "t:22".into(),
                     ssh_certificate: b"not a real cert".to_vec(),
+                    recording_required: false,
+                    recording_object_key: String::new(),
                 })
             })
         });
