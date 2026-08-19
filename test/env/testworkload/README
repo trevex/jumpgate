@@ -1,0 +1,30 @@
+jumpgate test workloads
+========================
+
+Independent "protected server" sshd workloads for the jumpgate kind demo/e2e.
+These are NOT part of the jumpgate control-plane deployment; each stands in for
+a real target host that an admin onboards via the CLI, exercising a different
+asset credential type:
+
+  - sshd.{Dockerfile,yaml} + entrypoint.sh
+        CA-trusting target (TrustedUserCAKeys). Service/Deployment: ssh-target.
+        Login: deploy. Auth: warden-CA-signed user certificate.
+
+  - sshd-password.{Dockerfile,yaml} + entrypoint-password.sh
+        Password target. Service/Deployment: ssh-target-password.
+        Login: demo. Password: demo-password-123.
+
+  - sshd-key.{Dockerfile,yaml} + entrypoint-key.sh
+        Public-key target. Service/Deployment: ssh-target-key.
+        Login: demo. Authorized key: demo_key.pub.
+
+THROWAWAY TEST KEYS
+-------------------
+demo_key / demo_key.pub is an ed25519 keypair generated with:
+
+    ssh-keygen -t ed25519 -N '' -C jumpgate-test-key -f demo_key
+
+It is committed ON PURPOSE for the automated tests ONLY. It is a throwaway,
+non-secret, test-only credential: the private key is the stored asset key for
+ssh-target-key in the e2e, and the public key is baked into that target's
+authorized_keys. DO NOT reuse it anywhere real.
