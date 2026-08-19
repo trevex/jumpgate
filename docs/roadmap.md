@@ -79,10 +79,24 @@ warden + gateway + worker binaries end-to-end. Deferred: session recording,
 target host-key pinning enforcement (plumbed but not enforced), scp/port-forwarding,
 and a containerized (compose/kind) e2e environment.
 
-**Next:** M4d (the eligibility-change cascade + pull-sweep + orphan-session GC for
-standing bindings/memberships/rewrites) and M4e (session recording). A containerized
-e2e environment (docker-compose, then kind) is a near-term follow-on that also
-bootstraps M7 packaging.
+**M4d — eligibility-change cascade + pull-sweep + orphan-GC ✅.** Teardown now
+fires for **standing** authorization changes, not just grants: deleting a
+`role_binding`, removing a `group_memberships` row, changing a `role_grants`
+rewrite rule, dropping a role capability, or deactivating a user re-evaluates every
+dependent live session and force-closes those no longer permitted. Detection is
+**push + pull**: database change notifications drive near-instant re-evaluation, and
+a periodic **sweep** (debounced) is the backstop. Re-evaluation is
+**ownership-partitioned** — each replica sweeps only the sessions of workers
+connected to it, so every session is evaluated exactly once fleet-wide. An
+**orphan GC** reconciles sessions whose owning worker is unreachable and stuck
+teardowns, driven off a worker-presence heartbeat. Proven end-to-end by the
+full-stack test: a held-open SSH session is force-closed within seconds of its
+standing binding being deleted through the admin API, with a matching
+`session.terminated` audit event.
+
+**Next:** M4e (session recording — hooks at the worker's SSH termination point) is
+the remaining data-plane piece. A containerized e2e environment (docker-compose,
+then kind) is a near-term follow-on that also bootstraps M7 packaging.
 
 ## Beyond the MVP (later product sub-projects)
 
