@@ -150,6 +150,13 @@ func run() error {
 			slog.Error("teardown listener stopped", "err", err)
 		}
 	}()
+	// Continuously reconcile live sessions with current authorization: the sweeper
+	// re-evaluates owned sessions on authorization-change notifications (and on a
+	// periodic backstop), tearing down those that lost their standing access, and
+	// garbage-collects sessions of unreachable workers and stuck teardowns.
+	sweeper := dataplane.NewSweeper(pool, registry, terminator)
+	go sweeper.RunAuthzSweeper(ctx, cfg.AuthzSweepInterval, cfg.AuthzSweepDebounce)
+	go sweeper.RunGC(ctx, cfg.OrphanGCInterval, cfg.OrphanGrace, cfg.TeardownGrace)
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
 	var sessionPubKey ed25519.PublicKey
