@@ -2,6 +2,7 @@ package dataplane_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,6 +146,203 @@ func (f *sweepFixture) sessionTerminatedCount(t *testing.T) int {
 		}
 	}
 	return n
+}
+
+// seedPresence upserts a worker_presence row for workerID and backdates its
+// last_seen_at to the given timestamp.
+func (f *sweepFixture) seedPresence(t *testing.T, workerID string, lastSeen time.Time) {
+	t.Helper()
+	if err := f.q.UpsertWorkerPresence(f.ctx, workerID); err != nil {
+		t.Fatalf("UpsertWorkerPresence: %v", err)
+	}
+	if _, err := f.pool.Exec(f.ctx, `UPDATE worker_presence SET last_seen_at = $1 WHERE worker_id = $2`, lastSeen, workerID); err != nil {
+		t.Fatalf("backdate worker_presence: %v", err)
+	}
+}
+
+// setTerminateRequestedAt backdates a session's terminate_requested_at directly,
+// simulating a teardown that was requested but never confirmed.
+func (f *sweepFixture) setTerminateRequestedAt(t *testing.T, sess uuid.UUID, at time.Time) {
+	t.Helper()
+	if _, err := f.pool.Exec(f.ctx, `UPDATE live_sessions SET terminate_requested_at = $1 WHERE id = $2`, at, sess); err != nil {
+		t.Fatalf("set terminate_requested_at: %v", err)
+	}
+}
+
+// sessionEndedCount drains the outbox and counts session.ended entries.
+func (f *sweepFixture) sessionEndedCount(t *testing.T) int {
+	t.Helper()
+	for {
+		n, err := audit.New(f.pool).DrainOnce(f.ctx, 256)
+		if err != nil {
+			t.Fatalf("DrainOnce: %v", err)
+		}
+		if n < 256 {
+			break
+		}
+	}
+	rows, err := f.q.ListAuditEntries(f.ctx)
+	if err != nil {
+		t.Fatalf("ListAuditEntries: %v", err)
+	}
+	n := 0
+	for _, r := range rows {
+		if r.EventType == dataplane.EventSessionEnded {
+			n++
+		}
+	}
+	return n
+}
+
+// liveSessionExists reports whether a live_sessions row is still present.
+func (f *sweepFixture) liveSessionExists(t *testing.T, sess uuid.UUID) bool {
+	t.Helper()
+	var n int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, sess).Scan(&n); err != nil {
+		t.Fatalf("count live_sessions: %v", err)
+	}
+	return n > 0
+}
+
+// presenceExists reports whether a worker_presence row is still present.
+func (f *sweepFixture) presenceExists(t *testing.T, workerID string) bool {
+	t.Helper()
+	var n int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM worker_presence WHERE worker_id = $1`, workerID).Scan(&n); err != nil {
+		t.Fatalf("count worker_presence: %v", err)
+	}
+	return n > 0
+}
+
+// TestSweepGCReapsOrphanedSession: a session whose worker's presence is older than
+// orphanGrace is force-cleaned (row deleted + session.ended audited), while a session
+// whose worker presence is fresh is left untouched.
+func TestSweepGCReapsOrphanedSession(t *testing.T) {
+	f := setupSweep(t)
+	now := time.Now()
+
+	orphan := f.seedSession(t, "w1")
+	f.seedPresence(t, "w1", now.Add(-90*time.Second)) // stale
+
+	fresh := f.seedSession(t, "w2")
+	f.seedPresence(t, "w2", now) // fresh
+
+	if err := f.swp.SweepGC(f.ctx, 45*time.Second, 30*time.Second); err != nil {
+		t.Fatalf("SweepGC: %v", err)
+	}
+
+	if f.liveSessionExists(t, orphan) {
+		t.Fatal("orphaned session must be deleted")
+	}
+	if !f.liveSessionExists(t, fresh) {
+		t.Fatal("fresh-worker session must be left untouched")
+	}
+	if n := f.sessionEndedCount(t); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestSweepGCReapsStuckTerminating: a session marked terminating longer ago than
+// teardownGrace is force-cleaned, while one terminating within the grace survives.
+func TestSweepGCReapsStuckTerminating(t *testing.T) {
+	f := setupSweep(t)
+	now := time.Now()
+
+	stuck := f.seedSession(t, "w1")
+	f.seedPresence(t, "w1", now) // fresh presence — only the stuck teardown matters
+	f.setTerminateRequestedAt(t, stuck, now.Add(-90*time.Second))
+
+	recent := f.seedSession(t, "w1")
+	f.setTerminateRequestedAt(t, recent, now.Add(-5*time.Second)) // within grace
+
+	if err := f.swp.SweepGC(f.ctx, 45*time.Second, 30*time.Second); err != nil {
+		t.Fatalf("SweepGC: %v", err)
+	}
+
+	if f.liveSessionExists(t, stuck) {
+		t.Fatal("stuck-terminating session must be deleted")
+	}
+	if !f.liveSessionExists(t, recent) {
+		t.Fatal("session terminating within grace must survive")
+	}
+	if n := f.sessionEndedCount(t); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestSweepGCIdempotentConcurrent: two SweepGC runs over the same orphaned session
+// (MarkEnded's delete is :execrows) produce exactly one session.ended audit event.
+func TestSweepGCIdempotentConcurrent(t *testing.T) {
+	f := setupSweep(t)
+	now := time.Now()
+
+	f.seedSession(t, "w1")
+	f.seedPresence(t, "w1", now.Add(-90*time.Second))
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = f.swp.SweepGC(f.ctx, 45*time.Second, 30*time.Second)
+		}(i)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("SweepGC: %v", err)
+		}
+	}
+
+	if n := f.sessionEndedCount(t); n != 1 {
+		t.Fatalf("session.ended events = %d, want 1 (idempotent)", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestSweepGCPrunesDeadPresence: a worker_presence row older than orphanGrace with no
+// live session is pruned. A presence row that is still within grace (fresh) is retained
+// even without a session, and a presence row still holding a live session is retained
+// because DeleteStaleWorkerPresence's NOT EXISTS clause guards it.
+//
+// Note the interaction with the orphan reap: a STALE-presence worker's sessions are
+// force-cleaned earlier in the same SweepGC, so by the time presence is pruned that
+// worker no longer has a live session. Retaining a session-holding presence therefore
+// only manifests for a FRESH presence (within grace), which the cutoff itself excludes.
+func TestSweepGCPrunesDeadPresence(t *testing.T) {
+	f := setupSweep(t)
+	now := time.Now()
+
+	// Dead presence: old, no live session -> pruned.
+	f.seedPresence(t, "dead", now.Add(-90*time.Second))
+
+	// Fresh presence with a live session: excluded by the cutoff AND guarded by the
+	// NOT EXISTS clause -> retained (and its session not reaped as an orphan).
+	busy := f.seedSession(t, "busy")
+	f.seedPresence(t, "busy", now)
+
+	if err := f.swp.SweepGC(f.ctx, 45*time.Second, 30*time.Second); err != nil {
+		t.Fatalf("SweepGC: %v", err)
+	}
+
+	if f.presenceExists(t, "dead") {
+		t.Fatal("dead worker_presence must be pruned")
+	}
+	if !f.presenceExists(t, "busy") {
+		t.Fatal("fresh worker_presence with a live session must be retained")
+	}
+	if !f.liveSessionExists(t, busy) {
+		t.Fatal("fresh-worker session must not be reaped")
+	}
 }
 
 // TestSweepOwnedTearsDownDeauthorizedOwnedSession: a session owned by a locally

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -51,6 +52,59 @@ func (s *Sweeper) SweepOwned(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// SweepGC reconciles the live_sessions ledger with reality: it force-cleans sessions
+// whose worker has gone unreachable (presence older than orphanGrace) and sessions
+// stuck marked-terminating past teardownGrace, then prunes dead worker_presence rows.
+// MarkEnded is idempotent (its delete is :execrows), so running this on every replica
+// concurrently produces no duplicate audit events.
+func (s *Sweeper) SweepGC(ctx context.Context, orphanGrace, teardownGrace time.Duration) error {
+	q := gen.New(s.pool)
+	now := time.Now()
+
+	orphanCutoff := now.Add(-orphanGrace)
+	orphans, err := q.ListStaleWorkerSessions(ctx, orphanCutoff)
+	if err != nil {
+		return fmt.Errorf("list stale sessions: %w", err)
+	}
+	for _, id := range orphans {
+		if err := s.terminator.MarkEnded(ctx, id, "worker unreachable"); err != nil {
+			slog.Error("orphan gc mark-ended failed", "session", id, "err", err)
+		}
+	}
+
+	stuckCutoff := pgtype.Timestamptz{Time: now.Add(-teardownGrace), Valid: true}
+	stuck, err := q.ListStuckTerminatingSessions(ctx, stuckCutoff)
+	if err != nil {
+		return fmt.Errorf("list stuck sessions: %w", err)
+	}
+	for _, id := range stuck {
+		if err := s.terminator.MarkEnded(ctx, id, "teardown unconfirmed"); err != nil {
+			slog.Error("stuck gc mark-ended failed", "session", id, "err", err)
+		}
+	}
+
+	if err := q.DeleteStaleWorkerPresence(ctx, orphanCutoff); err != nil {
+		slog.Error("prune stale presence failed", "err", err)
+	}
+	return nil
+}
+
+// RunGC runs SweepGC on a ticker until ctx is cancelled.
+func (s *Sweeper) RunGC(ctx context.Context, interval, orphanGrace, teardownGrace time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.SweepGC(ctx, orphanGrace, teardownGrace); err != nil && ctx.Err() == nil {
+				slog.Error("gc sweep failed", "err", err)
+			}
+		}
+	}
 }
 
 const authzChangedChannel = "authz_changed"
