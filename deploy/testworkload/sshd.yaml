@@ -1,0 +1,58 @@
+# Independent sshd test-workload ("protected server") for the jumpgate demo/e2e.
+#
+# This is a plain manifest applied directly (not part of the jumpgate Helm
+# chart). It stands in for a real target host the admin onboards via the CLI.
+#
+# PREREQUISITE: a Secret named "ssh-ca-pub" with key "ssh-ca.pub" (jumpgate's
+# SSH CA public key) MUST exist in the same namespace before/with this manifest.
+# The Makefile copies it out of the jumpgate release Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ssh-target
+  labels:
+    app: ssh-target
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ssh-target
+  template:
+    metadata:
+      labels:
+        app: ssh-target
+    spec:
+      containers:
+        - name: sshd
+          image: jumpgate/testworkload-sshd:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ssh
+              containerPort: 22
+          volumeMounts:
+            - name: ssh-ca-pub
+              mountPath: /etc/ssh/jumpgate_ca.pub
+              subPath: ssh-ca.pub
+              readOnly: true
+      volumes:
+        - name: ssh-ca-pub
+          secret:
+            secretName: ssh-ca-pub
+            items:
+              - key: ssh-ca.pub
+                path: ssh-ca.pub
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssh-target
+  labels:
+    app: ssh-target
+spec:
+  type: ClusterIP
+  selector:
+    app: ssh-target
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
