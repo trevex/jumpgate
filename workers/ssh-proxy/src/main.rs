@@ -3,9 +3,12 @@
 //! Thin process wrapper over the `ssh_proxy` library crate: install the crypto
 //! provider, init tracing, load [`Config`], and run the data-plane mTLS server.
 
+use std::sync::Arc;
+
 use ssh_proxy::config::Config;
 use ssh_proxy::control::{run_control, SessionRegistry};
 use ssh_proxy::server::run_dataplane_server;
+use tokio::sync::Notify;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -51,5 +54,47 @@ async fn main() -> anyhow::Result<()> {
         session_ended_rx,
     ));
 
-    run_dataplane_server(&config, registry, session_ended_tx).await
+    // Graceful shutdown: on ctrl-c / SIGTERM, tell the data-plane server to stop
+    // accepting and force-close its live sessions, then return.
+    let shutdown = Arc::new(Notify::new());
+    tokio::spawn(watch_for_signals(shutdown.clone()));
+
+    run_dataplane_server(&config, registry, session_ended_tx, shutdown).await
+}
+
+/// Wait for ctrl-c or SIGTERM and fire `shutdown`. On platforms without a SIGTERM
+/// stream we fall back to ctrl-c alone.
+async fn watch_for_signals(shutdown: Arc<Notify>) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot install SIGTERM handler; ctrl-c only");
+                let _ = tokio::signal::ctrl_c().await;
+                shutdown.notify_waiters();
+                return;
+            }
+        };
+        tokio::select! {
+            r = tokio::signal::ctrl_c() => {
+                if let Err(e) = r {
+                    tracing::warn!(error = %e, "ctrl-c handler failed");
+                }
+                tracing::info!("received ctrl-c; shutting down");
+            }
+            _ = term.recv() => {
+                tracing::info!("received SIGTERM; shutting down");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::warn!(error = %e, "ctrl-c handler failed");
+        }
+        tracing::info!("received ctrl-c; shutting down");
+    }
+    shutdown.notify_waiters();
 }
