@@ -15,6 +15,9 @@ DELETE FROM live_sessions WHERE id = $1;
 -- name: GetLiveSession :one
 SELECT * FROM live_sessions WHERE id = $1;
 
+-- name: GetLiveSessionParties :one
+SELECT user_id, asset_id, worker_id FROM live_sessions WHERE id = $1;
+
 -- name: ListLiveSessionsByWorker :many
 SELECT * FROM live_sessions WHERE worker_id = $1;
 

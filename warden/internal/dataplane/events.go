@@ -5,4 +5,9 @@ const (
 	EventSessionStarted    = "session.started"
 	EventSessionEnded      = "session.ended"
 	EventSessionTerminated = "session.terminated"
+
+	EventRecordingCompleted = "recording.completed"
+	EventRecordingFailed    = "recording.failed"
+	EventRecordingMissing   = "recording.missing"
+	EventRecordingAccessed  = "recording.accessed"
 )
