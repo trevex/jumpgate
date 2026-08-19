@@ -552,7 +552,8 @@ type SetupSessionRequest struct {
 	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	WorkerId           string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"` // Kc — cnf-bound
-	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target
+	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target (ca path)
+	Login              string                 `protobuf:"bytes,6,opt,name=login,proto3" json:"login,omitempty"`                                                         // requested target login; warden picks the credential
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -615,15 +616,29 @@ func (x *SetupSessionRequest) GetTargetPublicKey() []byte {
 	return nil
 }
 
+func (x *SetupSessionRequest) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
 type SetupSessionResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	TargetAddress      string                 `protobuf:"bytes,1,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	SshCertificate     []byte                 `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3" json:"ssh_certificate,omitempty"`               // over Kw
 	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                              // token jti / live_sessions PK
 	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`     // worker MUST record or refuse the session
 	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"` // object key warden assigns for this session's recording
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The credential the worker uses to authenticate to the target as the login.
+	//
+	// Types that are valid to be assigned to Credential:
+	//
+	//	*SetupSessionResponse_SshCertificate
+	//	*SetupSessionResponse_Password
+	//	*SetupSessionResponse_PrivateKey
+	Credential    isSetupSessionResponse_Credential `protobuf_oneof:"credential"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetupSessionResponse) Reset() {
@@ -663,13 +678,6 @@ func (x *SetupSessionResponse) GetTargetAddress() string {
 	return ""
 }
 
-func (x *SetupSessionResponse) GetSshCertificate() []byte {
-	if x != nil {
-		return x.SshCertificate
-	}
-	return nil
-}
-
 func (x *SetupSessionResponse) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
@@ -690,6 +698,62 @@ func (x *SetupSessionResponse) GetRecordingObjectKey() string {
 	}
 	return ""
 }
+
+func (x *SetupSessionResponse) GetCredential() isSetupSessionResponse_Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+func (x *SetupSessionResponse) GetSshCertificate() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*SetupSessionResponse_SshCertificate); ok {
+			return x.SshCertificate
+		}
+	}
+	return nil
+}
+
+func (x *SetupSessionResponse) GetPassword() string {
+	if x != nil {
+		if x, ok := x.Credential.(*SetupSessionResponse_Password); ok {
+			return x.Password
+		}
+	}
+	return ""
+}
+
+func (x *SetupSessionResponse) GetPrivateKey() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*SetupSessionResponse_PrivateKey); ok {
+			return x.PrivateKey
+		}
+	}
+	return nil
+}
+
+type isSetupSessionResponse_Credential interface {
+	isSetupSessionResponse_Credential()
+}
+
+type SetupSessionResponse_SshCertificate struct {
+	SshCertificate []byte `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3,oneof"` // ca: OpenSSH cert over Kw
+}
+
+type SetupSessionResponse_Password struct {
+	Password string `protobuf:"bytes,6,opt,name=password,proto3,oneof"` // password auth
+}
+
+type SetupSessionResponse_PrivateKey struct {
+	PrivateKey []byte `protobuf:"bytes,7,opt,name=private_key,json=privateKey,proto3,oneof"` // key auth: OpenSSH private key PEM
+}
+
+func (*SetupSessionResponse_SshCertificate) isSetupSessionResponse_Credential() {}
+
+func (*SetupSessionResponse_Password) isSetupSessionResponse_Credential() {}
+
+func (*SetupSessionResponse_PrivateKey) isSetupSessionResponse_Credential() {}
 
 var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
@@ -730,19 +794,25 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\bTeardown\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xda\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf9\x01\n" +
 	"\x13SetupSessionRequest\x12,\n" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12:\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x12clientSshPublicKey\x123\n" +
-	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\"\xe6\x01\n" +
+	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\x12\x1d\n" +
+	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xb7\x02\n" +
 	"\x14SetupSessionResponse\x12%\n" +
-	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12'\n" +
-	"\x0fssh_certificate\x18\x02 \x01(\fR\x0esshCertificate\x12\x1d\n" +
+	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
 	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
-	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey2\xdf\x01\n" +
+	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12)\n" +
+	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
+	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
+	"\vprivate_key\x18\a \x01(\fH\x00R\n" +
+	"privateKeyB\f\n" +
+	"\n" +
+	"credential2\xdf\x01\n" +
 	"\x10DataplaneService\x12`\n" +
 	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12i\n" +
 	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
@@ -803,6 +873,11 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5].OneofWrappers = []any{
 		(*ServerMessage_Ack)(nil),
 		(*ServerMessage_Teardown)(nil),
+	}
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9].OneofWrappers = []any{
+		(*SetupSessionResponse_SshCertificate)(nil),
+		(*SetupSessionResponse_Password)(nil),
+		(*SetupSessionResponse_PrivateKey)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
