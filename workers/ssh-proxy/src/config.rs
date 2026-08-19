@@ -25,6 +25,16 @@ pub struct Config {
     /// WARDEN_SPIFFE — the expected SPIFFE id of warden's mesh server cert,
     /// pinned by the WorkerStream control client.
     pub warden_spiffe: String,
+    /// RECORDING_BUCKET — S3 bucket session recordings are uploaded to.
+    pub recording_bucket: String,
+    /// RECORDING_S3_ENDPOINT — custom S3 endpoint (e.g. MinIO); empty = AWS default.
+    pub recording_s3_endpoint: String,
+    /// RECORDING_S3_REGION — S3 region for recording uploads.
+    pub recording_s3_region: String,
+    /// RECORDING_PART_SIZE — multipart upload part size in bytes.
+    pub recording_part_size: usize,
+    /// RECORDING_FLUSH_INTERVAL_SECS — max interval between recording flushes.
+    pub recording_flush_interval_secs: u64,
 }
 
 impl Config {
@@ -41,6 +51,18 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("WORKER_CAPACITY must be a non-negative integer"))?,
             Err(_) => 100,
         };
+        let recording_part_size = match env::var("RECORDING_PART_SIZE") {
+            Ok(v) => v.parse::<usize>().map_err(|_| {
+                anyhow::anyhow!("RECORDING_PART_SIZE must be a non-negative integer")
+            })?,
+            Err(_) => 5 * 1024 * 1024,
+        };
+        let recording_flush_interval_secs = match env::var("RECORDING_FLUSH_INTERVAL_SECS") {
+            Ok(v) => v.parse::<u64>().map_err(|_| {
+                anyhow::anyhow!("RECORDING_FLUSH_INTERVAL_SECS must be a non-negative integer")
+            })?,
+            Err(_) => 5,
+        };
         Ok(Self {
             worker_id: req("WORKER_ID")?,
             dataplane_addr: opt("WORKER_DATAPLANE_ADDR", "0.0.0.0:9000"),
@@ -51,6 +73,77 @@ impl Config {
             capacity,
             gateway_spiffe: opt("GATEWAY_SPIFFE", "spiffe://jumpgate/gateway/gateway"),
             warden_spiffe: opt("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
+            recording_bucket: opt("RECORDING_BUCKET", ""),
+            recording_s3_endpoint: opt("RECORDING_S3_ENDPOINT", ""),
+            recording_s3_region: opt("RECORDING_S3_REGION", "us-east-1"),
+            recording_part_size,
+            recording_flush_interval_secs,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The recording knobs fall back to their documented defaults when unset,
+    /// and `from_env` parses the numeric ones when present.
+    ///
+    /// Env is process-global; this test owns the recording vars plus the
+    /// required vars and clears them again to avoid bleeding into siblings.
+    #[test]
+    fn recording_config_defaults_and_parsing() {
+        // Serialize with any other env-touching test in this binary.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let keys = [
+            "WORKER_ID",
+            "WORKER_MESH_CERT",
+            "WORKER_MESH_KEY",
+            "WORKER_MESH_CA",
+            "WARDEN_MESH_ADDR",
+            "RECORDING_BUCKET",
+            "RECORDING_S3_ENDPOINT",
+            "RECORDING_S3_REGION",
+            "RECORDING_PART_SIZE",
+            "RECORDING_FLUSH_INTERVAL_SECS",
+        ];
+        for k in keys {
+            env::remove_var(k);
+        }
+
+        // Required vars so from_env reaches the recording fields.
+        env::set_var("WORKER_ID", "w1");
+        env::set_var("WORKER_MESH_CERT", "/c");
+        env::set_var("WORKER_MESH_KEY", "/k");
+        env::set_var("WORKER_MESH_CA", "/ca");
+        env::set_var("WARDEN_MESH_ADDR", "https://warden:8444");
+
+        // Recording vars unset → defaults.
+        let cfg = Config::from_env().expect("defaults parse");
+        assert_eq!(cfg.recording_bucket, "");
+        assert_eq!(cfg.recording_s3_endpoint, "");
+        assert_eq!(cfg.recording_s3_region, "us-east-1");
+        assert_eq!(cfg.recording_part_size, 5 * 1024 * 1024);
+        assert_eq!(cfg.recording_flush_interval_secs, 5);
+
+        // Recording vars set → parsed.
+        env::set_var("RECORDING_BUCKET", "recordings");
+        env::set_var("RECORDING_S3_ENDPOINT", "http://minio:9000");
+        env::set_var("RECORDING_S3_REGION", "eu-central-1");
+        env::set_var("RECORDING_PART_SIZE", "8388608");
+        env::set_var("RECORDING_FLUSH_INTERVAL_SECS", "2");
+
+        let cfg = Config::from_env().expect("set values parse");
+        assert_eq!(cfg.recording_bucket, "recordings");
+        assert_eq!(cfg.recording_s3_endpoint, "http://minio:9000");
+        assert_eq!(cfg.recording_s3_region, "eu-central-1");
+        assert_eq!(cfg.recording_part_size, 8 * 1024 * 1024);
+        assert_eq!(cfg.recording_flush_interval_secs, 2);
+
+        for k in keys {
+            env::remove_var(k);
+        }
     }
 }

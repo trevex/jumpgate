@@ -2,16 +2,20 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
@@ -72,9 +76,11 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&dataplanev1.SetupSessionResponse{
-		TargetAddress:  out.TargetAddress,
-		SshCertificate: out.SSHCertificate,
-		SessionId:      out.SessionID,
+		TargetAddress:      out.TargetAddress,
+		SshCertificate:     out.SSHCertificate,
+		SessionId:          out.SessionID,
+		RecordingRequired:  out.RecordingRequired,
+		RecordingObjectKey: out.RecordingObjectKey,
 	}), nil
 }
 
@@ -135,6 +141,13 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 				return
 			}
 			if se := msg.GetSessionEnded(); se != nil {
+				// Persist the recording report BEFORE marking the session ended: the
+				// parties lookup reads live_sessions, which handleSessionEnded deletes.
+				if rec := se.GetRecording(); rec != nil {
+					if err := s.persistRecording(ctx, se.SessionId, rec); err != nil {
+						slog.Error("session recording persist failed", "session_id", se.SessionId, "err", err)
+					}
+				}
 				if err := s.handleSessionEnded(ctx, se.SessionId, se.Reason); err != nil {
 					slog.Error("session ended handling failed", "session_id", se.SessionId, "err", err)
 				}
@@ -200,6 +213,75 @@ func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID stri
 		}
 	}
 	return nil
+}
+
+// persistRecording records a worker's recording report into session_recordings and
+// audits it, in a single transaction. It resolves the session's parties (user/asset)
+// from the live_sessions row, so it MUST run before handleSessionEnded deletes that
+// row. Failures are returned for the caller to LOG (not fatal to the worker stream): a
+// recording-persistence hiccup must never sever the worker's lifeline.
+func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("bad session id %q: %w", sessionID, err)
+	}
+	parties, err := gen.New(s.pool).GetLiveSessionParties(ctx, sid)
+	if err != nil {
+		return fmt.Errorf("lookup session parties: %w", err)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+		SessionID: sid,
+		UserID:    parties.UserID,
+		AssetID:   parties.AssetID,
+		WorkerID:  parties.WorkerID,
+		Protocol:  "ssh",
+		Format:    "asciicast-v2",
+		ObjectKey: rec.GetObjectKey(),
+		SizeBytes: rec.GetSizeBytes(),
+		Sha256:    rec.GetSha256(),
+		Status:    rec.GetStatus(),
+		StartedAt: msToTimestamptz(rec.GetStartedAtUnixMs()),
+		EndedAt:   msToTimestamptz(rec.GetEndedAtUnixMs()),
+	}); err != nil {
+		return fmt.Errorf("upsert session recording: %w", err)
+	}
+
+	eventType := dataplane.EventRecordingCompleted
+	if rec.GetStatus() != "completed" {
+		eventType = dataplane.EventRecordingFailed
+	}
+	detail, _ := json.Marshal(map[string]any{
+		"object_key": rec.GetObjectKey(),
+		"status":     rec.GetStatus(),
+		"size_bytes": rec.GetSizeBytes(),
+		"sha256":     rec.GetSha256(),
+	})
+	if err := audit.New(s.pool).Enqueue(ctx, q, audit.Event{
+		Type:    eventType,
+		ActorID: parties.UserID,
+		Subject: "live_session:" + sid.String(),
+		Details: detail,
+	}); err != nil {
+		return fmt.Errorf("enqueue recording audit: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+// msToTimestamptz converts a Unix-millisecond timestamp into a Timestamptz, treating
+// 0 as "unset" (an invalid/NULL timestamp).
+func msToTimestamptz(ms int64) pgtype.Timestamptz {
+	if ms == 0 {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: time.UnixMilli(ms).UTC(), Valid: true}
 }
 
 // handleSessionEnded removes a live session on a worker's SessionEnded report

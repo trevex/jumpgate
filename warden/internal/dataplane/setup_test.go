@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -330,6 +331,58 @@ func TestSetupSessionHappyPath(t *testing.T) {
 	}
 	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
 		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestSetupComputesRecordingRequirement asserts recording is mandatory by default
+// (a date-partitioned object key is handed to the worker), and that holding the
+// ssh:record:exempt capability on the asset waives it.
+func TestSetupComputesRecordingRequirement(t *testing.T) {
+	f := setup(t)
+
+	// Default scenario: no exemption → recording required, with a well-formed key.
+	tok := f.mintToken(t, f.clientFp)
+	claims, err := f.verifier.Verify(tok)
+	if err != nil {
+		t.Fatalf("verify token: %v", err)
+	}
+	sessionID := claims.SessionID.String()
+
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", f.clientPub, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if !res.RecordingRequired {
+		t.Fatal("RecordingRequired = false, want true (recording is mandatory by default)")
+	}
+	if !strings.HasPrefix(res.RecordingObjectKey, "recordings/ssh/") {
+		t.Fatalf("RecordingObjectKey = %q, want prefix recordings/ssh/", res.RecordingObjectKey)
+	}
+	if !strings.HasSuffix(res.RecordingObjectKey, "/"+sessionID+".cast") {
+		t.Fatalf("RecordingObjectKey = %q, want suffix /%s.cast", res.RecordingObjectKey, sessionID)
+	}
+
+	// Exempt scenario: bind a role carrying ssh:record:exempt to the same user on
+	// the same asset, then drive a fresh Setup (new token/session).
+	exemptRole, err := f.q.CreateRole(f.ctx, gen.CreateRoleParams{
+		Name: "ssh-record-exempt", ResourceType: "asset", Capabilities: capsJSON("ssh:record:exempt"),
+	})
+	if err != nil {
+		t.Fatalf("CreateRole(exempt): %v", err)
+	}
+	if _, err := f.q.CreateRoleBinding(f.ctx, gen.CreateRoleBindingParams{
+		RoleID: exemptRole.ID, ScopeAssetID: pg(f.asset), SubjectUserID: pg(f.user),
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding(exempt): %v", err)
+	}
+
+	tok2 := f.mintToken(t, f.clientFp)
+	res2, err := f.svc.Setup(f.ctx, tok2, "worker-1", f.clientPub, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup(exempt): %v", err)
+	}
+	if res2.RecordingRequired {
+		t.Fatal("RecordingRequired = true, want false (user holds ssh:record:exempt)")
 	}
 }
 

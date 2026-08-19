@@ -29,6 +29,10 @@ pub struct SetupOutcome {
     pub target_address: String,
     /// The OpenSSH certificate line minted over `Kw` (authorized_keys cert form).
     pub ssh_certificate: Vec<u8>,
+    /// Whether warden requires this session to be recorded (else refuse it).
+    pub recording_required: bool,
+    /// The object key warden assigned for this session's recording.
+    pub recording_object_key: String,
 }
 
 /// Call warden's `SetupSession` over mesh mTLS.
@@ -70,5 +74,7 @@ pub async fn setup_session(
         session_id: resp.session_id,
         target_address: resp.target_address,
         ssh_certificate: resp.ssh_certificate,
+        recording_required: resp.recording_required,
+        recording_object_key: resp.recording_object_key,
     })
 }

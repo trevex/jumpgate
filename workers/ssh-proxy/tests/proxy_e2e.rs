@@ -30,7 +30,7 @@ use russh::{Channel, ChannelId, ChannelMsg};
 use tokio::sync::mpsc;
 
 use ssh_proxy::control::SessionRegistry;
-use ssh_proxy::server::{SetupFn, SshHandler};
+use ssh_proxy::server::{RecordingSettings, SessionEndReport, SetupFn, SshHandler};
 use ssh_proxy::setup::SetupOutcome;
 
 /// Fresh ed25519 private key.
@@ -95,6 +95,8 @@ fn stub_setup(
                 session_id: "sess-1".into(),
                 target_address,
                 ssh_certificate: cert.to_openssh().unwrap().into_bytes(),
+                recording_required: false,
+                recording_object_key: String::new(),
             })
         })
     })
@@ -209,7 +211,7 @@ async fn spawn_worker(
 ) -> (
     String,
     SessionRegistry,
-    mpsc::UnboundedReceiver<(String, String)>,
+    mpsc::UnboundedReceiver<SessionEndReport>,
 ) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -219,7 +221,12 @@ async fn spawn_worker(
     let worker_registry = registry.clone();
     tokio::spawn(async move {
         let (tcp, _) = listener.accept().await.unwrap();
-        let handler = SshHandler::with_setup(setup, worker_registry, ended_tx);
+        let handler = SshHandler::with_setup(
+            setup,
+            worker_registry,
+            ended_tx,
+            RecordingSettings::disabled(),
+        );
         let config = ssh_server_config();
         if let Ok(session) = russh::server::run_stream(config, tcp, handler).await {
             let _ = session.await;
@@ -373,7 +380,9 @@ async fn teardown_closes_live_session() {
         .await
         .expect("timed out waiting for SessionEnded")
         .expect("SessionEnded channel closed");
-    assert_eq!(ended, ("sess-1".to_string(), "terminated".to_string()));
+    assert_eq!(ended.session_id, "sess-1");
+    assert_eq!(ended.reason, "terminated");
+    assert!(ended.recording.is_none());
 }
 
 #[tokio::test]

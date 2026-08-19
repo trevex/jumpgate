@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/ssh"
 
@@ -55,9 +56,21 @@ func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a authz.Autho
 
 // SetupResult is the successful outcome.
 type SetupResult struct {
-	TargetAddress  string
-	SSHCertificate []byte
-	SessionID      string
+	TargetAddress      string
+	SSHCertificate     []byte
+	SessionID          string
+	RecordingRequired  bool
+	RecordingObjectKey string
+}
+
+// capRecordExempt, when held on the asset, permits an unrecorded SSH session.
+const capRecordExempt = "ssh:record:exempt"
+
+// recordingObjectKey is the date-partitioned object key for a session recording.
+// The protocol segment keeps one bucket usable across protocols.
+func recordingObjectKey(sessionID uuid.UUID, at time.Time) string {
+	u := at.UTC()
+	return fmt.Sprintf("recordings/ssh/%04d/%02d/%02d/%s.cast", u.Year(), u.Month(), u.Day(), sessionID.String())
 }
 
 // Setup verifies the token, re-checks authorization, records the live session (with
@@ -96,6 +109,14 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	if len(logins) == 0 {
 		return SetupResult{}, ErrNotAuthorized
 	}
+
+	// Recording is mandatory unless the user holds an explicit exemption on the asset.
+	exempt, err := s.authz.Check(ctx, claims.UserID, claims.AssetID, capRecordExempt)
+	if err != nil {
+		return SetupResult{}, err
+	}
+	recordingRequired := !exempt
+	recordingKey := recordingObjectKey(claims.SessionID, time.Now())
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -158,7 +179,13 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 			cert = c.SSHCertificate
 		}
 	}
-	return SetupResult{TargetAddress: cfg.TargetAddress, SSHCertificate: cert, SessionID: claims.SessionID.String()}, nil
+	return SetupResult{
+		TargetAddress:      cfg.TargetAddress,
+		SSHCertificate:     cert,
+		SessionID:          claims.SessionID.String(),
+		RecordingRequired:  recordingRequired,
+		RecordingObjectKey: recordingKey,
+	}, nil
 }
 
 // parseSSHPublicKey accepts authorized_keys text or raw wire form (copy of the

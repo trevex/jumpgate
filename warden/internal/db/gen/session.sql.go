@@ -97,6 +97,23 @@ func (q *Queries) GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession
 	return i, err
 }
 
+const getLiveSessionParties = `-- name: GetLiveSessionParties :one
+SELECT user_id, asset_id, worker_id FROM live_sessions WHERE id = $1
+`
+
+type GetLiveSessionPartiesRow struct {
+	UserID   uuid.UUID `json:"user_id"`
+	AssetID  uuid.UUID `json:"asset_id"`
+	WorkerID string    `json:"worker_id"`
+}
+
+func (q *Queries) GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error) {
+	row := q.db.QueryRow(ctx, getLiveSessionParties, id)
+	var i GetLiveSessionPartiesRow
+	err := row.Scan(&i.UserID, &i.AssetID, &i.WorkerID)
+	return i, err
+}
+
 const insertLiveSession = `-- name: InsertLiveSession :one
 INSERT INTO live_sessions (id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
