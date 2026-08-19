@@ -1,0 +1,46 @@
+# Independent public-key-auth sshd test-workload ("protected server") for the
+# jumpgate demo/e2e.
+#
+# This is a plain manifest applied directly (not part of the jumpgate Helm
+# chart). It stands in for a real target host the admin onboards via the CLI,
+# whose asset credential is a stored private SSH key. The matching throwaway
+# test public key (demo_key.pub) is baked into the image's authorized_keys.
+# No SSH CA trust is required.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ssh-target-key
+  labels:
+    app: ssh-target-key
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ssh-target-key
+  template:
+    metadata:
+      labels:
+        app: ssh-target-key
+    spec:
+      containers:
+        - name: sshd
+          image: jumpgate/testworkload-sshd-key:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: ssh
+              containerPort: 22
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssh-target-key
+  labels:
+    app: ssh-target-key
+spec:
+  type: ClusterIP
+  selector:
+    app: ssh-target-key
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
