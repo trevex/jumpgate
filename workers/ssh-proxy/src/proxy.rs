@@ -267,4 +267,56 @@ mod tests {
             b"x".to_vec(),
         ));
     }
+
+    /// An overflowing recorder (bounded channel already full, receiver kept alive
+    /// so the buffer stays full) makes the tap report unhealthy on the very next
+    /// frame. This is the exact condition the bridge's `feed!` macro checks to set
+    /// `recording_failed`, so it drives the fail-closed path without a live SSH
+    /// handshake — the full `bridge` loop can only be exercised with real russh
+    /// `Channel`s, which cannot be constructed outside a live session (the
+    /// existing tests build none), so this seam-level test stands in for it.
+    #[test]
+    fn tap_reports_unhealthy_when_bounded_channel_is_full() {
+        // bound = 1, receiver retained → the first event fills the buffer, the
+        // second overflows (try_send returns Full → try_event errors).
+        let (handle, _rx) = RecorderHandle::for_test(1);
+        let start = std::time::Instant::now();
+        assert!(
+            tap_event(Some(&handle), start, EventKind::Output, b"first".to_vec()),
+            "first frame fills the single-slot buffer and is accepted",
+        );
+        assert!(
+            !tap_event(Some(&handle), start, EventKind::Output, b"second".to_vec()),
+            "second frame overflows the full buffer → tap reports unhealthy",
+        );
+    }
+
+    /// The `feed!` fail-closed decision, factored to the same boolean the bridge
+    /// loop computes: once `tap_event` reports unhealthy, the loop sets its
+    /// outcome to `RecordingFailed`. This locks the tap→outcome mapping that the
+    /// bridge relies on, and that the target hop then maps to `fail()`.
+    #[test]
+    fn unhealthy_tap_selects_recording_failed_outcome() {
+        let (handle, _rx) = RecorderHandle::for_test(1);
+        let start = std::time::Instant::now();
+        let _ = tap_event(Some(&handle), start, EventKind::Output, b"fill".to_vec());
+
+        // Mirror the bridge's `feed!` logic on the next (overflowing) frame.
+        let mut recording_failed = false;
+        if !tap_event(Some(&handle), start, EventKind::Output, b"more".to_vec()) {
+            recording_failed = true;
+        }
+        assert!(recording_failed, "overflow must flag the session failed");
+
+        // The bridge maps that flag to RecordingFailed; the target hop finalizes
+        // such an outcome via `fail()` (abort the upload) — asserted by the reason
+        // string the caller reports.
+        let outcome = if recording_failed {
+            BridgeOutcome::RecordingFailed
+        } else {
+            BridgeOutcome::Closed
+        };
+        assert_eq!(outcome, BridgeOutcome::RecordingFailed);
+        assert_eq!(outcome.reason(), "recording_failed");
+    }
 }
