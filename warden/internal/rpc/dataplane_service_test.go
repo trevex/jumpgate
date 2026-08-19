@@ -2,10 +2,13 @@ package rpc_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,16 +16,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/ssh"
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
+	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
@@ -185,6 +191,156 @@ func TestSetupSessionRPCUnauthenticated(t *testing.T) {
 	}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("bogus-token SetupSession = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// TestSetupSessionRPCSurfacesRecording drives a full happy-path SetupSession over
+// the RPC surface and asserts the response carries the recording requirement the
+// SetupService computed: recording is mandatory by default (no exemption seeded),
+// with a well-formed, session-scoped object key.
+func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
+	ctx := context.Background()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	q := gen.New(pool)
+
+	sealer := testSealer(t)
+
+	// Active session signing key → minter (this test) + verifier (setup svc).
+	ks := session.NewKeyStore(gen.New(pool), sealer)
+	if err := ks.Init(ctx); err != nil {
+		t.Fatalf("keystore init: %v", err)
+	}
+	priv, pub, err := ks.LoadActive(ctx)
+	if err != nil {
+		t.Fatalf("keystore load: %v", err)
+	}
+	minter := sessiontoken.NewMinter(priv)
+	verifier := sessiontoken.NewVerifier(pub)
+
+	// SSH CA (sealed seed) so the broker can mint the target-hop cert.
+	seed, line, err := ca.GenerateSSHCA()
+	if err != nil {
+		t.Fatalf("GenerateSSHCA: %v", err)
+	}
+	sealedSeed, err := sealer.Seal(seed)
+	if err != nil {
+		t.Fatalf("seal ca seed: %v", err)
+	}
+	if _, err := q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: "ssh", Sealed: sealedSeed, PublicMaterial: line}); err != nil {
+		t.Fatalf("CreateCAKey: %v", err)
+	}
+
+	authorizer := authz.NewSQLAuthorizer(pool)
+	auditLog := audit.New(pool)
+	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
+
+	registry := dataplane.NewRegistry()
+	mux := http.NewServeMux()
+	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+		t.Fatalf("register mesh: %v", err)
+	}
+	var protos http.Protocols
+	protos.SetHTTP1(true)
+	protos.SetUnencryptedHTTP2(true)
+	srv := httptest.NewUnstartedServer(withTestWorkerIdentity(mux, "w1"))
+	srv.Config.Protocols = &protos
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	// Seed an ssh asset (target + allowed_logins {deploy}) and a role carrying
+	// ssh:login:deploy standing-bound to the user — the sole login source.
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-rec-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-rec", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+		AssetID: asset.ID, AllowedLogins: []string{"deploy"}, AuthMethod: "ca-cert",
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetConfig: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE ssh_asset_config SET target_address = $1 WHERE asset_id = $2`, "10.0.0.7:22", asset.ID); err != nil {
+		t.Fatalf("set target_address: %v", err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-rec-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`)})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeAssetID: pgtype.UUID{Bytes: asset.ID, Valid: true}, SubjectUserID: pgtype.UUID{Bytes: user.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding: %v", err)
+	}
+
+	// Client ephemeral key (cnf-bound in the token) + worker per-session key (certified).
+	_, cpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen client key: %v", err)
+	}
+	cpub, err := ssh.NewPublicKey(cpriv.Public())
+	if err != nil {
+		t.Fatalf("ssh client pub: %v", err)
+	}
+	clientPub := ssh.MarshalAuthorizedKey(cpub)
+	clientFp := ssh.FingerprintSHA256(cpub)
+
+	_, wpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen worker key: %v", err)
+	}
+	wpub, err := ssh.NewPublicKey(wpriv.Public())
+	if err != nil {
+		t.Fatalf("ssh worker pub: %v", err)
+	}
+	workerPub := ssh.MarshalAuthorizedKey(wpub)
+
+	sessionID := uuid.New()
+	tok, err := minter.Mint(sessiontoken.Claims{
+		SessionID:            sessionID,
+		UserID:               user.ID,
+		AssetID:              asset.ID,
+		Protocol:             "ssh",
+		ClientKeyFingerprint: clientFp,
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), srv.URL)
+	resp, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
+		SessionToken: tok, WorkerId: "w1", ClientSshPublicKey: clientPub, TargetPublicKey: workerPub,
+	}))
+	if err != nil {
+		t.Fatalf("SetupSession: %v", err)
+	}
+	if resp.Msg.GetSessionId() != sessionID.String() {
+		t.Fatalf("SessionId = %q, want %q", resp.Msg.GetSessionId(), sessionID.String())
+	}
+	if !resp.Msg.GetRecordingRequired() {
+		t.Fatal("RecordingRequired = false, want true (recording is mandatory by default)")
+	}
+	key := resp.Msg.GetRecordingObjectKey()
+	if !strings.HasPrefix(key, "recordings/ssh/") {
+		t.Fatalf("RecordingObjectKey = %q, want prefix recordings/ssh/", key)
+	}
+	if !strings.HasSuffix(key, "/"+sessionID.String()+".cast") {
+		t.Fatalf("RecordingObjectKey = %q, want suffix /%s.cast", key, sessionID.String())
 	}
 }
 

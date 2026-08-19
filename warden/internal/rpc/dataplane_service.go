@@ -72,9 +72,11 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&dataplanev1.SetupSessionResponse{
-		TargetAddress:  out.TargetAddress,
-		SshCertificate: out.SSHCertificate,
-		SessionId:      out.SessionID,
+		TargetAddress:      out.TargetAddress,
+		SshCertificate:     out.SSHCertificate,
+		SessionId:          out.SessionID,
+		RecordingRequired:  out.RecordingRequired,
+		RecordingObjectKey: out.RecordingObjectKey,
 	}), nil
 }
 
