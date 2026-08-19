@@ -67,7 +67,8 @@ spec:
               mountPath: /work
       containers:
         - name: apply
-          image: {{ .Values.bootstrap.kubectlImage }}
+          image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+          imagePullPolicy: {{ .Values.images.kubectl.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
             - |
