@@ -53,6 +53,7 @@ func TestMain(m *testing.M) {
 		configDir: configDir,
 		meshCA:    filepath.Join(fixtures, "mesh-ca.pem"),
 		wardenURL: "http://localhost:8080",
+		suffix:    os.Getenv("E2E_SUFFIX"),
 	}
 
 	os.Exit(m.Run())

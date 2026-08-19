@@ -25,7 +25,12 @@ type env struct {
 	configDir string // XDG_CONFIG_HOME for all actor contexts
 	meshCA    string // exported gateway mesh CA PEM
 	wardenURL string // http://localhost:8080
+	suffix    string // optional name suffix (E2E_SUFFIX) for repeat runs on a persistent cluster
 }
+
+// name appends the run suffix to a base object name. With no suffix (the default,
+// used by `make kind-e2e` on a fresh cluster) it returns base unchanged.
+func (e *env) name(base string) string { return base + e.suffix }
 
 var idRe = regexp.MustCompile(`"id":\s*"([^"]+)"`)
 
@@ -56,6 +61,17 @@ func (e *env) asActor(t *testing.T, ctx string, args ...string) string {
 	t.Helper()
 	full := append([]string{"--context", ctx}, args...)
 	return run(t, []string{"XDG_CONFIG_HOME=" + e.configDir}, e.jgBin, full...)
+}
+
+// login stores credentials for actor ctx in the shared config dir. login has its
+// own local --context flag (the name to store under), distinct from the global
+// --context used by asActor to select a stored context.
+func (e *env) login(t *testing.T, ctx, email, pass string) {
+	t.Helper()
+	run(t, []string{"XDG_CONFIG_HOME=" + e.configDir}, e.jgBin,
+		"login", "--context", ctx,
+		"--warden-addr", e.wardenURL, "--ca", e.meshCA,
+		"--email", email, "--password", pass)
 }
 
 // kubectl runs kubectl with the ambient kubeconfig and returns stdout+stderr.
