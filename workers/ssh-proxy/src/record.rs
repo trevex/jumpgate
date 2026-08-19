@@ -122,6 +122,21 @@ impl PartUploader for S3Uploader {
     }
 }
 
+/// Build an S3 client for the recording store. Credentials come from the AWS SDK
+/// env chain; a custom endpoint + path-style addressing supports self-hosted stores.
+pub async fn build_s3_client(endpoint: &str, region: &str) -> aws_sdk_s3::Client {
+    let region = aws_sdk_s3::config::Region::new(region.to_string());
+    let shared = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(region)
+        .load()
+        .await;
+    let mut b = aws_sdk_s3::config::Builder::from(&shared);
+    if !endpoint.is_empty() {
+        b = b.endpoint_url(endpoint).force_path_style(true);
+    }
+    aws_sdk_s3::Client::from_conf(b.build())
+}
+
 /// Terminal state of a recording.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordStatus {
@@ -172,7 +187,10 @@ pub enum RecMsg {
     Fail,
 }
 
-/// Handle used by the session to feed events into the recorder task.
+/// Handle used by the session to feed events into the recorder task. Cheaply
+/// cloneable (an mpsc sender): the bridge tap holds one clone while the target
+/// hop keeps another to `finish`/`fail` the recording after the bridge returns.
+#[derive(Clone)]
 pub struct RecorderHandle {
     tx: mpsc::Sender<RecMsg>,
 }
@@ -203,6 +221,14 @@ impl RecorderHandle {
     /// gone.
     pub async fn fail(&self) {
         let _ = self.tx.send(RecMsg::Fail).await;
+    }
+
+    /// Test-only: build a handle over a raw channel so a test can observe the
+    /// exact [`RecMsg`]s a producer (e.g. the bridge tap) emits.
+    #[cfg(test)]
+    pub(crate) fn for_test(bound: usize) -> (RecorderHandle, mpsc::Receiver<RecMsg>) {
+        let (tx, rx) = mpsc::channel(bound);
+        (RecorderHandle { tx }, rx)
     }
 }
 
