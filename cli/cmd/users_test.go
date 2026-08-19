@@ -67,6 +67,23 @@ func TestUsersCreate(t *testing.T) {
 	}
 }
 
+func TestUsersCreatePassword(t *testing.T) {
+	s := &stubIdentity{}
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(func() { flagOutput = "table" })
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"users", "create", "alice@x", "--password", "s3cret-pw", "-o", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got := s.gotCreate.GetPassword(); got != "s3cret-pw" {
+		t.Fatalf("password not forwarded: got %q", got)
+	}
+}
+
 func TestUsersList(t *testing.T) {
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, &stubIdentity{}))
 	t.Setenv("JUMPGATE_TOKEN", "tok")

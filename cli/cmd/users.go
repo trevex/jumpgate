@@ -23,8 +23,9 @@ var usersCmd = &cobra.Command{
 }
 
 var (
-	usersCreateName  string
-	usersCreateAdmin bool
+	usersCreateName     string
+	usersCreateAdmin    bool
+	usersCreatePassword string
 )
 
 var usersCreateCmd = &cobra.Command{
@@ -44,6 +45,7 @@ var usersListCmd = &cobra.Command{
 func init() {
 	usersCreateCmd.Flags().StringVar(&usersCreateName, "name", "", "display name")
 	usersCreateCmd.Flags().BoolVar(&usersCreateAdmin, "admin", false, "grant admin privileges")
+	usersCreateCmd.Flags().StringVar(&usersCreatePassword, "password", "", "initial login password (min 8 chars)")
 
 	usersCmd.AddCommand(usersCreateCmd)
 	usersCmd.AddCommand(usersListCmd)
@@ -60,6 +62,7 @@ func runUsersCreate(cmd *cobra.Command, args []string) error {
 		Email:       args[0],
 		DisplayName: usersCreateName,
 		IsAdmin:     usersCreateAdmin,
+		Password:    usersCreatePassword,
 	})
 	cl.Authorize(req)
 	resp, err := cl.Identity().CreateUser(cmd.Context(), req)
