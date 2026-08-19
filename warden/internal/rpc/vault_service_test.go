@@ -2,6 +2,8 @@ package rpc_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
@@ -348,6 +351,67 @@ func TestVaultSSHAssetConfig(t *testing.T) {
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("SetSSHAssetConfig stored-key (no secret) = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+}
+
+// TestSetSSHAssetConfigHostKey locks the optional host_public_key contract: a
+// valid OpenSSH authorized_keys line round-trips through Get, empty is allowed,
+// and a non-key value is rejected InvalidArgument (so the ssh-proxy worker can
+// trust that a persisted host_public_key parses when it pins the target host key).
+func TestSetSSHAssetConfigHostKey(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	asset := newAsset(t, url, tok, "ssh")
+
+	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Generate a valid ed25519 host key as an authorized_keys line.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519 keygen: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("ssh signer: %v", err)
+	}
+	hostKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+
+	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
+		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert", HostPublicKey: hostKey,
+	}), tok)); err != nil {
+		t.Fatalf("SetSSHAssetConfig with host key: %v", err)
+	}
+
+	got, err := c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
+	if err != nil {
+		t.Fatalf("GetSSHAssetConfig: %v", err)
+	}
+	if got.Msg.HostPublicKey != hostKey {
+		t.Fatalf("host_public_key round-trip mismatch: got %q want %q", got.Msg.HostPublicKey, hostKey)
+	}
+
+	// Empty host key is allowed (accept-and-log) and overwrites the prior value.
+	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
+		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert",
+	}), tok)); err != nil {
+		t.Fatalf("SetSSHAssetConfig empty host key: %v", err)
+	}
+	got2, err := c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
+	if err != nil {
+		t.Fatalf("GetSSHAssetConfig (post-clear): %v", err)
+	}
+	if got2.Msg.HostPublicKey != "" {
+		t.Fatalf("host_public_key not cleared: %q", got2.Msg.HostPublicKey)
+	}
+
+	// An unparseable host key is rejected before touching the DB.
+	_, err = c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
+		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert", HostPublicKey: "not a key",
+	}), tok))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("SetSSHAssetConfig bad host key = %v, want InvalidArgument", connect.CodeOf(err))
 	}
 }
 

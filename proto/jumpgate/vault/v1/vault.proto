@@ -92,6 +92,9 @@ message SetSSHAssetConfigRequest {
   repeated string allowed_logins = 2;
   string auth_method = 3 [(buf.validate.field).string = {in: ["ca-cert", "stored-key"]}];
   string stored_secret_id = 4;
+  // Optional OpenSSH authorized_keys line (e.g. "ssh-ed25519 AAAA..."). When set,
+  // the ssh-proxy worker pins the target host key; empty = accept-and-log.
+  string host_public_key = 5;
 }
 message SetSSHAssetConfigResponse {}
 
@@ -102,4 +105,5 @@ message GetSSHAssetConfigResponse {
   repeated string allowed_logins = 1;
   string auth_method = 2;
   string stored_secret_id = 3;
+  string host_public_key = 4;
 }
