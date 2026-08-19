@@ -564,6 +564,17 @@ async fn handle_conn(
         .await
         .context("read CONNECT preamble")?;
 
+    // Acknowledge the CONNECT before starting the SSH server: the gateway blocks
+    // on this `200` response and blind-pipes only afterwards. Without it the
+    // gateway reads the SSH banner as an HTTP status line and rejects the tunnel.
+    {
+        use tokio::io::AsyncWriteExt as _;
+        tls.write_all(jumpgate_mesh::connect::response_established())
+            .await
+            .context("write CONNECT 200 response")?;
+        tls.flush().await.context("flush CONNECT 200 response")?;
+    }
+
     tracing::info!(%peer, authority = %req.authority, "gateway CONNECT received; starting SSH server");
 
     let handler = SshHandler::new(

@@ -900,6 +900,7 @@ dependencies = [
  "anyhow",
  "axum",
  "http-body-util",
+ "hyper",
  "hyper-util",
  "jumpgate-mesh",
  "pasetors",
@@ -2549,6 +2550,7 @@ name = "ssh-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hyper",
  "hyper-util",
  "jumpgate-mesh",
  "prost",

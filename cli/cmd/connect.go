@@ -99,6 +99,25 @@ type connectResult struct {
 	tunnel net.Conn
 }
 
+// DialTunnel resolves the asset, creates a session, and dials the gateway tunnel
+// exactly as `connect` does, returning the live tunnel and the ephemeral client
+// signer whose public key admitted the session. It is a stable entry point for
+// out-of-package integration harnesses that need to drive the real connect path
+// and then run their own SSH step over the tunnel. The caller owns the tunnel
+// and must Close it.
+//
+// wardenAddr, token, and caFile mirror the persisted CLI config's WardenAddr,
+// Token, and CAFile; they are passed as primitives so callers outside this
+// module need not depend on the internal config package.
+func DialTunnel(ctx context.Context, wardenAddr, token, caFile, login, asset string) (net.Conn, ssh.Signer, error) {
+	cfg := config.Config{WardenAddr: wardenAddr, Token: token, CAFile: caFile}
+	res, err := runConnect(ctx, cfg, login, asset)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.tunnel, res.signer, nil
+}
+
 // runConnect resolves the asset, generates an ephemeral client key, creates a
 // session, and dials the gateway tunnel. It returns once the tunnel is open.
 func runConnect(ctx context.Context, cfg config.Config, login, asset string) (*connectResult, error) {

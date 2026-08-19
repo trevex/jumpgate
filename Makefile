@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := bash
 
-.PHONY: help gen build test lint fmt ci
+.PHONY: help gen build test lint fmt ci e2e-ssh
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -32,3 +32,9 @@ fmt: ## Auto-format
 	cargo fmt --all
 
 ci: gen build test lint ## Full CI pipeline
+
+e2e-ssh: ## Opt-in full-stack SSH connect e2e (real warden+gateway+worker binaries; NOT in ci)
+	cargo build --workspace
+	cd warden && go build ./... && go build ./cmd/warden-meshcert
+	cd cli && go build ./...
+	cd warden && go test -tags e2e -count=1 -timeout 300s ./e2e/...
