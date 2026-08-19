@@ -180,7 +180,10 @@ func run() error {
 	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc); err != nil {
+	// Recording download presigning is not yet wired (a later task supplies the
+	// object-store presign client); a nil presigner makes RecordingService's
+	// download path fail closed until then.
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, nil, 5*time.Minute); err != nil {
 		return err
 	}
 

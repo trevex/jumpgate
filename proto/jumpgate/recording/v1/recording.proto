@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package jumpgate.recording.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1;recordingv1";
+
+// RecordingService is the admin API for session recordings: list/get recording
+// metadata and issue a short-lived presigned download URL for the recorded
+// object. Every RPC is admin-guarded. Issuing a download URL is audited
+// (recording.accessed).
+service RecordingService {
+  rpc ListRecordings(ListRecordingsRequest) returns (ListRecordingsResponse) {}
+  rpc GetRecording(GetRecordingRequest) returns (Recording) {}
+  rpc GetRecordingDownload(GetRecordingRequest) returns (GetRecordingDownloadResponse) {}
+}
+
+message Recording {
+  string session_id = 1;
+  string user_id = 2;
+  string asset_id = 3;
+  string protocol = 4;
+  string format = 5;
+  int64 size_bytes = 6;
+  string sha256 = 7;
+  string status = 8;
+  int64 started_at_unix_ms = 9;
+  int64 ended_at_unix_ms = 10;
+}
+
+message ListRecordingsRequest {
+  string user_id = 1;
+  string asset_id = 2;
+  int32 page_size = 3;
+}
+
+message ListRecordingsResponse {
+  repeated Recording recordings = 1;
+}
+
+message GetRecordingRequest {
+  string session_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message GetRecordingDownloadResponse {
+  string url = 1;
+  int64 expires_at_unix_ms = 2;
+}
