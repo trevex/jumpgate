@@ -3,6 +3,7 @@ package rpc
 
 import (
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
@@ -15,6 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/gateway/v1/gatewayv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
@@ -43,7 +45,11 @@ import (
 // sessionSvc is the CLI-facing data-plane admission service. It is nil when the
 // vault or the active session signing key is unavailable; in that case
 // SessionService is not mounted (CreateSession is disabled until initialized).
-func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service) error {
+//
+// recordingPresign issues short-lived presigned download URLs for session
+// recordings; a nil presigner makes RecordingService's download path fail closed
+// (FailedPrecondition). recordingURLTTL bounds the lifetime of an issued URL.
+func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service, recordingPresign Presigner, recordingURLTTL time.Duration) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -76,6 +82,9 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 
 	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer), opts)
 	mux.Handle(vaultPath, vaultHandler)
+
+	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL), opts)
+	mux.Handle(recPath, recHandler)
 
 	if sessionSvc != nil {
 		sPath, sHandler := sessionv1connect.NewSessionServiceHandler(NewSessionServer(sessionSvc), opts)
@@ -118,8 +127,8 @@ func RegisterMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audi
 // tests use RegisterUserServices / RegisterMeshServices on separate muxes. The
 // GatewayServer here carries no session verification key (its GetSessionVerification
 // Key returns FailedPrecondition), which is acceptable for the user-only tests.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry) error {
-	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc); err != nil {
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry, recordingPresign Presigner, recordingURLTTL time.Duration) error {
+	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, recordingURLTTL); err != nil {
 		return err
 	}
 	return RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, NewGatewayServer(registry, nil))
