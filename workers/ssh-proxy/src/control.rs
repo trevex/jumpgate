@@ -211,6 +211,7 @@ async fn connect_and_run(
                             msg: Some(worker_message::Msg::SessionEnded(SessionEnded {
                                 session_id,
                                 reason,
+                                recording: None,
                             })),
                         };
                         if tx.send(frame).await.is_err() {
