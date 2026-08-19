@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // env holds process-wide handles shared by every actor: the built CLI binary, the
@@ -90,6 +91,47 @@ func (e *env) exportMeshCA(t *testing.T) {
 	}
 	if err := os.WriteFile(e.meshCA, []byte(pem), 0o600); err != nil {
 		t.Fatalf("write mesh CA: %v", err)
+	}
+}
+
+var sessRe = regexp.MustCompile(`"sessionId":\s*"([^"]+)"`)
+
+// firstSessionID returns the first sessionId in a recordings-list protojson blob.
+func firstSessionID(s string) string {
+	m := sessRe.FindStringSubmatch(s)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// connectWithStdin runs `jumpgate connect` as actor ctx, feeding script on stdin
+// under a timeout. `connect` has no command-arg form: with non-TTY stdin it runs
+// the piped input as a non-interactive shell over the tunnel.
+func (e *env) connectWithStdin(t *testing.T, ctx, target, script string) string {
+	t.Helper()
+	cmd := exec.Command(e.jgBin, "--context", ctx, "connect", target, "--ca", e.meshCA)
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+e.configDir)
+	cmd.Stdin = strings.NewReader(script)
+	type res struct {
+		out []byte
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		out, err := cmd.CombinedOutput()
+		ch <- res{out, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("connect failed: %v\noutput:\n%s", r.err, r.out)
+		}
+		return string(r.out)
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("connect timed out after 30s")
+		return ""
 	}
 }
 

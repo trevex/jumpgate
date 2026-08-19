@@ -1,8 +1,11 @@
 package e2e
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -98,5 +101,49 @@ func TestScenario(t *testing.T) {
 			t.Fatalf("bob's pending approvals missing request %s:\n%s", st.requestID, pending)
 		}
 		e.asActor(t, "bob", "access", "approve", st.requestID)
+	})
+
+	t.Run("act3_alice_connects", func(t *testing.T) {
+		// The approval produced a time-boxed grant; it should now show up.
+		grants := e.asActor(t, "alice", "access", "grants", "-o", "json")
+		if !strings.Contains(grants, st.assetID) {
+			t.Fatalf("alice has no grant for asset %s:\n%s", st.assetID, grants)
+		}
+		// With the grant, the asset resolves by name; connect over the tunnel and
+		// run a marker command whose output we can later find in the recording.
+		script := "echo " + marker + "; hostname; whoami; exit\n"
+		out := e.connectWithStdin(t, "alice", "deploy@"+e.name("demo-box"), script)
+		if !strings.Contains(out, marker) {
+			t.Fatalf("connect output missing marker:\n%s", out)
+		}
+	})
+
+	t.Run("act4_auditor_verifies_recording", func(t *testing.T) {
+		// Recordings are admin-only, so the admin acts as auditor. Filter by this
+		// run's asset so we find alice's session, not a leftover from another run.
+		var sessionID string
+		deadline := time.Now().Add(45 * time.Second)
+		for time.Now().Before(deadline) {
+			list := e.asActor(t, "admin", "recordings", "list", "--asset", st.assetID, "-o", "json")
+			if strings.Contains(list, `"status": "completed"`) || strings.Contains(list, `"status":"completed"`) {
+				if id := firstSessionID(list); id != "" {
+					sessionID = id
+					break
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+		if sessionID == "" {
+			t.Fatal("no completed recording appeared for the asset within 45s")
+		}
+		castPath := filepath.Join(fixturesDir(t), "recording"+e.suffix+".cast")
+		e.asActor(t, "admin", "recordings", "download", sessionID, "--file", castPath)
+		data, err := os.ReadFile(castPath) // #nosec G304 -- test-controlled fixture path
+		if err != nil {
+			t.Fatalf("read recording: %v", err)
+		}
+		if !strings.Contains(string(data), marker) {
+			t.Fatal("recording asciicast does not contain the marker alice typed")
+		}
 	})
 }
