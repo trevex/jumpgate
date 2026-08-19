@@ -28,3 +28,4 @@ node_modules/
 # build without a codegen step. Rust protobuf stubs are generated into target/
 # by build.rs (already ignored above).
 warden/warden-meshcert
+warden/warden-bootstrap
