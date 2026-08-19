@@ -455,10 +455,12 @@ end-to-end without any hand-wired certificates or processes.
   chart stays deployment-agnostic.
 - **Make targets.** `make kind-up` creates the cluster, installs cert-manager and
   the chart, and deploys the sshd workload; `make kind-demo` also exports the mesh
-  CA and prints the CLI setup; `make kind-e2e` runs the `deploy/kind/smoke.sh`
-  smoke test against the live stack (login -> onboard an SSH asset -> grant a role
-  -> `connect` and run a command -> assert a recording lands) and tears the cluster
-  down (`KEEP=1` to keep it).
+  CA and prints the CLI setup; `make kind-e2e` runs the Go e2e suite (`test/e2e`)
+  against the live stack — a three-actor cross-approval scenario driving the real
+  CLI (admin onboards an SSH asset and a request policy; two users request and
+  approve each other's access; one connects and runs a command; the admin auditor
+  downloads the recording and confirms it captured the session) — and tears the
+  cluster down (`KEEP=1` to keep it).
 
 ## Key technology choices
 

@@ -76,6 +76,6 @@ kind-demo: kind-up ## Bring up the env, export the mesh CA, and print CLI setup
 	@echo "admin creds: admin@demo.test / admin-password-1234"
 	@echo "try: jumpgate login --context admin --warden-addr http://localhost:8080"
 
-kind-e2e: kind-up ## Bring up the env, run the smoke test, then tear down (KEEP=1 to keep it up)
-	bash deploy/kind/smoke.sh
+kind-e2e: kind-up ## Bring up the env, run the Go e2e suite, then tear down (KEEP=1 to keep it up)
+	cd test/e2e && JUMPGATE_E2E=1 GOWORK=off go test -count=1 -timeout 300s ./...
 	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi
