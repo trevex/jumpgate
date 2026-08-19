@@ -141,6 +141,10 @@ func TestSSHConnectFullStack(t *testing.T) {
 
 	sealer := newSealer(t)
 
+	// 1b. Object store for session recordings (real S3-compatible Silo server).
+	//     Started before warden/worker so both can be pointed at it via env.
+	silo := startSilo(t)
+
 	// 2. Provision CAs + session signing key + mesh CA, all sealed under the same
 	//    master key warden will boot with. warden loads the active session key at
 	//    boot, so it must exist BEFORE we start warden.
@@ -196,6 +200,11 @@ func TestSSHConnectFullStack(t *testing.T) {
 		"AUDIT_DRAIN_INTERVAL=500ms",
 		"BOOTSTRAP_ADMIN_EMAIL=" + bootstrapAdminEmail,
 		"BOOTSTRAP_ADMIN_PASSWORD=" + bootstrapAdminPass,
+		"RECORDING_BUCKET=" + silo.bucket,
+		"RECORDING_S3_ENDPOINT=" + silo.endpoint,
+		"RECORDING_S3_REGION=us-east-1",
+		"AWS_ACCESS_KEY_ID=" + silo.accessKey,
+		"AWS_SECRET_ACCESS_KEY=" + silo.secretKey,
 		"LOG_LEVEL=debug",
 	})
 	waitTCP(t, "warden api", wardenAPIAddr)
@@ -229,6 +238,14 @@ func TestSSHConnectFullStack(t *testing.T) {
 		"WARDEN_MESH_ADDR=https://" + wardenMeshAddr,
 		"WARDEN_SPIFFE=" + wardenSpiffe,
 		"GATEWAY_SPIFFE=" + gatewaySpiffe,
+		"RECORDING_BUCKET=" + silo.bucket,
+		"RECORDING_S3_ENDPOINT=" + silo.endpoint,
+		"RECORDING_S3_REGION=us-east-1",
+		// The recorder flushes a final (small) part on Finish, so a short exec still
+		// produces a complete upload; the default 5 MiB part size never triggers an
+		// early flush for these tiny sessions.
+		"AWS_ACCESS_KEY_ID=" + silo.accessKey,
+		"AWS_SECRET_ACCESS_KEY=" + silo.secretKey,
 		"RUST_LOG=info",
 	})
 	waitTCP(t, "worker dataplane", workerDataplaneAddr)
@@ -266,6 +283,14 @@ func TestSSHConnectFullStack(t *testing.T) {
 	// 10. Assert the audit pair. session.started rides SetupSession; session.ended
 	//     lands after the worker reports the finished session to warden.
 	assertAuditPair(t, pool)
+
+	// 10b. Recording phases (reuse the booted stack, real Silo object store).
+	//      The happy-path exec above already produced a required recording; assert
+	//      it was uploaded, then cover the exempt and fail-closed cases. These run
+	//      BEFORE revocation, which removes the deployer's standing access.
+	assertRecordedSession(ctx, t, pool, silo)
+	assertExemptSessionNotRecorded(ctx, t, pool, silo, wardenAddr, caFile)
+	assertFailClosedWhenRecordingUnavailable(ctx, t, pool, silo, wardenAddr, token, caFile)
 
 	// 11. Revocation phase (reuses the already-booted stack). Open a long-lived
 	//     session over a FRESH tunnel, then remove the user's standing role
