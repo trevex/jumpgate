@@ -35,7 +35,7 @@ func init() {
 }
 
 func runConnectCmd(cmd *cobra.Command, args []string) error {
-	cfg, err := effectiveConfig()
+	ctx, err := resolveContext()
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func runConnectCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	out, err := runConnect(cmd.Context(), cfg, login, asset)
+	out, err := runConnect(cmd.Context(), ctx, login, asset)
 	if err != nil {
 		return err
 	}
@@ -110,8 +110,8 @@ type connectResult struct {
 // Token, and CAFile; they are passed as primitives so callers outside this
 // module need not depend on the internal config package.
 func DialTunnel(ctx context.Context, wardenAddr, token, caFile, login, asset string) (net.Conn, ssh.Signer, error) {
-	cfg := config.Config{WardenAddr: wardenAddr, Token: token, CAFile: caFile}
-	res, err := runConnect(ctx, cfg, login, asset)
+	cctx := config.Context{WardenAddr: wardenAddr, Token: token, CAFile: caFile}
+	res, err := runConnect(ctx, cctx, login, asset)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,11 +120,11 @@ func DialTunnel(ctx context.Context, wardenAddr, token, caFile, login, asset str
 
 // runConnect resolves the asset, generates an ephemeral client key, creates a
 // session, and dials the gateway tunnel. It returns once the tunnel is open.
-func runConnect(ctx context.Context, cfg config.Config, login, asset string) (*connectResult, error) {
-	if cfg.WardenAddr == "" {
+func runConnect(ctx context.Context, cctx config.Context, login, asset string) (*connectResult, error) {
+	if cctx.WardenAddr == "" {
 		return nil, errors.New("warden address is not set; pass --warden-addr, set JUMPGATE_WARDEN_ADDR, or configure it")
 	}
-	if cfg.Token == "" {
+	if cctx.Token == "" {
 		return nil, errors.New("not authenticated; run `jumpgate login` first")
 	}
 	if login == "" {
@@ -136,7 +136,7 @@ func runConnect(ctx context.Context, cfg config.Config, login, asset string) (*c
 		return nil, err
 	}
 
-	wc := wardenclient.New(cfg.WardenAddr, cfg.Token)
+	wc := wardenclient.New(cctx.WardenAddr, cctx.Token)
 	assetID, err := wc.ResolveAsset(ctx, asset)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func runConnect(ctx context.Context, cfg config.Config, login, asset string) (*c
 		return nil, err
 	}
 
-	conn, err := tunnel.Dial(ctx, gatewayEndpoint, cfg.CAFile, assetID, token)
+	conn, err := tunnel.Dial(ctx, gatewayEndpoint, cctx.CAFile, assetID, token)
 	if err != nil {
 		return nil, err
 	}

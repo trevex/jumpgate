@@ -36,22 +36,24 @@ func newStub(t *testing.T) string {
 
 func TestLoginSuccessStoresToken(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	flagCfg = config.Config{WardenAddr: newStub(t)}
+	flagWardenAddr = newStub(t)
+	t.Cleanup(func() { flagWardenAddr = "" })
 	loginEmail, loginPassword = "good@x", "pw"
 	loginCmd.SetContext(context.Background())
 	loginCmd.SetOut(&bytes.Buffer{})
 	if err := runLogin(loginCmd, nil); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	c, _ := config.Load()
-	if c.Token != "tok-123" {
-		t.Fatalf("token not stored: %q", c.Token)
+	f, _ := config.LoadFile()
+	if f.Contexts["default"].Token != "tok-123" {
+		t.Fatalf("token not stored: %q", f.Contexts["default"].Token)
 	}
 }
 
 func TestLoginBadCredsCleanError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	flagCfg = config.Config{WardenAddr: newStub(t)}
+	flagWardenAddr = newStub(t)
+	t.Cleanup(func() { flagWardenAddr = "" })
 	loginEmail, loginPassword = "bad@x", "nope"
 	loginCmd.SetContext(context.Background())
 	err := runLogin(loginCmd, nil)
