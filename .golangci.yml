@@ -15,6 +15,11 @@ linters:
         linters: [revive, gosec, staticcheck]
       - path: 'internal/db/gen/'
         linters: [revive, gosec, staticcheck]
+      # The e2e harness is a black-box test driver: it deliberately execs the
+      # jumpgate CLI and kubectl with variable args (gosec G204) and writes
+      # fixture files/dirs, so gosec's subprocess/permission checks are noise here.
+      - path: 'test/e2e/'
+        linters: [gosec]
 formatters:
   enable:
     - gofmt
