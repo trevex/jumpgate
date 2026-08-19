@@ -34,6 +34,31 @@ func TestRegistryAddPushRemove(t *testing.T) {
 	}
 }
 
+func TestRegistryConnectedWorkers(t *testing.T) {
+	r := NewRegistry()
+	ch1 := make(chan Signal, 1)
+	ch2 := make(chan Signal, 1)
+	r.Add("w1", ch1)
+	r.Add("w2", ch2)
+
+	got := map[string]bool{}
+	for _, id := range r.ConnectedWorkers() {
+		got[id] = true
+	}
+	if !got["w1"] || !got["w2"] || len(got) != 2 {
+		t.Fatalf("expected [w1 w2], got %v", r.ConnectedWorkers())
+	}
+
+	r.Remove("w1", ch1)
+	got = map[string]bool{}
+	for _, id := range r.ConnectedWorkers() {
+		got[id] = true
+	}
+	if got["w1"] || !got["w2"] || len(got) != 1 {
+		t.Fatalf("expected only [w2] after Remove, got %v", r.ConnectedWorkers())
+	}
+}
+
 func TestRegistryPushUnknownWorker(t *testing.T) {
 	r := NewRegistry()
 	if r.Push("nope", Signal{SessionID: "s1"}) {
