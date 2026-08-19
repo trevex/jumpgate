@@ -13,7 +13,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server \
  && rm -rf /var/lib/apt/lists/*
 
-COPY deploy/testworkload/entrypoint.sh /entrypoint.sh
+COPY test/env/testworkload/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 22

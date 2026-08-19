@@ -72,8 +72,12 @@ spec:
               value: {{ .Values.recording.bucket | quote }}
             - name: RECORDING_S3_REGION
               value: {{ .Values.recording.s3.region | quote }}
+            # Warden only presigns (offline), so this sets the download URL host.
+            # Prefer the client-reachable publicEndpoint; else the worker endpoint.
             - name: RECORDING_S3_ENDPOINT
-              {{- if .Values.silo.enabled }}
+              {{- if .Values.recording.s3.publicEndpoint }}
+              value: {{ .Values.recording.s3.publicEndpoint | quote }}
+              {{- else if .Values.silo.enabled }}
               value: "http://{{ include "jumpgate.siloHost" . }}:9000"
               {{- else }}
               value: {{ .Values.recording.s3.endpoint | quote }}
