@@ -9,3 +9,4 @@
 pub mod config;
 pub mod control;
 pub mod server;
+pub mod setup;
