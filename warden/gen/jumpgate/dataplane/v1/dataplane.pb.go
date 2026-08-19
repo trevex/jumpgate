@@ -236,6 +236,7 @@ type SessionEnded struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Recording     *RecordingInfo         `protobuf:"bytes,3,opt,name=recording,proto3" json:"recording,omitempty"` // present when the session was recorded (or a recording was attempted)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -284,6 +285,98 @@ func (x *SessionEnded) GetReason() string {
 	return ""
 }
 
+func (x *SessionEnded) GetRecording() *RecordingInfo {
+	if x != nil {
+		return x.Recording
+	}
+	return nil
+}
+
+// RecordingInfo is the worker's report of a session recording's disposition.
+type RecordingInfo struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ObjectKey       string                 `protobuf:"bytes,1,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`  // recordings/ssh/<yyyy>/<mm>/<dd>/<session_id>.cast
+	SizeBytes       int64                  `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"` // total bytes uploaded
+	Sha256          string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`                         // hex sha256 over the exact uploaded bytes
+	StartedAtUnixMs int64                  `protobuf:"varint,4,opt,name=started_at_unix_ms,json=startedAtUnixMs,proto3" json:"started_at_unix_ms,omitempty"`
+	EndedAtUnixMs   int64                  `protobuf:"varint,5,opt,name=ended_at_unix_ms,json=endedAtUnixMs,proto3" json:"ended_at_unix_ms,omitempty"`
+	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // "completed" | "failed" | "aborted"
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RecordingInfo) Reset() {
+	*x = RecordingInfo{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordingInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordingInfo) ProtoMessage() {}
+
+func (x *RecordingInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordingInfo.ProtoReflect.Descriptor instead.
+func (*RecordingInfo) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RecordingInfo) GetObjectKey() string {
+	if x != nil {
+		return x.ObjectKey
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *RecordingInfo) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetStartedAtUnixMs() int64 {
+	if x != nil {
+		return x.StartedAtUnixMs
+	}
+	return 0
+}
+
+func (x *RecordingInfo) GetEndedAtUnixMs() int64 {
+	if x != nil {
+		return x.EndedAtUnixMs
+	}
+	return 0
+}
+
+func (x *RecordingInfo) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Msg:
@@ -297,7 +390,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -309,7 +402,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -322,7 +415,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ServerMessage) GetMsg() isServerMessage_Msg {
@@ -374,7 +467,7 @@ type RegisterAck struct {
 
 func (x *RegisterAck) Reset() {
 	*x = RegisterAck{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +479,7 @@ func (x *RegisterAck) String() string {
 func (*RegisterAck) ProtoMessage() {}
 
 func (x *RegisterAck) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +492,7 @@ func (x *RegisterAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAck.ProtoReflect.Descriptor instead.
 func (*RegisterAck) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
 }
 
 type Teardown struct {
@@ -412,7 +505,7 @@ type Teardown struct {
 
 func (x *Teardown) Reset() {
 	*x = Teardown{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +517,7 @@ func (x *Teardown) String() string {
 func (*Teardown) ProtoMessage() {}
 
 func (x *Teardown) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,7 +530,7 @@ func (x *Teardown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Teardown.ProtoReflect.Descriptor instead.
 func (*Teardown) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Teardown) GetSessionId() string {
@@ -466,7 +559,7 @@ type SetupSessionRequest struct {
 
 func (x *SetupSessionRequest) Reset() {
 	*x = SetupSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +571,7 @@ func (x *SetupSessionRequest) String() string {
 func (*SetupSessionRequest) ProtoMessage() {}
 
 func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +584,7 @@ func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionRequest.ProtoReflect.Descriptor instead.
 func (*SetupSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SetupSessionRequest) GetSessionToken() string {
@@ -523,17 +616,19 @@ func (x *SetupSessionRequest) GetTargetPublicKey() []byte {
 }
 
 type SetupSessionResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TargetAddress  string                 `protobuf:"bytes,1,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	SshCertificate []byte                 `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3" json:"ssh_certificate,omitempty"` // over Kw
-	SessionId      string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                // token jti / live_sessions PK
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	TargetAddress      string                 `protobuf:"bytes,1,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	SshCertificate     []byte                 `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3" json:"ssh_certificate,omitempty"`               // over Kw
+	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                              // token jti / live_sessions PK
+	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`     // worker MUST record or refuse the session
+	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"` // object key warden assigns for this session's recording
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *SetupSessionResponse) Reset() {
 	*x = SetupSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +640,7 @@ func (x *SetupSessionResponse) String() string {
 func (*SetupSessionResponse) ProtoMessage() {}
 
 func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +653,7 @@ func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionResponse.ProtoReflect.Descriptor instead.
 func (*SetupSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetupSessionResponse) GetTargetAddress() string {
@@ -582,6 +677,20 @@ func (x *SetupSessionResponse) GetSessionId() string {
 	return ""
 }
 
+func (x *SetupSessionResponse) GetRecordingRequired() bool {
+	if x != nil {
+		return x.RecordingRequired
+	}
+	return false
+}
+
+func (x *SetupSessionResponse) GetRecordingObjectKey() string {
+	if x != nil {
+		return x.RecordingObjectKey
+	}
+	return ""
+}
+
 var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
@@ -598,11 +707,21 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\bcapacity\x18\x03 \x01(\x05R\bcapacity\x12(\n" +
 	"\x10live_session_ids\x18\x04 \x03(\tR\x0eliveSessionIds\x12+\n" +
 	"\x11dataplane_address\x18\x05 \x01(\tR\x10dataplaneAddress\"\v\n" +
-	"\tHeartbeat\"O\n" +
+	"\tHeartbeat\"\x93\x01\n" +
 	"\fSessionEnded\x12'\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8d\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12B\n" +
+	"\trecording\x18\x03 \x01(\v2$.jumpgate.dataplane.v1.RecordingInfoR\trecording\"\xd3\x01\n" +
+	"\rRecordingInfo\x12\x1d\n" +
+	"\n" +
+	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\x12\x16\n" +
+	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12+\n" +
+	"\x12started_at_unix_ms\x18\x04 \x01(\x03R\x0fstartedAtUnixMs\x12'\n" +
+	"\x10ended_at_unix_ms\x18\x05 \x01(\x03R\rendedAtUnixMs\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"\x8d\x01\n" +
 	"\rServerMessage\x126\n" +
 	"\x03ack\x18\x01 \x01(\v2\".jumpgate.dataplane.v1.RegisterAckH\x00R\x03ack\x12=\n" +
 	"\bteardown\x18\x02 \x01(\v2\x1f.jumpgate.dataplane.v1.TeardownH\x00R\bteardownB\x05\n" +
@@ -616,12 +735,14 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12:\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x12clientSshPublicKey\x123\n" +
-	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\"\x85\x01\n" +
+	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\"\xe6\x01\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12'\n" +
 	"\x0fssh_certificate\x18\x02 \x01(\fR\x0esshCertificate\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId2\xdf\x01\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
+	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
+	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey2\xdf\x01\n" +
 	"\x10DataplaneService\x12`\n" +
 	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12i\n" +
 	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
@@ -638,33 +759,35 @@ func file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP() []byte {
 	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescData
 }
 
-var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(*WorkerMessage)(nil),        // 0: jumpgate.dataplane.v1.WorkerMessage
 	(*Register)(nil),             // 1: jumpgate.dataplane.v1.Register
 	(*Heartbeat)(nil),            // 2: jumpgate.dataplane.v1.Heartbeat
 	(*SessionEnded)(nil),         // 3: jumpgate.dataplane.v1.SessionEnded
-	(*ServerMessage)(nil),        // 4: jumpgate.dataplane.v1.ServerMessage
-	(*RegisterAck)(nil),          // 5: jumpgate.dataplane.v1.RegisterAck
-	(*Teardown)(nil),             // 6: jumpgate.dataplane.v1.Teardown
-	(*SetupSessionRequest)(nil),  // 7: jumpgate.dataplane.v1.SetupSessionRequest
-	(*SetupSessionResponse)(nil), // 8: jumpgate.dataplane.v1.SetupSessionResponse
+	(*RecordingInfo)(nil),        // 4: jumpgate.dataplane.v1.RecordingInfo
+	(*ServerMessage)(nil),        // 5: jumpgate.dataplane.v1.ServerMessage
+	(*RegisterAck)(nil),          // 6: jumpgate.dataplane.v1.RegisterAck
+	(*Teardown)(nil),             // 7: jumpgate.dataplane.v1.Teardown
+	(*SetupSessionRequest)(nil),  // 8: jumpgate.dataplane.v1.SetupSessionRequest
+	(*SetupSessionResponse)(nil), // 9: jumpgate.dataplane.v1.SetupSessionResponse
 }
 var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	1, // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
 	2, // 1: jumpgate.dataplane.v1.WorkerMessage.heartbeat:type_name -> jumpgate.dataplane.v1.Heartbeat
 	3, // 2: jumpgate.dataplane.v1.WorkerMessage.session_ended:type_name -> jumpgate.dataplane.v1.SessionEnded
-	5, // 3: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
-	6, // 4: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
-	0, // 5: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
-	7, // 6: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
-	4, // 7: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
-	8, // 8: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	4, // 3: jumpgate.dataplane.v1.SessionEnded.recording:type_name -> jumpgate.dataplane.v1.RecordingInfo
+	6, // 4: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
+	7, // 5: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
+	0, // 6: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
+	8, // 7: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
+	5, // 8: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
+	9, // 9: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
+	8, // [8:10] is the sub-list for method output_type
+	6, // [6:8] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_dataplane_v1_dataplane_proto_init() }
@@ -677,7 +800,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*WorkerMessage_Heartbeat)(nil),
 		(*WorkerMessage_SessionEnded)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5].OneofWrappers = []any{
 		(*ServerMessage_Ack)(nil),
 		(*ServerMessage_Teardown)(nil),
 	}
@@ -687,7 +810,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc), len(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

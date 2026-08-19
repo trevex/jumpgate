@@ -6,9 +6,11 @@
 //! and hops to the target. Exposed as a library so integration tests can reach
 //! [`config`] and [`server`] directly.
 
+pub mod asciicast;
 pub mod config;
 pub mod control;
 pub mod proxy;
+pub mod record;
 pub mod server;
 pub mod setup;
 pub mod target;

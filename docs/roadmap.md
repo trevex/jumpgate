@@ -94,9 +94,24 @@ full-stack test: a held-open SSH session is force-closed within seconds of its
 standing binding being deleted through the admin API, with a matching
 `session.terminated` audit event.
 
-**Next:** M4e (session recording — hooks at the worker's SSH termination point) is
-the remaining data-plane piece. A containerized e2e environment (docker-compose,
-then kind) is a near-term follow-on that also bootstraps M7 packaging.
+**M4e — session recording ✅.** SSH sessions are recorded by default at the
+terminating worker in **asciicast v2** (input + output + resize, with timing),
+streamed directly to S3-compatible object storage via multipart upload (parts
+flushed as the session runs) with a rolling SHA-256. Recording is **fail-closed and
+mandatory** unless the subject holds `ssh:record:exempt` on the asset: warden
+decides at setup and the worker refuses/tears down a required session it cannot
+record. The worker signs its own S3 requests (`rusty-s3` + a ring-backed rustls HTTP
+client — no heavyweight SDK), reports `{object_key, size, sha256, status}` to warden
+on completion, and warden persists a `session_recordings` row + audits
+`recording.completed`/`.failed` into the hash-chained log. Admins retrieve via the
+`RecordingService` (presigned GET, audited). Proven end-to-end against a real
+S3-compatible store: a recorded session yields a valid, hash-matched asciicast; an
+exempt session yields none; a store failure refuses the session. Deferred: aborting
+orphaned multipart uploads is left to an object-store lifecycle rule (incomplete
+multipart expiration); other protocols and a web replay player are later.
+
+**Next:** a containerized e2e environment (docker-compose, then kind) is a near-term
+follow-on that also bootstraps M7 packaging.
 
 ## Beyond the MVP (later product sub-projects)
 

@@ -74,6 +74,14 @@ type Config struct {
 	MeshCertFile string `env:"MESH_CERT_FILE"`
 	MeshKeyFile  string `env:"MESH_KEY_FILE"`
 	MeshCAFile   string `env:"MESH_CA_FILE"`
+
+	// RecordingBucket / RecordingS3Endpoint / RecordingS3Region configure the object
+	// store warden presigns recording download URLs against. An empty bucket disables
+	// recording retrieval (RecordingService mounts but download fails closed).
+	RecordingBucket     string        `env:"RECORDING_BUCKET"`
+	RecordingS3Endpoint string        `env:"RECORDING_S3_ENDPOINT"`
+	RecordingS3Region   string        `env:"RECORDING_S3_REGION" envDefault:"us-east-1"`
+	RecordingURLTTL     time.Duration `env:"RECORDING_URL_TTL" envDefault:"5m"`
 }
 
 // Load reads configuration from environment variables.

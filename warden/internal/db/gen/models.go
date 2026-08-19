@@ -183,6 +183,22 @@ type RoleGrant struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type SessionRecording struct {
+	SessionID uuid.UUID          `json:"session_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	AssetID   uuid.UUID          `json:"asset_id"`
+	WorkerID  string             `json:"worker_id"`
+	Protocol  string             `json:"protocol"`
+	Format    string             `json:"format"`
+	ObjectKey string             `json:"object_key"`
+	SizeBytes int64              `json:"size_bytes"`
+	Sha256    string             `json:"sha256"`
+	Status    string             `json:"status"`
+	StartedAt pgtype.Timestamptz `json:"started_at"`
+	EndedAt   pgtype.Timestamptz `json:"ended_at"`
+	CreatedAt time.Time          `json:"created_at"`
+}
+
 type SessionSigningKey struct {
 	ID        uuid.UUID `json:"id"`
 	Sealed    []byte    `json:"sealed"`
