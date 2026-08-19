@@ -4,6 +4,7 @@
 //! provider, init tracing, load [`Config`], and run the data-plane mTLS server.
 
 use ssh_proxy::config::Config;
+use ssh_proxy::control::{run_control, SessionRegistry};
 use ssh_proxy::server::run_dataplane_server;
 
 #[tokio::main]
@@ -35,5 +36,20 @@ async fn main() -> anyhow::Result<()> {
         "ssh-proxy starting",
     );
 
-    run_dataplane_server(&config).await
+    // Control-plane seam shared between the WorkerStream client and the data
+    // plane: the registry lets `Teardown` force-close live sessions; the channel
+    // carries `SessionEnded` reports from finished sessions to warden.
+    let registry = SessionRegistry::default();
+    let (session_ended_tx, session_ended_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // The WorkerStream control loop runs alongside the data-plane server: it
+    // registers this worker with warden, heartbeats, forwards SessionEnded, and
+    // dispatches Teardown into `registry`. It reconnects on its own.
+    tokio::spawn(run_control(
+        config.clone(),
+        registry.clone(),
+        session_ended_rx,
+    ));
+
+    run_dataplane_server(&config, registry, session_ended_tx).await
 }
