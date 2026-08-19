@@ -380,7 +380,7 @@ emitted cert/secret. It does **not** connect to hosts, inject into a session, or
 wire the broker to a proxy — that (and the worker passing the grant TTL) is **M4**;
 the `postgres`/`k8s` typed configs + their proxies are **M5**.
 
-## Audit & recording 🟡 (M3a primitive ✅ · JIT events ✅ · sessions M4/M5)
+## Audit & recording 🟢 (M3a primitive ✅ · JIT events ✅ · SSH session recording ✅)
 
 Every request, reason, approval, grant, session start/stop, step-up, and expiry is
 written to an append-only, **hash-chained** audit log
@@ -393,9 +393,24 @@ written through a **transactional outbox**: each service `Enqueue`s its event in
 background drainer chains outbox rows into the hash-linked log — closing the
 post-commit crash window (see [security.md](security.md#tamper-evident-audit)).
 The vault's `credential.issued` is a post-fact append (no domain tx to join) and
-still uses direct `Append`. Sessions are recorded
-(SSH as asciicast v2; Postgres as a structured statement log) to object storage with
-per-chunk hashes — later milestones (M4/M5). SIEM export is a later milestone.
+still uses direct `Append`.
+
+**SSH session recording.** SSH sessions are recorded by default at the terminating
+worker in **asciicast v2** (both directions of I/O plus terminal resizes, with
+timing — replayable with `asciinema play`). Recording is **mandatory unless** the
+subject holds the `ssh:record:exempt` capability on the asset; warden decides this
+at session setup and tells the worker, which **fails closed** — if a required
+recording cannot be established or a mid-session write fails, the session is refused
+or torn down. The worker streams the recording directly to S3-compatible object
+storage via multipart upload (parts flushed as the session runs, so a crash loses at
+most the last part), maintaining a rolling SHA-256. On completion it reports
+`{object_key, size, sha256, status}` to warden, which persists a `session_recordings`
+row and emits `recording.completed`/`recording.failed` into the hash-chained log.
+Admins retrieve a recording through the `RecordingService` (list/get and a
+short-lived **presigned GET URL**, audited as `recording.accessed`). The object key
+is protocol-partitioned (`recordings/ssh/<date>/<session_id>.cast`) so one bucket can
+serve other protocols later. Postgres statement-log recording, other protocols, a
+web replay player, and SIEM export are later milestones.
 
 ## Key technology choices
 
