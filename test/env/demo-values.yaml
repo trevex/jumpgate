@@ -17,3 +17,13 @@ masterKey:
 bootstrapAdmin:
   email: admin@demo.test
   password: admin-password-1234
+
+recording:
+  s3:
+    # Presigned download URLs must be reachable from the host CLI. Expose silo on
+    # a NodePort forwarded to localhost:30900 (cluster.yaml) and have warden sign
+    # that host; the worker still uploads via the in-cluster endpoint.
+    publicEndpoint: "http://localhost:30900"
+
+service:
+  silo: { nodePort: 30900 }

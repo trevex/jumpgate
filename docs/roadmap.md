@@ -117,11 +117,12 @@ under warden's CA, a `warden-bootstrap` pre-install Job (vault master key, mesh 
 session-signing key, bootstrap admin, SSH user CA), toggleable in-cluster
 Postgres + object store, and an independent sshd test workload. warden and the
 gateway are forwarded to fixed host ports so the CLI reaches them directly. Driven
-by `make kind-up` / `kind-demo` / `kind-e2e`; a `deploy/kind/smoke.sh` script drives
-the real CLI through login -> onboard -> grant -> `connect` -> recording against the
-live stack. This also bootstraps M7 packaging. **Remaining:** a scripted multi-user
-demo scenario (distinct requester/approver/admin) and a full-stack e2e that runs the
-smoke test in CI on every change.
+by `make kind-up` / `kind-demo` / `kind-e2e`. The Go e2e suite (`test/e2e`) drives the
+real CLI through a three-actor cross-approval scenario against the live stack: an admin
+onboards an SSH asset and a request policy, two users request and approve each other's
+access, one connects and runs a command, and the admin auditor downloads the recording
+and confirms it captured the session. A narrated walkthrough (`docs/demo/walkthrough.md`)
+follows the same command sequence for a live demo. This also bootstraps M7 packaging.
 
 ## Beyond the MVP (later product sub-projects)
 

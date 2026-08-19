@@ -69,6 +69,28 @@ spec:
     - name: console
       port: 9001
       targetPort: 9001
+{{- if .Values.service.silo.nodePort }}
+---
+# Optional NodePort so a host client can reach silo's S3 port to download the
+# recordings warden presigns (the presign host must match, e.g. localhost:<port>).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.siloHost" . }}-ext
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+spec:
+  type: NodePort
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: silo
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+      nodePort: {{ .Values.service.silo.nodePort }}
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: Job

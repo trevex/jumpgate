@@ -34,7 +34,12 @@ worker:
 recording:
   bucket: jumpgate-recordings
   s3:
-    endpoint: ""           # default http://<release>-silo:9000 when silo.enabled
+    endpoint: ""           # worker upload endpoint; default http://<release>-silo:9000 when silo.enabled
+    # publicEndpoint is the host warden signs into download URLs. Presigning is
+    # offline, so this only sets the URL host — it must be reachable by whoever
+    # downloads (an auditor), which the in-cluster endpoint usually is not. Empty
+    # falls back to the worker endpoint.
+    publicEndpoint: ""
     region: us-east-1
     accessKey: minioadmin
     secretKey: minioadmin-demo-secret
@@ -58,5 +63,8 @@ certManager:
 service:
   warden:  { nodePort: 30080 }
   gateway: { nodePort: 30443 }
+  # Optional NodePort exposing silo's S3 port so a host client can fetch presigned
+  # download URLs. Empty = ClusterIP only (no external S3 access).
+  silo:    { nodePort: "" }
 
 resources: {}

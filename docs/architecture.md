@@ -431,7 +431,7 @@ end-to-end without any hand-wired certificates or processes.
 - **Chart — `deploy/helm/jumpgate`.** Renders warden, the gateway, and one
   ssh-proxy worker, plus their Services, Secrets, and mesh Certificates. warden's
   user API and the gateway's external listener are exposed as fixed NodePorts; the
-  kind cluster (`deploy/kind/cluster.yaml`) forwards them to `localhost:8080`
+  kind cluster (`test/env/cluster.yaml`) forwards them to `localhost:8080`
   (warden) and `localhost:8443` (gateway) so the host CLI can reach them directly.
 - **Mesh certificates via cert-manager.** The chart provisions a cert-manager
   `Issuer` rooted at warden's mesh CA and issues each mesh peer (gateway, worker,
@@ -449,16 +449,18 @@ end-to-end without any hand-wired certificates or processes.
   Postgres for warden's data (set it false and point `warden.databaseUrl` at an
   external database); `silo.enabled` runs an in-cluster S3-compatible object store
   for session recordings (disable it to use any external S3 endpoint).
-- **Independent sshd test workload — `deploy/testworkload`.** A minimal sshd
+- **Independent sshd test workload — `test/env/testworkload`.** A minimal sshd
   Deployment (`ssh-target` Service) that trusts the bootstrap SSH user CA. It is a
   *target*, not part of jumpgate, and is applied separately from the chart so the
   chart stays deployment-agnostic.
 - **Make targets.** `make kind-up` creates the cluster, installs cert-manager and
   the chart, and deploys the sshd workload; `make kind-demo` also exports the mesh
-  CA and prints the CLI setup; `make kind-e2e` runs the `deploy/kind/smoke.sh`
-  smoke test against the live stack (login -> onboard an SSH asset -> grant a role
-  -> `connect` and run a command -> assert a recording lands) and tears the cluster
-  down (`KEEP=1` to keep it).
+  CA and prints the CLI setup; `make kind-e2e` runs the Go e2e suite (`test/e2e`)
+  against the live stack — a three-actor cross-approval scenario driving the real
+  CLI (admin onboards an SSH asset and a request policy; two users request and
+  approve each other's access; one connects and runs a command; the admin auditor
+  downloads the recording and confirms it captured the session) — and tears the
+  cluster down (`KEEP=1` to keep it).
 
 ## Key technology choices
 
