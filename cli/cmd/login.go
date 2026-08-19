@@ -19,6 +19,7 @@ import (
 var (
 	loginEmail    string
 	loginPassword string
+	loginContext  = "default"
 )
 
 var loginCmd = &cobra.Command{
@@ -30,6 +31,7 @@ var loginCmd = &cobra.Command{
 func init() {
 	loginCmd.Flags().StringVar(&loginEmail, "email", "", "account email")
 	loginCmd.Flags().StringVar(&loginPassword, "password", "", "account password (prompted if omitted on a TTY)")
+	loginCmd.Flags().StringVar(&loginContext, "context", "default", "config context to store the credentials under")
 	_ = loginCmd.MarkFlagRequired("email")
 }
 
@@ -59,7 +61,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("login failed: %w", err)
 	}
 
-	if err := config.UpsertContext("default", config.Context{
+	if err := config.UpsertContext(loginContext, config.Context{
 		WardenAddr: ctx.WardenAddr,
 		CAFile:     ctx.CAFile,
 		Token:      resp.Msg.GetToken(),
@@ -68,7 +70,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("saving credentials: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in as %s\n", loginEmail)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in as %s; context %q is now current\n", loginEmail, loginContext)
 	return nil
 }
 
