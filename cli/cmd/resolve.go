@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/trevex/jumpgate/cli/internal/wardenclient"
+	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 )
@@ -68,6 +69,36 @@ func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (str
 	}
 	if match == "" {
 		return "", fmt.Errorf("no group found with name %q", s)
+	}
+	return match, nil
+}
+
+// resolveRoleID returns s unchanged if it is already a UUID; otherwise it looks
+// up a role by name via ListRoles and returns the matching id. A missing or
+// ambiguous match is a clear error.
+func resolveRoleID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
+	if _, err := uuid.Parse(s); err == nil {
+		return s, nil
+	}
+
+	req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 1000})
+	cl.Authorize(req)
+	resp, err := cl.Access().ListRoles(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	var match string
+	for _, r := range resp.Msg.GetRoles() {
+		if r.GetName() == s {
+			if match != "" {
+				return "", fmt.Errorf("multiple roles match name %q; use the role id", s)
+			}
+			match = r.GetId()
+		}
+	}
+	if match == "" {
+		return "", fmt.Errorf("no role found with name %q", s)
 	}
 	return match, nil
 }
