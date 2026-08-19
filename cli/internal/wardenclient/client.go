@@ -12,18 +12,28 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 )
 
 // Client wraps the warden ConnectRPC clients the CLI uses. Every request is
 // authenticated with the configured bearer token.
 type Client struct {
-	token   string
-	catalog catalogv1connect.CatalogServiceClient
-	session sessionv1connect.SessionServiceClient
+	token         string
+	catalog       catalogv1connect.CatalogServiceClient
+	session       sessionv1connect.SessionServiceClient
+	identity      identityv1connect.IdentityServiceClient
+	access        accessv1connect.AccessServiceClient
+	accessRequest accessrequestv1connect.AccessRequestServiceClient
+	recording     recordingv1connect.RecordingServiceClient
+	vault         vaultv1connect.VaultServiceClient
 }
 
 // New builds a Client for the warden at addr, authenticating with token. The
@@ -32,11 +42,40 @@ type Client struct {
 func New(addr, token string) *Client {
 	httpc := httpClient(addr)
 	return &Client{
-		token:   token,
-		catalog: catalogv1connect.NewCatalogServiceClient(httpc, addr),
-		session: sessionv1connect.NewSessionServiceClient(httpc, addr),
+		token:         token,
+		catalog:       catalogv1connect.NewCatalogServiceClient(httpc, addr),
+		session:       sessionv1connect.NewSessionServiceClient(httpc, addr),
+		identity:      identityv1connect.NewIdentityServiceClient(httpc, addr),
+		access:        accessv1connect.NewAccessServiceClient(httpc, addr),
+		accessRequest: accessrequestv1connect.NewAccessRequestServiceClient(httpc, addr),
+		recording:     recordingv1connect.NewRecordingServiceClient(httpc, addr),
+		vault:         vaultv1connect.NewVaultServiceClient(httpc, addr),
 	}
 }
+
+// Catalog returns the catalog service client.
+func (c *Client) Catalog() catalogv1connect.CatalogServiceClient { return c.catalog }
+
+// Identity returns the identity service client.
+func (c *Client) Identity() identityv1connect.IdentityServiceClient { return c.identity }
+
+// Access returns the access service client.
+func (c *Client) Access() accessv1connect.AccessServiceClient { return c.access }
+
+// AccessRequest returns the access request service client.
+func (c *Client) AccessRequest() accessrequestv1connect.AccessRequestServiceClient {
+	return c.accessRequest
+}
+
+// Recording returns the recording service client.
+func (c *Client) Recording() recordingv1connect.RecordingServiceClient { return c.recording }
+
+// Vault returns the vault service client.
+func (c *Client) Vault() vaultv1connect.VaultServiceClient { return c.vault }
+
+// Authorize attaches the bearer token to any connect request. Command files
+// build their own typed requests and call this before sending.
+func (c *Client) Authorize(req interface{ Header() http.Header }) { c.authorize(req) }
 
 // ResolveAsset maps an exact asset name to its id via ListVisibleAssets. If name
 // already parses as a UUID it is returned as-is. A missing name or an ambiguous
