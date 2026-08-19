@@ -10,6 +10,7 @@ pub mod asciicast;
 pub mod config;
 pub mod control;
 pub mod proxy;
+pub mod record;
 pub mod server;
 pub mod setup;
 pub mod target;
