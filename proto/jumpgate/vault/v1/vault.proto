@@ -95,6 +95,9 @@ message SetSSHAssetConfigRequest {
   // Optional OpenSSH authorized_keys line (e.g. "ssh-ed25519 AAAA..."). When set,
   // the ssh-proxy worker pins the target host key; empty = accept-and-log.
   string host_public_key = 5;
+  // Optional host:port the ssh-proxy worker dials to reach the target. Empty is
+  // allowed (worker falls back to its default resolution).
+  string target_address = 6;
 }
 message SetSSHAssetConfigResponse {}
 
@@ -106,4 +109,5 @@ message GetSSHAssetConfigResponse {
   string auth_method = 2;
   string stored_secret_id = 3;
   string host_public_key = 4;
+  string target_address = 5;
 }

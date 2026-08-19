@@ -290,6 +290,7 @@ func (s *VaultServer) SetSSHAssetConfig(ctx context.Context, req *connect.Reques
 		AuthMethod:     req.Msg.AuthMethod,
 		StoredSecretID: storedSecret,
 		HostPublicKey:  req.Msg.HostPublicKey,
+		TargetAddress:  req.Msg.TargetAddress,
 	}); err != nil {
 		return nil, mapWriteErr(err) // CHECK / FK → InvalidArgument
 	}
@@ -317,5 +318,6 @@ func (s *VaultServer) GetSSHAssetConfig(ctx context.Context, req *connect.Reques
 		AuthMethod:     cfg.AuthMethod,
 		StoredSecretId: pgUUIDToString(cfg.StoredSecretID),
 		HostPublicKey:  cfg.HostPublicKey,
+		TargetAddress:  cfg.TargetAddress,
 	}), nil
 }
