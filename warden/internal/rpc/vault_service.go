@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/ssh"
 
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -276,11 +277,20 @@ func (s *VaultServer) SetSSHAssetConfig(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad stored_secret_id"))
 	}
+	// When set, host_public_key must be a parseable OpenSSH authorized_keys line so
+	// the ssh-proxy worker can pin the target host key. Empty = accept-and-log.
+	if req.Msg.HostPublicKey != "" {
+		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.Msg.HostPublicKey)); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
+		}
+	}
 	if _, err := s.q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
 		AssetID:        assetID,
 		AllowedLogins:  req.Msg.AllowedLogins,
 		AuthMethod:     req.Msg.AuthMethod,
 		StoredSecretID: storedSecret,
+		HostPublicKey:  req.Msg.HostPublicKey,
+		TargetAddress:  req.Msg.TargetAddress,
 	}); err != nil {
 		return nil, mapWriteErr(err) // CHECK / FK → InvalidArgument
 	}
@@ -307,5 +317,7 @@ func (s *VaultServer) GetSSHAssetConfig(ctx context.Context, req *connect.Reques
 		AllowedLogins:  cfg.AllowedLogins,
 		AuthMethod:     cfg.AuthMethod,
 		StoredSecretId: pgUUIDToString(cfg.StoredSecretID),
+		HostPublicKey:  cfg.HostPublicKey,
+		TargetAddress:  cfg.TargetAddress,
 	}), nil
 }

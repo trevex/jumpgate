@@ -1,7 +1,7 @@
 //! Minimal HTTP/1.1 CONNECT handshake used on both gateway legs: the client
 //! tunnels via `CONNECT <authority>` + `Authorization: Bearer <token>`, and the
 //! gateway forwards the same shape to the chosen worker.
-#![allow(dead_code)] // read_connect/response_status/write_connect_request/read_worker_response wired in Tasks 12/13
+#![allow(dead_code)] // helpers used across the workspace; not every consumer uses all of them
 
 use tokio::io::{AsyncRead, AsyncReadExt};
 

@@ -63,9 +63,26 @@ with `warden-meshcert -spiffe spiffe://jumpgate/warden/warden`).
 Go↔Rust PASETO interop is locked by a fixture test. Deferred: boot-time cert
 auto-enrollment, global multi-replica LB, k8s discovery, a real public external cert.
 
-**Next:** M4 (gateway + ssh-proxy + CLI — **live credential injection** wiring the
-broker to a session, the real `GrantTerminator` session-kill path, and the
-eligibility-change cascade for standing bindings/memberships/rewrites).
+**M4c — ssh-proxy worker + `jumpgate connect` CLI ✅.** `jumpgate connect
+<login>@<asset>` works end-to-end against a real SSH host. The **ssh-proxy worker**
+(Rust/russh) terminates the client's SSH, drives session-setup from its
+publickey-auth callback, and proxies to the target with an injected certificate;
+credential injection is **two-hop key-separated** — the client proves its ephemeral
+key **Kc** (the token's binding) to the worker, and the control plane certifies a
+fresh worker key **Kw** for the target hop, so the worker (not the client) holds the
+key that reaches the target. Teardown is now real for SSH (a control-plane signal
+force-closes the live session; the worker reports its end). The **`jumpgate` CLI**
+(Go) does login → session → gateway `CONNECT` tunnel → interactive `x/crypto/ssh`
+pty. The gateway's mesh mTLS/`CONNECT` code was extracted into a shared
+**`jumpgate-mesh`** crate. A full-stack test (opt-in `make e2e-ssh`) drives the real
+warden + gateway + worker binaries end-to-end. Deferred: session recording,
+target host-key pinning enforcement (plumbed but not enforced), scp/port-forwarding,
+and a containerized (compose/kind) e2e environment.
+
+**Next:** M4d (the eligibility-change cascade + pull-sweep + orphan-session GC for
+standing bindings/memberships/rewrites) and M4e (session recording). A containerized
+e2e environment (docker-compose, then kind) is a near-term follow-on that also
+bootstraps M7 packaging.
 
 ## Beyond the MVP (later product sub-projects)
 
