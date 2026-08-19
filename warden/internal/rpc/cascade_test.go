@@ -65,12 +65,14 @@ func setupCascade(t *testing.T) *cascadeFixture {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
-		AssetID: asset.ID, AllowedLogins: []string{"deploy"}, AuthMethod: "ca-cert", StoredSecretID: pgtype.UUID{},
+		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE ssh_asset_config SET target_address = $1 WHERE asset_id = $2`, "10.0.0.5:22", asset.ID); err != nil {
-		t.Fatalf("set target_address: %v", err)
+	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
 	// A registry with "w1" registered marks that worker as owned by this replica,

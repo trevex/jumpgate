@@ -62,7 +62,7 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.ClientSshPublicKey, req.Msg.TargetPublicKey)
+	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.Login, req.Msg.ClientSshPublicKey, req.Msg.TargetPublicKey)
 	switch {
 	case errors.Is(err, dataplane.ErrBadToken), errors.Is(err, dataplane.ErrKeyMismatch):
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
@@ -75,13 +75,23 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&dataplanev1.SetupSessionResponse{
+	resp := &dataplanev1.SetupSessionResponse{
 		TargetAddress:      out.TargetAddress,
-		SshCertificate:     out.SSHCertificate,
 		SessionId:          out.SessionID,
 		RecordingRequired:  out.RecordingRequired,
 		RecordingObjectKey: out.RecordingObjectKey,
-	}), nil
+	}
+	switch out.CredentialKind {
+	case "ssh-cert":
+		resp.Credential = &dataplanev1.SetupSessionResponse_SshCertificate{SshCertificate: out.SSHCertificate}
+	case "ssh-password":
+		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
+	case "ssh-key":
+		resp.Credential = &dataplanev1.SetupSessionResponse_PrivateKey{PrivateKey: out.PrivateKey}
+	default:
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // WorkerStream is the worker's lifeline. The worker sends Register (first frame),
