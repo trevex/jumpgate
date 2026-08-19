@@ -113,6 +113,10 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 	})
 	defer s.registry.ClearWorkerMeta(workerID)
 
+	if err := gen.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
+		slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
+	}
+
 	if err := stream.Send(&dataplanev1.ServerMessage{Msg: &dataplanev1.ServerMessage_Ack{Ack: &dataplanev1.RegisterAck{}}}); err != nil {
 		return err
 	}
@@ -135,7 +139,12 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 					slog.Error("session ended handling failed", "session_id", se.SessionId, "err", err)
 				}
 			}
-			// Heartbeat / Register(after first): no-op.
+			if msg.GetHeartbeat() != nil {
+				if err := gen.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
+					slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
+				}
+			}
+			// Register(after first): no-op.
 		}
 	}()
 
