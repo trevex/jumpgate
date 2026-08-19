@@ -15,7 +15,7 @@ pub struct Config {
     /// WORKER_MESH_CA — the mesh CA bundle PEM path.
     pub mesh_ca: String,
     /// WARDEN_MESH_ADDR — warden's mesh endpoint (e.g. https://warden:8444),
-    /// dialed by the WorkerStream control client (Task 6).
+    /// dialed by the WorkerStream control client.
     pub warden_mesh_addr: String,
     /// WORKER_CAPACITY — advertised session capacity.
     pub capacity: u32,
@@ -23,7 +23,7 @@ pub struct Config {
     /// cert, pinned by the data-plane mTLS verifier.
     pub gateway_spiffe: String,
     /// WARDEN_SPIFFE — the expected SPIFFE id of warden's mesh server cert,
-    /// pinned by the WorkerStream control client (Task 6).
+    /// pinned by the WorkerStream control client.
     pub warden_spiffe: String,
 }
 

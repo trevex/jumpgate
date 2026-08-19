@@ -21,8 +21,9 @@
 //! The security decision is isolated in [`authorize`] (a pure async fn over an
 //! injected [`SetupFn`]) so it is unit-testable without a real warden or a live
 //! russh handshake. The russh [`Handler::auth_publickey`] is a thin wrapper that
-//! calls it. The target hop (dialing the target with `Kw` + cert) is Task 8; this
-//! task stops at a successful auth with the session state cached on the handler.
+//! calls it. Once auth succeeds, the client's session/pty/shell (or exec)
+//! requests drive the second hop: the worker dials the target with `Kw` + the
+//! certificate, opens a matching channel, and bridges the two.
 
 use std::fs;
 use std::future::Future;
@@ -31,19 +32,21 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use russh::keys::ssh_key::{Certificate, PrivateKey, PublicKey};
-use russh::server::{Auth, Handler};
+use russh::server::{Auth, Handler, Msg, Session};
+use russh::{Channel, ChannelId, Pty};
 use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
 use crate::control::SessionRegistry;
 use crate::setup::{setup_session, SetupOutcome};
+use crate::{proxy, target};
 use jumpgate_mesh::tls::MeshClientCerts;
 
 /// A validated, cached session: the outcome of a successful publickey auth.
 ///
-/// `kw` is the per-session private key the target hop (Task 8) presents together
-/// with `certificate`. `certificate` is the OpenSSH cert warden minted over
+/// `kw` is the per-session private key the target hop presents together with
+/// `certificate`. `certificate` is the OpenSSH cert warden minted over
 /// `kw.public_key()`.
 #[derive(Debug)]
 pub struct SessionState {
@@ -51,6 +54,18 @@ pub struct SessionState {
     pub target_address: String,
     pub certificate: Certificate,
     pub kw: PrivateKey,
+}
+
+/// Pseudo-terminal parameters remembered from the client's `pty_request`, so the
+/// worker requests a matching pty on the target before starting the shell/exec.
+#[derive(Clone)]
+struct PtyParams {
+    term: String,
+    col_width: u32,
+    row_height: u32,
+    pix_width: u32,
+    pix_height: u32,
+    modes: Vec<(Pty, u32)>,
 }
 
 /// Why an auth attempt was rejected. All variants map to `Auth::Reject` — the
@@ -151,11 +166,23 @@ pub async fn authorize(
 }
 
 /// Per-connection SSH server handler. Holds the CONNECT token + shared deps, and
-/// (after a successful auth) the cached [`SessionState`].
+/// (after a successful auth) the cached [`SessionState`], the requested login,
+/// the accepted client channel, and any pty parameters — everything the
+/// shell/exec trigger needs to dial the target and start the bridge.
 pub struct SshHandler {
     setup: SetupFn,
-    /// Cached after a successful publickey auth (Task 8 consumes it for the hop).
+    /// Force-close registry + finished-session reporter, shared with the control
+    /// plane so warden can tear a live session down and learn when it ends.
+    registry: SessionRegistry,
+    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    /// Cached after a successful publickey auth; consumed by the target hop.
     state: Option<SessionState>,
+    /// The login the client authenticated as (a cert principal).
+    login: Option<String>,
+    /// The client's session channel, accepted in `channel_open_session`.
+    client_channel: Option<Channel<Msg>>,
+    /// Remembered pty request, replayed on the target before shell/exec.
+    pty: Option<PtyParams>,
 }
 
 impl SshHandler {
@@ -167,6 +194,8 @@ impl SshHandler {
         warden_addr: String,
         warden_spiffe: String,
         certs: Arc<MeshClientCerts>,
+        registry: SessionRegistry,
+        session_ended_tx: mpsc::UnboundedSender<(String, String)>,
     ) -> Self {
         let setup: SetupFn = Arc::new(move |kc_pub, kw_pub| {
             let token = token.clone();
@@ -187,17 +216,120 @@ impl SshHandler {
                 .await
             })
         });
-        Self::with_setup(setup)
+        Self::with_setup(setup, registry, session_ended_tx)
     }
 
     /// Build a handler over an injected SetupSession fn (tests stub warden here).
-    pub fn with_setup(setup: SetupFn) -> Self {
-        Self { setup, state: None }
+    pub fn with_setup(
+        setup: SetupFn,
+        registry: SessionRegistry,
+        session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    ) -> Self {
+        Self {
+            setup,
+            registry,
+            session_ended_tx,
+            state: None,
+            login: None,
+            client_channel: None,
+            pty: None,
+        }
     }
 
-    /// The cached session after a successful auth, if any (Task 8 / tests).
+    /// The cached session after a successful auth, if any (tests).
     pub fn session_state(&self) -> Option<&SessionState> {
         self.state.as_ref()
+    }
+
+    /// Start the second hop: dial the target as the requested login with the
+    /// session certificate, open a matching channel (pty + shell, or exec), and
+    /// bridge it to the client channel until either side closes or a teardown
+    /// fires. On completion, report the session ended and drop it from the
+    /// registry. `command` is `Some` for exec, `None` for an interactive shell.
+    async fn start_hop(&mut self, channel: ChannelId, command: Option<Vec<u8>>) {
+        let Some(state) = self.state.as_ref() else {
+            tracing::warn!("shell/exec before a successful auth; ignoring");
+            return;
+        };
+        let Some(login) = self.login.clone() else {
+            tracing::warn!("shell/exec without a recorded login; ignoring");
+            return;
+        };
+        let Some(client_channel) = self.client_channel.take() else {
+            tracing::warn!(
+                ?channel,
+                "shell/exec without an open session channel; ignoring"
+            );
+            return;
+        };
+
+        let (target_handle, target_channel) =
+            match self.open_target_channel(state, &login, command).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
+                    return;
+                }
+            };
+
+        // Register the live session so a Teardown can force-close it, then bridge.
+        let session_id = state.session_id.clone();
+        let handle = self.registry.insert(&session_id);
+        let registry = self.registry.clone();
+        let ended_tx = self.session_ended_tx.clone();
+
+        tokio::spawn(async move {
+            let result = proxy::bridge(client_channel, target_channel, handle.cancel).await;
+            if let Err(e) = &result {
+                tracing::warn!(session_id = %session_id, error = %e, "channel bridge error");
+            }
+            registry.remove(&session_id);
+            let _ = ended_tx.send((session_id.clone(), "closed".to_string()));
+            // The client connection to the target stays up for as long as this
+            // task holds `target_handle`; dropping it here closes the second hop.
+            drop(target_handle);
+            tracing::info!(session_id = %session_id, "session ended");
+        });
+    }
+
+    /// Dial the target and open the matching channel (applying the remembered
+    /// pty, then requesting a shell or the given exec command). Returns the
+    /// client handle too: it must outlive the channel, or the connection closes.
+    async fn open_target_channel(
+        &self,
+        state: &SessionState,
+        login: &str,
+        command: Option<Vec<u8>>,
+    ) -> anyhow::Result<(
+        russh::client::Handle<target::TargetHandler>,
+        Channel<russh::client::Msg>,
+    )> {
+        let handle =
+            target::dial_target(&state.target_address, login, &state.kw, &state.certificate)
+                .await?;
+
+        let target_channel = handle.channel_open_session().await?;
+
+        if let Some(pty) = self.pty.as_ref() {
+            target_channel
+                .request_pty(
+                    false,
+                    &pty.term,
+                    pty.col_width,
+                    pty.row_height,
+                    pty.pix_width,
+                    pty.pix_height,
+                    &pty.modes,
+                )
+                .await?;
+        }
+
+        match command {
+            Some(cmd) => target_channel.exec(true, cmd).await?,
+            None => target_channel.request_shell(true).await?,
+        }
+
+        Ok((handle, target_channel))
     }
 }
 
@@ -217,6 +349,7 @@ impl Handler for SshHandler {
                     "ssh publickey auth accepted; session set up",
                 );
                 self.state = Some(state);
+                self.login = Some(user.to_string());
                 // russh now verifies the client's signature over Kc
                 // (proof-of-possession) before the auth actually succeeds.
                 Ok(Auth::Accept)
@@ -229,6 +362,65 @@ impl Handler for SshHandler {
             }
         }
     }
+
+    async fn channel_open_session(
+        &mut self,
+        channel: Channel<Msg>,
+        reply: russh::server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        // Hold the channel until the client requests a shell/exec; that request
+        // is the trigger to dial the target and start the bridge.
+        self.client_channel = Some(channel);
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn pty_request(
+        &mut self,
+        channel: ChannelId,
+        term: &str,
+        col_width: u32,
+        row_height: u32,
+        pix_width: u32,
+        pix_height: u32,
+        modes: &[(Pty, u32)],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        // Remember the pty so the target request matches the client's terminal.
+        self.pty = Some(PtyParams {
+            term: term.to_string(),
+            col_width,
+            row_height,
+            pix_width,
+            pix_height,
+            modes: modes.to_vec(),
+        });
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    async fn shell_request(
+        &mut self,
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        self.start_hop(channel, None).await;
+        Ok(())
+    }
+
+    async fn exec_request(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        self.start_hop(channel, Some(data.to_vec())).await;
+        Ok(())
+    }
 }
 
 /// Bind the data-plane mTLS listener and dispatch each accepted gateway
@@ -236,18 +428,14 @@ impl Handler for SshHandler {
 /// over the tunnel (publickey auth drives SetupSession).
 ///
 /// `registry` and `session_ended_tx` are the control-plane seam shared with
-/// [`crate::control`]: the SSH server will register each live session in
-/// `registry` (so `Teardown` can force-close it) and report finished sessions via
-/// `session_ended_tx`. They are threaded through here; the full session lifecycle
-/// (target hop, registration, SessionEnded) lands in Task 8.
+/// [`crate::control`]: each live session is registered in `registry` (so
+/// `Teardown` can force-close it) and reported via `session_ended_tx` when it
+/// ends.
 pub async fn run_dataplane_server(
     config: &Config,
     registry: SessionRegistry,
     session_ended_tx: mpsc::UnboundedSender<(String, String)>,
 ) -> anyhow::Result<()> {
-    // Held for Task 8's session lifecycle wiring.
-    let _ = (&registry, &session_ended_tx);
-
     let cert_pem = fs::read(&config.mesh_cert)
         .with_context(|| format!("read mesh cert {}", config.mesh_cert))?;
     let key_pem =
@@ -295,8 +483,21 @@ pub async fn run_dataplane_server(
         let ssh_config = ssh_config.clone();
         let mesh_certs = mesh_certs.clone();
         let config = config.clone();
+        let registry = registry.clone();
+        let session_ended_tx = session_ended_tx.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(acceptor, ssh_config, mesh_certs, config, tcp, peer).await {
+            if let Err(e) = handle_conn(
+                acceptor,
+                ssh_config,
+                mesh_certs,
+                config,
+                registry,
+                session_ended_tx,
+                tcp,
+                peer,
+            )
+            .await
+            {
                 tracing::warn!(%peer, error = %e, "data-plane connection failed");
             }
         });
@@ -315,11 +516,14 @@ fn build_ssh_server_config() -> anyhow::Result<russh::server::Config> {
 
 /// Per-connection handler: TLS handshake (gateway mTLS), read the CONNECT
 /// preamble for the session token, then run the russh SSH server over the tunnel.
+#[allow(clippy::too_many_arguments)]
 async fn handle_conn(
     acceptor: TlsAcceptor,
     ssh_config: Arc<russh::server::Config>,
     mesh_certs: Arc<MeshClientCerts>,
     config: Config,
+    registry: SessionRegistry,
+    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
     tcp: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
@@ -340,11 +544,13 @@ async fn handle_conn(
         config.warden_mesh_addr.clone(),
         config.warden_spiffe.clone(),
         mesh_certs,
+        registry,
+        session_ended_tx,
     );
 
     // Run the SSH server over the already-authenticated tunnel. `run_stream`
     // drives the handshake + auth; the publickey callback performs SetupSession.
-    // Channel handling (session/pty/shell) + the target hop are Task 8.
+    // Session/pty/shell (or exec) requests then drive the target hop + bridge.
     let running = russh::server::run_stream(ssh_config, tls, handler)
         .await
         .context("start SSH server over tunnel")?;
@@ -386,6 +592,13 @@ mod tests {
 
     fn ed25519() -> PrivateKey {
         PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()
+    }
+
+    /// A handler over a stubbed setup with a throwaway registry + ended channel
+    /// (the auth path under test touches neither).
+    fn test_handler(setup: SetupFn) -> SshHandler {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        SshHandler::with_setup(setup, SessionRegistry::default(), tx)
     }
 
     /// A stub SetupFn that mints a cert (over the Kw it is handed) with the given
@@ -446,7 +659,7 @@ mod tests {
         // does not clobber the cached state with a bogus one.
         let ca = ed25519();
         let kc = ed25519();
-        let mut handler = SshHandler::with_setup(stub_ok(ca, vec!["deploy".into()]));
+        let mut handler = test_handler(stub_ok(ca, vec!["deploy".into()]));
 
         let auth = handler
             .auth_publickey("deploy", kc.public_key())
@@ -460,7 +673,7 @@ mod tests {
 
         // A rejected attempt yields Auth::Reject (never Accept) and leaves no
         // new state cached beyond what a rejection would set (None).
-        let mut handler2 = SshHandler::with_setup(stub_err());
+        let mut handler2 = test_handler(stub_err());
         let auth2 = handler2
             .auth_publickey("deploy", kc.public_key())
             .await

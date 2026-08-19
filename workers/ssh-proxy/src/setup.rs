@@ -25,7 +25,7 @@ use jumpgate_mesh::tls::MeshClientCerts;
 pub struct SetupOutcome {
     /// live_sessions PK / token jti — the worker's handle on this session.
     pub session_id: String,
-    /// The target host:port the worker dials for the second hop (Task 8).
+    /// The target host:port the worker dials for the second hop.
     pub target_address: String,
     /// The OpenSSH certificate line minted over `Kw` (authorized_keys cert form).
     pub ssh_certificate: Vec<u8>,
