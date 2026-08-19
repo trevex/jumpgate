@@ -352,19 +352,51 @@ impl SshHandler {
             None
         };
 
-        let (target_handle, target_channel) =
-            match self.open_target_channel(state, &login, command).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
-                    // A recorder was already spun up; abort it so no dangling
-                    // multipart upload is left behind.
-                    if let Some((handle, _join, _started)) = recorder {
-                        handle.fail().await;
-                    }
-                    return;
+        let (target_handle, target_channel) = match self
+            .open_target_channel(state, &login, command)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
+                // A recorder may already have been spun up; finalize it and
+                // report the failed recording. The invariant is that once a
+                // recorder exists for a required session, EVERY exit path both
+                // finalizes the upload and sends exactly one SessionEndReport.
+                let recording = if let Some((handle, join, started_ms)) = recorder {
+                    // Abort the multipart upload so nothing dangles, then await
+                    // the recorder task for an accurate (failed) report.
+                    handle.fail().await;
+                    let report = join.await.unwrap_or_else(|e| {
+                            tracing::warn!(session_id = %state.session_id, error = %e, "recorder task join failed");
+                            crate::record::RecordingReport {
+                                size_bytes: 0,
+                                sha256_hex: String::new(),
+                                status: crate::record::RecordStatus::Failed,
+                            }
+                        });
+                    Some(RecordingOutcome {
+                        object_key: state.recording_object_key.clone(),
+                        size_bytes: report.size_bytes,
+                        sha256: report.sha256_hex,
+                        started_at_unix_ms: started_ms,
+                        ended_at_unix_ms: unix_millis_now(),
+                        status: "failed".into(),
+                    })
+                } else {
+                    // Unrecorded session: keep the prior behavior — no report.
+                    None
+                };
+                if recording.is_some() {
+                    let _ = self.session_ended_tx.send(SessionEndReport {
+                        session_id: state.session_id.clone(),
+                        reason: "target_unavailable".into(),
+                        recording,
+                    });
                 }
-            };
+                return;
+            }
+        };
 
         // Register the live session so a Teardown can force-close it, then bridge.
         let session_id = state.session_id.clone();
