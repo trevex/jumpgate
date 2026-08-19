@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-gateway
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          ports:
+            - name: external
+              containerPort: 8443
+            - name: health
+              containerPort: 8081
+          env:
+            - name: GATEWAY_LISTEN
+              value: ":8443"
+            - name: GATEWAY_HEALTH_LISTEN
+              value: ":8081"
+            - name: RUST_LOG
+              value: "info"
+            - name: GATEWAY_TLS_CERT
+              value: /ext/tls.crt
+            - name: GATEWAY_TLS_KEY
+              value: /ext/tls.key
+            - name: GATEWAY_MESH_CERT
+              value: /mesh/tls.crt
+            - name: GATEWAY_MESH_KEY
+              value: /mesh/tls.key
+            - name: GATEWAY_MESH_CA
+              value: /mesh/ca.crt
+            - name: WARDEN_MESH_ADDR
+              value: "https://{{ include "jumpgate.wardenMeshHost" . }}:8443"
+            - name: WARDEN_MESH_SPIFFE
+              value: "spiffe://jumpgate/warden/warden"
+            - name: GATEWAY_SPIFFE
+              value: "spiffe://jumpgate/gateway/gateway"
+          volumeMounts:
+            - name: gateway-ext
+              mountPath: /ext
+              readOnly: true
+            - name: gateway-mesh
+              mountPath: /mesh
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: gateway-ext
+          secret:
+            secretName: {{ include "jumpgate.fullname" . }}-gateway-ext
+        - name: gateway-mesh
+          secret:
+            secretName: {{ include "jumpgate.fullname" . }}-gateway-mesh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-gateway
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: NodePort
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: external
+      port: 8443
+      targetPort: 8443
+      nodePort: {{ .Values.service.gateway.nodePort }}
