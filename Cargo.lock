@@ -355,14 +355,12 @@ dependencies = [
  "anyhow",
  "axum",
  "http-body-util",
- "httparse",
  "hyper-util",
+ "jumpgate-mesh",
  "pasetors",
- "prost",
  "rand",
  "rcgen",
  "rustls",
- "rustls-pemfile",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -370,11 +368,9 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tonic",
- "tonic-build",
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "x509-parser",
 ]
 
 [[package]]
@@ -581,6 +577,27 @@ checksum = "0e0c1080212aad755ea003d18543e8768dd432c48819efd73a7bf1e39b7a5a3a"
 dependencies = [
  "cfg-if",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "jumpgate-mesh"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "httparse",
+ "prost",
+ "prost-types",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "x509-parser",
 ]
 
 [[package]]
