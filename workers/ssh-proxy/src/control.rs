@@ -235,7 +235,10 @@ async fn connect_and_run(
 /// `ClientTlsConfig` (which always webpki-name-checks) can't be used. We drive
 /// the rustls handshake inside a custom connector — mirroring the gateway's
 /// roster dial — and hand the resulting stream to tonic.
-async fn mesh_channel(
+///
+/// Shared with [`crate::setup`] (the SetupSession client dials warden the same
+/// way).
+pub(crate) async fn mesh_channel(
     warden_addr: &str,
     mesh_client_config: Arc<rustls::ClientConfig>,
 ) -> anyhow::Result<tonic::transport::Channel> {

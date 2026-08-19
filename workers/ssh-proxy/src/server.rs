@@ -1,34 +1,251 @@
-//! ssh-proxy data-plane front door.
+//! ssh-proxy data-plane front door + SSH auth gate.
 //!
 //! Accepts the gateway's mesh mTLS connection (client cert pinned to the
-//! gateway's SPIFFE id), reads the HTTP/1.1 CONNECT preamble, and — for now —
-//! logs and closes. The russh SSH server + SetupSession auth + target hop land
-//! in later M4c tasks (7+).
+//! gateway's SPIFFE id), reads the HTTP/1.1 CONNECT preamble to obtain the
+//! session `token`, then runs a russh SSH server over the already-authenticated
+//! tunnel. The client authenticates with **publickey** using its ephemeral key
+//! `Kc` (whose fingerprint is the token's `cnf`).
+//!
+//! On the offered key + requested login the worker:
+//! 1. generates a fresh per-session key `Kw` (ed25519),
+//! 2. calls `SetupSession(token, worker_id, Kc.pub, Kw.pub)` on warden,
+//! 3. warden verifies `cnf == fp(Kc)`, re-checks the entitlement, and returns
+//!    `{session_id, target_address, cert-over-Kw}`,
+//! 4. the worker requires `login ∈ cert.valid_principals`, that the cert is over
+//!    `Kw`, caches the session, and **Accepts** (russh then verifies the client's
+//!    signature over `Kc` — proof-of-possession).
+//!
+//! Any failure — SetupSession error, cert parse failure, cert not over `Kw`,
+//! login not in principals — is a hard **Reject**. We NEVER accept on error.
+//!
+//! The security decision is isolated in [`authorize`] (a pure async fn over an
+//! injected [`SetupFn`]) so it is unit-testable without a real warden or a live
+//! russh handshake. The russh [`Handler::auth_publickey`] is a thin wrapper that
+//! calls it. The target hop (dialing the target with `Kw` + cert) is Task 8; this
+//! task stops at a successful auth with the session state cached on the handler.
 
 use std::fs;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Context;
+use russh::keys::ssh_key::{Certificate, PrivateKey, PublicKey};
+use russh::server::{Auth, Handler};
 use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
 use crate::control::SessionRegistry;
+use crate::setup::{setup_session, SetupOutcome};
+use jumpgate_mesh::tls::MeshClientCerts;
+
+/// A validated, cached session: the outcome of a successful publickey auth.
+///
+/// `kw` is the per-session private key the target hop (Task 8) presents together
+/// with `certificate`. `certificate` is the OpenSSH cert warden minted over
+/// `kw.public_key()`.
+#[derive(Debug)]
+pub struct SessionState {
+    pub session_id: String,
+    pub target_address: String,
+    pub certificate: Certificate,
+    pub kw: PrivateKey,
+}
+
+/// Why an auth attempt was rejected. All variants map to `Auth::Reject` — the
+/// distinction exists for logging/tests only, never to leak to the client.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("SetupSession failed: {0}")]
+    Setup(String),
+    #[error("certificate parse failed: {0}")]
+    CertParse(String),
+    #[error("certificate is not over the worker's per-session key Kw")]
+    CertNotOverKw,
+    #[error("login {login:?} not in certificate principals {principals:?}")]
+    PrincipalNotAllowed {
+        login: String,
+        principals: Vec<String>,
+    },
+    #[error("failed to serialize public key: {0}")]
+    KeySerialize(String),
+}
+
+/// The SetupSession call, injected so [`authorize`] can be tested without a real
+/// warden. Takes the OpenSSH public-key bytes for `Kc` and `Kw`; returns
+/// warden's outcome or an error (which the caller MUST treat as a hard reject).
+pub type SetupFn = Arc<
+    dyn Fn(
+            Vec<u8>, // kc_pub (authorized_keys line)
+            Vec<u8>, // kw_pub (authorized_keys line)
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<SetupOutcome>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Serialize an `ssh_key::PublicKey` to its OpenSSH authorized_keys line bytes —
+/// the form warden's `parseSSHPublicKey` accepts first.
+fn public_key_line(pk: &PublicKey) -> Result<Vec<u8>, AuthError> {
+    pk.to_openssh()
+        .map(String::into_bytes)
+        .map_err(|e| AuthError::KeySerialize(e.to_string()))
+}
+
+/// The security-critical publickey-auth decision, isolated from russh.
+///
+/// Generates a fresh `Kw`, calls SetupSession (via the injected `setup`) with the
+/// offered `Kc` + `Kw`, then requires:
+/// - SetupSession to succeed,
+/// - the returned certificate to parse,
+/// - the certificate to be **over `Kw`** (defence against a swapped/confused
+///   cert — we only ever present `Kw` on the target hop),
+/// - the requested `login` to be in the certificate's `valid_principals`.
+///
+/// Returns the cached [`SessionState`] on success; ANY failure is an
+/// [`AuthError`] and the caller MUST reject. It never returns `Ok` on error.
+pub async fn authorize(
+    login: &str,
+    kc: &PublicKey,
+    setup: &SetupFn,
+) -> Result<SessionState, AuthError> {
+    // 1. Fresh per-session Kw (ed25519). Infallible in practice; treat a keygen
+    //    failure as a setup-class error rather than ever accepting.
+    let kw = PrivateKey::random(&mut rand::rng(), russh::keys::ssh_key::Algorithm::Ed25519)
+        .map_err(|e| AuthError::Setup(format!("generate Kw: {e}")))?;
+
+    let kc_pub = public_key_line(kc)?;
+    let kw_pub = public_key_line(kw.public_key())?;
+
+    // 2. Redeem the token. A transport/authorization error is a hard reject.
+    let outcome = setup(kc_pub, kw_pub)
+        .await
+        .map_err(|e| AuthError::Setup(e.to_string()))?;
+
+    // 3. Parse the cert (authorized_keys cert line, per warden's `ca.MarshalCert`).
+    let cert_str = String::from_utf8(outcome.ssh_certificate)
+        .map_err(|e| AuthError::CertParse(format!("cert not utf-8: {e}")))?;
+    let certificate = Certificate::from_openssh(cert_str.trim())
+        .map_err(|e| AuthError::CertParse(e.to_string()))?;
+
+    // 4. The cert MUST certify Kw — the only key we present on the target hop.
+    if certificate.public_key() != kw.public_key().key_data() {
+        return Err(AuthError::CertNotOverKw);
+    }
+
+    // 5. The requested login MUST be one of the cert's principals.
+    let principals = certificate.valid_principals();
+    if !principals.iter().any(|p| p == login) {
+        return Err(AuthError::PrincipalNotAllowed {
+            login: login.to_string(),
+            principals: principals.to_vec(),
+        });
+    }
+
+    Ok(SessionState {
+        session_id: outcome.session_id,
+        target_address: outcome.target_address,
+        certificate,
+        kw,
+    })
+}
+
+/// Per-connection SSH server handler. Holds the CONNECT token + shared deps, and
+/// (after a successful auth) the cached [`SessionState`].
+pub struct SshHandler {
+    setup: SetupFn,
+    /// Cached after a successful publickey auth (Task 8 consumes it for the hop).
+    state: Option<SessionState>,
+}
+
+impl SshHandler {
+    /// Build a handler that redeems `token` via a real SetupSession call to
+    /// `warden_addr` (pinned to `warden_spiffe`) as `worker_id`.
+    pub fn new(
+        token: String,
+        worker_id: String,
+        warden_addr: String,
+        warden_spiffe: String,
+        certs: Arc<MeshClientCerts>,
+    ) -> Self {
+        let setup: SetupFn = Arc::new(move |kc_pub, kw_pub| {
+            let token = token.clone();
+            let worker_id = worker_id.clone();
+            let warden_addr = warden_addr.clone();
+            let warden_spiffe = warden_spiffe.clone();
+            let certs = certs.clone();
+            Box::pin(async move {
+                setup_session(
+                    &warden_addr,
+                    &warden_spiffe,
+                    &certs,
+                    &token,
+                    &worker_id,
+                    kc_pub,
+                    kw_pub,
+                )
+                .await
+            })
+        });
+        Self::with_setup(setup)
+    }
+
+    /// Build a handler over an injected SetupSession fn (tests stub warden here).
+    pub fn with_setup(setup: SetupFn) -> Self {
+        Self { setup, state: None }
+    }
+
+    /// The cached session after a successful auth, if any (Task 8 / tests).
+    pub fn session_state(&self) -> Option<&SessionState> {
+        self.state.as_ref()
+    }
+}
+
+impl Handler for SshHandler {
+    type Error = russh::Error;
+
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        public_key: &PublicKey,
+    ) -> Result<Auth, Self::Error> {
+        match authorize(user, public_key, &self.setup).await {
+            Ok(state) => {
+                tracing::info!(
+                    session_id = %state.session_id,
+                    login = %user,
+                    "ssh publickey auth accepted; session set up",
+                );
+                self.state = Some(state);
+                // russh now verifies the client's signature over Kc
+                // (proof-of-possession) before the auth actually succeeds.
+                Ok(Auth::Accept)
+            }
+            Err(e) => {
+                // Log the reason server-side; the client only sees a generic
+                // reject. NEVER accept on error.
+                tracing::warn!(login = %user, error = %e, "ssh publickey auth rejected");
+                Ok(Auth::reject())
+            }
+        }
+    }
+}
 
 /// Bind the data-plane mTLS listener and dispatch each accepted gateway
-/// connection: TLS-accept (gateway mTLS) → read CONNECT → log + close.
+/// connection: TLS-accept (gateway mTLS) → read CONNECT → run the SSH server
+/// over the tunnel (publickey auth drives SetupSession).
 ///
 /// `registry` and `session_ended_tx` are the control-plane seam shared with
-/// [`crate::control`]: the SSH server (Task 7) registers each live session in
-/// `registry` (so `Teardown` can force-close it) and reports finished sessions
-/// via `session_ended_tx`. They are threaded through here but unused until the
-/// SSH server lands.
+/// [`crate::control`]: the SSH server will register each live session in
+/// `registry` (so `Teardown` can force-close it) and report finished sessions via
+/// `session_ended_tx`. They are threaded through here; the full session lifecycle
+/// (target hop, registration, SessionEnded) lands in Task 8.
 pub async fn run_dataplane_server(
     config: &Config,
     registry: SessionRegistry,
     session_ended_tx: mpsc::UnboundedSender<(String, String)>,
 ) -> anyhow::Result<()> {
-    // Task 7 will hand these to each accepted session; hold them for now so the
-    // control plane wiring in `main` is complete and type-checked.
+    // Held for Task 8's session lifecycle wiring.
     let _ = (&registry, &session_ended_tx);
 
     let cert_pem = fs::read(&config.mesh_cert)
@@ -38,6 +255,12 @@ pub async fn run_dataplane_server(
     let ca_pem =
         fs::read(&config.mesh_ca).with_context(|| format!("read mesh CA {}", config.mesh_ca))?;
 
+    // The worker's mesh identity, reused for every SetupSession call.
+    let mesh_certs = Arc::new(
+        MeshClientCerts::from_files(&config.mesh_cert, &config.mesh_key, &config.mesh_ca)
+            .context("load worker mesh certs for SetupSession")?,
+    );
+
     let server_config = jumpgate_mesh::tls::server_config_mtls(
         &cert_pem,
         &key_pem,
@@ -46,6 +269,10 @@ pub async fn run_dataplane_server(
     )
     .context("build data-plane mTLS server config")?;
     let acceptor = TlsAcceptor::from(server_config);
+
+    // Ephemeral SSH host key: the client ignores it (the tunnel is already
+    // authenticated by mesh mTLS), so a per-process random key suffices.
+    let ssh_config = Arc::new(build_ssh_server_config()?);
 
     let listener = tokio::net::TcpListener::bind(&config.dataplane_addr)
         .await
@@ -65,18 +292,34 @@ pub async fn run_dataplane_server(
             }
         };
         let acceptor = acceptor.clone();
+        let ssh_config = ssh_config.clone();
+        let mesh_certs = mesh_certs.clone();
+        let config = config.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(acceptor, tcp, peer).await {
+            if let Err(e) = handle_conn(acceptor, ssh_config, mesh_certs, config, tcp, peer).await {
                 tracing::warn!(%peer, error = %e, "data-plane connection failed");
             }
         });
     }
 }
 
+/// Build the russh server config with a fresh ephemeral ed25519 host key.
+fn build_ssh_server_config() -> anyhow::Result<russh::server::Config> {
+    let host_key = PrivateKey::random(&mut rand::rng(), russh::keys::ssh_key::Algorithm::Ed25519)
+        .context("generate ephemeral SSH host key")?;
+    Ok(russh::server::Config {
+        keys: vec![host_key],
+        ..Default::default()
+    })
+}
+
 /// Per-connection handler: TLS handshake (gateway mTLS), read the CONNECT
-/// preamble, then log and drop (close). SSH server lands in Task 7.
+/// preamble for the session token, then run the russh SSH server over the tunnel.
 async fn handle_conn(
     acceptor: TlsAcceptor,
+    ssh_config: Arc<russh::server::Config>,
+    mesh_certs: Arc<MeshClientCerts>,
+    config: Config,
     tcp: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
@@ -89,8 +332,214 @@ async fn handle_conn(
         .await
         .context("read CONNECT preamble")?;
 
-    tracing::info!(%peer, authority = %req.authority, "gateway CONNECT received");
-    // For now: drop `tls` (and the parsed token) to close the connection. The
-    // russh SSH server + SetupSession token auth land in Task 7.
+    tracing::info!(%peer, authority = %req.authority, "gateway CONNECT received; starting SSH server");
+
+    let handler = SshHandler::new(
+        req.token,
+        config.worker_id.clone(),
+        config.warden_mesh_addr.clone(),
+        config.warden_spiffe.clone(),
+        mesh_certs,
+    );
+
+    // Run the SSH server over the already-authenticated tunnel. `run_stream`
+    // drives the handshake + auth; the publickey callback performs SetupSession.
+    // Channel handling (session/pty/shell) + the target hop are Task 8.
+    let running = russh::server::run_stream(ssh_config, tls, handler)
+        .await
+        .context("start SSH server over tunnel")?;
+    running
+        .await
+        .context("SSH server session ended with error")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use russh::keys::ssh_key::{certificate, Algorithm};
+
+    /// A test SSH CA that mints certs over a given public key with given
+    /// principals — mirrors warden's `ca.MarshalCert` output (authorized_keys
+    /// cert line).
+    fn mint_cert(ca: &PrivateKey, subject: &PublicKey, principals: &[&str]) -> Vec<u8> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut builder = certificate::Builder::new_with_random_nonce(
+            &mut rand::rng(),
+            subject,
+            now - 60,
+            now + 3600,
+        )
+        .unwrap();
+        builder.serial(1).unwrap();
+        builder.key_id("test-session").unwrap();
+        builder.cert_type(certificate::CertType::User).unwrap();
+        for p in principals {
+            builder.valid_principal(*p).unwrap();
+        }
+        let cert = builder.sign(ca).unwrap();
+        cert.to_openssh().unwrap().into_bytes()
+    }
+
+    fn ed25519() -> PrivateKey {
+        PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()
+    }
+
+    /// A stub SetupFn that mints a cert (over the Kw it is handed) with the given
+    /// principals, so the principal check runs against a real, parseable cert.
+    fn stub_ok(ca: PrivateKey, principals: Vec<String>) -> SetupFn {
+        Arc::new(move |_kc_pub, kw_pub| {
+            let ca = ca.clone();
+            let principals = principals.clone();
+            Box::pin(async move {
+                // Recover Kw's public key from the authorized_keys line the
+                // handler sent, and mint a cert over exactly that key.
+                let kw_line = String::from_utf8(kw_pub).unwrap();
+                let kw_pk = PublicKey::from_openssh(kw_line.trim()).unwrap();
+                let refs: Vec<&str> = principals.iter().map(String::as_str).collect();
+                let cert = mint_cert(&ca, &kw_pk, &refs);
+                Ok(SetupOutcome {
+                    session_id: "sess-1".into(),
+                    target_address: "10.0.0.5:22".into(),
+                    ssh_certificate: cert,
+                })
+            })
+        })
+    }
+
+    /// A stub SetupFn that always errors (unreachable warden / bad token / …).
+    fn stub_err() -> SetupFn {
+        Arc::new(|_kc, _kw| Box::pin(async { Err(anyhow::anyhow!("warden unreachable")) }))
+    }
+
+    #[tokio::test]
+    async fn accepts_when_login_in_principals_and_caches_state() {
+        let ca = ed25519();
+        let kc = ed25519();
+        let setup = stub_ok(ca, vec!["deploy".into(), "root".into()]);
+
+        let state = authorize("deploy", kc.public_key(), &setup)
+            .await
+            .expect("deploy is a principal → accept");
+
+        assert_eq!(state.session_id, "sess-1");
+        assert_eq!(state.target_address, "10.0.0.5:22");
+        // The cached cert MUST be over Kw (the key we present on the hop).
+        assert_eq!(
+            state.certificate.public_key(),
+            state.kw.public_key().key_data()
+        );
+        assert!(state
+            .certificate
+            .valid_principals()
+            .iter()
+            .any(|p| p == "deploy"));
+    }
+
+    #[tokio::test]
+    async fn handler_auth_publickey_accepts_and_caches_then_rejects() {
+        // Exercise the russh Handler wrapper end-to-end (minus the live
+        // handshake): accept caches state; a subsequent bad login rejects and
+        // does not clobber the cached state with a bogus one.
+        let ca = ed25519();
+        let kc = ed25519();
+        let mut handler = SshHandler::with_setup(stub_ok(ca, vec!["deploy".into()]));
+
+        let auth = handler
+            .auth_publickey("deploy", kc.public_key())
+            .await
+            .expect("handler auth must not error");
+        assert!(matches!(auth, Auth::Accept));
+        assert_eq!(
+            handler.session_state().expect("state cached").session_id,
+            "sess-1"
+        );
+
+        // A rejected attempt yields Auth::Reject (never Accept) and leaves no
+        // new state cached beyond what a rejection would set (None).
+        let mut handler2 = SshHandler::with_setup(stub_err());
+        let auth2 = handler2
+            .auth_publickey("deploy", kc.public_key())
+            .await
+            .expect("handler auth must not error");
+        assert!(matches!(auth2, Auth::Reject { .. }));
+        assert!(handler2.session_state().is_none());
+    }
+
+    #[tokio::test]
+    async fn rejects_when_login_not_in_principals() {
+        let ca = ed25519();
+        let kc = ed25519();
+        // Cert only carries "deploy"; the client asks for "root".
+        let setup = stub_ok(ca, vec!["deploy".into()]);
+
+        let err = authorize("root", kc.public_key(), &setup)
+            .await
+            .expect_err("root not in principals → reject");
+        assert!(matches!(err, AuthError::PrincipalNotAllowed { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_when_setup_session_errors() {
+        let kc = ed25519();
+        let err = authorize("deploy", kc.public_key(), &stub_err())
+            .await
+            .expect_err("SetupSession error → reject");
+        assert!(matches!(err, AuthError::Setup(_)));
+    }
+
+    #[tokio::test]
+    async fn rejects_when_cert_is_not_over_kw() {
+        // Stub mints a cert over a DIFFERENT key than the Kw it was handed —
+        // the cert-over-Kw invariant must catch it.
+        let ca = ed25519();
+        let kc = ed25519();
+        let setup: SetupFn = Arc::new(move |_kc_pub, _kw_pub| {
+            let ca = ca.clone();
+            Box::pin(async move {
+                let other = ed25519();
+                let cert = mint_cert(&ca, other.public_key(), &["deploy"]);
+                Ok(SetupOutcome {
+                    session_id: "sess-x".into(),
+                    target_address: "t:22".into(),
+                    ssh_certificate: cert,
+                })
+            })
+        });
+
+        let err = authorize("deploy", kc.public_key(), &setup)
+            .await
+            .expect_err("cert not over Kw → reject");
+        assert!(matches!(err, AuthError::CertNotOverKw));
+    }
+
+    #[tokio::test]
+    async fn rejects_when_cert_unparseable() {
+        let kc = ed25519();
+        let setup: SetupFn = Arc::new(|_kc, _kw| {
+            Box::pin(async {
+                Ok(SetupOutcome {
+                    session_id: "s".into(),
+                    target_address: "t:22".into(),
+                    ssh_certificate: b"not a real cert".to_vec(),
+                })
+            })
+        });
+        let err = authorize("deploy", kc.public_key(), &setup)
+            .await
+            .expect_err("garbage cert → reject");
+        assert!(matches!(err, AuthError::CertParse(_)));
+    }
+
+    #[test]
+    fn public_key_line_roundtrips() {
+        let k = ed25519();
+        let pk = k.public_key();
+        let line = public_key_line(pk).unwrap();
+        let parsed = PublicKey::from_openssh(std::str::from_utf8(&line).unwrap().trim()).unwrap();
+        assert_eq!(parsed.key_data(), pk.key_data());
+    }
 }
