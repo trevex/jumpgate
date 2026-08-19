@@ -208,12 +208,16 @@ type SessionSigningKey struct {
 }
 
 type SshAssetConfig struct {
-	AssetID        uuid.UUID   `json:"asset_id"`
-	AllowedLogins  []string    `json:"allowed_logins"`
-	AuthMethod     string      `json:"auth_method"`
-	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
-	TargetAddress  string      `json:"target_address"`
-	HostPublicKey  string      `json:"host_public_key"`
+	AssetID       uuid.UUID `json:"asset_id"`
+	TargetAddress string    `json:"target_address"`
+	HostPublicKey string    `json:"host_public_key"`
+}
+
+type SshAssetLogin struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Login    string      `json:"login"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
 }
 
 type User struct {
