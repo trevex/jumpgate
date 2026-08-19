@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 
 	"github.com/trevex/jumpgate/cli/internal/config"
+	"github.com/trevex/jumpgate/cli/internal/sshclient"
 	"github.com/trevex/jumpgate/cli/internal/tunnel"
 	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 )
@@ -46,11 +49,47 @@ func runConnectCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The SSH client over this tunnel is a later step; close it for now.
-	_ = out.tunnel.Close()
+	defer func() { _ = out.tunnel.Close() }()
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "tunnel established to %s as %s\n", asset, login)
+	code, err := runSession(cmd.Context(), out.tunnel, login, out.signer)
+	if err != nil {
+		return err
+	}
+	os.Exit(code)
 	return nil
+}
+
+// runSession runs the interactive SSH client over the tunnel. When stdin is a
+// terminal it switches the terminal to raw mode, requests a matching pty, and
+// forwards window-size changes; otherwise it runs non-interactively.
+func runSession(ctx context.Context, tunnel net.Conn, login string, signer ssh.Signer) (int, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return sshclient.Run(ctx, tunnel, login, signer, os.Stdin, os.Stdout, os.Stderr, nil)
+	}
+
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return 0, fmt.Errorf("switching terminal to raw mode: %w", err)
+	}
+	defer func() { _ = term.Restore(fd, oldState) }()
+
+	w, h, err := term.GetSize(fd)
+	if err != nil {
+		return 0, fmt.Errorf("reading terminal size: %w", err)
+	}
+
+	termType := os.Getenv("TERM")
+	if termType == "" {
+		termType = "xterm-256color"
+	}
+
+	resize := make(chan [2]int, 1)
+	stop := watchResize(fd, resize)
+	defer stop()
+
+	pty := &sshclient.PTY{Term: termType, W: w, H: h, Resize: resize}
+	return sshclient.Run(ctx, tunnel, login, signer, os.Stdin, os.Stdout, os.Stderr, pty)
 }
 
 // connectResult carries the state a later SSH step needs: the ephemeral client
