@@ -27,11 +27,12 @@ use tonic::transport::{Endpoint, Uri};
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
-    Register, ServerMessage, SessionEnded, WorkerMessage,
+    RecordingInfo, Register, ServerMessage, SessionEnded, WorkerMessage,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
 
 use crate::config::Config;
+use crate::server::SessionEndReport;
 
 /// A live session's teardown handle: the proxy loop selects on `cancel.notified()`.
 #[derive(Clone)]
@@ -91,7 +92,7 @@ const OUTBOUND_CHANNEL_CAP: usize = 64;
 pub async fn run_control(
     config: Config,
     registry: SessionRegistry,
-    mut session_ended_rx: mpsc::UnboundedReceiver<(String, String)>,
+    mut session_ended_rx: mpsc::UnboundedReceiver<SessionEndReport>,
 ) {
     // Read the worker's mesh identity PEMs once; each connect builds a cheap,
     // warden-pinned client config from them.
@@ -123,7 +124,7 @@ async fn connect_and_run(
     config: &Config,
     certs: &MeshClientCerts,
     registry: &SessionRegistry,
-    session_ended_rx: &mut mpsc::UnboundedReceiver<(String, String)>,
+    session_ended_rx: &mut mpsc::UnboundedReceiver<SessionEndReport>,
 ) -> anyhow::Result<()> {
     let mesh_client_config = certs
         .client_config(&config.warden_spiffe)
@@ -206,12 +207,19 @@ async fn connect_and_run(
             // Data plane → warden: a finished session to report.
             ended = session_ended_rx.recv() => {
                 match ended {
-                    Some((session_id, reason)) => {
+                    Some(rep) => {
                         let frame = WorkerMessage {
                             msg: Some(worker_message::Msg::SessionEnded(SessionEnded {
-                                session_id,
-                                reason,
-                                recording: None,
+                                session_id: rep.session_id,
+                                reason: rep.reason,
+                                recording: rep.recording.map(|r| RecordingInfo {
+                                    object_key: r.object_key,
+                                    size_bytes: r.size_bytes,
+                                    sha256: r.sha256,
+                                    started_at_unix_ms: r.started_at_unix_ms,
+                                    ended_at_unix_ms: r.ended_at_unix_ms,
+                                    status: r.status,
+                                }),
                             })),
                         };
                         if tx.send(frame).await.is_err() {

@@ -39,6 +39,15 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
 use crate::control::SessionRegistry;
+
+/// Current wall-clock time as unix milliseconds (saturating at 0 before the
+/// epoch). Used to stamp recording start/end timestamps.
+fn unix_millis_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 use crate::setup::{setup_session, SetupOutcome};
 use crate::{proxy, target};
 use jumpgate_mesh::tls::MeshClientCerts;
@@ -54,6 +63,51 @@ pub struct SessionState {
     pub target_address: String,
     pub certificate: Certificate,
     pub kw: PrivateKey,
+    /// warden requires this session to be recorded; if a recording cannot be
+    /// established (or a write fails mid-session) the session is refused/torn down.
+    pub recording_required: bool,
+    /// The object key warden assigned for this session's recording.
+    pub recording_object_key: String,
+}
+
+/// Recording store settings the target hop needs to build an uploader. An empty
+/// `bucket` disables recording (used by tests and unconfigured deployments).
+#[derive(Clone)]
+pub struct RecordingSettings {
+    pub bucket: String,
+    pub endpoint: String,
+    pub region: String,
+    pub part_size: usize,
+}
+
+impl RecordingSettings {
+    /// Recording disabled: no bucket configured. `build_recorder` fails closed on
+    /// this when a session is marked `recording_required`.
+    pub fn disabled() -> Self {
+        Self {
+            bucket: String::new(),
+            endpoint: String::new(),
+            region: String::new(),
+            part_size: crate::record::MIN_PART_SIZE,
+        }
+    }
+}
+
+/// What the data plane reports to the control stream when a session ends.
+pub struct SessionEndReport {
+    pub session_id: String,
+    pub reason: String,
+    pub recording: Option<RecordingOutcome>,
+}
+
+/// The recorded-session disposition carried to warden.
+pub struct RecordingOutcome {
+    pub object_key: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub started_at_unix_ms: i64,
+    pub ended_at_unix_ms: i64,
+    pub status: String, // "completed" | "failed"
 }
 
 /// Pseudo-terminal parameters remembered from the client's `pty_request`, so the
@@ -162,6 +216,8 @@ pub async fn authorize(
         target_address: outcome.target_address,
         certificate,
         kw,
+        recording_required: outcome.recording_required,
+        recording_object_key: outcome.recording_object_key,
     })
 }
 
@@ -174,7 +230,9 @@ pub struct SshHandler {
     /// Force-close registry + finished-session reporter, shared with the control
     /// plane so warden can tear a live session down and learn when it ends.
     registry: SessionRegistry,
-    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
+    /// Recording store settings, used to build the per-session uploader.
+    recording: RecordingSettings,
     /// Cached after a successful publickey auth; consumed by the target hop.
     state: Option<SessionState>,
     /// The login the client authenticated as (a cert principal).
@@ -188,6 +246,7 @@ pub struct SshHandler {
 impl SshHandler {
     /// Build a handler that redeems `token` via a real SetupSession call to
     /// `warden_addr` (pinned to `warden_spiffe`) as `worker_id`.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         token: String,
         worker_id: String,
@@ -195,7 +254,8 @@ impl SshHandler {
         warden_spiffe: String,
         certs: Arc<MeshClientCerts>,
         registry: SessionRegistry,
-        session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+        session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
+        recording: RecordingSettings,
     ) -> Self {
         let setup: SetupFn = Arc::new(move |kc_pub, kw_pub| {
             let token = token.clone();
@@ -216,19 +276,21 @@ impl SshHandler {
                 .await
             })
         });
-        Self::with_setup(setup, registry, session_ended_tx)
+        Self::with_setup(setup, registry, session_ended_tx, recording)
     }
 
     /// Build a handler over an injected SetupSession fn (tests stub warden here).
     pub fn with_setup(
         setup: SetupFn,
         registry: SessionRegistry,
-        session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+        session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
+        recording: RecordingSettings,
     ) -> Self {
         Self {
             setup,
             registry,
             session_ended_tx,
+            recording,
             state: None,
             login: None,
             client_channel: None,
@@ -263,41 +325,176 @@ impl SshHandler {
             return;
         };
 
+        // Decide recording BEFORE dialing the target. When warden marked the
+        // session `recording_required`, a recorder that cannot be established is a
+        // hard refuse: report a failed recording and return without bridging.
+        let recorder = if state.recording_required {
+            match self.build_recorder(state).await {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    tracing::warn!(session_id = %state.session_id, error = %e, "recording unavailable; refusing session");
+                    let _ = self.session_ended_tx.send(SessionEndReport {
+                        session_id: state.session_id.clone(),
+                        reason: "recording_unavailable".into(),
+                        recording: Some(RecordingOutcome {
+                            object_key: state.recording_object_key.clone(),
+                            size_bytes: 0,
+                            sha256: String::new(),
+                            started_at_unix_ms: 0,
+                            ended_at_unix_ms: 0,
+                            status: "failed".into(),
+                        }),
+                    });
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         let (target_handle, target_channel) =
             match self.open_target_channel(state, &login, command).await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
+                    // A recorder was already spun up; abort it so no dangling
+                    // multipart upload is left behind.
+                    if let Some((handle, _join, _started)) = recorder {
+                        handle.fail().await;
+                    }
                     return;
                 }
             };
 
         // Register the live session so a Teardown can force-close it, then bridge.
         let session_id = state.session_id.clone();
+        let object_key = state.recording_object_key.clone();
         let handle = self.registry.insert(&session_id);
         let registry = self.registry.clone();
         let ended_tx = self.session_ended_tx.clone();
 
         tokio::spawn(async move {
+            // Split the recorder into the tap handle (fed into the bridge) and the
+            // join handle + start timestamp used to finalize the recording report.
+            let (rec_handle, rec_join, started_ms) = match recorder {
+                Some((h, j, s)) => (Some(h), Some(j), s),
+                None => (None, None, 0),
+            };
+
             // The bridge reports whether it ended on a control-plane teardown
-            // (`terminated`) or a natural channel close (`closed`). An I/O error
-            // while pumping bytes counts as a natural close for reporting.
-            let reason = match proxy::bridge(client_channel, target_channel, handle.cancel).await {
-                Ok(outcome) => outcome.reason(),
+            // (`terminated`), a natural channel close (`closed`), or a recording
+            // failure (`recording_failed`). An I/O error while pumping bytes counts
+            // as a natural close for reporting.
+            let outcome = match proxy::bridge(
+                client_channel,
+                target_channel,
+                handle.cancel,
+                rec_handle.clone(),
+            )
+            .await
+            {
+                Ok(outcome) => outcome,
                 Err(e) => {
                     tracing::warn!(session_id = %session_id, error = %e, "channel bridge error");
-                    proxy::BridgeOutcome::Closed.reason()
+                    proxy::BridgeOutcome::Closed
                 }
             };
+            let reason = outcome.reason();
+
+            // Finalize the recording: a clean end completes the upload; a recording
+            // failure aborts it. Await the recorder task for the final report.
+            let recording = if let (Some(h), Some(join)) = (rec_handle, rec_join) {
+                if outcome == proxy::BridgeOutcome::RecordingFailed {
+                    h.fail().await;
+                } else {
+                    h.finish().await;
+                }
+                let report = join.await.unwrap_or_else(|e| {
+                    tracing::warn!(session_id = %session_id, error = %e, "recorder task join failed");
+                    crate::record::RecordingReport {
+                        size_bytes: 0,
+                        sha256_hex: String::new(),
+                        status: crate::record::RecordStatus::Failed,
+                    }
+                });
+                let ended_ms = unix_millis_now();
+                let status = match report.status {
+                    crate::record::RecordStatus::Completed => "completed",
+                    crate::record::RecordStatus::Failed => "failed",
+                };
+                Some(RecordingOutcome {
+                    object_key,
+                    size_bytes: report.size_bytes,
+                    sha256: report.sha256_hex,
+                    started_at_unix_ms: started_ms,
+                    ended_at_unix_ms: ended_ms,
+                    status: status.into(),
+                })
+            } else {
+                None
+            };
+
             // Exactly-once cleanup on every exit path: drop from the registry and
             // report the end to warden once.
             registry.remove(&session_id);
-            let _ = ended_tx.send((session_id.clone(), reason.to_string()));
+            let _ = ended_tx.send(SessionEndReport {
+                session_id: session_id.clone(),
+                reason: reason.to_string(),
+                recording,
+            });
             // The client connection to the target stays up for as long as this
             // task holds `target_handle`; dropping it here closes the second hop.
             drop(target_handle);
             tracing::info!(session_id = %session_id, reason, "session ended");
         });
+    }
+
+    /// Build a streaming recorder for `state`: a multipart upload to the recording
+    /// bucket under the session's object key, fed by [`crate::record::spawn_recorder`].
+    ///
+    /// Returns the tap handle, the recorder task's join handle, and the recording's
+    /// start timestamp (unix ms). Fails when recording is not configured (no
+    /// bucket) or the object store rejects the multipart-upload create — either is
+    /// a fail-closed trigger for a `recording_required` session.
+    async fn build_recorder(
+        &self,
+        state: &SessionState,
+    ) -> anyhow::Result<(
+        crate::record::RecorderHandle,
+        tokio::task::JoinHandle<crate::record::RecordingReport>,
+        i64,
+    )> {
+        if self.recording.bucket.is_empty() {
+            anyhow::bail!("recording bucket not configured");
+        }
+        let client =
+            crate::record::build_s3_client(&self.recording.endpoint, &self.recording.region).await;
+        let uploader = crate::record::S3Uploader::create(
+            client,
+            self.recording.bucket.clone(),
+            state.recording_object_key.clone(),
+        )
+        .await?;
+
+        // Header dimensions come from the remembered pty (fallback 80x24).
+        let (width, height) = self
+            .pty
+            .as_ref()
+            .map(|p| (p.col_width as u16, p.row_height as u16))
+            .filter(|(w, h)| *w != 0 && *h != 0)
+            .unwrap_or((80, 24));
+        let started_ms = unix_millis_now();
+        let header = crate::asciicast::Header::new(width, height, started_ms / 1000);
+
+        let (handle, join) = crate::record::spawn_recorder(
+            uploader,
+            header,
+            crate::record::RecorderConfig {
+                part_size: self.recording.part_size,
+                channel_bound: 1024,
+            },
+        );
+        Ok((handle, join, started_ms))
     }
 
     /// Dial the target and open the matching channel (applying the remembered
@@ -446,7 +643,7 @@ impl Handler for SshHandler {
 pub async fn run_dataplane_server(
     config: &Config,
     registry: SessionRegistry,
-    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> anyhow::Result<()> {
     let cert_pem = fs::read(&config.mesh_cert)
@@ -551,7 +748,7 @@ async fn handle_conn(
     mesh_certs: Arc<MeshClientCerts>,
     config: Config,
     registry: SessionRegistry,
-    session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
     tcp: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
@@ -585,6 +782,12 @@ async fn handle_conn(
         mesh_certs,
         registry,
         session_ended_tx,
+        RecordingSettings {
+            bucket: config.recording_bucket.clone(),
+            endpoint: config.recording_s3_endpoint.clone(),
+            region: config.recording_s3_region.clone(),
+            part_size: config.recording_part_size,
+        },
     );
 
     // Run the SSH server over the already-authenticated tunnel. `run_stream`
@@ -637,7 +840,12 @@ mod tests {
     /// (the auth path under test touches neither).
     fn test_handler(setup: SetupFn) -> SshHandler {
         let (tx, _rx) = mpsc::unbounded_channel();
-        SshHandler::with_setup(setup, SessionRegistry::default(), tx)
+        SshHandler::with_setup(
+            setup,
+            SessionRegistry::default(),
+            tx,
+            RecordingSettings::disabled(),
+        )
     }
 
     /// A stub SetupFn that mints a cert (over the Kw it is handed) with the given
@@ -790,6 +998,38 @@ mod tests {
             .await
             .expect_err("garbage cert → reject");
         assert!(matches!(err, AuthError::CertParse(_)));
+    }
+
+    /// FAIL CLOSED: a `recording_required` session whose worker has no recording
+    /// bucket configured must not be able to build a recorder — `build_recorder`
+    /// errors, and `start_hop` turns that into a refuse (no bridge).
+    #[tokio::test]
+    async fn build_recorder_fails_closed_without_a_bucket() {
+        let handler = test_handler(stub_ok(ed25519(), vec!["deploy".into()]));
+        // A minimal required-recording session state (the cert/kw are unused by
+        // build_recorder; only the object key + the disabled bucket matter).
+        let kw = ed25519();
+        let ca = ed25519();
+        let cert_bytes = mint_cert(&ca, kw.public_key(), &["deploy"]);
+        let cert =
+            Certificate::from_openssh(std::str::from_utf8(&cert_bytes).unwrap().trim()).unwrap();
+        let state = SessionState {
+            session_id: "sess-rec".into(),
+            target_address: "t:22".into(),
+            certificate: cert,
+            kw,
+            recording_required: true,
+            recording_object_key: "recordings/ssh/x.cast".into(),
+        };
+
+        let err = match handler.build_recorder(&state).await {
+            Ok(_) => panic!("no bucket → build_recorder must fail closed"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("bucket not configured"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
