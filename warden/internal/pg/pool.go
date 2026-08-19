@@ -4,6 +4,7 @@ package pg
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,22 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
 		pgxuuid.Register(conn.TypeMap())
 		return nil
+	}
+	// Bound dead-peer detection for long-lived LISTEN connections: a session that
+	// blocks in WaitForNotification holds an idle socket, so a silently-dropped path
+	// (NAT/LB timeout, peer crash) would otherwise go unnoticed for the OS default
+	// (~11 min) or never. TCP keepalive probes force detection in ~1 minute.
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		KeepAliveConfig: net.KeepAliveConfig{
+			Enable:   true,
+			Idle:     30 * time.Second,
+			Interval: 10 * time.Second,
+			Count:    3,
+		},
+	}
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, addr)
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)

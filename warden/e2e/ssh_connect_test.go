@@ -72,7 +72,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,6 +83,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -89,6 +92,10 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	clicmd "github.com/trevex/jumpgate/cli/cmd"
+	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
+	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -149,7 +156,12 @@ func TestSSHConnectFullStack(t *testing.T) {
 	// 4. Seed identity/catalog: user + bearer token, role granting ssh:login:deploy
 	//    standing-bound to the user on the asset, and the ssh asset config pointing
 	//    at the target sshd.
-	token := seedAccess(t, pool, targetAddr, targetHostPub)
+	token, roleBindingID := seedAccess(t, pool, targetAddr, targetHostPub)
+
+	// An admin user for the revocation phase's admin API calls. warden's first-boot
+	// bootstrap only seeds an admin when the users table is empty, and seedAccess
+	// already created the deployer, so seed the admin directly here.
+	seedAdmin(t, pool, bootstrapAdminEmail, bootstrapAdminPass)
 
 	// 5. Mesh certs for warden, gateway (+ its external server cert), and the
 	//    worker, all issued by warden-meshcert against the seeded mesh CA.
@@ -178,6 +190,9 @@ func TestSSHConnectFullStack(t *testing.T) {
 		"GATEWAY_ENDPOINT=" + gatewayExtAddr,
 		"SESSION_TOKEN_TTL=120s",
 		"REAPER_INTERVAL=2s",
+		"AUTHZ_SWEEP_INTERVAL=2s",
+		"AUTHZ_SWEEP_DEBOUNCE=100ms",
+		"ORPHAN_GC_INTERVAL=2s",
 		"AUDIT_DRAIN_INTERVAL=500ms",
 		"BOOTSTRAP_ADMIN_EMAIL=" + bootstrapAdminEmail,
 		"BOOTSTRAP_ADMIN_PASSWORD=" + bootstrapAdminPass,
@@ -251,6 +266,99 @@ func TestSSHConnectFullStack(t *testing.T) {
 	// 10. Assert the audit pair. session.started rides SetupSession; session.ended
 	//     lands after the worker reports the finished session to warden.
 	assertAuditPair(t, pool)
+
+	// 11. Revocation phase (reuses the already-booted stack). Open a long-lived
+	//     session over a FRESH tunnel, then remove the user's standing role
+	//     binding through the real admin API. The control plane's authorization
+	//     re-evaluation must detect that the live session is no longer permitted
+	//     and force it closed at the worker; the client's channel read then
+	//     unblocks with EOF and a session.terminated audit event lands.
+	assertRevocationClosesLiveSession(ctx, t, pool, wardenAddr, token, caFile, roleBindingID)
+}
+
+// assertRevocationClosesLiveSession opens a held-open shell over a fresh tunnel,
+// revokes the standing role binding via the admin AccessService RPC, and asserts
+// the live session is torn down end-to-end: the held channel closes and a
+// session.terminated audit event is recorded within a bounded deadline.
+func assertRevocationClosesLiveSession(ctx context.Context, t *testing.T, pool *pgxpool.Pool, wardenAddr, token, caFile, roleBindingID string) {
+	t.Helper()
+
+	// Establish a fresh tunnel and hold a shell open. The returned channel is
+	// closed by the reader goroutine when the session channel reaches EOF.
+	tunnel, signer := dialWithRetry(ctx, t, wardenAddr, token, caFile)
+	defer func() { _ = tunnel.Close() }()
+
+	client, closed, err := openHeldSession(tunnel, login, signer)
+	if err != nil {
+		t.Fatalf("open held session: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	// The session must still be live just after opening (not already torn down).
+	select {
+	case <-closed:
+		t.Fatalf("held session closed before revocation")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	// Revoke the standing binding via the real admin API.
+	adminTok := adminLogin(ctx, t, wardenAddr)
+	deleteRoleBinding(ctx, t, wardenAddr, adminTok, roleBindingID)
+	t.Logf("deleted role binding %s via admin API", roleBindingID)
+
+	// The held session's channel must close (worker force-close) AND a
+	// session.terminated audit event must land, both within the deadline.
+	deadline := time.Now().Add(20 * time.Second)
+	channelClosed := false
+	for {
+		if !channelClosed {
+			select {
+			case <-closed:
+				channelClosed = true
+				t.Logf("held session channel closed (worker force-close)")
+			default:
+			}
+		}
+		if channelClosed && auditCount(t, pool, "session.terminated") >= 1 {
+			t.Logf("revocation cascade complete: session.terminated audit present")
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("revocation did not close the live session in time: channelClosed=%v session.terminated=%d",
+				channelClosed, auditCount(t, pool, "session.terminated"))
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+// adminLogin logs in as the bootstrap admin via the AuthService RPC and returns
+// the resulting bearer token.
+func adminLogin(ctx context.Context, t *testing.T, wardenAddr string) string {
+	t.Helper()
+	c := authv1connect.NewAuthServiceClient(http.DefaultClient, wardenAddr)
+	resp, err := c.Login(ctx, connect.NewRequest(&authv1.LoginRequest{
+		Email:    bootstrapAdminEmail,
+		Password: bootstrapAdminPass,
+	}))
+	if err != nil {
+		t.Fatalf("admin login: %v", err)
+	}
+	if resp.Msg.Token == "" {
+		t.Fatalf("admin login returned empty token")
+	}
+	return resp.Msg.Token
+}
+
+// deleteRoleBinding removes a role binding through the admin AccessService RPC,
+// attaching the admin bearer token.
+func deleteRoleBinding(ctx context.Context, t *testing.T, wardenAddr, adminTok, roleBindingID string) {
+	t.Helper()
+	c := accessv1connect.NewAccessServiceClient(http.DefaultClient, wardenAddr)
+	req := connect.NewRequest(&accessv1.DeleteRoleBindingRequest{Id: roleBindingID})
+	req.Header().Set("Authorization", "Bearer "+adminTok)
+	if _, err := c.DeleteRoleBinding(ctx, req); err != nil {
+		t.Fatalf("DeleteRoleBinding: %v", err)
+	}
 }
 
 // --- CA + key provisioning (direct DB seeding, sealed under the master key) ---
@@ -328,8 +436,9 @@ func activeSSHCAPublicKey(t *testing.T, pool *pgxpool.Pool) gossh.PublicKey {
 
 // seedAccess creates a user + bearer token, a role carrying ssh:login:<login>
 // standing-bound to the user on the asset, and the ssh asset config pointing at
-// the target sshd. Returns the bearer token for the CLI config.
-func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub string) string {
+// the target sshd. Returns the bearer token for the CLI config and the id of the
+// created role binding (so a caller can later revoke it via the admin API).
+func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub string) (token, roleBindingID string) {
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
@@ -366,11 +475,12 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	rb, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeAssetID:  pgUUID(asset.ID),
 		SubjectUserID: pgUUID(user.ID),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
 	}
 
@@ -378,7 +488,26 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 	if err != nil {
 		t.Fatalf("issue bearer token: %v", err)
 	}
-	return tok
+	return tok, rb.ID.String()
+}
+
+// seedAdmin creates an admin user with a password login, used by the revocation
+// phase to authenticate against warden's admin API.
+func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: true})
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatalf("hash admin password: %v", err)
+	}
+	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+		t.Fatalf("set admin password: %v", err)
+	}
 }
 
 // --- Target sshd (in-test) ---------------------------------------------------
@@ -471,12 +600,14 @@ func handleTargetSession(ch gossh.Channel, reqs <-chan *gossh.Request) {
 			_ = ch.Close()
 			return
 		case "shell":
-			// An interactive shell: acknowledge and close cleanly (no output).
+			// An interactive shell: acknowledge and hold the channel open. We do
+			// NOT send exit-status or close the channel — the channel stays open
+			// until the far end (the worker) force-closes it. Discard anything the
+			// client sends so the reader drains until the channel is torn down.
 			if req.WantReply {
 				_ = req.Reply(true, nil)
 			}
-			sendExit(ch, 0)
-			_ = ch.Close()
+			go func() { _, _ = io.Copy(io.Discard, ch) }()
 			return
 		case "pty-req":
 			if req.WantReply {
@@ -528,6 +659,49 @@ func runExec(tunnel net.Conn, login string, signer gossh.Signer, cmd string) (st
 		return string(out), 0, fmt.Errorf("exec: %w", err)
 	}
 	return string(out), 0, nil
+}
+
+// openHeldSession performs the SSH client handshake over an established tunnel
+// and opens a long-lived shell session that stays open until the far end tears
+// it down. It returns the live client (the caller closes it) and a channel that
+// is closed once the session's stdout reaches EOF — which happens when the
+// worker force-closes the session on teardown.
+func openHeldSession(tunnel net.Conn, login string, signer gossh.Signer) (*gossh.Client, <-chan struct{}, error) {
+	cfg := &gossh.ClientConfig{
+		User:            login,
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(), //nolint:gosec // the tunnel is already mutually authenticated to the worker (mesh mTLS); mirrors the CLI's sshclient
+		Timeout:         15 * time.Second,
+	}
+	clientConn, chans, reqs, err := gossh.NewClientConn(tunnel, "jumpgate", cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("client handshake: %w", err)
+	}
+	client := gossh.NewClient(clientConn, chans, reqs)
+
+	sess, err := client.NewSession()
+	if err != nil {
+		_ = client.Close()
+		return nil, nil, fmt.Errorf("new session: %w", err)
+	}
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		_ = client.Close()
+		return nil, nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	if err := sess.Shell(); err != nil {
+		_ = client.Close()
+		return nil, nil, fmt.Errorf("start shell: %w", err)
+	}
+
+	// The read blocks while the session is live and unblocks (EOF) when the
+	// worker force-closes the channel on teardown; signal that via closed.
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		_, _ = io.Copy(io.Discard, stdout)
+	}()
+	return client, closed, nil
 }
 
 // --- Audit assertions --------------------------------------------------------

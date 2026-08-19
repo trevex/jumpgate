@@ -145,18 +145,21 @@ policy, grants) stays centralized in Go; the Rust data plane holds a credential
 only for the duration of a live, authorized session. Revocation is immediate
 (workers introspect the grant at session start; grant deletion tears sessions down).
 
-### Continuous revocation — live-session teardown 🟡 (M3c reaper ✅ + M4a terminator ✅ + M4b worker mTLS ✅ + M4d cascade ⬜)
+### Continuous revocation — live-session teardown 🟢 (M3c reaper ✅ + M4a terminator ✅ + M4b worker mTLS ✅ + M4d cascade ✅)
 
-> **Largely built.** The M3c side is done: grant revocation/expiry re-evaluates
-> authorization (a revoked/expired grant stops conferring immediately, since the
-> held closure filters `revoked_at IS NULL AND expires_at > now()`), audits the
-> event, and calls the **`GrantTerminator` teardown seam**. As of **M4a** that seam
-> is the **real** grant-keyed `dataplane.Terminator`: it re-evaluates the closure
-> and, for sessions in the durable **`live_sessions`** ledger whose authorization no
-> longer holds, pushes teardown to the owning worker stream via **`LISTEN/NOTIFY`**
-> (a warden-node fan-out to the in-memory session registry). The remaining gaps are
-> the **standing-eligibility cascade** (binding/membership/rewrite changes — **M4d**,
-> incl. the pull-sweep) and the worker **mTLS** transport (**M4b**).
+> **Built.** The M3c side re-evaluates authorization on grant revocation/expiry (a
+> revoked/expired grant stops conferring immediately, since the held closure filters
+> `revoked_at IS NULL AND expires_at > now()`), audits the event, and calls the
+> **`GrantTerminator` teardown seam**. As of **M4a** that seam is the **real**
+> grant-keyed `dataplane.Terminator`: it re-evaluates the closure and, for sessions
+> in the durable **`live_sessions`** ledger whose authorization no longer holds,
+> pushes teardown to the owning worker stream via **`LISTEN/NOTIFY`** (a warden-node
+> fan-out to the in-memory session registry). **M4d** closes the loop for
+> **standing** authorization: teardown now ALSO fires when a role binding, group
+> membership, role-rewrite rule, or role capability is removed, or a user is
+> deactivated — not only when a grant is reaped. Changes are detected via database
+> change notifications, with a periodic re-evaluation **sweep** as a backstop; a
+> **worker-presence heartbeat** reconciles orphaned sessions and stuck teardowns.
 
 **Authorization is continuous, not connect-time only.** A session is authorized
 for its whole lifetime, not just at the handshake. When the authorization a live

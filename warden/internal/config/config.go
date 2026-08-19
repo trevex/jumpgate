@@ -36,6 +36,22 @@ type Config struct {
 	// keys and stored secrets at rest. Empty means the vault is disabled.
 	VaultMasterKey string `env:"VAULT_MASTER_KEY"`
 
+	// AuthzSweepInterval is the pull-sweep backstop period: how often each replica
+	// re-evaluates its owned live sessions even without a change notification.
+	AuthzSweepInterval time.Duration `env:"AUTHZ_SWEEP_INTERVAL" envDefault:"30s"`
+	// AuthzSweepDebounce coalesces a burst of authorization-change notifications into
+	// a single sweep.
+	AuthzSweepDebounce time.Duration `env:"AUTHZ_SWEEP_DEBOUNCE" envDefault:"200ms"`
+	// OrphanGCInterval is how often the live-session ledger is reconciled against
+	// worker presence.
+	OrphanGCInterval time.Duration `env:"ORPHAN_GC_INTERVAL" envDefault:"30s"`
+	// OrphanGrace is how long a worker may miss heartbeats before its live sessions
+	// are reaped as unreachable (a small multiple of the heartbeat interval).
+	OrphanGrace time.Duration `env:"ORPHAN_GRACE" envDefault:"45s"`
+	// TeardownGrace is how long a session may stay marked-terminating (its teardown
+	// unconfirmed) before it is force-cleaned from the ledger.
+	TeardownGrace time.Duration `env:"TEARDOWN_GRACE" envDefault:"30s"`
+
 	// SessionTokenTTL bounds the data-plane admission token lifetime (an admission
 	// ticket; the session outlives it — teardown handles in-session revocation).
 	SessionTokenTTL time.Duration `env:"SESSION_TOKEN_TTL" envDefault:"60s"`

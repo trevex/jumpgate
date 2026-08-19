@@ -6,6 +6,7 @@ package gen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -44,6 +45,7 @@ type Querier interface {
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
+	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
@@ -73,6 +75,7 @@ type Querier interface {
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
+	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
 	// Admin listing: all grants (active + past), optionally narrowed to a subject
@@ -92,6 +95,8 @@ type Querier interface {
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error)
+	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
 	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
@@ -112,6 +117,7 @@ type Querier interface {
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
+	UpsertWorkerPresence(ctx context.Context, workerID string) error
 }
 
 var _ Querier = (*Queries)(nil)

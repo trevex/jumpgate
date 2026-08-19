@@ -58,12 +58,16 @@ held(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
     -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
     SELECT g.role_id, 'asset'::text, g.scope_asset_id
     FROM access_grants g
     WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
@@ -91,6 +95,8 @@ held_standing(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held_standing h,
@@ -156,6 +162,8 @@ WHERE
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          -- a deactivated user counts for nothing
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).
@@ -189,12 +197,16 @@ held(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
     -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
     SELECT g.role_id, 'asset'::text, g.scope_asset_id
     FROM access_grants g
     WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held h,
@@ -221,6 +233,8 @@ held_standing(role_id, object_kind, object_id) AS (
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
     WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION
     SELECT x.role_id, x.object_kind, x.object_id
     FROM held_standing h,
@@ -284,6 +298,8 @@ WHERE
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
           AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          -- a deactivated user counts for nothing
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).

@@ -108,6 +108,19 @@ func (r *Registry) Connected(workerID string) bool {
 	return len(r.sinks[workerID]) > 0
 }
 
+// ConnectedWorkers returns the ids of workers with a live stream on this replica.
+func (r *Registry) ConnectedWorkers() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.sinks))
+	for id, set := range r.sinks {
+		if len(set) > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // SetWorkerMeta records a worker's routing metadata and broadcasts a RosterAdded
 // event to all current subscribers (non-blocking: a slow/cancelled subscriber is
 // skipped, never blocks the caller).
