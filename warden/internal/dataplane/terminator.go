@@ -43,9 +43,9 @@ func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) erro
 }
 
 // Reevaluate re-checks the connect predicate for all live sessions of (user,asset)
-// and tears down those that no longer pass. Exported so the reconnect re-sync
-// (Task 11) and the M4d eligibility cascade can reuse it. Idempotent: safe to call
-// repeatedly — teardown of an already-terminating session is a no-op (see requestTeardown).
+// and tears down those that no longer pass. Exported so worker reconnect re-sync and
+// the periodic eligibility sweep can reuse it. Idempotent: safe to call repeatedly —
+// teardown of an already-terminating session is a no-op (see requestTeardown).
 func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) error {
 	q := gen.New(t.pool)
 	sessions, err := q.ListLiveSessionsByUserAsset(ctx, gen.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
@@ -104,10 +104,11 @@ func (t *Terminator) MarkEnded(ctx context.Context, sessionID uuid.UUID, reason 
 	return tx.Commit(ctx)
 }
 
-// requestTeardown marks the session terminating + enqueues session.terminated in one
-// tx, then NOTIFYs so the stream-owning replica pushes the Teardown. Idempotent: safe
-// to call repeatedly — only the transition (0→terminating) enqueues the audit event +
-// NOTIFY; a repeat call on an already-terminating session is a clean no-op.
+// requestTeardown marks a session terminating (once) and (re-)delivers the teardown
+// signal. MarkLiveSessionTerminating flips a NULL terminate_requested_at and returns
+// 0 rows thereafter, so the session.terminated audit event is recorded exactly once.
+// The teardown notification is sent on every call so a lost delivery self-heals —
+// telling an already-closing session to close is a no-op for the worker.
 func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, reason string) error {
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
@@ -119,21 +120,20 @@ func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, r
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		// Already terminating — idempotent no-op (no duplicate audit/notify).
-		return nil
+	if n > 0 {
+		detail, _ := json.Marshal(map[string]any{"session_id": sessionID.String(), "reason": reason})
+		if err := t.audit.Enqueue(ctx, q, audit.Event{
+			Type:    EventSessionTerminated,
+			ActorID: uuid.Nil,
+			Subject: "live_session:" + sessionID.String(),
+			Details: detail,
+		}); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
 	}
-	detail, _ := json.Marshal(map[string]any{"session_id": sessionID.String(), "reason": reason})
-	if err := t.audit.Enqueue(ctx, q, audit.Event{
-		Type:    EventSessionTerminated,
-		ActorID: uuid.Nil,
-		Subject: "live_session:" + sessionID.String(),
-		Details: detail,
-	}); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
+	// Re-deliver every time so a dropped notification self-heals.
 	return NotifyTeardown(ctx, t.pool, sessionID.String(), reason)
 }

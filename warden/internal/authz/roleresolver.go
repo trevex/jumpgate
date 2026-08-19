@@ -86,7 +86,9 @@ const holdsSatisfyBinding = `
     JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
          OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
-      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )`
+      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
+    -- a deactivated user holds nothing
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
 
 // holdsSatisfyGrant is the active-JIT-grant satisfaction arm (access membership
 // only — NOT governance). SECURITY: mirror of the held-base grant arm (see
@@ -97,7 +99,9 @@ const holdsSatisfyGrant = `
     FROM goals g
     JOIN access_grants ag ON ag.role_id = g.role_id
       AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
-      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()`
+      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+    -- a deactivated user holds nothing
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
 
 // HoldsRole reports whether userID holds roleID on the given object (objectKind is
 // "asset" or "folder") — i.e. whether the user holds it via a standing role_binding
@@ -222,6 +226,8 @@ FROM (
       AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
         OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
       AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+    -- a deactivated user holds nothing
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
   UNION ALL
     -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
     -- SECURITY: mirror of the held-base grant arm (see heldCTE). The grant id
@@ -232,6 +238,8 @@ FROM (
     JOIN access_grants ag ON ag.role_id = g.role_id
       AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
       AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+    -- a deactivated user holds nothing
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
 ) sat
 -- Defensive cap: role_grants is tiny/admin-curated, but bound worst-case result
 -- size. This caps explanation breadth only — holds (len(paths)>0) stays correct

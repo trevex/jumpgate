@@ -29,7 +29,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
-// Sentinel errors returned by Setup (Task 8 maps them to Connect codes).
+// Sentinel errors returned by Setup; the RPC layer maps them to Connect codes.
 var (
 	ErrBadToken      = errors.New("invalid session token")
 	ErrKeyMismatch   = errors.New("client key does not match token binding")
@@ -104,8 +104,8 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := gen.New(tx)
 	// GrantID is intentionally omitted (zero value pgtype.UUID{} → NULL): teardown
-	// re-evaluates the held-role closure, so the grant link is an unused
-	// optimization in M4a.
+	// re-evaluates the held-role closure, so the grant link would be an unused
+	// optimization.
 	if _, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
 		ID:          claims.SessionID,
 		UserID:      claims.UserID,

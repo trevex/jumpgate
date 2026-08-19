@@ -209,3 +209,8 @@ type User struct {
 	IsAdmin       bool               `json:"is_admin"`
 	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
 }
+
+type WorkerPresence struct {
+	WorkerID   string    `json:"worker_id"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}

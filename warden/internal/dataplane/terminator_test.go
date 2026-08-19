@@ -302,6 +302,59 @@ func TestTerminateGrantIdempotent(t *testing.T) {
 	}
 }
 
+// TestReevaluateRedeliversTeardownAuditsOnce: sole-source setup (as in
+// TestTerminateGrantKillsSoleSource) but Reevaluate is called TWICE. Teardown is
+// level-triggered: the still-present terminating session is re-listed on the second
+// pass and the NOTIFY is re-delivered so a dropped signal self-heals. The
+// session.terminated audit event, by contrast, is recorded exactly once (only on the
+// row's 0→terminating transition). Asserts: two notifications on session_teardown,
+// terminate_requested_at set, and exactly one session.terminated audit event.
+func TestReevaluateRedeliversTeardownAuditsOnce(t *testing.T) {
+	f := setupTerm(t)
+	gid := f.mkGrant(t)
+	f.revokeGrant(t, gid)
+
+	// Dedicated conn LISTENing on the teardown channel.
+	conn, err := f.pool.Acquire(f.ctx)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(f.ctx, "LISTEN session_teardown"); err != nil {
+		t.Fatalf("LISTEN: %v", err)
+	}
+
+	if err := f.term.Reevaluate(f.ctx, f.user, f.asset); err != nil {
+		t.Fatalf("Reevaluate (1): %v", err)
+	}
+	if err := f.term.Reevaluate(f.ctx, f.user, f.asset); err != nil {
+		t.Fatalf("Reevaluate (2): %v", err)
+	}
+
+	// Two teardown notifications must have been delivered (one per Reevaluate).
+	for i := 0; i < 2; i++ {
+		waitCtx, cancel := context.WithTimeout(f.ctx, 3*time.Second)
+		n, err := conn.Conn().WaitForNotification(waitCtx)
+		cancel()
+		if err != nil {
+			t.Fatalf("WaitForNotification (%d): %v", i+1, err)
+		}
+		if n.Channel != "session_teardown" {
+			t.Fatalf("notification channel = %q, want session_teardown", n.Channel)
+		}
+	}
+
+	if !f.terminateRequestedAt(t).Valid {
+		t.Fatal("re-delivered teardown: terminate_requested_at must be non-NULL")
+	}
+	if n := f.sessionTerminatedCount(t); n != 1 {
+		t.Fatalf("session.terminated events = %d, want exactly 1 (audit once across re-deliveries)", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
 // TestTerminateGrantKeepsStandingSession: the user holds BOTH a standing binding
 // AND a JIT grant of the role. Revoking the grant must NOT tear down the session —
 // the standing binding still confers the login. This is the critical property.

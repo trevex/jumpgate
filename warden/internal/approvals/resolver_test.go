@@ -503,6 +503,141 @@ func TestIsEligibleRequester(t *testing.T) {
 	})
 }
 
+// deactivateUser marks a user deactivated directly in the store.
+func deactivateUser(t *testing.T, pool *pgxpool.Pool, user uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE users SET deactivated_at = now() WHERE id = $1`, user); err != nil {
+		t.Fatalf("deactivate user: %v", err)
+	}
+}
+
+// TestDeactivatedExplicitApproverSubject proves a user named as an explicit
+// kind='approver' subject on a policy is an approver while active, but NOT once
+// deactivated — a deactivated user counts for nothing in governance.
+func TestDeactivatedExplicitApproverSubject(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	r := approvals.New(pool)
+
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-approver@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Role-default policy with NO approver_role: the only approver path is the
+	// explicit subject below.
+	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            dba.ID,
+		RequiredApprovals: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:      policy.ID,
+		Kind:          "approver",
+		SubjectUserID: pg(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active: explicit approver subject → approver.
+	ok, err := r.IsApprover(ctx, user.ID, dba.ID, pgAsset.ID)
+	if err != nil {
+		t.Fatalf("active: IsApprover error: %v", err)
+	}
+	if !ok {
+		t.Fatal("active: IsApprover = false; want true (explicit approver subject)")
+	}
+
+	// Deactivated: explicit approver subject no longer counts.
+	deactivateUser(t, pool, user.ID)
+	ok, err = r.IsApprover(ctx, user.ID, dba.ID, pgAsset.ID)
+	if err != nil {
+		t.Fatalf("deactivated: IsApprover error: %v", err)
+	}
+	if ok {
+		t.Fatal("deactivated: IsApprover = true; want false (deactivated approver subject counts for nothing)")
+	}
+}
+
+// TestDeactivatedExplicitRequesterSubject proves a user named as an explicit
+// kind='requester' subject on a policy is an eligible requester while active, but
+// NOT once deactivated.
+func TestDeactivatedExplicitRequesterSubject(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	r := approvals.New(pool)
+
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-req@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Role-default policy with NO requester_role: the only requester path is the
+	// explicit subject below.
+	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID:            dba.ID,
+		RequiredApprovals: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		PolicyID:      policy.ID,
+		Kind:          "requester",
+		SubjectUserID: pg(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active: explicit requester subject → eligible.
+	ok, err := r.IsEligibleRequester(ctx, user.ID, dba.ID, pgAsset.ID)
+	if err != nil {
+		t.Fatalf("active: IsEligibleRequester error: %v", err)
+	}
+	if !ok {
+		t.Fatal("active: IsEligibleRequester = false; want true (explicit requester subject)")
+	}
+
+	// Deactivated: explicit requester subject no longer counts.
+	deactivateUser(t, pool, user.ID)
+	ok, err = r.IsEligibleRequester(ctx, user.ID, dba.ID, pgAsset.ID)
+	if err != nil {
+		t.Fatalf("deactivated: IsEligibleRequester error: %v", err)
+	}
+	if ok {
+		t.Fatal("deactivated: IsEligibleRequester = true; want false (deactivated requester subject counts for nothing)")
+	}
+}
+
 // fabricateGrant inserts a minimal access_requests + active access_grants row for
 // (user, role, asset), returning the grant id. Mirrors the authz test helper;
 // used to prove a JIT-granted role confers access but NOT governance eligibility.
