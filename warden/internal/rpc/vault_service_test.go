@@ -380,6 +380,7 @@ func TestSetSSHAssetConfigHostKey(t *testing.T) {
 
 	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
 		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert", HostPublicKey: hostKey,
+		TargetAddress: "10.0.0.9:22",
 	}), tok)); err != nil {
 		t.Fatalf("SetSSHAssetConfig with host key: %v", err)
 	}
@@ -391,8 +392,11 @@ func TestSetSSHAssetConfigHostKey(t *testing.T) {
 	if got.Msg.HostPublicKey != hostKey {
 		t.Fatalf("host_public_key round-trip mismatch: got %q want %q", got.Msg.HostPublicKey, hostKey)
 	}
+	if got.Msg.TargetAddress != "10.0.0.9:22" {
+		t.Fatalf("target_address round-trip mismatch: got %q want %q", got.Msg.TargetAddress, "10.0.0.9:22")
+	}
 
-	// Empty host key is allowed (accept-and-log) and overwrites the prior value.
+	// Empty host key and target address are allowed and overwrite the prior values.
 	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
 		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert",
 	}), tok)); err != nil {
@@ -404,6 +408,9 @@ func TestSetSSHAssetConfigHostKey(t *testing.T) {
 	}
 	if got2.Msg.HostPublicKey != "" {
 		t.Fatalf("host_public_key not cleared: %q", got2.Msg.HostPublicKey)
+	}
+	if got2.Msg.TargetAddress != "" {
+		t.Fatalf("target_address not cleared: %q", got2.Msg.TargetAddress)
 	}
 
 	// An unparseable host key is rejected before touching the DB.

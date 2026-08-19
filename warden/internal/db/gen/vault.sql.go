@@ -168,13 +168,14 @@ func (q *Queries) SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) 
 }
 
 const upsertSSHAssetConfig = `-- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, allowed_logins, auth_method, stored_secret_id, host_public_key)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO ssh_asset_config (asset_id, allowed_logins, auth_method, stored_secret_id, host_public_key, target_address)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (asset_id) DO UPDATE SET
   allowed_logins = EXCLUDED.allowed_logins,
   auth_method = EXCLUDED.auth_method,
   stored_secret_id = EXCLUDED.stored_secret_id,
-  host_public_key = EXCLUDED.host_public_key
+  host_public_key = EXCLUDED.host_public_key,
+  target_address = EXCLUDED.target_address
 RETURNING asset_id, allowed_logins, auth_method, stored_secret_id, target_address, host_public_key
 `
 
@@ -184,6 +185,7 @@ type UpsertSSHAssetConfigParams struct {
 	AuthMethod     string      `json:"auth_method"`
 	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
 	HostPublicKey  string      `json:"host_public_key"`
+	TargetAddress  string      `json:"target_address"`
 }
 
 func (q *Queries) UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error) {
@@ -193,6 +195,7 @@ func (q *Queries) UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetCo
 		arg.AuthMethod,
 		arg.StoredSecretID,
 		arg.HostPublicKey,
+		arg.TargetAddress,
 	)
 	var i SshAssetConfig
 	err := row.Scan(
