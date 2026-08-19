@@ -7,6 +7,7 @@ package gen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -44,6 +45,17 @@ func (q *Queries) DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteStaleWorkerPresence = `-- name: DeleteStaleWorkerPresence :exec
+DELETE FROM worker_presence wp
+WHERE wp.last_seen_at < $1
+  AND NOT EXISTS (SELECT 1 FROM live_sessions ls WHERE ls.worker_id = wp.worker_id)
+`
+
+func (q *Queries) DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error {
+	_, err := q.db.Exec(ctx, deleteStaleWorkerPresence, lastSeenAt)
+	return err
 }
 
 const getActiveSessionSigningKey = `-- name: GetActiveSessionSigningKey :one
@@ -129,6 +141,35 @@ func (q *Queries) InsertLiveSession(ctx context.Context, arg InsertLiveSessionPa
 	return i, err
 }
 
+const listDistinctUserAssetsByWorkers = `-- name: ListDistinctUserAssetsByWorkers :many
+SELECT DISTINCT user_id, asset_id FROM live_sessions WHERE worker_id = ANY($1::text[])
+`
+
+type ListDistinctUserAssetsByWorkersRow struct {
+	UserID  uuid.UUID `json:"user_id"`
+	AssetID uuid.UUID `json:"asset_id"`
+}
+
+func (q *Queries) ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error) {
+	rows, err := q.db.Query(ctx, listDistinctUserAssetsByWorkers, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDistinctUserAssetsByWorkersRow
+	for rows.Next() {
+		var i ListDistinctUserAssetsByWorkersRow
+		if err := rows.Scan(&i.UserID, &i.AssetID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveSessionsByUserAsset = `-- name: ListLiveSessionsByUserAsset :many
 SELECT id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at FROM live_sessions WHERE user_id = $1 AND asset_id = $2
 `
@@ -204,6 +245,57 @@ func (q *Queries) ListLiveSessionsByWorker(ctx context.Context, workerID string)
 	return items, nil
 }
 
+const listStaleWorkerSessions = `-- name: ListStaleWorkerSessions :many
+SELECT ls.id FROM live_sessions ls
+JOIN worker_presence wp ON wp.worker_id = ls.worker_id
+WHERE wp.last_seen_at < $1
+`
+
+func (q *Queries) ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listStaleWorkerSessions, lastSeenAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStuckTerminatingSessions = `-- name: ListStuckTerminatingSessions :many
+SELECT id FROM live_sessions
+WHERE terminate_requested_at IS NOT NULL AND terminate_requested_at < $1
+`
+
+func (q *Queries) ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listStuckTerminatingSessions, terminateRequestedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markLiveSessionTerminating = `-- name: MarkLiveSessionTerminating :execrows
 UPDATE live_sessions SET terminate_requested_at = now() WHERE id = $1 AND terminate_requested_at IS NULL
 `
@@ -214,4 +306,14 @@ func (q *Queries) MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertWorkerPresence = `-- name: UpsertWorkerPresence :exec
+INSERT INTO worker_presence (worker_id, last_seen_at) VALUES ($1, now())
+ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now()
+`
+
+func (q *Queries) UpsertWorkerPresence(ctx context.Context, workerID string) error {
+	_, err := q.db.Exec(ctx, upsertWorkerPresence, workerID)
+	return err
 }

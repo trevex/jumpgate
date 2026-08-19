@@ -23,3 +23,24 @@ SELECT * FROM live_sessions WHERE user_id = $1 AND asset_id = $2;
 
 -- name: MarkLiveSessionTerminating :execrows
 UPDATE live_sessions SET terminate_requested_at = now() WHERE id = $1 AND terminate_requested_at IS NULL;
+
+-- name: UpsertWorkerPresence :exec
+INSERT INTO worker_presence (worker_id, last_seen_at) VALUES ($1, now())
+ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now();
+
+-- name: ListDistinctUserAssetsByWorkers :many
+SELECT DISTINCT user_id, asset_id FROM live_sessions WHERE worker_id = ANY($1::text[]);
+
+-- name: ListStaleWorkerSessions :many
+SELECT ls.id FROM live_sessions ls
+JOIN worker_presence wp ON wp.worker_id = ls.worker_id
+WHERE wp.last_seen_at < $1;
+
+-- name: ListStuckTerminatingSessions :many
+SELECT id FROM live_sessions
+WHERE terminate_requested_at IS NOT NULL AND terminate_requested_at < $1;
+
+-- name: DeleteStaleWorkerPresence :exec
+DELETE FROM worker_presence wp
+WHERE wp.last_seen_at < $1
+  AND NOT EXISTS (SELECT 1 FROM live_sessions ls WHERE ls.worker_id = wp.worker_id);
