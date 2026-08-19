@@ -13,13 +13,38 @@ service CatalogService {
   rpc CreateFolder(CreateFolderRequest) returns (CreateFolderResponse) {}
   rpc ListFolders(ListFoldersRequest) returns (ListFoldersResponse) {}
   rpc CreateAsset(CreateAssetRequest) returns (CreateAssetResponse) {}
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {}
+  rpc UpdateAssetConfig(UpdateAssetConfigRequest) returns (UpdateAssetConfigResponse) {}
   rpc ListAssetsByFolder(ListAssetsByFolderRequest) returns (ListAssetsByFolderResponse) {}
   rpc ListVisibleAssets(ListVisibleAssetsRequest) returns (ListVisibleAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
 }
 
 message Folder { string id = 1; string name = 2; string parent_id = 3; }
-message Asset  { string id = 1; string folder_id = 2; string name = 3; string kind = 4; }
+
+// Asset is a target in the catalog. The typed per-kind connection config (config)
+// is populated only by single-asset reads (GetAsset); list responses leave it empty
+// so they never carry connection details like stored_secret_id/target_address.
+message Asset {
+  string id = 1;
+  string folder_id = 2;
+  string name = 3;
+  string kind = 4;
+  oneof config { SSHConfig ssh = 5; }
+}
+
+// SSHConfig is an SSH asset's connection + auth config. stored_secret_id references
+// a sealed secret in the vault (asset_secrets); the bytes never live here.
+message SSHConfig {
+  repeated string allowed_logins = 1;
+  string auth_method = 2 [(buf.validate.field).string = {in: ["ca-cert", "stored-key"]}];
+  string stored_secret_id = 3;
+  // Optional OpenSSH authorized_keys line; when set the ssh-proxy worker pins the
+  // target host key, empty = accept-and-log.
+  string host_public_key = 4;
+  // Optional host:port the ssh-proxy worker dials; empty = worker default resolution.
+  string target_address = 5;
+}
 
 message CreateFolderRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
@@ -34,8 +59,19 @@ message CreateAssetRequest {
   string folder_id = 1 [(buf.validate.field).string.uuid = true];
   string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
   string kind = 3 [(buf.validate.field).string = {in: ["ssh", "postgres", "k8s", ""]}];
+  // Optional inline connection config so onboarding is a single call.
+  oneof config { SSHConfig ssh = 4; }
 }
 message CreateAssetResponse { Asset asset = 1; }
+
+message GetAssetRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetAssetResponse { Asset asset = 1; }
+
+message UpdateAssetConfigRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  oneof config { SSHConfig ssh = 2; }
+}
+message UpdateAssetConfigResponse {}
 
 message ListAssetsByFolderRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }
 message ListAssetsByFolderResponse { repeated Asset assets = 1; }

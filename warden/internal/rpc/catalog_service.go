@@ -6,8 +6,11 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	gossh "golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -49,12 +52,14 @@ func mapWriteErr(err error) error {
 // AccessService.
 type CatalogServer struct {
 	q          *gen.Queries
+	pool       *pgxpool.Pool
 	authorizer authz.Authorizer
 }
 
-// NewCatalogServer constructs the CatalogService implementation.
-func NewCatalogServer(q *gen.Queries, authorizer authz.Authorizer) *CatalogServer {
-	return &CatalogServer{q: q, authorizer: authorizer}
+// NewCatalogServer constructs the CatalogService implementation. pool is used to
+// run CreateAsset + its inline config as one transaction.
+func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer) *CatalogServer {
+	return &CatalogServer{q: q, pool: pool, authorizer: authorizer}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {
@@ -70,6 +75,47 @@ func toFolderMsg(f gen.Folder) *catalogv1.Folder {
 
 func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
+}
+
+// toAssetMsgWithConfig builds an Asset carrying its typed SSH config.
+func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig) *catalogv1.Asset {
+	msg := toAssetMsg(a)
+	msg.Config = &catalogv1.Asset_Ssh{Ssh: &catalogv1.SSHConfig{
+		AllowedLogins:  cfg.AllowedLogins,
+		AuthMethod:     cfg.AuthMethod,
+		StoredSecretId: pgUUIDToString(cfg.StoredSecretID),
+		HostPublicKey:  cfg.HostPublicKey,
+		TargetAddress:  cfg.TargetAddress,
+	}}
+	return msg
+}
+
+// validateSSHConfig checks the parts protovalidate can't: an optional
+// host_public_key must be a parseable authorized_keys line, and stored_secret_id
+// (when set) must be a UUID. Returns the parsed optional secret id.
+func validateSSHConfig(ssh *catalogv1.SSHConfig) (pgtype.UUID, error) {
+	storedSecret, _, err := optUUID(ssh.GetStoredSecretId())
+	if err != nil {
+		return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("bad stored_secret_id"))
+	}
+	if ssh.GetHostPublicKey() != "" {
+		if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(ssh.GetHostPublicKey())); err != nil {
+			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
+		}
+	}
+	return storedSecret, nil
+}
+
+// upsertSSHConfigParams builds the DB params for an asset's SSH config.
+func upsertSSHConfigParams(assetID uuid.UUID, ssh *catalogv1.SSHConfig, storedSecret pgtype.UUID) gen.UpsertSSHAssetConfigParams {
+	return gen.UpsertSSHAssetConfigParams{
+		AssetID:        assetID,
+		AllowedLogins:  ssh.GetAllowedLogins(),
+		AuthMethod:     ssh.GetAuthMethod(),
+		StoredSecretID: storedSecret,
+		HostPublicKey:  ssh.GetHostPublicKey(),
+		TargetAddress:  ssh.GetTargetAddress(),
+	}
 }
 
 // optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
@@ -148,11 +194,94 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if kind == "" {
 		kind = "ssh"
 	}
-	a, err := s.q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: kind})
-	if err != nil {
-		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
+	params := gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: kind}
+
+	// Without inline config, a single insert suffices.
+	ssh := req.Msg.GetSsh()
+	if ssh == nil {
+		a, err := s.q.CreateAsset(ctx, params)
+		if err != nil {
+			return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
+		}
+		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsg(a)}), nil
 	}
-	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsg(a)}), nil
+
+	// With inline config, create the asset and its config atomically so a bad config
+	// leaves no orphan bare asset.
+	storedSecret, err := validateSSHConfig(ssh)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+	a, err := qtx.CreateAsset(ctx, params)
+	if err != nil {
+		return nil, mapWriteErr(err)
+	}
+	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh, storedSecret))
+	if err != nil {
+		return nil, mapWriteErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsgWithConfig(a, cfg)}), nil
+}
+
+// GetAsset returns an asset with its typed config (admin only). NotFound if the
+// asset does not exist; an asset with no ssh config returns an Asset without config.
+func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catalogv1.GetAssetRequest]) (*connect.Response[catalogv1.GetAssetResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	a, err := s.q.GetAsset(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsg(a)}), nil
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsgWithConfig(a, cfg)}), nil
+}
+
+// UpdateAssetConfig upserts an asset's typed config (admin only). The
+// stored_key_needs_secret CHECK and the stored_secret_id FK surface as
+// InvalidArgument.
+func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Request[catalogv1.UpdateAssetConfigRequest]) (*connect.Response[catalogv1.UpdateAssetConfigResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	ssh := req.Msg.GetSsh()
+	if ssh == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
+	}
+	storedSecret, err := validateSSHConfig(ssh)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.q.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(assetID, ssh, storedSecret)); err != nil {
+		return nil, mapWriteErr(err) // CHECK / FK → InvalidArgument
+	}
+	return connect.NewResponse(&catalogv1.UpdateAssetConfigResponse{}), nil
 }
 
 // ListAssetsByFolder lists a folder's assets (admin only).

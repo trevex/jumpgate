@@ -19,17 +19,3 @@ DELETE FROM asset_secrets WHERE id = $1;
 
 -- name: ListAssetSecrets :many
 SELECT id, asset_id, name, created_at FROM asset_secrets WHERE asset_id = $1 ORDER BY name;
-
--- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, allowed_logins, auth_method, stored_secret_id, host_public_key, target_address)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (asset_id) DO UPDATE SET
-  allowed_logins = EXCLUDED.allowed_logins,
-  auth_method = EXCLUDED.auth_method,
-  stored_secret_id = EXCLUDED.stored_secret_id,
-  host_public_key = EXCLUDED.host_public_key,
-  target_address = EXCLUDED.target_address
-RETURNING *;
-
--- name: GetSSHAssetConfig :one
-SELECT * FROM ssh_asset_config WHERE asset_id = $1;

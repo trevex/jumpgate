@@ -10,7 +10,6 @@ import (
 
 	"github.com/trevex/jumpgate/cli/internal/output"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
-	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 )
 
 var assetHeaders = []string{"ID", "NAME", "KIND", "FOLDER"}
@@ -95,10 +94,18 @@ func runAssetsOnboardSSH(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// One call: the asset and its SSH config are created together, so there is no
+	// window where a bare asset exists without config.
 	createReq := connect.NewRequest(&catalogv1.CreateAssetRequest{
 		FolderId: folderID,
 		Name:     args[0],
 		Kind:     "ssh",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+			AllowedLogins: onboardSSHLogins,
+			AuthMethod:    onboardSSHAuth,
+			HostPublicKey: onboardSSHHostKey,
+			TargetAddress: onboardSSHTarget,
+		}},
 	})
 	cl.Authorize(createReq)
 	createResp, err := cl.Catalog().CreateAsset(cmd.Context(), createReq)
@@ -106,20 +113,6 @@ func runAssetsOnboardSSH(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	asset := createResp.Msg.GetAsset()
-
-	cfgReq := connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId:       asset.GetId(),
-		AllowedLogins: onboardSSHLogins,
-		AuthMethod:    onboardSSHAuth,
-		HostPublicKey: onboardSSHHostKey,
-		TargetAddress: onboardSSHTarget,
-	})
-	cl.Authorize(cfgReq)
-	if _, err := cl.Vault().SetSSHAssetConfig(cmd.Context(), cfgReq); err != nil {
-		// The asset now exists but is unconfigured. Surface its id so the user
-		// can retry only the config step rather than re-create a duplicate.
-		return fmt.Errorf("asset %q was created (id %s) but setting its SSH config failed: %w", asset.GetName(), asset.GetId(), err)
-	}
 
 	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
 		Headers: assetHeaders,
