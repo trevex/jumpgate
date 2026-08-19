@@ -20,6 +20,39 @@
 
         go = pkgs.go-bin.fromGoMod ./warden/go.mod;
 
+        # S3-compatible object store used by the recording pipeline in local dev
+        # and the end-to-end tests. Installed from the upstream release archive
+        # (not yet packaged in nixpkgs).
+        silo =
+          let
+            release = "RELEASE.2026-08-06T00-00-00Z";
+            ver = "20260806000000.0.0";
+            src =
+              if pkgs.stdenv.hostPlatform.system == "x86_64-linux" then
+                pkgs.fetchurl {
+                  url = "https://github.com/pgsty/silo/releases/download/${release}/silo_${ver}_linux_amd64.tar.gz";
+                  sha256 = "d63d57cc7f0535e1aa116f9e5f42117dbfc4f63492da692b64d3ba6ded30e574";
+                }
+              else if pkgs.stdenv.hostPlatform.system == "aarch64-linux" then
+                pkgs.fetchurl {
+                  url = "https://github.com/pgsty/silo/releases/download/${release}/silo_${ver}_linux_arm64.tar.gz";
+                  sha256 = "4389413672d8b2681130a2e518ae6609406671e0f0a5d34934c20701078ee1ad";
+                }
+              else throw "silo: unsupported system ${pkgs.stdenv.hostPlatform.system}";
+          in
+          pkgs.stdenv.mkDerivation {
+            pname = "silo";
+            version = ver;
+            inherit src;
+            sourceRoot = ".";
+            nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            installPhase = ''
+              runHook preInstall
+              install -Dm755 silo $out/bin/silo
+              runHook postInstall
+            '';
+          };
+
         pre-commit-check = git-hooks.lib.${system}.run {
           src = ./.;
           hooks = {
@@ -66,6 +99,7 @@
             pkgs.postgresql
             pkgs.openfga
             pkgs.minio-client
+            silo
             pkgs.kubernetes-helm
             pkgs.kubectl
             pkgs.kind
