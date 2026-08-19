@@ -103,6 +103,9 @@ func TestUsersList(t *testing.T) {
 }
 
 func TestUsersCreateNotLoggedIn(t *testing.T) {
+	// Isolate the config dir so the test reads no stored context — otherwise a real
+	// ~/.config/jumpgate login would supply a token and defeat the not-logged-in check.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("JUMPGATE_WARDEN_ADDR", "http://127.0.0.1:0")
 	t.Setenv("JUMPGATE_TOKEN", "")
 	t.Cleanup(func() { flagOutput = "table" })
