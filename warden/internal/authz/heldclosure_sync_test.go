@@ -81,7 +81,9 @@ const canonicalStandingBase = `
            (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))`
+    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
 
 // canonicalGrantArm is the active-grant base arm carried ONLY by the `held`
 // closures (never by `held_standing`). Copied verbatim from heldCTE
@@ -91,7 +93,9 @@ const canonicalGrantArm = `
     -- KEEP THIS ARM IDENTICAL across all held-style copies (requestable.go).
     SELECT g.role_id, 'asset'::text, g.scope_asset_id
     FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()`
+    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
+      -- a deactivated user holds nothing
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
 
 var (
 	lineCommentRe = regexp.MustCompile(`--[^\n]*`)

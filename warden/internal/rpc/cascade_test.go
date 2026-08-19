@@ -12,6 +12,8 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
+	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
@@ -204,6 +206,47 @@ func TestCascadeDeleteRoleBindingTearsDownSession(t *testing.T) {
 
 	if !f.terminateRequestedAt(t, sess).Valid {
 		t.Fatal("deauthorized session: terminate_requested_at must be non-NULL after revoke")
+	}
+	if n := f.sessionTerminatedCount(t); n != 1 {
+		t.Fatalf("session.terminated events = %d, want 1", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestCascadeDeactivateUserTearsDownSession proves that deactivating a user through
+// the public IdentityService API — when their sole login on an asset is a standing
+// role binding — causes the sweeper to tear down their live session: the users
+// deactivation trigger fires authz_changed, and the re-evaluation now sees the
+// deactivated user as authorized-for-nothing.
+func TestCascadeDeactivateUserTearsDownSession(t *testing.T) {
+	f := setupCascade(t)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, f.url)
+
+	roleID := f.createRole(t, "ssh-deploy")
+	f.bindRoleOnAsset(t, roleID)
+	sess := f.seedSession(t)
+
+	// While the user is active, the sweep re-evaluates and leaves the session alone.
+	f.sweep(t)
+	if f.terminateRequestedAt(t, sess).Valid {
+		t.Fatal("active user: terminate_requested_at must stay NULL before deactivation")
+	}
+	if n := f.sessionTerminatedCount(t); n != 0 {
+		t.Fatalf("session.terminated events = %d, want 0 before deactivation", n)
+	}
+
+	// Deactivate the user via the real admin-authed RPC, then sweep.
+	if _, err := id.DeactivateUser(f.ctx, withToken(connect.NewRequest(&identityv1.DeactivateUserRequest{
+		UserId: f.user.String(),
+	}), f.admin)); err != nil {
+		t.Fatalf("DeactivateUser: %v", err)
+	}
+	f.sweep(t)
+
+	if !f.terminateRequestedAt(t, sess).Valid {
+		t.Fatal("deactivated user: terminate_requested_at must be non-NULL after deactivation")
 	}
 	if n := f.sessionTerminatedCount(t); n != 1 {
 		t.Fatalf("session.terminated events = %d, want 1", n)
