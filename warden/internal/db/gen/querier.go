@@ -85,6 +85,7 @@ type Querier interface {
 	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
 	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)

@@ -57,7 +57,11 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
 
-	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc), opts)
+	// A standalone terminator (stateless; a second instance alongside the mesh
+	// side is fine) lets DeactivateUser synchronously evict a user's live
+	// sessions as part of the API call.
+	terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc, terminator), opts)
 	mux.Handle(idPath, idHandler)
 
 	authorizer := authz.NewSQLAuthorizer(pool)

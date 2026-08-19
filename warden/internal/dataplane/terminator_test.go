@@ -355,6 +355,81 @@ func TestReevaluateRedeliversTeardownAuditsOnce(t *testing.T) {
 	}
 }
 
+// seedSecondSession inserts an ADDITIONAL live_sessions row for the fixture's user
+// on a freshly created second asset owned by a different worker, so a user-wide
+// eviction has more than one row to signal. Returns the new session id.
+func (f *termFixture) seedSecondSession(t *testing.T) uuid.UUID {
+	t.Helper()
+	folder, err := f.q.CreateFolder(f.ctx, gen.CreateFolderParams{Name: uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := f.q.CreateAsset(f.ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg2", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	sess, err := f.q.InsertLiveSession(f.ctx, gen.InsertLiveSessionParams{
+		ID: uuid.New(), UserID: f.user, AssetID: asset.ID, WorkerID: "worker-2",
+		GrantID: pgtype.UUID{}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp2",
+	})
+	if err != nil {
+		t.Fatalf("InsertLiveSession (2): %v", err)
+	}
+	return sess.ID
+}
+
+func (f *termFixture) terminateRequestedAtOf(t *testing.T, sess uuid.UUID) pgtype.Timestamptz {
+	t.Helper()
+	var ts pgtype.Timestamptz
+	if err := f.pool.QueryRow(f.ctx, `SELECT terminate_requested_at FROM live_sessions WHERE id = $1`, sess).Scan(&ts); err != nil {
+		t.Fatalf("select terminate_requested_at: %v", err)
+	}
+	return ts
+}
+
+// TestTerminateUserEvictsAllSessions: a user with TWO live sessions (on different
+// assets, owned by different workers) is evicted wholesale. Both rows get
+// terminate_requested_at set, exactly two session.terminated audit events are
+// recorded, and a second call is idempotent — it adds no further events.
+func TestTerminateUserEvictsAllSessions(t *testing.T) {
+	f := setupTerm(t)
+	sess2 := f.seedSecondSession(t)
+
+	n, err := f.term.TerminateUser(f.ctx, f.user, "user_deactivated")
+	if err != nil {
+		t.Fatalf("TerminateUser: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("TerminateUser signalled %d sessions, want 2", n)
+	}
+
+	if !f.terminateRequestedAt(t).Valid {
+		t.Fatal("session 1: terminate_requested_at must be non-NULL after eviction")
+	}
+	if !f.terminateRequestedAtOf(t, sess2).Valid {
+		t.Fatal("session 2: terminate_requested_at must be non-NULL after eviction")
+	}
+	if c := f.sessionTerminatedCount(t); c != 2 {
+		t.Fatalf("session.terminated events = %d, want 2", c)
+	}
+
+	// Idempotent: a second wholesale eviction re-signals the still-present rows but
+	// records no additional session.terminated events.
+	n, err = f.term.TerminateUser(f.ctx, f.user, "user_deactivated")
+	if err != nil {
+		t.Fatalf("TerminateUser (2): %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("TerminateUser (2) signalled %d sessions, want 2", n)
+	}
+	if c := f.sessionTerminatedCount(t); c != 2 {
+		t.Fatalf("session.terminated events after repeat = %d, want exactly 2 (idempotent)", c)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
 // TestTerminateGrantKeepsStandingSession: the user holds BOTH a standing binding
 // AND a JIT grant of the role. Revoking the grant must NOT tear down the session —
 // the standing binding still confers the login. This is the critical property.

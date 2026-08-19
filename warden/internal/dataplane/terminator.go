@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -102,6 +104,27 @@ func (t *Terminator) MarkEnded(ctx context.Context, sessionID uuid.UUID, reason 
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// TerminateUser force-evicts every live session belonging to a user, regardless
+// of which grant or standing binding conferred access. Used when access is
+// revoked wholesale (account deactivation): the caller wants immediate teardown
+// rather than waiting for the periodic re-evaluation to notice. Idempotent —
+// each teardown is safe to repeat. Returns the number of sessions signalled.
+func (t *Terminator) TerminateUser(ctx context.Context, userID uuid.UUID, reason string) (int, error) {
+	ids, err := gen.New(t.pool).ListLiveSessionsByUser(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("list live sessions for user: %w", err)
+	}
+	n := 0
+	for _, id := range ids {
+		if err := t.requestTeardown(ctx, id, reason); err != nil {
+			slog.Error("terminate user session failed", "session", id, "user", userID, "err", err)
+			continue
+		}
+		n++
+	}
+	return n, nil
 }
 
 // requestTeardown marks a session terminating (once) and (re-)delivers the teardown

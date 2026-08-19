@@ -21,6 +21,9 @@ SELECT * FROM live_sessions WHERE worker_id = $1;
 -- name: ListLiveSessionsByUserAsset :many
 SELECT * FROM live_sessions WHERE user_id = $1 AND asset_id = $2;
 
+-- name: ListLiveSessionsByUser :many
+SELECT id FROM live_sessions WHERE user_id = $1;
+
 -- name: MarkLiveSessionTerminating :execrows
 UPDATE live_sessions SET terminate_requested_at = now() WHERE id = $1 AND terminate_requested_at IS NULL;
 
