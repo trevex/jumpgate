@@ -279,16 +279,24 @@ impl SshHandler {
         let ended_tx = self.session_ended_tx.clone();
 
         tokio::spawn(async move {
-            let result = proxy::bridge(client_channel, target_channel, handle.cancel).await;
-            if let Err(e) = &result {
-                tracing::warn!(session_id = %session_id, error = %e, "channel bridge error");
-            }
+            // The bridge reports whether it ended on a control-plane teardown
+            // (`terminated`) or a natural channel close (`closed`). An I/O error
+            // while pumping bytes counts as a natural close for reporting.
+            let reason = match proxy::bridge(client_channel, target_channel, handle.cancel).await {
+                Ok(outcome) => outcome.reason(),
+                Err(e) => {
+                    tracing::warn!(session_id = %session_id, error = %e, "channel bridge error");
+                    proxy::BridgeOutcome::Closed.reason()
+                }
+            };
+            // Exactly-once cleanup on every exit path: drop from the registry and
+            // report the end to warden once.
             registry.remove(&session_id);
-            let _ = ended_tx.send((session_id.clone(), "closed".to_string()));
+            let _ = ended_tx.send((session_id.clone(), reason.to_string()));
             // The client connection to the target stays up for as long as this
             // task holds `target_handle`; dropping it here closes the second hop.
             drop(target_handle);
-            tracing::info!(session_id = %session_id, "session ended");
+            tracing::info!(session_id = %session_id, reason, "session ended");
         });
     }
 
@@ -431,10 +439,15 @@ impl Handler for SshHandler {
 /// [`crate::control`]: each live session is registered in `registry` (so
 /// `Teardown` can force-close it) and reported via `session_ended_tx` when it
 /// ends.
+///
+/// The loop accepts until `shutdown` fires, at which point it stops accepting
+/// new connections and force-closes every live session in `registry` (each
+/// bridge selects on its handle's `cancel`), then returns.
 pub async fn run_dataplane_server(
     config: &Config,
     registry: SessionRegistry,
     session_ended_tx: mpsc::UnboundedSender<(String, String)>,
+    shutdown: Arc<tokio::sync::Notify>,
 ) -> anyhow::Result<()> {
     let cert_pem = fs::read(&config.mesh_cert)
         .with_context(|| format!("read mesh cert {}", config.mesh_cert))?;
@@ -472,12 +485,27 @@ pub async fn run_dataplane_server(
     );
 
     loop {
-        let (tcp, peer) = match listener.accept().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(error = %e, "accept failed");
-                continue;
+        let (tcp, peer) = tokio::select! {
+            // Stop accepting on shutdown; force-close every live session so an
+            // in-flight bridge tears down instead of being dropped mid-write.
+            _ = shutdown.notified() => {
+                let live = registry.live_ids();
+                tracing::info!(
+                    sessions = live.len(),
+                    "shutdown signalled; closing live sessions and stopping accept loop",
+                );
+                for id in live {
+                    registry.teardown(&id);
+                }
+                return Ok(());
             }
+            accepted = listener.accept() => match accepted {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(error = %e, "accept failed");
+                    continue;
+                }
+            },
         };
         let acceptor = acceptor.clone();
         let ssh_config = ssh_config.clone();

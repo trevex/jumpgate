@@ -12,6 +12,26 @@ use russh::server;
 use russh::{Channel, ChannelMsg};
 use tokio::sync::Notify;
 
+/// How a [`bridge`] ended, so the caller can report the right `SessionEnded`
+/// reason to warden.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeOutcome {
+    /// The control plane signalled `cancel` (a warden `Teardown`).
+    Terminated,
+    /// A channel closed / hit EOF naturally (the client or target ended it).
+    Closed,
+}
+
+impl BridgeOutcome {
+    /// The `SessionEnded.reason` string warden expects for this outcome.
+    pub fn reason(self) -> &'static str {
+        match self {
+            BridgeOutcome::Terminated => "terminated",
+            BridgeOutcome::Closed => "closed",
+        }
+    }
+}
+
 /// Bridge the client channel and the target channel until one closes or `cancel`
 /// fires.
 ///
@@ -20,23 +40,25 @@ use tokio::sync::Notify;
 /// `ExitStatus` is relayed to the client before teardown; an `ExitSignal` is
 /// logged (the client channel API exposes exit-status but not exit-signal).
 /// On `cancel`, both channels are closed and the bridge returns.
+///
+/// Returns the [`BridgeOutcome`] distinguishing a control-plane teardown from a
+/// natural channel close, alongside any I/O error hit while pumping bytes.
 pub async fn bridge(
     client_channel: Channel<server::Msg>,
     target_channel: Channel<client::Msg>,
     cancel: Arc<Notify>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<BridgeOutcome> {
     let (mut client_read, client_write) = client_channel.split();
     let (mut target_read, target_write) = target_channel.split();
 
-    // Reason recorded only for the trailing debug log; the bridge always tries
-    // to close both sides cleanly regardless.
-    let reason;
+    // Why the loop exited: a control-plane teardown vs a natural channel close.
+    let outcome;
 
     loop {
         tokio::select! {
             // Teardown requested by the control plane.
             _ = cancel.notified() => {
-                reason = "cancelled";
+                outcome = BridgeOutcome::Terminated;
                 break;
             }
 
@@ -60,7 +82,7 @@ pub async fn bridge(
                             .await?;
                     }
                     Some(ChannelMsg::Close) | None => {
-                        reason = "client closed";
+                        outcome = BridgeOutcome::Closed;
                         break;
                     }
                     // pty/shell/exec requests are handled before the bridge starts;
@@ -98,7 +120,7 @@ pub async fn bridge(
                         );
                     }
                     Some(ChannelMsg::Close) | None => {
-                        reason = "target closed";
+                        outcome = BridgeOutcome::Closed;
                         break;
                     }
                     Some(_) => {}
@@ -107,12 +129,23 @@ pub async fn bridge(
         }
     }
 
-    tracing::debug!(reason, "channel bridge finished; closing both sides");
+    tracing::debug!(?outcome, "channel bridge finished; closing both sides");
     // Best-effort close of both directions; the peer may already be gone.
     let _ = client_write.eof().await;
     let _ = client_write.close().await;
     let _ = target_write.eof().await;
     let _ = target_write.close().await;
 
-    Ok(())
+    Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outcome_maps_to_session_ended_reason() {
+        assert_eq!(BridgeOutcome::Terminated.reason(), "terminated");
+        assert_eq!(BridgeOutcome::Closed.reason(), "closed");
+    }
 }
