@@ -6,6 +6,11 @@ images:
   gateway:  { repository: jumpgate/gateway,   tag: dev, pullPolicy: IfNotPresent }
   sshProxy: { repository: jumpgate/ssh-proxy, tag: dev, pullPolicy: IfNotPresent }
 
+# The bootstrap Job's apply step needs kubectl + a shell. alpine/kubectl fits
+# (the official registry.k8s.io/kubectl is distroless and has no shell).
+bootstrap:
+  kubectlImage: alpine/kubectl:1.34.1
+
 warden:
   databaseUrl: ""          # used when postgres.enabled=false
   gatewayEndpoint: ""      # external addr the CLI dials; default localhost:<gateway nodePort>

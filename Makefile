@@ -6,6 +6,7 @@ SHELL := bash
 DOCKER_BUILD_FLAGS ?=
 KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
+KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 .PHONY: help gen build test lint fmt ci e2e-ssh \
         kind-images kind-up kind-down kind-demo kind-e2e
@@ -58,7 +59,8 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 	$(MAKE) kind-images
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev --name $(KIND_CLUSTER)
+	docker pull $(KUBECTL_IMAGE)
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
 	helm install jumpgate deploy/helm/jumpgate -f deploy/kind/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f deploy/testworkload/sshd.yaml
