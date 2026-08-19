@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -109,5 +110,76 @@ func TestOverlayPrecedence(t *testing.T) {
 	}
 	if got.CAFile != "/file/ca" {
 		t.Fatalf("CAFile should still come from file: got %q", got.CAFile)
+	}
+}
+
+func TestMigrateFlatConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir) // os.UserConfigDir honors XDG_CONFIG_HOME on linux
+	p := filepath.Join(dir, "jumpgate", "config.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(`{"warden_addr":"http://w","ca_file":"/ca","token":"tok"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := LoadFile()
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if f.CurrentContext != "default" {
+		t.Fatalf("current=%q", f.CurrentContext)
+	}
+	ctx, ok := f.Contexts["default"]
+	if !ok || ctx.Token != "tok" || ctx.WardenAddr != "http://w" || ctx.CAFile != "/ca" {
+		t.Fatalf("migrated context wrong: %+v ok=%v", ctx, ok)
+	}
+}
+
+func TestResolvePrecedence(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	f := File{CurrentContext: "a", Contexts: map[string]Context{"a": {WardenAddr: "http://file", Token: "ftok"}}}
+	if err := f.Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("JUMPGATE_TOKEN", "etok") // env beats file
+	got, err := Resolve("", Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WardenAddr != "http://file" || got.Token != "etok" {
+		t.Fatalf("resolve=%+v", got)
+	}
+	got, _ = Resolve("", Overrides{Token: "flagtok"}) // flag beats env
+	if got.Token != "flagtok" {
+		t.Fatalf("flag precedence: %q", got.Token)
+	}
+}
+
+func TestUseContextUnknown(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	f := File{Contexts: map[string]Context{}}
+	if err := f.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := UseContext("nope"); err == nil {
+		t.Fatal("want error for unknown context")
+	}
+}
+
+func TestUpsertContextRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := UpsertContext("bob", Context{WardenAddr: "http://w", Token: "t", IsAdmin: false}, true); err != nil {
+		t.Fatal(err)
+	}
+	f, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.CurrentContext != "bob" || f.Contexts["bob"].Token != "t" {
+		t.Fatalf("f=%+v", f)
 	}
 }
