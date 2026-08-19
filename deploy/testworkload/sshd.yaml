@@ -3,9 +3,10 @@
 # This is a plain manifest applied directly (not part of the jumpgate Helm
 # chart). It stands in for a real target host the admin onboards via the CLI.
 #
-# PREREQUISITE: a Secret named "ssh-ca-pub" with key "ssh-ca.pub" (jumpgate's
-# SSH CA public key) MUST exist in the same namespace before/with this manifest.
-# The Makefile copies it out of the jumpgate release Secret.
+# PREREQUISITE: a Secret named "jumpgate-ssh-ca-pub" with key "ssh-ca.pub"
+# (jumpgate's SSH CA public key) MUST exist in the same namespace before/with
+# this manifest. The jumpgate Helm chart's bootstrap Job creates exactly this
+# Secret (<release-fullname>-ssh-ca-pub) in the release namespace.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,7 +38,7 @@ spec:
       volumes:
         - name: ssh-ca-pub
           secret:
-            secretName: ssh-ca-pub
+            secretName: jumpgate-ssh-ca-pub
             items:
               - key: ssh-ca.pub
                 path: ssh-ca.pub

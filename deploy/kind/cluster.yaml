@@ -1,0 +1,17 @@
+# kind cluster for the jumpgate containerized demo/e2e environment.
+#
+# One control-plane node. The Helm chart exposes warden's user API and the
+# gateway's external listener via NodePorts; extraPortMappings forward those
+# NodePorts to fixed localhost ports so the CLI (and host tooling) can reach
+# them directly.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # warden user API  (service.warden.nodePort)
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30443   # gateway external (service.gateway.nodePort)
+        hostPort: 8443
+        protocol: TCP
