@@ -379,9 +379,14 @@ The broker's stored-secret lookup is scoped to the owning asset (id **and**
 
 Admin-guarded ConnectRPC: `InitCA(kind)` / `GetCAPublic(kind)`; `SetAssetSecret` /
 `DeleteAssetSecret` / `ListAssetSecrets` (**metadata only — id/name/created_at,
-never the value**); `SetSSHAssetConfig` / `GetSSHAssetConfig`. `CatalogService.
-CreateAsset` gains a validated `kind` (default `ssh`). Sealed private material
-never leaves the server.
+never the value**). Sealed private material never leaves the server.
+
+SSH asset connection config (allowed logins, auth method, `stored_secret_id`
+reference, host key, target address) lives on **`CatalogService`**, which owns the
+asset: `CreateAsset` takes an inline typed `config` (so onboarding is one call),
+`GetAsset` returns the asset with its config, and `UpdateAssetConfig` upserts it.
+`stored_secret_id` is a reference into the vault's `asset_secrets`; the sealed
+bytes stay in the vault.
 
 ### Scope boundary — no live injection yet
 
