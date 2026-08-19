@@ -46,7 +46,7 @@ spec:
             - name: WORKER_MESH_CA
               value: /mesh/ca.crt
             - name: WARDEN_MESH_ADDR
-              value: "https://{{ include "jumpgate.wardenMeshHost" . }}:8443"
+              value: "https://{{ include "jumpgate.wardenMeshHost" . }}.{{ .Release.Namespace }}.svc.cluster.local:8443"
             - name: WARDEN_SPIFFE
               value: "spiffe://jumpgate/warden/warden"
             - name: GATEWAY_SPIFFE
