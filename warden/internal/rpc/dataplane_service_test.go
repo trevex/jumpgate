@@ -181,6 +181,7 @@ func TestSetupSessionRPCUnauthenticated(t *testing.T) {
 		SessionToken:       "not-a-real-token",
 		WorkerId:           "w1",
 		ClientSshPublicKey: []byte("bogus"),
+		TargetPublicKey:    []byte("bogus"),
 	}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("bogus-token SetupSession = %v, want Unauthenticated", connect.CodeOf(err))

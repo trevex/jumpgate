@@ -4,29 +4,21 @@
 //! configuration, builds the shared [`GatewayState`], spawns the roster client and
 //! the health server, and drives the external TLS accept loop. Each accepted,
 //! TLS-terminated connection is handed to [`handle_connection`], which is also the
-//! seam the integration test (Task 14) drives directly.
+//! seam the integration tests drive directly.
 
 pub mod config;
-pub mod connect;
 pub mod health;
 pub mod lb;
 pub mod proxy;
 pub mod roster;
-pub mod tls;
 pub mod token;
 
-/// Generated tonic clients + prost messages for the jumpgate protos. The gateway
-/// consumes `jumpgate.gateway.v1.GatewayService` over the internal mesh. This is
-/// the single include site; other modules reference `crate::pb::...`.
-pub mod pb {
-    pub mod jumpgate {
-        pub mod gateway {
-            pub mod v1 {
-                tonic::include_proto!("jumpgate.gateway.v1");
-            }
-        }
-    }
-}
+// The mesh mTLS ([`tls`]), CONNECT framing ([`connect`]), and generated tonic
+// clients ([`pb`]) live in the shared `jumpgate-mesh` crate — ONE copy of the
+// reviewed SPIFFE-pinning verifier. Re-exported here so existing
+// `crate::tls`/`crate::connect`/`crate::pb` (and the e2e test's
+// `gateway::tls`/`gateway::connect`) paths keep resolving unchanged.
+pub use jumpgate_mesh::{connect, pb, tls};
 
 use std::sync::{Arc, RwLock};
 use tokio_rustls::server::TlsStream;

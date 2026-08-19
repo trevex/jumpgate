@@ -84,14 +84,59 @@ minted with `warden-meshcert -spiffe spiffe://jumpgate/warden/warden`.
 The real ssh-proxy worker + `jumpgate connect` CLI are **M4c** (M4b tests against a
 stub worker).
 
-### Protocol workers — Rust ⬜
+### Protocol workers — Rust (`ssh-proxy` ✅ · others ⬜)
 
 Stateless enforcers, one Deployment per protocol, scaled independently by replica
 count. Each terminates its protocol, calls the control plane over gRPC for the
 target address + just-in-time credential, injects the credential, proxies, and
-records the session. MVP workers: `ssh-proxy` (russh) and `pg-proxy` (pgwire +
-sqlparser-rs). Because they sit behind the language-agnostic gateway, future
-workers may be Go (e.g. `k8s-proxy` on client-go).
+(later) records the session. Because they sit behind the language-agnostic
+gateway, future workers may be Go (e.g. `k8s-proxy` on client-go). Planned:
+`pg-proxy` (pgwire + sqlparser-rs), and beyond that RDP/k8s.
+
+**`ssh-proxy` (russh)** ✅ — the SSH worker registers with the control plane over
+mesh mTLS (advertising its data-plane address, protocol, and capacity), then
+accepts the gateway's tunnelled connection (reading the `CONNECT` preamble to
+recover the session token) and runs an SSH **server** on it. The connection is a
+**two-hop, key-separated** exchange:
+
+- The client authenticates to the worker with its ephemeral key **Kc** (whose
+  fingerprint is bound into the session token). The worker's publickey-auth
+  callback calls the control plane's session-setup RPC, which verifies that
+  binding, re-checks the caller's live entitlement, and issues a short-lived SSH
+  **certificate** — over a fresh key **Kw** the worker generates per session. The
+  worker accepts only if setup succeeds and the requested login is among the
+  certificate's principals.
+- The worker then opens an SSH **client** to the target, authenticating with
+  **Kw + the certificate**, and proxies the channels (pty/shell/exec,
+  window-resize, exit status) between the two hops.
+
+Because the worker holds Kw's private key, it — not the client — authenticates the
+target hop; the client's key never reaches the target. Terminating SSH at the
+worker is also what will let it record sessions. A control-plane teardown signal
+force-closes the live session; the worker reports the session's end, closing the
+loop on continuous revocation for SSH.
+
+### Client — `jumpgate` CLI ✅ (Go)
+
+`jumpgate connect <login>@<asset>` is the user entry point. It authenticates to the
+control plane (`jumpgate login` stores an opaque bearer token), resolves the asset,
+generates the ephemeral key **Kc**, and requests a session — receiving a
+short-lived admission token and the gateway address. It dials the gateway over TLS,
+performs an HTTP `CONNECT` carrying the token, and then runs an embedded SSH client
+(`golang.org/x/crypto/ssh`) over the resulting tunnel: an interactive pty with raw
+local terminal mode, window-resize forwarding, and the remote exit code propagated.
+The tunnel is already mutually authenticated all the way to the pinned worker
+(client→gateway TLS, gateway→worker mesh mTLS), so the inner SSH host-key check is a
+deliberate no-op. Config is a small hand-rolled file (`~/.config/jumpgate/`) with
+flag/env/file precedence.
+
+### Shared mesh library (`jumpgate-mesh`, Rust) ✅
+
+The gateway and workers share one Rust crate for the internal mTLS mesh: the
+certificate verifiers that verify a peer's chain to the mesh CA and **pin its
+SPIFFE identity** (`spiffe://jumpgate/<role>/<id>`), the `CONNECT` framing, and the
+generated gRPC client stubs. Keeping the security-critical verifier in a single
+place avoids drift between the components that depend on it.
 
 ### Data-plane interaction model ("Approach A")
 

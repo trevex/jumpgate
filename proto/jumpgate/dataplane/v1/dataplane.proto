@@ -51,9 +51,11 @@ message Teardown {
 message SetupSessionRequest {
   string session_token = 1 [(buf.validate.field).string.min_len = 1];
   string worker_id = 2 [(buf.validate.field).string.min_len = 1];
-  bytes client_ssh_public_key = 3 [(buf.validate.field).bytes.min_len = 1];
+  bytes client_ssh_public_key = 3 [(buf.validate.field).bytes.min_len = 1]; // Kc — cnf-bound
+  bytes target_public_key = 4 [(buf.validate.field).bytes.min_len = 1]; // Kw — certified for the target
 }
 message SetupSessionResponse {
   string target_address = 1;
-  bytes ssh_certificate = 2;
+  bytes ssh_certificate = 2; // over Kw
+  string session_id = 3; // token jti / live_sessions PK
 }

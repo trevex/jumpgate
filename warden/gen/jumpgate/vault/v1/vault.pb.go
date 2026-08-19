@@ -801,8 +801,14 @@ type SetSSHAssetConfigRequest struct {
 	AllowedLogins  []string               `protobuf:"bytes,2,rep,name=allowed_logins,json=allowedLogins,proto3" json:"allowed_logins,omitempty"`
 	AuthMethod     string                 `protobuf:"bytes,3,opt,name=auth_method,json=authMethod,proto3" json:"auth_method,omitempty"`
 	StoredSecretId string                 `protobuf:"bytes,4,opt,name=stored_secret_id,json=storedSecretId,proto3" json:"stored_secret_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Optional OpenSSH authorized_keys line (e.g. "ssh-ed25519 AAAA..."). When set,
+	// the ssh-proxy worker pins the target host key; empty = accept-and-log.
+	HostPublicKey string `protobuf:"bytes,5,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
+	// Optional host:port the ssh-proxy worker dials to reach the target. Empty is
+	// allowed (worker falls back to its default resolution).
+	TargetAddress string `protobuf:"bytes,6,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetSSHAssetConfigRequest) Reset() {
@@ -859,6 +865,20 @@ func (x *SetSSHAssetConfigRequest) GetAuthMethod() string {
 func (x *SetSSHAssetConfigRequest) GetStoredSecretId() string {
 	if x != nil {
 		return x.StoredSecretId
+	}
+	return ""
+}
+
+func (x *SetSSHAssetConfigRequest) GetHostPublicKey() string {
+	if x != nil {
+		return x.HostPublicKey
+	}
+	return ""
+}
+
+func (x *SetSSHAssetConfigRequest) GetTargetAddress() string {
+	if x != nil {
+		return x.TargetAddress
 	}
 	return ""
 }
@@ -948,6 +968,8 @@ type GetSSHAssetConfigResponse struct {
 	AllowedLogins  []string               `protobuf:"bytes,1,rep,name=allowed_logins,json=allowedLogins,proto3" json:"allowed_logins,omitempty"`
 	AuthMethod     string                 `protobuf:"bytes,2,opt,name=auth_method,json=authMethod,proto3" json:"auth_method,omitempty"`
 	StoredSecretId string                 `protobuf:"bytes,3,opt,name=stored_secret_id,json=storedSecretId,proto3" json:"stored_secret_id,omitempty"`
+	HostPublicKey  string                 `protobuf:"bytes,4,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
+	TargetAddress  string                 `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1003,6 +1025,20 @@ func (x *GetSSHAssetConfigResponse) GetStoredSecretId() string {
 	return ""
 }
 
+func (x *GetSSHAssetConfigResponse) GetHostPublicKey() string {
+	if x != nil {
+		return x.HostPublicKey
+	}
+	return ""
+}
+
+func (x *GetSSHAssetConfigResponse) GetTargetAddress() string {
+	if x != nil {
+		return x.TargetAddress
+	}
+	return ""
+}
+
 var File_jumpgate_vault_v1_vault_proto protoreflect.FileDescriptor
 
 const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
@@ -1046,22 +1082,26 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x03 \x01(\tR\tcreatedAt\"X\n" +
 	"\x18ListAssetSecretsResponse\x12<\n" +
-	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets\"\xcd\x01\n" +
+	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets\"\x9c\x02\n" +
 	"\x18SetSSHAssetConfigRequest\x12#\n" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12%\n" +
 	"\x0eallowed_logins\x18\x02 \x03(\tR\rallowedLogins\x12;\n" +
 	"\vauth_method\x18\x03 \x01(\tB\x1a\xbaH\x17r\x15R\aca-certR\n" +
 	"stored-keyR\n" +
 	"authMethod\x12(\n" +
-	"\x10stored_secret_id\x18\x04 \x01(\tR\x0estoredSecretId\"\x1b\n" +
+	"\x10stored_secret_id\x18\x04 \x01(\tR\x0estoredSecretId\x12&\n" +
+	"\x0fhost_public_key\x18\x05 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x0etarget_address\x18\x06 \x01(\tR\rtargetAddress\"\x1b\n" +
 	"\x19SetSSHAssetConfigResponse\"?\n" +
 	"\x18GetSSHAssetConfigRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\x8d\x01\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xdc\x01\n" +
 	"\x19GetSSHAssetConfigResponse\x12%\n" +
 	"\x0eallowed_logins\x18\x01 \x03(\tR\rallowedLogins\x12\x1f\n" +
 	"\vauth_method\x18\x02 \x01(\tR\n" +
 	"authMethod\x12(\n" +
-	"\x10stored_secret_id\x18\x03 \x01(\tR\x0estoredSecretId2\x99\b\n" +
+	"\x10stored_secret_id\x18\x03 \x01(\tR\x0estoredSecretId\x12&\n" +
+	"\x0fhost_public_key\x18\x04 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x0etarget_address\x18\x05 \x01(\tR\rtargetAddress2\x99\b\n" +
 	"\fVaultService\x12O\n" +
 	"\x06InitCA\x12 .jumpgate.vault.v1.InitCARequest\x1a!.jumpgate.vault.v1.InitCAResponse\"\x00\x12^\n" +
 	"\vGetCAPublic\x12%.jumpgate.vault.v1.GetCAPublicRequest\x1a&.jumpgate.vault.v1.GetCAPublicResponse\"\x00\x12[\n" +

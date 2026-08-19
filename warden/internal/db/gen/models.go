@@ -197,6 +197,7 @@ type SshAssetConfig struct {
 	AuthMethod     string      `json:"auth_method"`
 	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
 	TargetAddress  string      `json:"target_address"`
+	HostPublicKey  string      `json:"host_public_key"`
 }
 
 type User struct {

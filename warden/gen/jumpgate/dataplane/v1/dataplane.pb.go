@@ -458,7 +458,8 @@ type SetupSessionRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	WorkerId           string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"`
+	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"` // Kc — cnf-bound
+	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -514,10 +515,18 @@ func (x *SetupSessionRequest) GetClientSshPublicKey() []byte {
 	return nil
 }
 
+func (x *SetupSessionRequest) GetTargetPublicKey() []byte {
+	if x != nil {
+		return x.TargetPublicKey
+	}
+	return nil
+}
+
 type SetupSessionResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TargetAddress  string                 `protobuf:"bytes,1,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	SshCertificate []byte                 `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3" json:"ssh_certificate,omitempty"`
+	SshCertificate []byte                 `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3" json:"ssh_certificate,omitempty"` // over Kw
+	SessionId      string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                // token jti / live_sessions PK
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -566,6 +575,13 @@ func (x *SetupSessionResponse) GetSshCertificate() []byte {
 	return nil
 }
 
+func (x *SetupSessionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
@@ -595,14 +611,17 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\bTeardown\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xa5\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xda\x01\n" +
 	"\x13SetupSessionRequest\x12,\n" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12:\n" +
-	"\x15client_ssh_public_key\x18\x03 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x12clientSshPublicKey\"f\n" +
+	"\x15client_ssh_public_key\x18\x03 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x12clientSshPublicKey\x123\n" +
+	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\"\x85\x01\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12'\n" +
-	"\x0fssh_certificate\x18\x02 \x01(\fR\x0esshCertificate2\xdf\x01\n" +
+	"\x0fssh_certificate\x18\x02 \x01(\fR\x0esshCertificate\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId2\xdf\x01\n" +
 	"\x10DataplaneService\x12`\n" +
 	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12i\n" +
 	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
