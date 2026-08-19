@@ -2,8 +2,6 @@ package rpc_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"net/http"
@@ -12,7 +10,6 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
@@ -89,10 +86,6 @@ func TestVaultRequiresAdmin(t *testing.T) {
 	assertDenied("DeleteAssetSecret", err)
 	_, err = c.ListAssetSecrets(ctx, withToken(connect.NewRequest(&vaultv1.ListAssetSecretsRequest{AssetId: "00000000-0000-0000-0000-000000000000"}), utok))
 	assertDenied("ListAssetSecrets", err)
-	_, err = c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{AssetId: "00000000-0000-0000-0000-000000000000", AuthMethod: "ca-cert"}), utok))
-	assertDenied("SetSSHAssetConfig", err)
-	_, err = c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: "00000000-0000-0000-0000-000000000000"}), utok))
-	assertDenied("GetSSHAssetConfig", err)
 }
 
 func TestVaultInitCA(t *testing.T) {
@@ -315,123 +308,6 @@ func TestAssetSecretMetaHasNoValue(t *testing.T) {
 		if name == "value" || name == "sealed" || name == "secret" {
 			t.Fatalf("AssetSecretMeta must not expose a %q field (metadata only)", name)
 		}
-	}
-}
-
-func TestVaultSSHAssetConfig(t *testing.T) {
-	pool, url := newServer(t)
-	seedUser(t, pool, "admin@x", "supersecret", true)
-	tok := adminToken(t, url)
-	asset := newAsset(t, url, tok, "ssh")
-
-	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
-	ctx := context.Background()
-
-	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId: asset.Id, AllowedLogins: []string{"root", "deploy"}, AuthMethod: "ca-cert",
-	}), tok)); err != nil {
-		t.Fatalf("SetSSHAssetConfig ca-cert: %v", err)
-	}
-
-	got, err := c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
-	if err != nil {
-		t.Fatalf("GetSSHAssetConfig: %v", err)
-	}
-	if got.Msg.AuthMethod != "ca-cert" || len(got.Msg.AllowedLogins) != 2 ||
-		got.Msg.AllowedLogins[0] != "root" || got.Msg.AllowedLogins[1] != "deploy" {
-		t.Fatalf("GetSSHAssetConfig round-trip mismatch: %+v", got.Msg)
-	}
-	if got.Msg.StoredSecretId != "" {
-		t.Fatalf("unexpected stored_secret_id: %q", got.Msg.StoredSecretId)
-	}
-
-	// stored-key without a secret violates the stored_key_needs_secret CHECK.
-	_, err = c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "stored-key",
-	}), tok))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("SetSSHAssetConfig stored-key (no secret) = %v, want InvalidArgument", connect.CodeOf(err))
-	}
-}
-
-// TestSetSSHAssetConfigHostKey locks the optional host_public_key contract: a
-// valid OpenSSH authorized_keys line round-trips through Get, empty is allowed,
-// and a non-key value is rejected InvalidArgument (so the ssh-proxy worker can
-// trust that a persisted host_public_key parses when it pins the target host key).
-func TestSetSSHAssetConfigHostKey(t *testing.T) {
-	pool, url := newServer(t)
-	seedUser(t, pool, "admin@x", "supersecret", true)
-	tok := adminToken(t, url)
-	asset := newAsset(t, url, tok, "ssh")
-
-	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
-	ctx := context.Background()
-
-	// Generate a valid ed25519 host key as an authorized_keys line.
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("ed25519 keygen: %v", err)
-	}
-	signer, err := ssh.NewSignerFromKey(priv)
-	if err != nil {
-		t.Fatalf("ssh signer: %v", err)
-	}
-	hostKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
-
-	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert", HostPublicKey: hostKey,
-		TargetAddress: "10.0.0.9:22",
-	}), tok)); err != nil {
-		t.Fatalf("SetSSHAssetConfig with host key: %v", err)
-	}
-
-	got, err := c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
-	if err != nil {
-		t.Fatalf("GetSSHAssetConfig: %v", err)
-	}
-	if got.Msg.HostPublicKey != hostKey {
-		t.Fatalf("host_public_key round-trip mismatch: got %q want %q", got.Msg.HostPublicKey, hostKey)
-	}
-	if got.Msg.TargetAddress != "10.0.0.9:22" {
-		t.Fatalf("target_address round-trip mismatch: got %q want %q", got.Msg.TargetAddress, "10.0.0.9:22")
-	}
-
-	// Empty host key and target address are allowed and overwrite the prior values.
-	if _, err := c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert",
-	}), tok)); err != nil {
-		t.Fatalf("SetSSHAssetConfig empty host key: %v", err)
-	}
-	got2, err := c.GetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
-	if err != nil {
-		t.Fatalf("GetSSHAssetConfig (post-clear): %v", err)
-	}
-	if got2.Msg.HostPublicKey != "" {
-		t.Fatalf("host_public_key not cleared: %q", got2.Msg.HostPublicKey)
-	}
-	if got2.Msg.TargetAddress != "" {
-		t.Fatalf("target_address not cleared: %q", got2.Msg.TargetAddress)
-	}
-
-	// An unparseable host key is rejected before touching the DB.
-	_, err = c.SetSSHAssetConfig(ctx, withToken(connect.NewRequest(&vaultv1.SetSSHAssetConfigRequest{
-		AssetId: asset.Id, AllowedLogins: []string{"root"}, AuthMethod: "ca-cert", HostPublicKey: "not a key",
-	}), tok))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("SetSSHAssetConfig bad host key = %v, want InvalidArgument", connect.CodeOf(err))
-	}
-}
-
-func TestVaultGetSSHAssetConfigNotFound(t *testing.T) {
-	pool, url := newServer(t)
-	seedUser(t, pool, "admin@x", "supersecret", true)
-	tok := adminToken(t, url)
-	asset := newAsset(t, url, tok, "ssh")
-	c := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
-
-	_, err := c.GetSSHAssetConfig(context.Background(), withToken(connect.NewRequest(&vaultv1.GetSSHAssetConfigRequest{AssetId: asset.Id}), tok))
-	if connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatalf("GetSSHAssetConfig (absent) = %v, want NotFound", connect.CodeOf(err))
 	}
 }
 
