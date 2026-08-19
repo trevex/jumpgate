@@ -31,7 +31,7 @@ use tokio::sync::mpsc;
 
 use ssh_proxy::control::SessionRegistry;
 use ssh_proxy::server::{RecordingSettings, SessionEndReport, SetupFn, SshHandler};
-use ssh_proxy::setup::SetupOutcome;
+use ssh_proxy::setup::{SetupOutcome, TargetCredential};
 
 /// Fresh ed25519 private key.
 fn ed25519() -> PrivateKey {
@@ -72,7 +72,7 @@ fn stub_setup(
     target_address: String,
     expect_kc_fp: Option<String>,
 ) -> SetupFn {
-    Arc::new(move |kc_pub, kw_pub| {
+    Arc::new(move |_login, kc_pub, kw_pub| {
         let ca = ca.clone();
         let principals = principals.clone();
         let target_address = target_address.clone();
@@ -94,7 +94,7 @@ fn stub_setup(
             Ok(SetupOutcome {
                 session_id: "sess-1".into(),
                 target_address,
-                ssh_certificate: cert.to_openssh().unwrap().into_bytes(),
+                credential: TargetCredential::Cert(cert.to_openssh().unwrap().into_bytes()),
                 recording_required: false,
                 recording_object_key: String::new(),
             })

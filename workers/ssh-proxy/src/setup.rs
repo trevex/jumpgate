@@ -14,10 +14,35 @@
 
 use anyhow::Context;
 
+use anyhow::anyhow;
+
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
-    dataplane_service_client::DataplaneServiceClient, SetupSessionRequest,
+    dataplane_service_client::DataplaneServiceClient, setup_session_response, SetupSessionRequest,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
+
+/// The credential warden returned for a redeemed session — a discriminated
+/// union mirroring the dataplane `SetupSessionResponse.credential` oneof.
+///
+/// Which variant is returned is driven by the asset login's configured `kind`:
+/// - `Cert` (kind `ca`): an OpenSSH certificate line minted over `Kw`; the
+///   worker presents it with `Kw` on the target hop.
+/// - `Password` (kind `password`): a plain stored password, injected as the
+///   target's password auth.
+/// - `Key` (kind `key`): a plain stored OpenSSH private-key PEM, injected as the
+///   target's publickey auth.
+///
+/// The secret variants (`Password`/`Key`) never touch the client — they are used
+/// solely worker-side to authenticate the second hop.
+#[derive(Debug, Clone)]
+pub enum TargetCredential {
+    /// OpenSSH certificate line (authorized_keys cert form), minted over `Kw`.
+    Cert(Vec<u8>),
+    /// Plain stored password.
+    Password(String),
+    /// Plain stored OpenSSH private-key PEM.
+    Key(Vec<u8>),
+}
 
 /// The successful outcome of [`setup_session`]: what warden returned for a
 /// redeemed token.
@@ -27,8 +52,8 @@ pub struct SetupOutcome {
     pub session_id: String,
     /// The target host:port the worker dials for the second hop.
     pub target_address: String,
-    /// The OpenSSH certificate line minted over `Kw` (authorized_keys cert form).
-    pub ssh_certificate: Vec<u8>,
+    /// The credential the worker uses to authenticate to the target as the login.
+    pub credential: TargetCredential,
     /// Whether warden requires this session to be recorded (else refuse it).
     pub recording_required: bool,
     /// The object key warden assigned for this session's recording.
@@ -44,12 +69,14 @@ pub struct SetupOutcome {
 /// A transport/RPC failure (bad token, key mismatch, not authorized, replay,
 /// unreachable warden, …) maps to `Err`; the caller MUST treat any `Err` as a
 /// hard reject and NEVER accept the SSH auth on it.
+#[allow(clippy::too_many_arguments)]
 pub async fn setup_session(
     warden_addr: &str,
     warden_spiffe: &str,
     certs: &MeshClientCerts,
     token: &str,
     worker_id: &str,
+    login: &str,
     kc_pub: Vec<u8>,
     kw_pub: Vec<u8>,
 ) -> anyhow::Result<SetupOutcome> {
@@ -63,17 +90,31 @@ pub async fn setup_session(
         .setup_session(SetupSessionRequest {
             session_token: token.to_string(),
             worker_id: worker_id.to_string(),
+            login: login.to_string(),
             client_ssh_public_key: kc_pub,
+            // The worker still generates and offers Kw for the ca path; warden
+            // ignores it for password/key logins.
             target_public_key: kw_pub,
         })
         .await
         .context("SetupSession rpc")?
         .into_inner();
 
+    // A missing or unrecognized credential is a hard error: the worker must
+    // never proceed without knowing how to authenticate the target hop.
+    let credential = match resp.credential {
+        Some(setup_session_response::Credential::SshCertificate(cert)) => {
+            TargetCredential::Cert(cert)
+        }
+        Some(setup_session_response::Credential::Password(pw)) => TargetCredential::Password(pw),
+        Some(setup_session_response::Credential::PrivateKey(key)) => TargetCredential::Key(key),
+        None => return Err(anyhow!("SetupSession returned no credential")),
+    };
+
     Ok(SetupOutcome {
         session_id: resp.session_id,
         target_address: resp.target_address,
-        ssh_certificate: resp.ssh_certificate,
+        credential,
         recording_required: resp.recording_required,
         recording_object_key: resp.recording_object_key,
     })
