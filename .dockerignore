@@ -1,0 +1,18 @@
+# Rust build artifacts (large; rebuilt in the builder stage)
+target/
+
+# Go build artifacts
+warden/bin/
+
+# Version control and tooling
+.git/
+.github/
+.claude/
+.direnv/
+node_modules/
+
+# Local editor/OS cruft
+.vscode/
+.idea/
+**/*.swp
+.DS_Store
