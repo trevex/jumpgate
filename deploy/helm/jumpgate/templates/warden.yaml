@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-warden
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: warden
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: warden
+    spec:
+      containers:
+        - name: warden
+          image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag }}"
+          imagePullPolicy: {{ .Values.images.warden.pullPolicy }}
+          ports:
+            - name: api
+              containerPort: 8080
+            - name: mesh
+              containerPort: 8443
+          env:
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: MESH_LISTEN_ADDR
+              value: ":8443"
+            - name: LOG_LEVEL
+              value: {{ .Values.warden.logLevel | quote }}
+            - name: MESH_CERT_FILE
+              value: /mesh/tls.crt
+            - name: MESH_KEY_FILE
+              value: /mesh/tls.key
+            - name: MESH_CA_FILE
+              value: /mesh/ca.crt
+            - name: DATABASE_URL
+              {{- if .Values.postgres.enabled }}
+              value: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "jumpgate.postgresHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=disable"
+              {{- else }}
+              value: {{ .Values.warden.databaseUrl | quote }}
+              {{- end }}
+            - name: VAULT_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.masterKeySecret" . }}
+                  key: VAULT_MASTER_KEY
+            - name: GATEWAY_ENDPOINT
+              value: {{ .Values.warden.gatewayEndpoint | default "localhost:8443" | quote }}
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.adminSecret" . }}
+                  key: email
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jumpgate.adminSecret" . }}
+                  key: password
+            - name: SESSION_TOKEN_TTL
+              value: "120s"
+            - name: REAPER_INTERVAL
+              value: "10s"
+            - name: AUDIT_DRAIN_INTERVAL
+              value: "1s"
+            - name: RECORDING_BUCKET
+              value: {{ .Values.recording.bucket | quote }}
+            - name: RECORDING_S3_REGION
+              value: {{ .Values.recording.s3.region | quote }}
+            - name: RECORDING_S3_ENDPOINT
+              {{- if .Values.silo.enabled }}
+              value: "http://{{ include "jumpgate.siloHost" . }}:9000"
+              {{- else }}
+              value: {{ .Values.recording.s3.endpoint | quote }}
+              {{- end }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.recording.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.recording.s3.secretKey | quote }}
+          volumeMounts:
+            - name: warden-mesh
+              mountPath: /mesh
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: warden-mesh
+          secret:
+            secretName: {{ include "jumpgate.fullname" . }}-warden-mesh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-warden
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+spec:
+  type: NodePort
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+  ports:
+    - name: api
+      port: 8080
+      targetPort: 8080
+      nodePort: {{ .Values.service.warden.nodePort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.wardenMeshHost" . }}
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: warden
+  ports:
+    - name: mesh
+      port: 8443
+      targetPort: 8443
