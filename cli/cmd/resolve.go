@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/trevex/jumpgate/cli/internal/wardenclient"
+	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 )
 
@@ -67,6 +68,36 @@ func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (str
 	}
 	if match == "" {
 		return "", fmt.Errorf("no group found with name %q", s)
+	}
+	return match, nil
+}
+
+// resolveFolderID returns s unchanged if it is already a UUID; otherwise it
+// looks up a folder by name via ListFolders and returns the matching id. A
+// missing or ambiguous match is a clear error.
+func resolveFolderID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
+	if _, err := uuid.Parse(s); err == nil {
+		return s, nil
+	}
+
+	req := connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 1000})
+	cl.Authorize(req)
+	resp, err := cl.Catalog().ListFolders(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	var match string
+	for _, f := range resp.Msg.GetFolders() {
+		if f.GetName() == s {
+			if match != "" {
+				return "", fmt.Errorf("multiple folders match name %q; use the folder id", s)
+			}
+			match = f.GetId()
+		}
+	}
+	if match == "" {
+		return "", fmt.Errorf("no folder found with name %q", s)
 	}
 	return match, nil
 }
