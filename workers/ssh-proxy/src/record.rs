@@ -6,13 +6,19 @@
 //!
 //! The multipart backend is abstracted behind [`PartUploader`] so the recorder
 //! can be unit-tested without a real object store; [`S3Uploader`] is the
-//! production implementation backed by `aws_sdk_s3`.
+//! production implementation: it signs S3 multipart requests with `rusty-s3`
+//! and issues them over a `reqwest` client whose rustls TLS uses the ring
+//! crypto provider (so no `aws-lc-rs` is pulled into the workspace).
 
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
-use aws_sdk_s3::Client;
+use rusty_s3::actions::{CreateMultipartUpload, S3Action};
+use rusty_s3::{Bucket, Credentials, UrlStyle};
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// Presigned-URL lifetime for each signed S3 request. Requests are issued
+/// immediately after signing, so a short window is ample.
+const URL_TTL: Duration = Duration::from_secs(15 * 60);
 
 /// The minimum size (5 MiB) for any multipart-upload part except the last, per
 /// the S3 multipart contract. The recorder only flushes a part early once the
@@ -32,32 +38,78 @@ pub trait PartUploader: Send + Sync {
     async fn abort(&self);
 }
 
-/// Production [`PartUploader`] backed by an S3 multipart upload.
+/// Build a rustls client config that uses the ring crypto provider explicitly,
+/// with Mozilla's webpki trust anchors. Selecting the provider by hand keeps
+/// `aws-lc-rs` out of the dependency tree and avoids relying on a process-wide
+/// default provider (the mesh installs ring; this stays consistent).
+fn ring_rustls_config() -> rustls::ClientConfig {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider supports default protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth()
+}
+
+/// Production [`PartUploader`] backed by an S3 multipart upload. Requests are
+/// signed by `rusty-s3` and sent over a ring-backed rustls `reqwest::Client`.
 pub struct S3Uploader {
-    client: Client,
-    bucket: String,
+    bucket: Bucket,
+    creds: Credentials,
+    http: reqwest::Client,
     key: String,
     upload_id: String,
-    parts: tokio::sync::Mutex<Vec<CompletedPart>>,
+    parts: tokio::sync::Mutex<Vec<(u16, String)>>,
 }
 
 impl S3Uploader {
     /// Begin a multipart upload against `bucket`/`key` and capture its
-    /// `upload_id`.
-    pub async fn create(client: Client, bucket: String, key: String) -> anyhow::Result<S3Uploader> {
-        let out = client
-            .create_multipart_upload()
-            .bucket(&bucket)
-            .key(&key)
-            .send()
-            .await?;
-        let upload_id = out
-            .upload_id()
-            .ok_or_else(|| anyhow::anyhow!("create_multipart_upload returned no upload_id"))?
-            .to_string();
+    /// `upload_id`. Credentials are read from `AWS_ACCESS_KEY_ID` /
+    /// `AWS_SECRET_ACCESS_KEY`. An empty `endpoint` is rejected; a non-empty
+    /// custom endpoint enables path-style addressing for self-hosted stores.
+    pub async fn create(
+        endpoint: &str,
+        region: &str,
+        bucket: &str,
+        key: String,
+    ) -> anyhow::Result<S3Uploader> {
+        if endpoint.is_empty() {
+            anyhow::bail!("recording endpoint not configured");
+        }
+        let http = reqwest::Client::builder()
+            .use_preconfigured_tls(ring_rustls_config())
+            .build()?;
+        let endpoint_url = url::Url::parse(endpoint)
+            .map_err(|e| anyhow::anyhow!("invalid recording endpoint {endpoint:?}: {e}"))?;
+        let bucket = Bucket::new(
+            endpoint_url,
+            UrlStyle::Path,
+            bucket.to_string(),
+            region.to_string(),
+        )
+        .map_err(|e| anyhow::anyhow!("invalid bucket config: {e}"))?;
+        let access_key = std::env::var("AWS_ACCESS_KEY_ID")
+            .map_err(|_| anyhow::anyhow!("AWS_ACCESS_KEY_ID not set"))?;
+        let secret_key = std::env::var("AWS_SECRET_ACCESS_KEY")
+            .map_err(|_| anyhow::anyhow!("AWS_SECRET_ACCESS_KEY not set"))?;
+        let creds = Credentials::new(access_key, secret_key);
+
+        let action = bucket.create_multipart_upload(Some(&creds), &key);
+        let url = action.sign(URL_TTL);
+        let resp = http.post(url).send().await?;
+        let resp = resp.error_for_status()?;
+        let body = resp.text().await?;
+        let parsed = CreateMultipartUpload::parse_response(&body)
+            .map_err(|e| anyhow::anyhow!("parse create_multipart_upload response: {e}"))?;
+        let upload_id = parsed.upload_id().to_string();
+
         Ok(S3Uploader {
-            client,
             bucket,
+            creds,
+            http,
             key,
             upload_id,
             parts: tokio::sync::Mutex::new(Vec::new()),
@@ -68,73 +120,57 @@ impl S3Uploader {
 #[async_trait::async_trait]
 impl PartUploader for S3Uploader {
     async fn upload_part(&self, part_number: i32, bytes: Vec<u8>) -> anyhow::Result<()> {
-        let out = self
-            .client
-            .upload_part()
-            .bucket(&self.bucket)
-            .key(&self.key)
-            .upload_id(&self.upload_id)
-            .part_number(part_number)
-            .body(ByteStream::from(bytes))
-            .send()
-            .await?;
-        let etag = out
-            .e_tag()
-            .ok_or_else(|| anyhow::anyhow!("upload_part returned no e_tag"))?
+        let part_number = u16::try_from(part_number)
+            .map_err(|_| anyhow::anyhow!("part number {part_number} out of range"))?;
+        let action =
+            self.bucket
+                .upload_part(Some(&self.creds), &self.key, part_number, &self.upload_id);
+        let url = action.sign(URL_TTL);
+        let resp = self.http.put(url).body(bytes).send().await?;
+        let resp = resp.error_for_status()?;
+        let etag = resp
+            .headers()
+            .get(reqwest::header::ETAG)
+            .ok_or_else(|| anyhow::anyhow!("upload_part response missing ETag header"))?
+            .to_str()
+            .map_err(|e| anyhow::anyhow!("upload_part ETag not valid text: {e}"))?
             .to_string();
-        let completed = CompletedPart::builder()
-            .e_tag(etag)
-            .part_number(part_number)
-            .build();
-        self.parts.lock().await.push(completed);
+        self.parts.lock().await.push((part_number, etag));
         Ok(())
     }
 
     async fn complete(&self) -> anyhow::Result<()> {
         let mut parts = self.parts.lock().await.clone();
-        parts.sort_by_key(|p| p.part_number().unwrap_or_default());
-        let completed = CompletedMultipartUpload::builder()
-            .set_parts(Some(parts))
-            .build();
-        self.client
-            .complete_multipart_upload()
-            .bucket(&self.bucket)
-            .key(&self.key)
-            .upload_id(&self.upload_id)
-            .multipart_upload(completed)
-            .send()
-            .await?;
+        parts.sort_by_key(|(n, _)| *n);
+        let etags: Vec<String> = parts.into_iter().map(|(_, etag)| etag).collect();
+        let action = self.bucket.complete_multipart_upload(
+            Some(&self.creds),
+            &self.key,
+            &self.upload_id,
+            etags.iter().map(String::as_str),
+        );
+        let url = action.sign(URL_TTL);
+        let body = action.body();
+        let resp = self.http.post(url).body(body).send().await?;
+        resp.error_for_status()?;
         Ok(())
     }
 
     async fn abort(&self) {
+        let action =
+            self.bucket
+                .abort_multipart_upload(Some(&self.creds), &self.key, &self.upload_id);
+        let url = action.sign(URL_TTL);
         if let Err(err) = self
-            .client
-            .abort_multipart_upload()
-            .bucket(&self.bucket)
-            .key(&self.key)
-            .upload_id(&self.upload_id)
+            .http
+            .delete(url)
             .send()
             .await
+            .and_then(|r| r.error_for_status())
         {
-            tracing::warn!(error = %err, bucket = %self.bucket, key = %self.key, "failed to abort multipart upload");
+            tracing::warn!(error = %err, key = %self.key, "failed to abort multipart upload");
         }
     }
-}
-
-/// Build an S3 client for the recording store. Credentials come from the AWS SDK
-/// env chain; a custom endpoint + path-style addressing supports self-hosted stores.
-pub async fn build_s3_client(endpoint: &str, region: &str) -> aws_sdk_s3::Client {
-    let region = aws_sdk_s3::config::Region::new(region.to_string());
-    let shared = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(region)
-        .load()
-        .await;
-    let mut b = aws_sdk_s3::config::Builder::from(&shared);
-    if !endpoint.is_empty() {
-        b = b.endpoint_url(endpoint).force_path_style(true);
-    }
-    aws_sdk_s3::Client::from_conf(b.build())
 }
 
 /// Terminal state of a recording.
