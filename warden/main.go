@@ -255,10 +255,18 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, auditLog *audit.Logg
 		slog.Warn("mesh listener disabled: service registration failed", "err", err)
 		return nil
 	}
+	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /
+	// SetupSession) are gRPC and require h2. Advertising h2 in NextProtos alone is
+	// not enough — the server must also install the h2 handler, which the
+	// Protocols field does. HTTP/1.1 stays enabled as a fallback.
+	var protos http.Protocols
+	protos.SetHTTP1(true)
+	protos.SetHTTP2(true)
 	return &http.Server{
 		Addr:              cfg.MeshListenAddr,
 		Handler:           mesh.Middleware(meshMux),
 		TLSConfig:         tlsCfg,
+		Protocols:         &protos,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }

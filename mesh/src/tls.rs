@@ -135,10 +135,14 @@ pub fn mesh_client_config(
             .with_context(|| format!("add mesh CA cert from {ca_pem_path}"))?;
     }
 
-    let config = ClientConfig::builder()
+    let mut config = ClientConfig::builder()
         .with_root_certificates(roots)
         .with_client_auth_cert(certs, key)
         .context("build mesh client config")?;
+    // The mesh RPCs (roster / worker stream / setup) are gRPC over HTTP/2, so the
+    // client MUST offer h2 via ALPN or the server falls back to HTTP/1.1 and the
+    // h2 transport never establishes.
+    config.alpn_protocols = vec![b"h2".to_vec()];
 
     Ok(Arc::new(config))
 }
@@ -295,11 +299,15 @@ pub fn mesh_client_config_no_hostname(
         expected_spiffe: expected_spiffe.to_string(),
     });
 
-    let config = ClientConfig::builder()
+    let mut config = ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_client_auth_cert(certs, key)
         .context("build mesh client config (no hostname)")?;
+    // The mesh RPCs (roster / worker stream / setup) are gRPC over HTTP/2, so the
+    // client MUST offer h2 via ALPN or the server falls back to HTTP/1.1 and the
+    // h2 transport never establishes.
+    config.alpn_protocols = vec![b"h2".to_vec()];
 
     Ok(Arc::new(config))
 }
