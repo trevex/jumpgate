@@ -200,6 +200,18 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	}
 	clientPub := ssh.MarshalAuthorizedKey(cpub)
 
+	// Worker per-session SSH keypair (Kw) — distinct from the client cnf key; the
+	// key SetupSession certifies for the target hop.
+	_, wpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen worker key: %v", err)
+	}
+	wpub, err := ssh.NewPublicKey(wpriv.Public())
+	if err != nil {
+		t.Fatalf("ssh worker pub: %v", err)
+	}
+	workerPub := ssh.MarshalAuthorizedKey(wpub)
+
 	subjectTok := authClient(t, url, "subject@e2e", "password123")
 	adminTok := adminToken(t, url)
 
@@ -237,13 +249,16 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 
 	// --- Step 3: SetupSession → target + SSH cert; live_sessions row exists. ---
 	ss, err := dpClient.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: token, WorkerId: "w1", ClientSshPublicKey: clientPub,
+		SessionToken: token, WorkerId: "w1", ClientSshPublicKey: clientPub, TargetPublicKey: workerPub,
 	}))
 	if err != nil {
 		t.Fatalf("SetupSession: %v", err)
 	}
 	if ss.Msg.TargetAddress != "10.0.0.9:22" {
 		t.Fatalf("TargetAddress = %q, want 10.0.0.9:22", ss.Msg.TargetAddress)
+	}
+	if ss.Msg.SessionId == "" {
+		t.Fatal("expected a non-empty session id")
 	}
 	pk, _, _, _, err := ssh.ParseAuthorizedKey(ss.Msg.SshCertificate)
 	if err != nil {
@@ -263,6 +278,9 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 		t.Fatalf("verify token: %v", err)
 	}
 	sid := claims.SessionID
+	if ss.Msg.SessionId != sid.String() {
+		t.Fatalf("SetupSession SessionId = %q, want %q", ss.Msg.SessionId, sid.String())
+	}
 	var n int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, sid).Scan(&n); err != nil {
 		t.Fatalf("count live_sessions: %v", err)

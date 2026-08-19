@@ -57,23 +57,29 @@ func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a authz.Autho
 type SetupResult struct {
 	TargetAddress  string
 	SSHCertificate []byte
+	SessionID      string
 }
 
 // Setup verifies the token, re-checks authorization, records the live session (with
 // the session.started audit event) in one tx, then issues the JIT SSH cert. The
 // re-check is defense-in-depth over the admission token; the live_sessions PK is
 // the replay guard.
-func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, clientPub []byte) (SetupResult, error) {
+func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, clientPub, targetPub []byte) (SetupResult, error) {
 	claims, err := s.verifier.Verify(rawToken)
 	if err != nil {
 		return SetupResult{}, ErrBadToken
 	}
+	// Kc — the client's ephemeral key — must match the token's cnf binding.
 	pub, err := parseSSHPublicKey(clientPub)
 	if err != nil {
 		return SetupResult{}, ErrBadToken
 	}
 	if ssh.FingerprintSHA256(pub) != claims.ClientKeyFingerprint {
 		return SetupResult{}, ErrKeyMismatch
+	}
+	// Kw — the worker's per-session key — is what we certify for the target hop.
+	if _, err := parseSSHPublicKey(targetPub); err != nil {
+		return SetupResult{}, ErrBadToken
 	}
 
 	cfg, err := gen.New(s.pool).GetSSHAssetConfig(ctx, claims.AssetID)
@@ -139,7 +145,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 	// cert-issue failure returns an error but leaves the recorded session in
 	// place — acceptable, the worker retry / teardown reconciles it.
 	creds, err := s.broker.Issue(ctx, claims.UserID, claims.AssetID, vault.IssueRequest{
-		ClientSSHPubKey: clientPub,
+		ClientSSHPubKey: targetPub,
 		ValidUntil:      time.Now().Add(s.certMaxTTL),
 		KeyID:           claims.SessionID.String(),
 	})
@@ -152,7 +158,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID string, cli
 			cert = c.SSHCertificate
 		}
 	}
-	return SetupResult{TargetAddress: cfg.TargetAddress, SSHCertificate: cert}, nil
+	return SetupResult{TargetAddress: cfg.TargetAddress, SSHCertificate: cert, SessionID: claims.SessionID.String()}, nil
 }
 
 // parseSSHPublicKey accepts authorized_keys text or raw wire form (copy of the

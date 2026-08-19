@@ -58,7 +58,7 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.ClientSshPublicKey)
+	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.ClientSshPublicKey, req.Msg.TargetPublicKey)
 	switch {
 	case errors.Is(err, dataplane.ErrBadToken), errors.Is(err, dataplane.ErrKeyMismatch):
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
@@ -74,6 +74,7 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&dataplanev1.SetupSessionResponse{
 		TargetAddress:  out.TargetAddress,
 		SshCertificate: out.SSHCertificate,
+		SessionId:      out.SessionID,
 	}), nil
 }
 
