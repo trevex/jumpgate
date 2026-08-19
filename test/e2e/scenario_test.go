@@ -125,11 +125,9 @@ func TestScenario(t *testing.T) {
 		deadline := time.Now().Add(45 * time.Second)
 		for time.Now().Before(deadline) {
 			list := e.asActor(t, "admin", "recordings", "list", "--asset", st.assetID, "-o", "json")
-			if strings.Contains(list, `"status": "completed"`) || strings.Contains(list, `"status":"completed"`) {
-				if id := firstSessionID(list); id != "" {
-					sessionID = id
-					break
-				}
+			if id := completedSessionID(list); id != "" {
+				sessionID = id
+				break
 			}
 			time.Sleep(1 * time.Second)
 		}

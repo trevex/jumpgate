@@ -2,13 +2,13 @@
 // It drives the real `jumpgate` CLI (per-actor --context) and `kubectl` against a
 // live kind cluster and asserts on their output.
 //
-// It lives in its own module (not in go.work), so `make ci` — which tests the
-// warden and cli modules per-directory — never runs it. Run it explicitly with
-// `GOWORK=off go test ./...` and JUMPGATE_E2E=1 against a live cluster (see
-// main_test.go); `make kind-e2e` does exactly that.
+// It is its own module in the go workspace, but `make ci` tests the warden and cli
+// modules per-directory and never reaches it. Run it explicitly with JUMPGATE_E2E=1
+// against a live cluster (see main_test.go); `make kind-e2e` does exactly that.
 package e2e
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,15 +94,25 @@ func (e *env) exportMeshCA(t *testing.T) {
 	}
 }
 
-var sessRe = regexp.MustCompile(`"sessionId":\s*"([^"]+)"`)
-
-// firstSessionID returns the first sessionId in a recordings-list protojson blob.
-func firstSessionID(s string) string {
-	m := sessRe.FindStringSubmatch(s)
-	if len(m) < 2 {
+// completedSessionID parses a `recordings list -o json` array (protojson objects
+// with camelCase keys) and returns the sessionId of the first recording whose own
+// status is "completed", or "" if none. Pairing the status with its own record —
+// rather than matching "completed" and "first id" independently across the blob —
+// keeps the pick correct even if the list holds more than one recording.
+func completedSessionID(listJSON string) string {
+	var recs []struct {
+		SessionID string `json:"sessionId"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(listJSON), &recs); err != nil {
 		return ""
 	}
-	return m[1]
+	for _, r := range recs {
+		if r.Status == "completed" {
+			return r.SessionID
+		}
+	}
+	return ""
 }
 
 // connectWithStdin runs `jumpgate connect` as actor ctx, feeding script on stdin
@@ -113,6 +123,9 @@ func (e *env) connectWithStdin(t *testing.T, ctx, target, script string) string 
 	cmd := exec.Command(e.jgBin, "--context", ctx, "connect", target, "--ca", e.meshCA)
 	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+e.configDir)
 	cmd.Stdin = strings.NewReader(script)
+	// After a timeout Kill, bound how long Wait blocks on the output pipes so the
+	// reader goroutine reaps instead of leaking if a child holds them open.
+	cmd.WaitDelay = 5 * time.Second
 	type res struct {
 		out []byte
 		err error

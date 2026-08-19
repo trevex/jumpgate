@@ -33,8 +33,8 @@ func TestMain(m *testing.M) {
 	if err := os.MkdirAll(fixtures, 0o750); err != nil {
 		panic(err)
 	}
-	// Build the CLI once into fixtures (GOWORK is off in this module's runs, so the
-	// cli builds via its own go.mod replace of the warden module).
+	// Build the CLI once into fixtures. The cli module resolves the warden dependency
+	// via its own go.mod replace, so this builds the same in or out of the workspace.
 	jgBin := filepath.Join(fixtures, "jumpgate-cli")
 	build := exec.Command("go", "build", "-o", jgBin, ".")
 	build.Dir = filepath.Join("..", "..", "cli")
