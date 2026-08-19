@@ -62,6 +62,7 @@ type Querier interface {
 	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
+	GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)

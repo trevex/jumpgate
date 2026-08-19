@@ -600,6 +600,116 @@ func TestWorkerSessionEndedDeletesRow(t *testing.T) {
 	}
 }
 
+// TestWorkerSessionEndedPersistsRecording drives a WorkerStream: a worker holds an
+// authorized live session (seeded), then reports SessionEnded carrying a RecordingInfo.
+// warden must persist a session_recordings row (with the session's parties, protocol
+// "ssh", format "asciicast-v2") and audit recording.completed / recording.failed.
+func TestWorkerSessionEndedPersistsRecording(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     string
+		wantStatus string
+		wantEvent  string
+	}{
+		{name: "completed", status: "completed", wantStatus: "completed", wantEvent: dataplane.EventRecordingCompleted},
+		{name: "failed", status: "failed", wantStatus: "failed", wantEvent: dataplane.EventRecordingFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pool, url, _ := newDataplaneServer(t)
+			seed := seedReconcile(t, pool)
+
+			ctx := context.Background()
+			client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+			stream := client.WorkerStream(ctx)
+			t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+			// Register reporting the session as still live so reconcile keeps the row.
+			if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+				Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: []string{seed.sess.String()}},
+			}}); err != nil {
+				t.Fatalf("send register: %v", err)
+			}
+			ack, err := stream.Receive()
+			if err != nil {
+				t.Fatalf("receive ack: %v", err)
+			}
+			if ack.GetAck() == nil {
+				t.Fatalf("expected RegisterAck, got %+v", ack)
+			}
+
+			objectKey := "recordings/ssh/2026/08/19/" + seed.sess.String() + ".cast"
+			startedMs := time.Now().Add(-time.Minute).UnixMilli()
+			endedMs := time.Now().UnixMilli()
+			if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_SessionEnded{
+				SessionEnded: &dataplanev1.SessionEnded{
+					SessionId: seed.sess.String(),
+					Reason:    "closed",
+					Recording: &dataplanev1.RecordingInfo{
+						Status:          tc.status,
+						ObjectKey:       objectKey,
+						Sha256:          "abc",
+						SizeBytes:       123,
+						StartedAtUnixMs: startedMs,
+						EndedAtUnixMs:   endedMs,
+					},
+				},
+			}}); err != nil {
+				t.Fatalf("send session-ended: %v", err)
+			}
+
+			// Poll until the recording row appears.
+			var rec gen.SessionRecording
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				rec, err = gen.New(pool).GetSessionRecording(ctx, seed.sess)
+				if err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("session_recordings row never appeared: %v", err)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+
+			if rec.Status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", rec.Status, tc.wantStatus)
+			}
+			if rec.ObjectKey != objectKey {
+				t.Errorf("object_key = %q, want %q", rec.ObjectKey, objectKey)
+			}
+			if rec.Sha256 != "abc" {
+				t.Errorf("sha256 = %q, want abc", rec.Sha256)
+			}
+			if rec.SizeBytes != 123 {
+				t.Errorf("size_bytes = %d, want 123", rec.SizeBytes)
+			}
+			if rec.UserID != seed.user {
+				t.Errorf("user_id = %v, want %v", rec.UserID, seed.user)
+			}
+			if rec.AssetID != seed.asset {
+				t.Errorf("asset_id = %v, want %v", rec.AssetID, seed.asset)
+			}
+			if rec.Protocol != "ssh" {
+				t.Errorf("protocol = %q, want ssh", rec.Protocol)
+			}
+			if rec.Format != "asciicast-v2" {
+				t.Errorf("format = %q, want asciicast-v2", rec.Format)
+			}
+			if !rec.StartedAt.Valid || !rec.EndedAt.Valid {
+				t.Errorf("started_at/ended_at not set: %+v / %+v", rec.StartedAt, rec.EndedAt)
+			}
+
+			if got := sessionEventCount(t, pool, tc.wantEvent); got != 1 {
+				t.Fatalf("%s events = %d, want 1", tc.wantEvent, got)
+			}
+			if err := audit.New(pool).Verify(ctx); err != nil {
+				t.Fatalf("audit Verify: %v", err)
+			}
+		})
+	}
+}
+
 // waitConnected polls the registry until worker's connected state matches want, or
 // fails after a short timeout (Add/Remove happen inside the handler goroutine).
 func waitConnected(t *testing.T, reg *dataplane.Registry, workerID string, want bool) {
