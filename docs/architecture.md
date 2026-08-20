@@ -118,10 +118,14 @@ loop on continuous revocation for SSH.
 
 ### Client — `jumpgate` CLI ✅ (Go)
 
-`jumpgate connect <login>@<asset>` is the user entry point. It authenticates to the
-control plane (`jumpgate login` stores an opaque bearer token), resolves the asset,
-generates the ephemeral key **Kc**, and requests a session — receiving a
-short-lived admission token and the gateway address. It dials the gateway over TLS,
+`jumpgate connect <login>@<asset>` is the user entry point. The `<asset>` is either a
+**DNS-style dotted path** (leaf-first: `pg-primary.db.prod`) or a UUID; the CLI sends
+the reference to `CatalogService.ResolveAsset`, which performs an access check and
+returns the asset id — an unknown reference and a reference the caller cannot see both
+return NotFound, hiding existence. It authenticates to the control plane (`jumpgate
+login` stores an opaque bearer token), resolves the asset, generates the ephemeral key
+**Kc**, and requests a session — receiving a short-lived admission token and the
+gateway address. It dials the gateway over TLS,
 performs an HTTP `CONNECT` carrying the token, and then runs an embedded SSH client
 (`golang.org/x/crypto/ssh`) over the resulting tunnel: an interactive pty with raw
 local terminal mode, window-resize forwarding, and the remote exit code propagated.
@@ -336,13 +340,14 @@ is **per-login**: it loads the asset's `ssh_asset_login` rows, enforces the
 then runs the provider for that login's `kind`:
 
 - **ca** (`kind='ca'`): signs `ClientSSHPubKey` with the SSH CA into an SSH **user
-  cert** with **host-scoped principals** (`ValidPrincipals = [login@<asset-path>,
-  login@<asset-id>]`), `ValidBefore = ValidUntil`, audit `KeyId`. Returns
-  `{Kind:"ssh-cert"}`. The cert binds the login to the specific asset: targets
-  accept it via an `AuthorizedPrincipalsFile` listing the expected principal(s)
-  for each login (`<login>@<asset-path>` is the stable, human-readable form
-  automation writes into the file; `<login>@<asset-id>` is the UUID form for
-  rename-safety). The worker validates that every `ValidPrincipal` is of the
+  cert** with **host-scoped principals** (`ValidPrincipals = [<login>@<asset>.<folders…>,
+  <login>@<asset-id>]`, e.g. `deploy@pg-primary.db.prod`), `ValidBefore = ValidUntil`,
+  audit `KeyId`. Returns `{Kind:"ssh-cert"}`. The cert binds the login to the specific
+  asset: targets accept it via an `AuthorizedPrincipalsFile` listing the expected
+  principal(s) for each login. The path form (`deploy@pg-primary.db.prod`) is
+  **DNS-style leaf-first** (asset name first, then parent folders toward the root) —
+  the stable, human-readable identifier automation writes into the file; the UUID form
+  (`deploy@<asset-id>`) provides rename safety. The worker validates that every `ValidPrincipal` is of the
   form `<login>@<scope>`, binding the login identity before forwarding to the
   target — the target then enforces the host-binding through the
   `AuthorizedPrincipalsFile` check.
