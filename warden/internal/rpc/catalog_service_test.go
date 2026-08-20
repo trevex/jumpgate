@@ -558,12 +558,18 @@ func TestResolveFolder(t *testing.T) {
 	ctx := context.Background()
 
 	prod, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
-	if err != nil { t.Fatalf("prod: %v", err) }
+	if err != nil {
+		t.Fatalf("prod: %v", err)
+	}
 	db, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
-	if err != nil { t.Fatalf("db: %v", err) }
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
 
 	got, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "db.prod"}), tok))
-	if err != nil { t.Fatalf("resolve db.prod: %v", err) }
+	if err != nil {
+		t.Fatalf("resolve db.prod: %v", err)
+	}
 	if got.Msg.FolderId != db.Msg.Folder.Id || got.Msg.Path != "db.prod" {
 		t.Fatalf("resolve db.prod = {%s,%s}, want {%s, db.prod}", got.Msg.FolderId, got.Msg.Path, db.Msg.Folder.Id)
 	}

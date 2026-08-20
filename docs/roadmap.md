@@ -165,7 +165,9 @@ performs an access check in the same call, and returns the asset id — an unkno
 reference and a forbidden reference both return NotFound, preventing topology
 disclosure. The `jumpgate connect` and `access request` commands pass the
 caller-supplied reference directly to `ResolveAsset`, replacing the previous
-client-side name scan.
+client-side name scan. Folder references in admin catalog commands are resolved the
+same way via `CatalogService.ResolveFolder` (path-or-UUID, admin-only, NotFound on
+any unknown reference), closing the sibling-unique-name ambiguity for folders too.
 
 ## Beyond the MVP (later product sub-projects)
 

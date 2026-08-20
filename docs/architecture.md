@@ -122,7 +122,12 @@ loop on continuous revocation for SSH.
 **DNS-style dotted path** (leaf-first: `pg-primary.db.prod`) or a UUID; the CLI sends
 the reference to `CatalogService.ResolveAsset`, which performs an access check and
 returns the asset id — an unknown reference and a reference the caller cannot see both
-return NotFound, hiding existence. It authenticates to the control plane (`jumpgate
+return NotFound, hiding existence. Admin catalog commands that accept a `--folder` flag
+use the same DNS-style dotted path form (`db.prod`, or a single segment for a top-level
+folder) or a UUID, resolved by `CatalogService.ResolveFolder` — **admin-only** (folders
+are an admin surface; an unknown or non-existent reference returns NotFound).
+
+`jumpgate connect` authenticates to the control plane (`jumpgate
 login` stores an opaque bearer token), resolves the asset, generates the ephemeral key
 **Kc**, and requests a session — receiving a short-lived admission token and the
 gateway address. It dials the gateway over TLS,
