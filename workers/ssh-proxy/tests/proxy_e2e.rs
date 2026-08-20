@@ -8,8 +8,8 @@
 //!   `ca.MarshalCert` output (authorized_keys cert line),
 //! - a **stub SetupFn** injected into the handler in place of the real warden
 //!   `SetupSession` call (via `SshHandler::with_setup`): it mints a cert over
-//!   the worker's per-session key `Kw` with principals `["deploy"]` and points
-//!   the second hop at the stub target's address,
+//!   the worker's per-session key `Kw` with host-scoped principals
+//!   `["deploy@prod.db"]` and points the second hop at the stub target's address,
 //! - a **stub target sshd**: a russh server that accepts any publickey/cert
 //!   auth and echoes an exec command back before exiting `0` (or echoes stdin
 //!   for an interactive shell).
@@ -279,7 +279,7 @@ async fn proxy_echoes_through_worker() {
     let target_addr = spawn_target_stub().await;
     let setup = stub_setup(
         ca,
-        vec!["deploy".into()],
+        vec!["deploy@prod.db".into()],
         target_addr,
         Some(kc.public_key().fingerprint(Default::default()).to_string()),
     );
@@ -327,7 +327,7 @@ async fn teardown_closes_live_session() {
     let kc = ed25519();
 
     let target_addr = spawn_target_stub().await;
-    let setup = stub_setup(ca, vec!["deploy".into()], target_addr, None);
+    let setup = stub_setup(ca, vec!["deploy@prod.db".into()], target_addr, None);
     let (worker_addr, registry, mut ended_rx) = spawn_worker(setup).await;
 
     let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
@@ -391,13 +391,13 @@ async fn login_not_in_principals_rejected() {
     let kc = ed25519();
 
     let target_addr = spawn_target_stub().await;
-    // Cert carries only "deploy"; the client will ask for "root".
-    let setup = stub_setup(ca, vec!["deploy".into()], target_addr, None);
+    // Cert is scoped to "deploy"; the client asks for "root" — must be rejected.
+    let setup = stub_setup(ca, vec!["deploy@prod.db".into()], target_addr, None);
     let (worker_addr, _registry, _ended_rx) = spawn_worker(setup).await;
 
     let (_handle, ok) = client_connect(&worker_addr, "root", &kc).await;
     assert!(
         !ok,
-        "auth for a login absent from the cert principals must be rejected",
+        "auth for a login whose principals are not all scoped to it must be rejected",
     );
 }
