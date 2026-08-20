@@ -1,8 +1,8 @@
 # jumpgate demo walkthrough
 
 A narrated, three-actor tour of the whole jumpgate flow, driven entirely through the
-real `jumpgate` CLI against the containerized test environment. An **admin** onboards an
-SSH asset and sets up a cross-approval request policy; two normal users, **alice** and
+real `jumpgate` CLI against the containerized test environment. An **admin** onboards three
+SSH assets (cert, password, key) and sets up a cross-approval request policy; two normal users, **alice** and
 **bob**, can each request access *and* approve the other; alice requests, bob approves,
 alice connects and runs a command, and the admin (as auditor) downloads the recording and
 confirms it captured the session.
@@ -52,9 +52,9 @@ jumpgate login --context admin \
   --email admin@demo.test --password admin-password-1234
 ```
 
-Create a folder and onboard the sshd test workload as an SSH asset. Capture the asset id —
-the admin has no standing access to a freshly onboarded asset, so it is not yet resolvable
-by name (you will pass the id explicitly below):
+Create a folder and onboard three sshd test workloads as SSH assets (cert, password, key).
+Capture each asset id — the admin has no standing access to a freshly onboarded asset, so
+it is not yet resolvable by name (you will pass the ids explicitly below):
 
 ```bash
 jumpgate --context admin folders create demo
@@ -62,20 +62,37 @@ jumpgate --context admin folders create demo
 jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
-  --login deploy -o json      # note the "id" -> ASSET_ID
+  --login deploy -o json      # note "id" -> ASSET_ID, and "path" -> demo-box.demo
 ```
 
-`--login deploy` adds a `ca` login (a short-lived signed cert). SSH auth is per-login;
-you can also add password/key logins backed by a stored secret:
+A CA target only accepts a certificate whose principal it has been told to trust. Provision the
+target's `AuthorizedPrincipalsFile` with the host-scoped principal `<login>@<path>` — the asset
+path is deterministic (`demo-box.demo`), so a real operator can even do this ahead of onboarding:
 
 ```bash
-# a password login (reads the password from stdin, seals it into the vault):
-printf 'the-password\n' | jumpgate --context admin assets ssh login set demo-box \
-  --login svc --kind password --password-stdin
-# a key login (seals the private key file):
-jumpgate --context admin assets ssh login set demo-box \
-  --login svc --kind key --key-file ./id_ed25519
-jumpgate --context admin assets ssh login list demo-box
+kubectl exec deploy/ssh-target -- sh -c \
+  'mkdir -p /etc/ssh/auth_principals && echo "deploy@demo-box.demo" > /etc/ssh/auth_principals/deploy'
+```
+
+`--login deploy` adds a `ca` login (a short-lived signed cert); this ca box drives the
+request/approve flow below. To show the other two SSH auth kinds, onboard the two dedicated
+workloads as their own assets — each with a `demo` login. A freshly onboarded asset is not yet
+resolvable by name or path (even for the admin), so use the ids from `create`:
+
+```bash
+# password workload:
+jumpgate --context admin assets ssh create password-box \
+  --folder demo \
+  --target ssh-target-password.default.svc.cluster.local:22 -o json   # note the "id" -> PW_ASSET_ID
+printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set <PW_ASSET_ID> \
+  --login demo --kind password --password-stdin
+
+# key workload:
+jumpgate --context admin assets ssh create key-box \
+  --folder demo \
+  --target ssh-target-key.default.svc.cluster.local:22 -o json        # note the "id" -> KEY_ASSET_ID
+jumpgate --context admin assets ssh login set <KEY_ASSET_ID> \
+  --login demo --kind key --key-file test/env/testworkload/demo_key
 ```
 
 Create the role the users will request. Its capability grants the `deploy` SSH login:
@@ -83,6 +100,9 @@ Create the role the users will request. Its capability grants the `deploy` SSH l
 ```bash
 jumpgate --context admin roles create ssh-deploy \
   --capability ssh:login:deploy -o json   # note the "id" -> ROLE_ID
+
+jumpgate --context admin roles create ssh-demo \
+  --capability ssh:login:demo -o json
 ```
 
 Create the two users with login passwords (a display name is required):
@@ -90,6 +110,15 @@ Create the two users with login passwords (a display name is required):
 ```bash
 jumpgate --context admin users create alice@demo.test --name Alice --password alice-password-1234
 jumpgate --context admin users create bob@demo.test   --name Bob   --password bob-password-1234
+```
+
+Grant alice **standing** access to the password and key boxes (no request needed — a contrast
+with the ca box's just-in-time flow). Bind `ssh-demo` to alice on each box — the role resolves by
+name, but a freshly onboarded asset must be referenced by its id:
+
+```bash
+jumpgate --context admin bindings create --role ssh-demo --user alice@demo.test --asset <PW_ASSET_ID>
+jumpgate --context admin bindings create --role ssh-demo --user alice@demo.test --asset <KEY_ASSET_ID>
 ```
 
 Create a request policy that makes `ssh-deploy` requestable at the asset scope, requiring
@@ -139,7 +168,7 @@ by name and connect through the gateway:
 
 ```bash
 jumpgate --context alice access grants                    # the active grant is listed
-jumpgate --context alice connect deploy@demo-box --ca ./jumpgate-mesh-ca.pem
+jumpgate --context alice connect deploy@demo-box.demo --ca ./jumpgate-mesh-ca.pem
 ```
 
 You are now on the target over the tunnel. Run a few commands, then exit:
@@ -149,6 +178,14 @@ echo hello-from-jumpgate
 hostname
 whoami
 exit
+```
+
+The password and key boxes need no request — alice already has standing access. She connects
+the same way (the worker injects the stored password or key at the target hop):
+
+```bash
+jumpgate --context alice connect demo@password-box.demo --ca ./jumpgate-mesh-ca.pem
+jumpgate --context alice connect demo@key-box.demo --ca ./jumpgate-mesh-ca.pem
 ```
 
 ## Act 4 — the auditor verifies the recording

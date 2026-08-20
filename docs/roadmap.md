@@ -135,7 +135,7 @@ exercised by the e2e suite against real sshd workloads.
 
 **Host-scoped SSH CA principals ✅.** CA-kind SSH certs now carry **host-scoped**
 principals `[<login>@<asset-path>, <login>@<asset-id>]` instead of a bare login.
-The path form (`deploy@prod.servers.web-01`) is the stable, human-readable identifier
+The path form (`deploy@web-01.servers.prod`) is the stable, human-readable identifier
 that automation writes into the target's `AuthorizedPrincipalsFile`; the UUID form
 (`deploy@<asset-id>`) provides rename safety. The worker validates that every cert
 principal is of the form `<login>@<scope>` (binding the login identity); the target
@@ -150,11 +150,22 @@ registry table with partial `UNIQUE` indexes over `(parent_id, name)` written
 inside the create transaction — no triggers, no separate dedup passes, no races. Names are
 restricted to `^[a-z0-9_-]+$` (input is case-folded to lowercase before
 validation), giving the catalog a predictable, URL-safe vocabulary. Every folder
-and asset now exposes a canonical dotted **path** (e.g. `prod.db.pg-primary`)
+and asset now exposes a canonical dotted **path** (e.g. `pg-primary.db.prod`)
 computed on read by walking the ancestry chain. The path is the stable identity
 used by the SSH principal scheme — follow-on work mints per-asset SSH CA
-principals from it (`deploy@prod.db.pg-primary`), replacing the generic
+principals from it (`deploy@pg-primary.db.prod`), replacing the generic
 single-principal cert.
+
+**DNS-style asset addressing + server-side resolution ✅.** The canonical asset
+path is **leaf-first** (`pg-primary.db.prod`), so connect targets read naturally
+as `user@fqdn` — the same left-to-right form SSH users expect, and the same form
+that appears in SSH CA principals (`deploy@pg-primary.db.prod`). Asset resolution
+is server-side: `CatalogService.ResolveAsset` accepts a dotted path or a UUID,
+performs an access check in the same call, and returns the asset id — an unknown
+reference and a forbidden reference both return NotFound, preventing topology
+disclosure. The `jumpgate connect` and `access request` commands pass the
+caller-supplied reference directly to `ResolveAsset`, replacing the previous
+client-side name scan.
 
 ## Beyond the MVP (later product sub-projects)
 

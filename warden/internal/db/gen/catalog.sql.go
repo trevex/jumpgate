@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assetByFolderName = `-- name: AssetByFolderName :one
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 AND name = $2
+`
+
+type AssetByFolderNameParams struct {
+	FolderID uuid.UUID `json:"folder_id"`
+	Name     string    `json:"name"`
+}
+
+func (q *Queries) AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, assetByFolderName, arg.FolderID, arg.Name)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.FolderID,
+		&i.Name,
+		&i.Labels,
+		&i.CreatedAt,
+		&i.Kind,
+	)
+	return i, err
+}
+
 const deleteRoleBinding = `-- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1
 `
@@ -30,6 +53,29 @@ func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid
 	return err
 }
 
+const folderByParentName = `-- name: FolderByParentName :one
+SELECT id, name, parent_id, created_at FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
+`
+
+type FolderByParentNameParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+}
+
+// One folder by (parent, name). parent_id NULL matches a top-level folder
+// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
+func (q *Queries) FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error) {
+	row := q.db.QueryRow(ctx, folderByParentName, arg.ParentID, arg.Name)
+	var i Folder
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ParentID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const folderPath = `-- name: FolderPath :one
 WITH RECURSIVE chain AS (
     SELECT folders.id, folders.parent_id, folders.name, 0 AS depth FROM folders WHERE folders.id = $1
@@ -37,10 +83,10 @@ WITH RECURSIVE chain AS (
     SELECT f.id, f.parent_id, f.name, c.depth + 1
     FROM folders f JOIN chain c ON f.id = c.parent_id
 )
-SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth DESC), '')::text AS path FROM chain
+SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth ASC), '')::text AS path FROM chain
 `
 
-// Dotted root->leaf path of a single folder (includes the folder itself).
+// Dotted leaf->root path of a single folder (the folder's own name first).
 func (q *Queries) FolderPath(ctx context.Context, id uuid.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, folderPath, id)
 	var path string
@@ -52,7 +98,7 @@ const folderPaths = `-- name: FolderPaths :many
 WITH RECURSIVE chain AS (
     SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
     UNION ALL
-    SELECT f.id, f.parent_id, (c.path || '.' || f.name)::text
+    SELECT f.id, f.parent_id, (f.name || '.' || c.path)::text
     FROM folders f JOIN chain c ON f.parent_id = c.id
 )
 SELECT chain.id, chain.path FROM chain
@@ -63,7 +109,7 @@ type FolderPathsRow struct {
 	Path string    `json:"path"`
 }
 
-// Every folder's full dotted path in one query (for list responses).
+// Every folder's full leaf->root dotted path in one query (for list responses).
 func (q *Queries) FolderPaths(ctx context.Context) ([]FolderPathsRow, error) {
 	rows, err := q.db.Query(ctx, folderPaths)
 	if err != nil {

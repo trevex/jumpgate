@@ -77,35 +77,20 @@ func (c *Client) Vault() vaultv1connect.VaultServiceClient { return c.vault }
 // build their own typed requests and call this before sending.
 func (c *Client) Authorize(req interface{ Header() http.Header }) { c.authorize(req) }
 
-// ResolveAsset maps an exact asset name to its id via ListVisibleAssets. If name
-// already parses as a UUID it is returned as-is. A missing name or an ambiguous
-// match (two visible assets sharing the name) is an error.
-func (c *Client) ResolveAsset(ctx context.Context, name string) (string, error) {
-	if _, err := uuid.Parse(name); err == nil {
-		return name, nil
+// ResolveAsset maps a uuid or DNS-style path ref to an asset id. A uuid short-circuits
+// locally (no round-trip); anything else is resolved by warden, which checks access +
+// existence (a bad ref or no access surfaces as NotFound).
+func (c *Client) ResolveAsset(ctx context.Context, ref string) (string, error) {
+	if _, err := uuid.Parse(ref); err == nil {
+		return ref, nil
 	}
-
-	req := connect.NewRequest(&catalogv1.ListVisibleAssetsRequest{})
+	req := connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: ref})
 	c.authorize(req)
-	resp, err := c.catalog.ListVisibleAssets(ctx, req)
+	resp, err := c.catalog.ResolveAsset(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("listing assets: %w", err)
+		return "", err
 	}
-
-	var match string
-	for _, a := range resp.Msg.GetAssets() {
-		if a.GetName() != name {
-			continue
-		}
-		if match != "" {
-			return "", fmt.Errorf("asset name %q is ambiguous", name)
-		}
-		match = a.GetId()
-	}
-	if match == "" {
-		return "", fmt.Errorf("no asset named %q", name)
-	}
-	return match, nil
+	return resp.Msg.GetAssetId(), nil
 }
 
 // CreateSession requests admission to assetID with the ephemeral client public

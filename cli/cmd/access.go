@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 
@@ -95,17 +96,18 @@ func runAccessRequest(cmd *cobra.Command, args []string) error {
 	}
 
 	// The target may carry a leading "<login>@" like `connect`; the request
-	// scope is the asset, so we take only the asset part for resolution.
+	// scope is the asset. Requesters cannot resolve a DNS path (no access yet),
+	// so we require an explicit asset UUID here.
 	_, asset, err := parseTarget(args[0], "")
 	if err != nil {
 		return err
 	}
+	if _, err := uuid.Parse(asset); err != nil {
+		return fmt.Errorf("request takes the asset id (a requester cannot resolve a path yet): %q", asset)
+	}
+	assetID := asset
 
 	roleID, err := resolveRoleID(cmd.Context(), cl, accessRequestRole)
-	if err != nil {
-		return err
-	}
-	assetID, err := cl.ResolveAsset(cmd.Context(), asset)
 	if err != nil {
 		return err
 	}
