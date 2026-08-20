@@ -11,12 +11,15 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/ca"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // TestVaultNilSealerFailsClosed locks the vault-disabled contract: the seal paths
@@ -330,5 +333,87 @@ func TestCreateAssetKind(t *testing.T) {
 	def := newAsset(t, url, tok, "")
 	if def.Kind != "ssh" {
 		t.Fatalf("CreateAsset(kind=\"\") got kind %q, want ssh", def.Kind)
+	}
+}
+
+// bindScopedCap creates a fresh role carrying capsJSON and binds it to the user
+// at the given scope (asset if assetID non-nil, else folder if folderID non-nil,
+// else global). It mirrors the manual bindings used across the rpc tests.
+func bindScopedCap(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, capsJSON string, folderID, assetID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cap-" + uuid.NewString(), Capabilities: []byte(capsJSON)})
+	if err != nil {
+		t.Fatalf("bindScopedCap CreateRole: %v", err)
+	}
+	params := gen.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: userID, Valid: true}}
+	if assetID != uuid.Nil {
+		params.ScopeAssetID = pgtype.UUID{Bytes: assetID, Valid: true}
+	} else if folderID != uuid.Nil {
+		params.ScopeFolderID = pgtype.UUID{Bytes: folderID, Valid: true}
+	}
+	if _, err := q.CreateRoleBinding(ctx, params); err != nil {
+		t.Fatalf("bindScopedCap CreateRoleBinding: %v", err)
+	}
+}
+
+// TestVaultCapabilityGating asserts the vault handlers are gated by scoped
+// management capabilities, not a blanket admin flag: a user holding
+// vault:secret:write at asset A's folder can SetAssetSecret on A but not on an
+// unrelated asset B, and cannot InitCA (which needs vault:ca:init globally). The
+// bootstrap admin (**) can do all.
+func TestVaultCapabilityGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "sec@x", "password123", false)
+	atok := adminToken(t, url)
+	stok := authClient(t, url, "sec@x", "password123")
+
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	vc := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Two folders, one asset each (admin setup).
+	fA, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "fa-" + uuid.NewString()}), atok))
+	if err != nil {
+		t.Fatalf("create folder A: %v", err)
+	}
+	assetA, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fA.Msg.Folder.Id, Name: "a", Kind: "ssh"}), atok))
+	if err != nil {
+		t.Fatalf("create asset A: %v", err)
+	}
+	fB, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "fb-" + uuid.NewString()}), atok))
+	if err != nil {
+		t.Fatalf("create folder B: %v", err)
+	}
+	assetB, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fB.Msg.Folder.Id, Name: "b", Kind: "ssh"}), atok))
+	if err != nil {
+		t.Fatalf("create asset B: %v", err)
+	}
+
+	// sec holds vault:secret:write bound at folder A → cascades to asset A.
+	folderAID := uuid.MustParse(fA.Msg.Folder.Id)
+	bindScopedCap(t, pool, userIDByEmail(t, pool, "sec@x"), `["vault:secret:write"]`, folderAID, uuid.Nil)
+
+	// Allowed on A.
+	if _, err := vc.SetAssetSecret(ctx, withToken(connect.NewRequest(&vaultv1.SetAssetSecretRequest{AssetId: assetA.Msg.Asset.Id, Name: "pw", Value: []byte("x")}), stok)); err != nil {
+		t.Fatalf("sec SetAssetSecret on A = %v, want ok", err)
+	}
+	// Denied on B (out of scope).
+	if _, err := vc.SetAssetSecret(ctx, withToken(connect.NewRequest(&vaultv1.SetAssetSecretRequest{AssetId: assetB.Msg.Asset.Id, Name: "pw", Value: []byte("x")}), stok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("sec SetAssetSecret on B = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// Denied on InitCA (needs vault:ca:init global).
+	if _, err := vc.InitCA(ctx, withToken(connect.NewRequest(&vaultv1.InitCARequest{Kind: "ssh"}), stok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("sec InitCA = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Admin (**) can do all.
+	if _, err := vc.SetAssetSecret(ctx, withToken(connect.NewRequest(&vaultv1.SetAssetSecretRequest{AssetId: assetB.Msg.Asset.Id, Name: "pw2", Value: []byte("y")}), atok)); err != nil {
+		t.Fatalf("admin SetAssetSecret on B = %v, want ok", err)
+	}
+	if _, err := vc.InitCA(ctx, withToken(connect.NewRequest(&vaultv1.InitCARequest{Kind: "ssh"}), atok)); err != nil {
+		t.Fatalf("admin InitCA = %v, want ok", err)
 	}
 }
