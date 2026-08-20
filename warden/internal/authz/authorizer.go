@@ -36,6 +36,12 @@ type Authorizer interface {
 	// active (standing) role. Requestable eligibility does NOT grant capabilities.
 	Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error)
 
+	// CapabilitiesOnAsset returns the capability patterns the user holds on the asset
+	// via the held (standing) closure — one query, for callers that test several
+	// capabilities (e.g. per-login entitlement + record-exempt) without re-running
+	// the closure per capability.
+	CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error)
+
 	// VisibleAssets returns every asset the user can see — those on which the user
 	// holds at least one Active (standing) role OR has at least one Requestable role
 	// (an effective request_policy for which the user is an eligible requester).
