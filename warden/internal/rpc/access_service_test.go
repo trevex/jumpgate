@@ -98,6 +98,17 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 	if len(r.Msg.Role.Capabilities) != 4 {
 		t.Fatalf("capabilities = %v, want 4", r.Msg.Role.Capabilities)
 	}
+
+	// Valid: a bare '**' (match-everything) — the admin capability.
+	rr, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "superadmin", Capabilities: []string{"**"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("CreateRole(bare **) = %v, want ok", err)
+	}
+	if len(rr.Msg.Role.Capabilities) != 1 || rr.Msg.Role.Capabilities[0] != "**" {
+		t.Fatalf("capabilities = %v, want [**]", rr.Msg.Role.Capabilities)
+	}
 }
 
 func TestRoleGrantCRUD(t *testing.T) {

@@ -2486,10 +2486,10 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12\x1b\n" +
 	"\tfolder_id\x18\x05 \x01(\tR\bfolderId\x12\x1f\n" +
 	"\vfolder_path\x18\x06 \x01(\tR\n" +
-	"folderPathJ\x04\b\x03\x10\x04R\rresource_type\"\x91\x02\n" +
+	"folderPathJ\x04\b\x03\x10\x04R\rresource_type\"\x98\x02\n" +
 	"\x11CreateRoleRequest\x12-\n" +
-	"\x04name\x18\x01 \x01(\tB\x19\xbaH\x16r\x14\x10\x01\x18\xc8\x012\r^[a-z0-9_-]+$R\x04name\x12\x8d\x01\n" +
-	"\fcapabilities\x18\x03 \x03(\tBi\xbaHf\x92\x01c\"ar_2]^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$R\fcapabilities\x12(\n" +
+	"\x04name\x18\x01 \x01(\tB\x19\xbaH\x16r\x14\x10\x01\x18\xc8\x012\r^[a-z0-9_-]+$R\x04name\x12\x94\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\tBp\xbaHm\x92\x01j\"hrf2d^(\\*\\*|([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*))$R\fcapabilities\x12(\n" +
 	"\tfolder_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderIdJ\x04\b\x02\x10\x03R\rresource_type\"B\n" +
 	"\x12CreateRoleResponse\x12,\n" +
 	"\x04role\x18\x01 \x01(\v2\x18.jumpgate.access.v1.RoleR\x04role\"Y\n" +
