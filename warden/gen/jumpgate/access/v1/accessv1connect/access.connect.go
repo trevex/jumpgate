@@ -73,6 +73,9 @@ const (
 	// AccessServiceAddPolicySubjectProcedure is the fully-qualified name of the AccessService's
 	// AddPolicySubject RPC.
 	AccessServiceAddPolicySubjectProcedure = "/jumpgate.access.v1.AccessService/AddPolicySubject"
+	// AccessServiceResolvePolicyProcedure is the fully-qualified name of the AccessService's
+	// ResolvePolicy RPC.
+	AccessServiceResolvePolicyProcedure = "/jumpgate.access.v1.AccessService/ResolvePolicy"
 	// AccessServiceRemovePolicySubjectProcedure is the fully-qualified name of the AccessService's
 	// RemovePolicySubject RPC.
 	AccessServiceRemovePolicySubjectProcedure = "/jumpgate.access.v1.AccessService/RemovePolicySubject"
@@ -104,6 +107,7 @@ type AccessServiceClient interface {
 	DeleteRequestPolicy(context.Context, *connect.Request[v1.DeleteRequestPolicyRequest]) (*connect.Response[v1.DeleteRequestPolicyResponse], error)
 	ListRequestPolicies(context.Context, *connect.Request[v1.ListRequestPoliciesRequest]) (*connect.Response[v1.ListRequestPoliciesResponse], error)
 	AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error)
+	ResolvePolicy(context.Context, *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error)
 	RemovePolicySubject(context.Context, *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error)
 	ListPolicySubjects(context.Context, *connect.Request[v1.ListPolicySubjectsRequest]) (*connect.Response[v1.ListPolicySubjectsResponse], error)
 	// Introspection (admin-or-self).
@@ -205,6 +209,12 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(accessServiceMethods.ByName("AddPolicySubject")),
 			connect.WithClientOptions(opts...),
 		),
+		resolvePolicy: connect.NewClient[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse](
+			httpClient,
+			baseURL+AccessServiceResolvePolicyProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("ResolvePolicy")),
+			connect.WithClientOptions(opts...),
+		),
 		removePolicySubject: connect.NewClient[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse](
 			httpClient,
 			baseURL+AccessServiceRemovePolicySubjectProcedure,
@@ -242,6 +252,7 @@ type accessServiceClient struct {
 	deleteRequestPolicy *connect.Client[v1.DeleteRequestPolicyRequest, v1.DeleteRequestPolicyResponse]
 	listRequestPolicies *connect.Client[v1.ListRequestPoliciesRequest, v1.ListRequestPoliciesResponse]
 	addPolicySubject    *connect.Client[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse]
+	resolvePolicy       *connect.Client[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse]
 	removePolicySubject *connect.Client[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse]
 	listPolicySubjects  *connect.Client[v1.ListPolicySubjectsRequest, v1.ListPolicySubjectsResponse]
 	explainRole         *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
@@ -317,6 +328,11 @@ func (c *accessServiceClient) AddPolicySubject(ctx context.Context, req *connect
 	return c.addPolicySubject.CallUnary(ctx, req)
 }
 
+// ResolvePolicy calls jumpgate.access.v1.AccessService.ResolvePolicy.
+func (c *accessServiceClient) ResolvePolicy(ctx context.Context, req *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error) {
+	return c.resolvePolicy.CallUnary(ctx, req)
+}
+
 // RemovePolicySubject calls jumpgate.access.v1.AccessService.RemovePolicySubject.
 func (c *accessServiceClient) RemovePolicySubject(ctx context.Context, req *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error) {
 	return c.removePolicySubject.CallUnary(ctx, req)
@@ -352,6 +368,7 @@ type AccessServiceHandler interface {
 	DeleteRequestPolicy(context.Context, *connect.Request[v1.DeleteRequestPolicyRequest]) (*connect.Response[v1.DeleteRequestPolicyResponse], error)
 	ListRequestPolicies(context.Context, *connect.Request[v1.ListRequestPoliciesRequest]) (*connect.Response[v1.ListRequestPoliciesResponse], error)
 	AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error)
+	ResolvePolicy(context.Context, *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error)
 	RemovePolicySubject(context.Context, *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error)
 	ListPolicySubjects(context.Context, *connect.Request[v1.ListPolicySubjectsRequest]) (*connect.Response[v1.ListPolicySubjectsResponse], error)
 	// Introspection (admin-or-self).
@@ -449,6 +466,12 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(accessServiceMethods.ByName("AddPolicySubject")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accessServiceResolvePolicyHandler := connect.NewUnaryHandler(
+		AccessServiceResolvePolicyProcedure,
+		svc.ResolvePolicy,
+		connect.WithSchema(accessServiceMethods.ByName("ResolvePolicy")),
+		connect.WithHandlerOptions(opts...),
+	)
 	accessServiceRemovePolicySubjectHandler := connect.NewUnaryHandler(
 		AccessServiceRemovePolicySubjectProcedure,
 		svc.RemovePolicySubject,
@@ -497,6 +520,8 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceListRequestPoliciesHandler.ServeHTTP(w, r)
 		case AccessServiceAddPolicySubjectProcedure:
 			accessServiceAddPolicySubjectHandler.ServeHTTP(w, r)
+		case AccessServiceResolvePolicyProcedure:
+			accessServiceResolvePolicyHandler.ServeHTTP(w, r)
 		case AccessServiceRemovePolicySubjectProcedure:
 			accessServiceRemovePolicySubjectHandler.ServeHTTP(w, r)
 		case AccessServiceListPolicySubjectsProcedure:
@@ -566,6 +591,10 @@ func (UnimplementedAccessServiceHandler) ListRequestPolicies(context.Context, *c
 
 func (UnimplementedAccessServiceHandler) AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.AddPolicySubject is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) ResolvePolicy(context.Context, *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ResolvePolicy is not implemented"))
 }
 
 func (UnimplementedAccessServiceHandler) RemovePolicySubject(context.Context, *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error) {

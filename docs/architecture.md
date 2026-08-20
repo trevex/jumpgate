@@ -127,6 +127,19 @@ use the same DNS-style dotted path form (`db.prod`, or a single segment for a to
 folder) or a UUID, resolved by `CatalogService.ResolveFolder` — **admin-only** (folders
 are an admin surface; an unknown or non-existent reference returns NotFound).
 
+`ResolveAsset` is **admin-aware**: admins resolve any asset by path without needing an
+active grant or binding; non-admins are gated by a per-asset visibility check (Active or
+Requestable in the caller's catalog) and receive NotFound for anything outside that
+set — no listing, no enumeration. This lets admin commands accept asset paths everywhere
+(e.g. `bindings create --asset password-box.demo`, `policies create --asset demo-box.demo`)
+without requiring the admin to hold a standing binding to the asset first.
+
+Request policies are addressable as **`<name>@<asset-path>`** in addition to their opaque
+id: `AccessService.ResolvePolicy` accepts this composite reference, resolves the asset
+path (admin-aware), looks up the policy by name within that asset's scope, and returns
+the policy id — the same NotFound-hiding semantics apply. This lets `policies add-subject
+approve-deploy@demo-box.demo` work without capturing an id from the prior `policies create`.
+
 `jumpgate connect` authenticates to the control plane (`jumpgate
 login` stores an opaque bearer token), resolves the asset, generates the ephemeral key
 **Kc**, and requests a session — receiving a short-lived admission token and the

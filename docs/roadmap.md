@@ -168,6 +168,15 @@ caller-supplied reference directly to `ResolveAsset`, replacing the previous
 client-side name scan. Folder references in admin catalog commands are resolved the
 same way via `CatalogService.ResolveFolder` (path-or-UUID, admin-only, NotFound on
 any unknown reference), closing the sibling-unique-name ambiguity for folders too.
+`ResolveAsset` is **admin-aware**: admin commands (`bindings create --asset`,
+`policies create --asset`, `assets ssh login set`, etc.) accept asset paths and
+resolve them without requiring the admin to hold a standing binding — non-admins
+are gated by a per-asset visibility check and get NotFound for anything outside
+their catalog. Request policies are **name-addressable** as `<name>@<asset-path>`:
+`AccessService.ResolvePolicy` resolves the composite reference (asset path via
+`ResolveAsset` + policy name within that scope), returning the policy id with the
+same NotFound-hiding semantics — so `policies add-subject approve-deploy@demo-box.demo`
+works without capturing an id from a prior `policies create`.
 
 ## Beyond the MVP (later product sub-projects)
 

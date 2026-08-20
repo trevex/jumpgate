@@ -591,6 +591,37 @@ func TestResolveFolder(t *testing.T) {
 	}
 }
 
+func TestResolveAssetAdminBypassAndTargetedCheck(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	prod, _ := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	db, _ := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
+	a, _ := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Kind: "ssh"}), tok))
+
+	// ADMIN resolves the asset by path WITH NO grant (the key change).
+	got, err := c.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), tok))
+	if err != nil || got.Msg.AssetId != a.Msg.Asset.Id || got.Msg.Path != "pg.db.prod" {
+		t.Fatalf("admin resolve = %v / {%s,%s}, want the asset", err, got.Msg.GetAssetId(), got.Msg.GetPath())
+	}
+	// non-admin with NO access → NotFound (targeted RolesOnAsset check)
+	seedUser(t, pool, "no@x", "password123", false)
+	notok := authClient(t, url, "no@x", "password123")
+	if _, err := c.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), notok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("no-access = %v, want NotFound", connect.CodeOf(err))
+	}
+	// non-admin WITH a standing binding resolves it
+	seedUser(t, pool, "y@x", "password123", false)
+	ytok := authClient(t, url, "y@x", "password123")
+	giveAssetAccess(t, pool, "y@x", a.Msg.Asset.Id)
+	if _, err := c.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), ytok)); err != nil {
+		t.Fatalf("entitled user resolve: %v", err)
+	}
+}
+
 func TestResolveAsset(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)

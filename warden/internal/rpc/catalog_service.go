@@ -509,20 +509,17 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
 	}
 
-	// Access check + existence hiding: only reveal assets the caller can see.
-	vis, err := s.authorizer.VisibleAssets(ctx, u.ID)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	seen := false
-	for _, v := range vis {
-		if v.AssetID == assetID {
-			seen = true
-			break
+	// Access + existence hiding. Admins see the whole catalog (no authz query).
+	// Non-admins are gated by a targeted single-asset RolesOnAsset lookup — same
+	// visibility as VisibleAssets (active OR requestable) without enumerating a list.
+	if !u.IsAdmin {
+		roles, err := s.authorizer.RolesOnAsset(ctx, u.ID, assetID)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
 		}
-	}
-	if !seen {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+		if len(roles.Active) == 0 && len(roles.Requestable) == 0 {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+		}
 	}
 
 	fp, err := s.q.FolderPath(ctx, folderID)

@@ -11,8 +11,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 )
 
 type stubPolicies struct {
@@ -50,10 +52,26 @@ func (s *stubPolicies) AddPolicySubject(_ context.Context, req *connect.Request[
 	return connect.NewResponse(&accessv1.AddPolicySubjectResponse{Id: "subject-456"}), nil
 }
 
+func (s *stubPolicies) ResolvePolicy(_ context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
+	return connect.NewResponse(&accessv1.ResolvePolicyResponse{PolicyId: "policy-uuid-1"}), nil
+}
+
 func newPoliciesStub(t *testing.T, s *stubPolicies) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle(accessv1connect.NewAccessServiceHandler(s))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// newPoliciesAndCatalogStub starts a server that handles both AccessService and
+// CatalogService so that resolvePolicyID can resolve assets and policies.
+func newPoliciesAndCatalogStub(t *testing.T, access *stubPolicies, catalog catalogv1connect.CatalogServiceHandler) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle(accessv1connect.NewAccessServiceHandler(access))
+	mux.Handle(catalogv1connect.NewCatalogServiceHandler(catalog))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -64,6 +82,7 @@ func newPoliciesStub(t *testing.T, s *stubPolicies) string {
 func resetPoliciesFlags() {
 	flagOutput = "table"
 	policiesCreateRequestRole = ""
+	policiesCreateName = ""
 	policiesCreateAsset = ""
 	policiesCreateFolder = ""
 	policiesCreateApproverRole = ""
@@ -77,6 +96,7 @@ func resetPoliciesFlags() {
 		name string
 	}{
 		{policiesCreateCmd, "request-role"},
+		{policiesCreateCmd, "name"},
 		{policiesCreateCmd, "asset"},
 		{policiesCreateCmd, "folder"},
 		{policiesCreateCmd, "approver-role"},
@@ -170,12 +190,15 @@ func TestPoliciesAddSubject(t *testing.T) {
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetPoliciesFlags)
 
-	const userID = "22222222-2222-2222-2222-222222222222"
+	const (
+		policyID = "55555555-5555-5555-5555-555555555555"
+		userID   = "22222222-2222-2222-2222-222222222222"
+	)
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
 	rootCmd.SetArgs([]string{
-		"policies", "add-subject", "policy-xyz",
+		"policies", "add-subject", policyID,
 		"--kind", "approver",
 		"--user", userID,
 	})
@@ -186,7 +209,7 @@ func TestPoliciesAddSubject(t *testing.T) {
 	if s.gotAddSubject == nil {
 		t.Fatalf("AddPolicySubject not called")
 	}
-	if s.gotAddSubject.GetPolicyId() != "policy-xyz" {
+	if s.gotAddSubject.GetPolicyId() != policyID {
 		t.Fatalf("policy_id=%q", s.gotAddSubject.GetPolicyId())
 	}
 	if s.gotAddSubject.GetKind() != "approver" {
@@ -211,7 +234,7 @@ func TestPoliciesAddSubjectRejectsTwoSubjects(t *testing.T) {
 
 	rootCmd.SetOut(&bytes.Buffer{})
 	rootCmd.SetArgs([]string{
-		"policies", "add-subject", "policy-xyz",
+		"policies", "add-subject", "55555555-5555-5555-5555-555555555555",
 		"--kind", "approver",
 		"--user", "22222222-2222-2222-2222-222222222222",
 		"--group", "44444444-4444-4444-4444-444444444444",
@@ -241,5 +264,30 @@ func TestPoliciesList(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "p-1") || !strings.Contains(got, "r-1") {
 		t.Fatalf("out=%s", got)
+	}
+}
+
+func TestResolvePolicyID(t *testing.T) {
+	access := &stubPolicies{}
+	catalog := &stubCatalog{}
+	addr := newPoliciesAndCatalogStub(t, access, catalog)
+	cl := wardenclient.New(addr, "")
+	ctx := context.Background()
+
+	// uuid short-circuits (no RPC)
+	id, err := resolvePolicyID(ctx, cl, "11111111-1111-1111-1111-111111111111")
+	if err != nil || id != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("uuid = %v/%q", err, id)
+	}
+
+	// name@asset-path → resolves asset then policy
+	id, err = resolvePolicyID(ctx, cl, "approve-deploy@demo-box.demo")
+	if err != nil || id != "policy-uuid-1" {
+		t.Fatalf("named = %v/%q", err, id)
+	}
+
+	// malformed (no @, not uuid) → error before any RPC
+	if _, err := resolvePolicyID(ctx, cl, "justaname"); err == nil {
+		t.Fatalf("expected error for malformed ref")
 	}
 }
