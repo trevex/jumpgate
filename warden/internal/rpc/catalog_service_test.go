@@ -549,6 +549,94 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 	}
 }
 
+// TestCatalogCapabilityGating asserts the catalog handlers are gated by
+// scoped management capabilities (not a blanket admin check): dana, bound the
+// folder-editor role (catalog:asset:create/read) at folder `team`, can create
+// and read assets under team but not under its parent `demo`, and cannot create
+// folders; the bootstrap admin (**) can do everything.
+func TestCatalogCapabilityGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Setup as the bootstrap admin: demo/ and team/ under demo.
+	demo, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "demo"}), tok))
+	if err != nil {
+		t.Fatalf("create demo: %v", err)
+	}
+	team, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "team", ParentId: demo.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+
+	// A non-admin user dana holding folder-editor bound at folder team.
+	seedUser(t, pool, "dana@x", "password123", false)
+	danatok := authClient(t, url, "dana@x", "password123")
+
+	q := gen.New(pool)
+	teamID, err := uuid.Parse(team.Msg.Folder.Id)
+	if err != nil {
+		t.Fatalf("parse team id: %v", err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "folder-editor",
+		Capabilities: []byte(`["catalog:asset:create","catalog:asset:read"]`),
+	})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	// A folder-scoped binding confers on the folder object; a via='parent' self-grant
+	// cascades the role's caps onto assets inside the bound folder so dana can read
+	// (AssetScope) the assets she creates under team.
+	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
+		t.Fatalf("create role grant: %v", err)
+	}
+	dana, err := q.GetUserByEmail(ctx, "dana@x")
+	if err != nil {
+		t.Fatalf("get dana: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        role.ID,
+		ScopeFolderID: pgtype.UUID{Bytes: teamID, Valid: true},
+		SubjectUserID: pgtype.UUID{Bytes: dana.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("bind role: %v", err)
+	}
+
+	// dana CAN create an asset under team (holds catalog:asset:create on team).
+	danaAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: team.Msg.Folder.Id, Name: "box", Kind: "ssh"}), danatok))
+	if err != nil {
+		t.Fatalf("dana CreateAsset under team: %v", err)
+	}
+	// dana CAN read it back (holds catalog:asset:read on team → asset scope).
+	if _, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: danaAsset.Msg.Asset.Id}), danatok)); err != nil {
+		t.Fatalf("dana GetAsset: %v", err)
+	}
+
+	// dana CANNOT create an asset under demo (the parent — she only holds it on team).
+	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "nope", Kind: "ssh"}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana CreateAsset under demo = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// dana CANNOT create a folder (no catalog:folder:create anywhere).
+	if _, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "sub", ParentId: team.Msg.Folder.Id}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana CreateFolder = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// The admin (**) CAN do all of the above.
+	adminAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "admin-box", Kind: "ssh"}), tok))
+	if err != nil {
+		t.Fatalf("admin CreateAsset under demo: %v", err)
+	}
+	if _, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: adminAsset.Msg.Asset.Id}), tok)); err != nil {
+		t.Fatalf("admin GetAsset: %v", err)
+	}
+	if _, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "admin-sub", ParentId: team.Msg.Folder.Id}), tok)); err != nil {
+		t.Fatalf("admin CreateFolder: %v", err)
+	}
+}
+
 func TestResolveFolder(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)

@@ -340,13 +340,14 @@ func TestListRoleBindings(t *testing.T) {
 	mkBinding(roleX.Msg.Role.Id, fB.Msg.Folder.Id)
 	mkBinding(roleY.Msg.Role.Id, fA.Msg.Folder.Id)
 
-	// no filter: all three
+	// no filter: the three created here plus the admin's scopeless `**` bootstrap
+	// binding (seedUser grants it so the capability-gated handlers admit the admin).
 	all, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{}), tok))
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}
-	if len(all.Msg.Bindings) != 3 {
-		t.Fatalf("list all = %d, want 3", len(all.Msg.Bindings))
+	if len(all.Msg.Bindings) != 4 {
+		t.Fatalf("list all = %d, want 4", len(all.Msg.Bindings))
 	}
 
 	// filter by role: roleX → 2
