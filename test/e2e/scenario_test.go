@@ -52,6 +52,17 @@ func TestScenario(t *testing.T) {
 			t.Fatalf("no asset id:\n%s", assetOut)
 		}
 
+		assetPath := jsonField(assetOut, "path")
+		if assetPath == "" {
+			t.Fatalf("no asset path in create output:\n%s", assetOut)
+		}
+		// Post-onboard provisioning: automation writes the target's accepted
+		// principal from the path the onboard command returned. This is the
+		// operator step a real deployment performs when creating/onboarding a host.
+		e.kubectl(t, "exec", "deploy/ssh-target", "--",
+			"sh", "-c",
+			"mkdir -p /etc/ssh/auth_principals && printf 'deploy@%s\\n' '"+assetPath+"' > /etc/ssh/auth_principals/deploy")
+
 		roleOut := e.asActor(t, "admin", "roles", "create", e.name("ssh-deploy"),
 			"--capability", "ssh:login:deploy", "-o", "json")
 		st.roleID = jsonID(roleOut)
