@@ -468,6 +468,12 @@ func (s *CatalogServer) ListVisibleAssets(ctx context.Context, _ *connect.Reques
 	return connect.NewResponse(out), nil
 }
 
+// ResolveAsset maps a ref (uuid or dotted path) to an asset id the caller can reach.
+// Stub: full implementation is in Task 4.
+func (s *CatalogServer) ResolveAsset(_ context.Context, _ *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // GetAssetAccess returns the caller's roles on one asset; NotFound if invisible.
 func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request[catalogv1.GetAssetAccessRequest]) (*connect.Response[catalogv1.GetAssetAccessResponse], error) {
 	u, ok := auth.UserFromContext(ctx)

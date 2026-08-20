@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assetByFolderName = `-- name: AssetByFolderName :one
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 AND name = $2
+`
+
+type AssetByFolderNameParams struct {
+	FolderID uuid.UUID `json:"folder_id"`
+	Name     string    `json:"name"`
+}
+
+func (q *Queries) AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, assetByFolderName, arg.FolderID, arg.Name)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.FolderID,
+		&i.Name,
+		&i.Labels,
+		&i.CreatedAt,
+		&i.Kind,
+	)
+	return i, err
+}
+
 const deleteRoleBinding = `-- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1
 `
@@ -28,6 +51,29 @@ DELETE FROM ssh_asset_login WHERE asset_id = $1
 func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSSHAssetLoginsForAsset, assetID)
 	return err
+}
+
+const folderByParentName = `-- name: FolderByParentName :one
+SELECT id, name, parent_id, created_at FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
+`
+
+type FolderByParentNameParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+}
+
+// One folder by (parent, name). parent_id NULL matches a top-level folder
+// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
+func (q *Queries) FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error) {
+	row := q.db.QueryRow(ctx, folderByParentName, arg.ParentID, arg.Name)
+	var i Folder
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ParentID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const folderPath = `-- name: FolderPath :one
