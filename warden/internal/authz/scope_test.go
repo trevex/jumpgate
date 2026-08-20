@@ -84,14 +84,17 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	subFolder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "scope-sub", ParentID: pgUUID(folderF.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	childAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folderF.ID, Name: "scope-child", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// mgr must cascade folder→asset for the folder binding to reach the child asset.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: mgr.ID, SourceRoleID: mgr.ID, Via: "parent"}); err != nil {
-		t.Fatal(err)
-	}
+	// NO role_grants(mgr,mgr,parent) self-edge: management scoping cascades
+	// STRUCTURALLY down the folder tree (via the folder ancestor walk in
+	// CapabilitiesOnScope), not via the opt-in data-plane parent inheritance.
 
 	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
 
@@ -134,7 +137,11 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	if c, err := a.CapabilitiesOnScope(ctx, fUser.ID, FolderScope(folderF.ID)); err != nil || !c.Allows("catalog:asset:create") {
 		t.Fatalf("folder user at FolderScope(F): allows=%v err=%v; want true", c.Allows("catalog:asset:create"), err)
 	}
-	// true at child asset of F (via parent cascade)
+	// true at sub-folder of F (structural cascade, no parent self-grant)
+	if c, err := a.CapabilitiesOnScope(ctx, fUser.ID, FolderScope(subFolder.ID)); err != nil || !c.Allows("catalog:asset:create") {
+		t.Fatalf("folder user at FolderScope(sub): allows=%v err=%v; want true", c.Allows("catalog:asset:create"), err)
+	}
+	// true at child asset of F (structural cascade, no parent self-grant)
 	if c, err := a.CapabilitiesOnScope(ctx, fUser.ID, AssetScope(childAsset.ID)); err != nil || !c.Allows("catalog:asset:create") {
 		t.Fatalf("folder user at AssetScope(child): allows=%v err=%v; want true", c.Allows("catalog:asset:create"), err)
 	}
