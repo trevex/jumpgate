@@ -9,5 +9,6 @@ CREATE TABLE role_grants (
     CONSTRAINT no_self_same_object CHECK (NOT (role_id = source_role_id AND via = 'same_object'))
 );
 CREATE INDEX idx_role_grants_role ON role_grants(role_id);
+CREATE INDEX idx_role_grants_source ON role_grants(source_role_id, via);
 -- +goose Down
 DROP TABLE role_grants;

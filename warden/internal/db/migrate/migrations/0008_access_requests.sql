@@ -30,6 +30,7 @@ CREATE TABLE access_requests (
 );
 CREATE UNIQUE INDEX uq_pending_request ON access_requests (requester_user_id, role_id, asset_id) WHERE status = 'pending';
 CREATE INDEX idx_access_requests_requester ON access_requests (requester_user_id);
+CREATE INDEX idx_access_requests_pending ON access_requests(created_at DESC) WHERE status = 'pending';
 
 CREATE TABLE access_request_approvals (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),

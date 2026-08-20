@@ -1093,6 +1093,70 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 	}
 }
 
+// TestCapabilitiesOnAsset pins the one-query connect-path primitive: a user
+// holding a role with ssh:login:deploy via a STANDING binding on the asset gets a
+// Capabilities set whose Allows/EntitledLogins reproduce Check exactly. The set is
+// fetched once and answers multiple capability questions.
+func TestCapabilitiesOnAsset(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	a := NewSQLAuthorizer(pool)
+
+	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cap-on-asset@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cap-folder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "cap-asset", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cap-deploy", Capabilities: caps("ssh:login:deploy")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	capsSet, err := a.CapabilitiesOnAsset(ctx, user.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("CapabilitiesOnAsset: %v", err)
+	}
+	if !capsSet.Allows("ssh:login:deploy") {
+		t.Fatalf("Allows(ssh:login:deploy) = false, want true; caps=%v", capsSet)
+	}
+	if capsSet.Allows("ssh:login:other") {
+		t.Fatalf("Allows(ssh:login:other) = true, want false; caps=%v", capsSet)
+	}
+	if capsSet.Allows("ssh:record:exempt") {
+		t.Fatalf("Allows(ssh:record:exempt) = true, want false; caps=%v", capsSet)
+	}
+
+	// EntitledLogins intersects order-preserving with only the held login.
+	logins, err := EntitledLogins(ctx, a, user.ID, asset.ID, []string{"deploy", "other"})
+	if err != nil {
+		t.Fatalf("EntitledLogins: %v", err)
+	}
+	if len(logins) != 1 || logins[0] != "deploy" {
+		t.Fatalf("EntitledLogins = %v, want [deploy]", logins)
+	}
+
+	// Check still agrees with the pre-refactor behavior (built on the same set).
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "ssh:login:deploy"); err != nil || !ok {
+		t.Fatalf("Check(ssh:login:deploy) = %v, %v; want true", ok, err)
+	}
+	if ok, err := a.Check(ctx, user.ID, asset.ID, "ssh:login:other"); err != nil || ok {
+		t.Fatalf("Check(ssh:login:other) = %v, %v; want false", ok, err)
+	}
+}
+
 // TestHoldsRoleStandingExcludesGrants (M3c T5): for a purely-granted role,
 // HoldsRole (access membership) is true but HoldsRoleStanding (governance
 // membership) is false; for a standing-bound role, both are true.
