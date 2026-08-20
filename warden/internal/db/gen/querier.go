@@ -51,6 +51,9 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
+	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
+	// to the root. Used for folder-scoped role containment checks.
+	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
 	// One folder by (parent, name). parent_id NULL matches a top-level folder
 	// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
 	FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error)

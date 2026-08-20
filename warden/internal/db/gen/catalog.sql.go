@@ -53,6 +53,37 @@ func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid
 	return err
 }
 
+const folderAncestorsAndSelf = `-- name: FolderAncestorsAndSelf :many
+WITH RECURSIVE up AS (
+    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
+)
+SELECT up.id FROM up
+`
+
+// Every ancestor-or-self folder id of $1 (the target), walking parent links up
+// to the root. Used for folder-scoped role containment checks.
+func (q *Queries) FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, folderAncestorsAndSelf, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const folderByParentName = `-- name: FolderByParentName :one
 SELECT id, name, parent_id, created_at FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
 `
