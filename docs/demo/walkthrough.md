@@ -112,27 +112,35 @@ jumpgate --context admin users create alice@demo.test --name Alice --password al
 jumpgate --context admin users create bob@demo.test   --name Bob   --password bob-password-1234
 ```
 
-Grant alice **standing** access to the password and key boxes (no request needed — a contrast
-with the ca box's just-in-time flow). Bind `ssh-demo` to alice on each box — the role resolves by
-name, but a freshly onboarded asset must be referenced by its id:
+Put both users in an **sre** group and assign permissions to the group rather than to the
+individuals — access flows through membership. (Group names are globally unique, so a group is
+always referenced by name; groups can also nest, in which case membership is walked transitively.)
 
 ```bash
-jumpgate --context admin bindings create --role ssh-demo --user alice@demo.test --asset <PW_ASSET_ID>
-jumpgate --context admin bindings create --role ssh-demo --user alice@demo.test --asset <KEY_ASSET_ID>
+jumpgate --context admin groups create sre
+jumpgate --context admin groups add-member sre alice@demo.test
+jumpgate --context admin groups add-member sre bob@demo.test
+```
+
+Grant the **sre** group **standing** access to the password and key boxes (no request needed — a
+contrast with the ca box's just-in-time flow). Bind `ssh-demo` to the group on each box — the role
+and group resolve by name, but a freshly onboarded asset must be referenced by its id:
+
+```bash
+jumpgate --context admin bindings create --role ssh-demo --group sre --asset <PW_ASSET_ID>
+jumpgate --context admin bindings create --role ssh-demo --group sre --asset <KEY_ASSET_ID>
 ```
 
 Create a request policy that makes `ssh-deploy` requestable at the asset scope, requiring
-one approval, then add alice and bob as **both** requester and approver so either can
-request and either can approve the other:
+one approval, then make the **sre** group **both** requester and approver — any member can request
+and any *other* member can approve (alice and bob approve each other via the group):
 
 ```bash
 jumpgate --context admin policies create \
   --request-role ssh-deploy --asset <ASSET_ID> --min-approvals 1 -o json   # note the "id" -> POLICY_ID
 
-jumpgate --context admin policies add-subject <POLICY_ID> --kind requester --user alice@demo.test
-jumpgate --context admin policies add-subject <POLICY_ID> --kind approver  --user alice@demo.test
-jumpgate --context admin policies add-subject <POLICY_ID> --kind requester --user bob@demo.test
-jumpgate --context admin policies add-subject <POLICY_ID> --kind approver  --user bob@demo.test
+jumpgate --context admin policies add-subject <POLICY_ID> --kind requester --group sre
+jumpgate --context admin policies add-subject <POLICY_ID> --kind approver  --group sre
 ```
 
 ## Act 1 — alice requests access
