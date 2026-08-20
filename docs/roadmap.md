@@ -124,6 +124,19 @@ access, one connects and runs a command, and the admin auditor downloads the rec
 and confirms it captured the session. A narrated walkthrough (`docs/demo/walkthrough.md`)
 follows the same command sequence for a live demo. This also bootstraps M7 packaging.
 
+**Catalog path uniqueness ✅.** Folder and asset names are now sibling-unique
+within their parent: folders share one namespace with assets, so no two siblings
+can collide regardless of kind. Uniqueness is enforced by a `catalog_names`
+registry table with partial `UNIQUE` indexes over `(parent_id, name)` written
+inside the create transaction — no triggers, no separate dedup passes, no races. Names are
+restricted to `^[a-z0-9_-]+$` (input is case-folded to lowercase before
+validation), giving the catalog a predictable, URL-safe vocabulary. Every folder
+and asset now exposes a canonical dotted **path** (e.g. `prod.db.pg-primary`)
+computed on read by walking the ancestry chain. The path is the stable identity
+used by the SSH principal scheme — follow-on work mints per-asset SSH CA
+principals from it (`deploy@prod.db.pg-primary`), replacing the generic
+single-principal cert.
+
 ## Beyond the MVP (later product sub-projects)
 
 | # | Sub-project | Adds |

@@ -30,6 +30,60 @@ func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid
 	return err
 }
 
+const folderPath = `-- name: FolderPath :one
+WITH RECURSIVE chain AS (
+    SELECT folders.id, folders.parent_id, folders.name, 0 AS depth FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id, f.name, c.depth + 1
+    FROM folders f JOIN chain c ON f.id = c.parent_id
+)
+SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth DESC), '')::text AS path FROM chain
+`
+
+// Dotted root->leaf path of a single folder (includes the folder itself).
+func (q *Queries) FolderPath(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, folderPath, id)
+	var path string
+	err := row.Scan(&path)
+	return path, err
+}
+
+const folderPaths = `-- name: FolderPaths :many
+WITH RECURSIVE chain AS (
+    SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
+    UNION ALL
+    SELECT f.id, f.parent_id, (c.path || '.' || f.name)::text
+    FROM folders f JOIN chain c ON f.parent_id = c.id
+)
+SELECT chain.id, chain.path FROM chain
+`
+
+type FolderPathsRow struct {
+	ID   uuid.UUID `json:"id"`
+	Path string    `json:"path"`
+}
+
+// Every folder's full dotted path in one query (for list responses).
+func (q *Queries) FolderPaths(ctx context.Context) ([]FolderPathsRow, error) {
+	rows, err := q.db.Query(ctx, folderPaths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FolderPathsRow
+	for rows.Next() {
+		var i FolderPathsRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getFolder = `-- name: GetFolder :one
 SELECT id, name, parent_id, created_at FROM folders WHERE id = $1
 `

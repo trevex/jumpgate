@@ -102,6 +102,13 @@ type CaKey struct {
 	Active         bool      `json:"active"`
 }
 
+type CatalogName struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+	FolderID pgtype.UUID `json:"folder_id"`
+	AssetID  pgtype.UUID `json:"asset_id"`
+}
+
 type Folder struct {
 	ID        uuid.UUID   `json:"id"`
 	Name      string      `json:"name"`

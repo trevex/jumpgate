@@ -255,6 +255,36 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return i, err
 }
 
+const insertAssetName = `-- name: InsertAssetName :exec
+INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3)
+`
+
+type InsertAssetNameParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+	AssetID  pgtype.UUID `json:"asset_id"`
+}
+
+func (q *Queries) InsertAssetName(ctx context.Context, arg InsertAssetNameParams) error {
+	_, err := q.db.Exec(ctx, insertAssetName, arg.ParentID, arg.Name, arg.AssetID)
+	return err
+}
+
+const insertFolderName = `-- name: InsertFolderName :exec
+INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, $2, $3)
+`
+
+type InsertFolderNameParams struct {
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+	FolderID pgtype.UUID `json:"folder_id"`
+}
+
+func (q *Queries) InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error {
+	_, err := q.db.Exec(ctx, insertFolderName, arg.ParentID, arg.Name, arg.FolderID)
+	return err
+}
+
 const listGroupMemberGroups = `-- name: ListGroupMemberGroups :many
 SELECT g.id, g.name, g.created_at FROM groups g
 JOIN group_memberships gm ON gm.member_group_id = g.id
