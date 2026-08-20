@@ -414,21 +414,9 @@ func TestAssetsListByFolderPathColumn(t *testing.T) {
 func TestAssetsSSHCreatePathColumn(t *testing.T) {
 	const folderID = "66666666-6666-6666-6666-666666666666"
 	s := &stubAssets{}
-	// Override CreateAsset to return a path-bearing asset.
-	// We override by setting up a separate stub that injects the path.
-	// Since stubAssets.CreateAsset ignores Path on the request and builds its own
-	// response, we need a custom stub here.
-	type stubAssetsWithPath struct {
-		stubAssets
-	}
-	type overrideStub struct {
-		catalogv1connect.UnimplementedCatalogServiceHandler
-		inner *stubAssets
-	}
-
-	// Use the existing stubAssets but note that it returns an asset without a
-	// path (path is empty). That is fine — we only assert the PATH header exists,
-	// not a specific value, since this test focuses on the column being present.
+	// Use the existing stubAssets which returns an asset without a path (path
+	// is empty). That is fine — we only assert the PATH header exists, not a
+	// specific value, since this test focuses on the column being present.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
