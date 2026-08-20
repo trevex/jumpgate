@@ -441,6 +441,12 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	return connect.NewResponse(out), nil
 }
 
+// ResolvePolicy maps a (name, asset scope) to a policy id (admin only).
+// Task 4 replaces this stub with a real DB lookup.
+func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // AddPolicySubject adds a requester/approver subject to a policy (admin only).
 func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Request[accessv1.AddPolicySubjectRequest]) (*connect.Response[accessv1.AddPolicySubjectResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {

@@ -31,6 +31,7 @@ service AccessService {
   rpc DeleteRequestPolicy(DeleteRequestPolicyRequest) returns (DeleteRequestPolicyResponse) {}
   rpc ListRequestPolicies(ListRequestPoliciesRequest) returns (ListRequestPoliciesResponse) {}
   rpc AddPolicySubject(AddPolicySubjectRequest) returns (AddPolicySubjectResponse) {}
+  rpc ResolvePolicy(ResolvePolicyRequest) returns (ResolvePolicyResponse) {}
   rpc RemovePolicySubject(RemovePolicySubjectRequest) returns (RemovePolicySubjectResponse) {}
   rpc ListPolicySubjects(ListPolicySubjectsRequest) returns (ListPolicySubjectsResponse) {}
 
@@ -116,6 +117,7 @@ message RequestPolicy {
   string requester_role_id = 6; // empty = no requester-role source
   string approver_role_id = 7;  // empty = no approver-role source
   int64 max_duration_seconds = 8; // 0 = no per-scope duration cap (NULL)
+  string name = 9;
 }
 
 message CreateRequestPolicyRequest {
@@ -126,6 +128,7 @@ message CreateRequestPolicyRequest {
   string requester_role_id = 5; // optional
   string approver_role_id = 6;  // optional
   int64 max_duration_seconds = 7 [(buf.validate.field).int64 = {gte: 0}]; // 0 = no per-scope cap (NULL)
+  string name = 8 [(buf.validate.field).string = {max_len: 200, pattern: "^[a-zA-Z0-9_-]*$"}];
 }
 message CreateRequestPolicyResponse { RequestPolicy policy = 1; }
 
@@ -151,6 +154,14 @@ message PolicySubject {
   string subject_user_id = 4;
   string subject_group_id = 5;
 }
+
+// ResolvePolicy maps a (name, asset scope) to a policy id. Admin only; NotFound if
+// no policy of that name is scoped to that asset.
+message ResolvePolicyRequest  {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message ResolvePolicyResponse { string policy_id = 1; }
 
 message AddPolicySubjectRequest {
   string policy_id = 1 [(buf.validate.field).string.uuid = true];
