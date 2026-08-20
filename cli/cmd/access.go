@@ -11,6 +11,7 @@ import (
 
 	"github.com/trevex/jumpgate/cli/internal/output"
 	accessrequestv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1"
+	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 )
 
 var requestHeaders = []string{"ID", "ROLE", "ASSET", "STATUS", "REASON"}
@@ -96,20 +97,29 @@ func runAccessRequest(cmd *cobra.Command, args []string) error {
 	}
 
 	// The target may carry a leading "<login>@" like `connect`; the request
-	// scope is the asset. Requesters cannot resolve a DNS path (no access yet),
-	// so we require an explicit asset UUID here.
+	// scope is the asset.
 	_, asset, err := parseTarget(args[0], "")
 	if err != nil {
 		return err
 	}
-	if _, err := uuid.Parse(asset); err != nil {
-		return fmt.Errorf("request takes the asset id (a requester cannot resolve a path yet): %q", asset)
-	}
-	assetID := asset
-
-	roleID, err := resolveRoleID(cmd.Context(), cl, accessRequestRole)
+	assetID, err := cl.ResolveAsset(cmd.Context(), asset) // uuid | DNS path; requester-capable
 	if err != nil {
 		return err
+	}
+
+	roleID := accessRequestRole
+	if _, uerr := uuid.Parse(roleID); uerr != nil {
+		// Resolve the role name against the caller's requestable set on this asset.
+		areq := connect.NewRequest(&catalogv1.GetAssetAccessRequest{AssetId: assetID})
+		cl.Authorize(areq)
+		aresp, gerr := cl.Catalog().GetAssetAccess(cmd.Context(), areq)
+		if gerr != nil {
+			return gerr
+		}
+		roleID, err = matchRequestableRole(aresp.Msg.GetRequestableRoles(), accessRequestRole, asset)
+		if err != nil {
+			return err
+		}
 	}
 
 	req := &accessrequestv1.RequestAccessRequest{
@@ -137,6 +147,29 @@ func runAccessRequest(cmd *cobra.Command, args []string) error {
 		Headers: requestHeaders,
 		Rows:    [][]string{requestRow(r)},
 	})
+}
+
+// matchRequestableRole finds exactly one role in refs matching ref by bare name or
+// by the qualified "<name>.<folder-path>" form. Errors clearly on none/ambiguous.
+func matchRequestableRole(refs []*catalogv1.RoleRef, ref, asset string) (string, error) {
+	var hits []string
+	for _, r := range refs {
+		qualified := r.GetName()
+		if r.GetFolderPath() != "" {
+			qualified = r.GetName() + "." + r.GetFolderPath()
+		}
+		if ref == r.GetName() || ref == qualified {
+			hits = append(hits, r.GetId())
+		}
+	}
+	switch len(hits) {
+	case 1:
+		return hits[0], nil
+	case 0:
+		return "", fmt.Errorf("role %q is not requestable on %s", ref, asset)
+	default:
+		return "", fmt.Errorf("role %q is ambiguous on %s; use <name>.<folder-path> or the role id", ref, asset)
+	}
 }
 
 func runAccessList(cmd *cobra.Command, _ []string) error {
