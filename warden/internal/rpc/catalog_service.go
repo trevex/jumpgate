@@ -535,10 +535,51 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 	}), nil
 }
 
-// ResolveFolder maps a uuid or DNS-style dotted path to a folder id (admin only).
-// Unknown ref returns NotFound. Implementation is provided by Task 2.
+// ResolveFolder maps a uuid or DNS-style dotted path to a folder id. Admin only;
+// unknown-ref returns NotFound. The response path is the canonical DNS path.
 func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[catalogv1.ResolveFolderRequest]) (*connect.Response[catalogv1.ResolveFolderResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	ref := req.Msg.Ref
+
+	var folderID uuid.UUID
+	if id, perr := uuid.Parse(ref); perr == nil {
+		f, err := s.q.GetFolder(ctx, id)
+		if err != nil {
+			return nil, folderNotFoundOrInternal(err)
+		}
+		folderID = f.ID
+	} else {
+		// Every segment is a folder; the chain is leaf->root, so walk root->leaf.
+		segs := strings.Split(ref, ".")
+		var parent pgtype.UUID // NULL = top level
+		for i := len(segs) - 1; i >= 0; i-- {
+			f, err := s.q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
+			if err != nil {
+				return nil, folderNotFoundOrInternal(err)
+			}
+			folderID = f.ID
+			parent = pgUUID(f.ID)
+		}
+	}
+
+	fp, err := s.q.FolderPath(ctx, folderID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.ResolveFolderResponse{
+		FolderId: folderID.String(),
+		Path:     fp,
+	}), nil
+}
+
+// folderNotFoundOrInternal maps pgx.ErrNoRows to NotFound and any other error to Internal.
+func folderNotFoundOrInternal(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+	}
+	return connect.NewError(connect.CodeInternal, err)
 }
 
 // notFoundOrInternal maps pgx.ErrNoRows to NotFound (existence hiding) and any other
