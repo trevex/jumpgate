@@ -37,10 +37,10 @@ WITH RECURSIVE chain AS (
     SELECT f.id, f.parent_id, f.name, c.depth + 1
     FROM folders f JOIN chain c ON f.id = c.parent_id
 )
-SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth DESC), '')::text AS path FROM chain
+SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth ASC), '')::text AS path FROM chain
 `
 
-// Dotted root->leaf path of a single folder (includes the folder itself).
+// Dotted leaf->root path of a single folder (the folder's own name first).
 func (q *Queries) FolderPath(ctx context.Context, id uuid.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, folderPath, id)
 	var path string
@@ -52,7 +52,7 @@ const folderPaths = `-- name: FolderPaths :many
 WITH RECURSIVE chain AS (
     SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
     UNION ALL
-    SELECT f.id, f.parent_id, (c.path || '.' || f.name)::text
+    SELECT f.id, f.parent_id, (f.name || '.' || c.path)::text
     FROM folders f JOIN chain c ON f.parent_id = c.id
 )
 SELECT chain.id, chain.path FROM chain
@@ -63,7 +63,7 @@ type FolderPathsRow struct {
 	Path string    `json:"path"`
 }
 
-// Every folder's full dotted path in one query (for list responses).
+// Every folder's full leaf->root dotted path in one query (for list responses).
 func (q *Queries) FolderPaths(ctx context.Context) ([]FolderPathsRow, error) {
 	rows, err := q.db.Query(ctx, folderPaths)
 	if err != nil {

@@ -50,9 +50,9 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
-	// Dotted root->leaf path of a single folder (includes the folder itself).
+	// Dotted leaf->root path of a single folder (the folder's own name first).
 	FolderPath(ctx context.Context, id uuid.UUID) (string, error)
-	// Every folder's full dotted path in one query (for list responses).
+	// Every folder's full leaf->root dotted path in one query (for list responses).
 	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)

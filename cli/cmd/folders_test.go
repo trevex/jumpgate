@@ -122,7 +122,7 @@ func TestFoldersListPathColumn(t *testing.T) {
 	if !strings.Contains(got, "PATH") {
 		t.Fatalf("folders table missing PATH column:\n%s", got)
 	}
-	if !strings.Contains(got, "prod.web") {
+	if !strings.Contains(got, "web.prod") {
 		t.Fatalf("folders table missing path value:\n%s", got)
 	}
 }
@@ -144,7 +144,7 @@ func TestFoldersCreatePathColumn(t *testing.T) {
 	if !strings.Contains(got, "PATH") {
 		t.Fatalf("folders create table missing PATH column:\n%s", got)
 	}
-	if !strings.Contains(got, "prod.web") {
+	if !strings.Contains(got, "web.prod") {
 		t.Fatalf("folders create table missing path value:\n%s", got)
 	}
 }
@@ -161,12 +161,12 @@ func (s *stubCatalogWithPath) CreateFolder(_ context.Context, req *connect.Reque
 		Id:       "f2",
 		Name:     req.Msg.GetName(),
 		ParentId: req.Msg.GetParentId(),
-		Path:     "prod.web",
+		Path:     "web.prod",
 	}}), nil
 }
 
 func (s *stubCatalogWithPath) ListFolders(_ context.Context, _ *connect.Request[catalogv1.ListFoldersRequest]) (*connect.Response[catalogv1.ListFoldersResponse], error) {
 	return connect.NewResponse(&catalogv1.ListFoldersResponse{Folders: []*catalogv1.Folder{
-		{Id: "f2", Name: "web", ParentId: "f1", Path: "prod.web"},
+		{Id: "f2", Name: "web", ParentId: "f1", Path: "web.prod"},
 	}}), nil
 }
