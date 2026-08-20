@@ -542,8 +542,8 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 		t.Fatalf("giveAssetAccess: CreateRole: %v", err)
 	}
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
-		RoleID:       role.ID,
-		ScopeAssetID: pgtype.UUID{Bytes: aid, Valid: true},
+		RoleID:        role.ID,
+		ScopeAssetID:  pgtype.UUID{Bytes: aid, Valid: true},
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
 	}); err != nil {
 		t.Fatalf("giveAssetAccess: CreateRoleBinding: %v", err)
