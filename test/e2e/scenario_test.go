@@ -18,9 +18,9 @@ const (
 
 // scenarioState threads ids captured in Act 0 through the later acts.
 type scenarioState struct {
-	assetID, roleID, requestID        string
-	pwAssetID, keyAssetID, demoRoleID string
-	aliceEmail, bobEmail              string
+	assetID, roleID, requestID string
+	demoRoleID                 string
+	aliceEmail, bobEmail       string
 }
 
 // TestScenario runs the 3-actor cross-approval flow against a live test env:
@@ -80,20 +80,20 @@ func TestScenario(t *testing.T) {
 		e.asActor(t, "admin", "groups", "add-member", e.name("sre"), st.aliceEmail)
 		e.asActor(t, "admin", "groups", "add-member", e.name("sre"), st.bobEmail)
 
+		caPath := e.name("demo-box") + "." + e.name("demo")
+		policyRef := e.name("approve-deploy") + "@" + caPath
+
 		// Request policy: the ssh-deploy role is requestable at the asset scope,
-		// requiring one approval.
-		polOut := e.asActor(t, "admin", "policies", "create",
+		// requiring one approval. Named so it can be referenced as <name>@<asset-path>.
+		e.asActor(t, "admin", "policies", "create",
+			"--name", e.name("approve-deploy"),
 			"--request-role", st.roleID,
-			"--asset", st.assetID,
-			"--min-approvals", "1", "-o", "json")
-		polID := jsonID(polOut)
-		if polID == "" {
-			t.Fatalf("no policy id:\n%s", polOut)
-		}
+			"--asset", caPath,
+			"--min-approvals", "1")
 		// The sre group is BOTH requester and approver, so any member can request and
 		// any other member can approve — cross-approval via group membership.
-		e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "requester", "--group", e.name("sre"))
-		e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "approver", "--group", e.name("sre"))
+		e.asActor(t, "admin", "policies", "add-subject", policyRef, "--kind", "requester", "--group", e.name("sre"))
+		e.asActor(t, "admin", "policies", "add-subject", policyRef, "--kind", "approver", "--group", e.name("sre"))
 	})
 
 	t.Run("act0b_stored_secret_setup", func(t *testing.T) {
@@ -107,35 +107,29 @@ func TestScenario(t *testing.T) {
 			t.Fatalf("no demo role id:\n%s", roleOut)
 		}
 
+		pwPath := e.name("password-box") + "." + e.name("demo")
+		keyPath := e.name("key-box") + "." + e.name("demo")
+
 		// Password asset: create (no inline login), then set a password login.
-		pwOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("password-box"),
+		e.asActor(t, "admin", "assets", "ssh", "create", e.name("password-box"),
 			"--folder", e.name("demo"),
-			"--target", "ssh-target-password.default.svc.cluster.local:22", "-o", "json")
-		st.pwAssetID = jsonID(pwOut)
-		if st.pwAssetID == "" {
-			t.Fatalf("no password asset id:\n%s", pwOut)
-		}
+			"--target", "ssh-target-password.default.svc.cluster.local:22")
 		e.asActorStdin(t, "admin", "demo-password-123\n",
-			"assets", "ssh", "login", "set", st.pwAssetID,
+			"assets", "ssh", "login", "set", pwPath,
 			"--login", "demo", "--kind", "password", "--password-stdin")
 
 		// Key asset: create, then set a key login from the committed test private key.
-		keyOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("key-box"),
+		e.asActor(t, "admin", "assets", "ssh", "create", e.name("key-box"),
 			"--folder", e.name("demo"),
-			"--target", "ssh-target-key.default.svc.cluster.local:22", "-o", "json")
-		st.keyAssetID = jsonID(keyOut)
-		if st.keyAssetID == "" {
-			t.Fatalf("no key asset id:\n%s", keyOut)
-		}
-		e.asActor(t, "admin", "assets", "ssh", "login", "set", st.keyAssetID,
+			"--target", "ssh-target-key.default.svc.cluster.local:22")
+		e.asActor(t, "admin", "assets", "ssh", "login", "set", keyPath,
 			"--login", "demo", "--kind", "key", "--key-file", "../env/testworkload/demo_key")
 
-		// Standing bindings for the sre group on both assets (resolve assets by id —
-		// admin has no visibility to a not-yet-granted asset by name). Alice reaches
-		// them through her sre membership, not a direct user binding.
-		for _, id := range []string{st.pwAssetID, st.keyAssetID} {
+		// Standing bindings for the sre group on both assets — admin can resolve
+		// them by path once they exist in the catalog.
+		for _, path := range []string{pwPath, keyPath} {
 			e.asActor(t, "admin", "bindings", "create",
-				"--role", e.name("ssh-demo"), "--group", e.name("sre"), "--asset", id)
+				"--role", e.name("ssh-demo"), "--group", e.name("sre"), "--asset", path)
 		}
 	})
 
