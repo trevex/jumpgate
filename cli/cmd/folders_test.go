@@ -104,3 +104,69 @@ func TestFoldersList(t *testing.T) {
 		t.Fatalf("out=%s", got)
 	}
 }
+
+func TestFoldersListPathColumn(t *testing.T) {
+	stub := &stubCatalogWithPath{}
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newCatalogStub(t, stub))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(func() { flagOutput = "table" })
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"folders", "list", "-o", "table"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "PATH") {
+		t.Fatalf("folders table missing PATH column:\n%s", got)
+	}
+	if !strings.Contains(got, "prod.web") {
+		t.Fatalf("folders table missing path value:\n%s", got)
+	}
+}
+
+func TestFoldersCreatePathColumn(t *testing.T) {
+	stub := &stubCatalogWithPath{}
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newCatalogStub(t, stub))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(func() { flagOutput = "table" })
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"folders", "create", "web", "-o", "table"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "PATH") {
+		t.Fatalf("folders create table missing PATH column:\n%s", got)
+	}
+	if !strings.Contains(got, "prod.web") {
+		t.Fatalf("folders create table missing path value:\n%s", got)
+	}
+}
+
+// stubCatalogWithPath extends stubCatalog to return folders that carry a path.
+type stubCatalogWithPath struct {
+	catalogv1connect.UnimplementedCatalogServiceHandler
+	gotCreate *catalogv1.CreateFolderRequest
+}
+
+func (s *stubCatalogWithPath) CreateFolder(_ context.Context, req *connect.Request[catalogv1.CreateFolderRequest]) (*connect.Response[catalogv1.CreateFolderResponse], error) {
+	s.gotCreate = req.Msg
+	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: &catalogv1.Folder{
+		Id:       "f2",
+		Name:     req.Msg.GetName(),
+		ParentId: req.Msg.GetParentId(),
+		Path:     "prod.web",
+	}}), nil
+}
+
+func (s *stubCatalogWithPath) ListFolders(_ context.Context, _ *connect.Request[catalogv1.ListFoldersRequest]) (*connect.Response[catalogv1.ListFoldersResponse], error) {
+	return connect.NewResponse(&catalogv1.ListFoldersResponse{Folders: []*catalogv1.Folder{
+		{Id: "f2", Name: "web", ParentId: "f1", Path: "prod.web"},
+	}}), nil
+}

@@ -17,10 +17,10 @@ import (
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 )
 
-var assetHeaders = []string{"ID", "NAME", "KIND", "FOLDER"}
+var assetHeaders = []string{"ID", "NAME", "KIND", "FOLDER", "PATH"}
 
 func assetRow(a *catalogv1.Asset) []string {
-	return []string{a.GetId(), a.GetName(), a.GetKind(), a.GetFolderId()}
+	return []string{a.GetId(), a.GetName(), a.GetKind(), a.GetFolderId(), a.GetPath()}
 }
 
 var visibleAssetHeaders = []string{"ID", "NAME", "ACTIVE"}

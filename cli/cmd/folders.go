@@ -9,10 +9,10 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 )
 
-var folderHeaders = []string{"ID", "NAME", "PARENT"}
+var folderHeaders = []string{"ID", "NAME", "PARENT", "PATH"}
 
 func folderRow(f *catalogv1.Folder) []string {
-	return []string{f.GetId(), f.GetName(), f.GetParentId()}
+	return []string{f.GetId(), f.GetName(), f.GetParentId(), f.GetPath()}
 }
 
 var foldersCmd = &cobra.Command{
