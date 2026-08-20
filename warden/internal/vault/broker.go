@@ -7,9 +7,10 @@
 // ssh:login:<login> capability for EVERY auth kind (ca / password / key): the
 // login must survive the intersection of the asset's configured logins with the
 // user's actual capabilities, else the request is refused (no credential, no
-// audit). For the ca kind it signs a certificate whose ValidPrincipals is
-// EXACTLY the single requested login; for password/key it opens the login's
-// asset-scoped stored secret (a secret bound to another asset cannot be opened).
+// audit). For the ca kind it signs a certificate whose ValidPrincipals are
+// host-scoped [login@<asset-path>, login@<asset-id>]; for password/key it opens
+// the login's asset-scoped stored secret (a secret bound to another asset cannot
+// be opened).
 //
 // FAIL-CLOSED: a disabled vault (nil sealer), a missing CA, a missing config,
 // or an unsupported asset kind all return a sentinel error and issue nothing.
@@ -133,7 +134,7 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 
 	switch asset.Kind {
 	case "ssh":
-		return b.issueSSH(ctx, userID, assetID, req)
+		return b.issueSSH(ctx, userID, asset, req)
 	default:
 		// postgres / k8s providers land in M5.
 		return Credential{}, ErrUnsupportedKind
@@ -142,9 +143,10 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 
 // issueSSH selects the requested login among the asset's login rows, enforces
 // the ssh:login:<login> entitlement (for every kind), and mints the credential
-// for that login's configured kind: a single-principal cert (ca), or the plain
+// for that login's configured kind: a host-scoped cert (ca), or the plain
 // stored password/key secret.
-func (b *Broker) issueSSH(ctx context.Context, userID, assetID uuid.UUID, req IssueRequest) (Credential, error) {
+func (b *Broker) issueSSH(ctx context.Context, userID uuid.UUID, asset gen.Asset, req IssueRequest) (Credential, error) {
+	assetID := asset.ID
 	rows, err := b.q.ListSSHAssetLogins(ctx, assetID)
 	if err != nil {
 		return Credential{}, fmt.Errorf("list ssh asset logins: %w", err)
@@ -176,7 +178,7 @@ func (b *Broker) issueSSH(ctx context.Context, userID, assetID uuid.UUID, req Is
 
 	switch row.Kind {
 	case "ca":
-		return b.issueSSHCert(ctx, userID, assetID, req)
+		return b.issueSSHCert(ctx, userID, asset, req)
 	case "password":
 		return b.issueStoredSecret(ctx, userID, assetID, row, "ssh-password")
 	case "key":
@@ -227,9 +229,10 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 	return Credential{Kind: kind, Secret: pt}, nil
 }
 
-// issueSSHCert signs the client's public key for the single requested login and
-// returns an "ssh-cert" credential whose ValidPrincipals is exactly [login].
-func (b *Broker) issueSSHCert(ctx context.Context, userID, assetID uuid.UUID, req IssueRequest) (Credential, error) {
+// issueSSHCert signs the client's public key with host-scoped principals
+// [login@<asset-path>, login@<asset-id>] and returns an "ssh-cert" credential.
+func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset gen.Asset, req IssueRequest) (Credential, error) {
+	assetID := asset.ID
 	caRow, err := b.q.GetActiveCA(ctx, "ssh")
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -251,7 +254,23 @@ func (b *Broker) issueSSHCert(ctx context.Context, userID, assetID uuid.UUID, re
 		return Credential{}, fmt.Errorf("parse client ssh public key: %w", err)
 	}
 
-	principals := []string{req.Login}
+	// FolderPath returns the folder's own dotted path (COALESCE'd to "" for a
+	// root-level folder, never an error for a valid folder_id). asset.FolderID is
+	// a NOT NULL FK, so an error here means a real DB failure — fail closed.
+	folderPath, err := b.q.FolderPath(ctx, asset.FolderID)
+	if err != nil {
+		return Credential{}, fmt.Errorf("resolve asset path: %w", err)
+	}
+	assetPath := folderPath
+	if assetPath != "" {
+		assetPath += "."
+	}
+	assetPath += asset.Name
+
+	principals := []string{
+		req.Login + "@" + assetPath,
+		req.Login + "@" + assetID.String(),
+	}
 	cert, err := sshCA.SignUserKey(pub, ca.SSHCertParams{
 		KeyID:       req.KeyID,
 		Principals:  principals,
