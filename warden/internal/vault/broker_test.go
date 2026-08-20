@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -161,6 +162,29 @@ func setLogin(t *testing.T, q *gen.Queries, asset uuid.UUID, login, kind string,
 	}
 }
 
+// wantAssetPrincipals derives the host-scoped principals warden must mint for
+// (login, asset): [login@<folder-path>.<asset-name>, login@<asset-id>]. Reading
+// the path back via the same FolderPath query the broker uses keeps the fixture
+// in step with randomized folder/asset names.
+func wantAssetPrincipals(t *testing.T, q *gen.Queries, assetID uuid.UUID, login string) []string {
+	t.Helper()
+	ctx := context.Background()
+	a, err := q.GetAsset(ctx, assetID)
+	if err != nil {
+		t.Fatalf("get asset: %v", err)
+	}
+	fp, err := q.FolderPath(ctx, a.FolderID)
+	if err != nil {
+		t.Fatalf("folder path: %v", err)
+	}
+	path := fp
+	if path != "" {
+		path += "."
+	}
+	path += a.Name
+	return []string{login + "@" + path, login + "@" + a.ID.String()}
+}
+
 // sealSecret seals the value under the sealer and stores it as an asset secret,
 // returning the secret id.
 func sealSecret(t *testing.T, q *gen.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
@@ -236,10 +260,11 @@ func newBroker(pool *pgxpool.Pool, sealer *secrets.Sealer) *Broker {
 	return NewBroker(pool, sealer, authz.NewSQLAuthorizer(pool), audit.New(pool))
 }
 
-// TestIssueCaSinglePrincipal: a ca login yields a cert whose ValidPrincipals is
-// exactly the single requested login, even though the user is entitled to
-// others. deploy is allowed but not requested; only root is signed.
-func TestIssueCaSinglePrincipal(t *testing.T) {
+// TestIssueCaHostScopedPrincipals: a ca login yields a cert whose
+// ValidPrincipals are host-scoped [login@<asset-path>, login@<asset-id>], even
+// though the user is entitled to others. deploy is allowed but not requested;
+// only root is signed, in host-scoped form.
+func TestIssueCaHostScopedPrincipals(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := gen.New(pool)
@@ -261,8 +286,13 @@ func TestIssueCaSinglePrincipal(t *testing.T) {
 	}
 	cert := parseCert(t, cred)
 
-	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "root" {
-		t.Fatalf("ValidPrincipals = %v, want [root] (single principal)", cert.ValidPrincipals)
+	want := wantAssetPrincipals(t, q, asset, "root")
+	if !slices.Equal(cert.ValidPrincipals, want) {
+		t.Fatalf("ValidPrincipals = %v, want %v (host-scoped)", cert.ValidPrincipals, want)
+	}
+	// The id-form principal is fully deterministic — assert it independently.
+	if cert.ValidPrincipals[1] != "root@"+asset.String() {
+		t.Fatalf("id principal = %q, want root@%s", cert.ValidPrincipals[1], asset)
 	}
 	if cert.KeyId != "g1" {
 		t.Fatalf("KeyId = %q, want g1", cert.KeyId)
@@ -271,14 +301,16 @@ func TestIssueCaSinglePrincipal(t *testing.T) {
 		t.Fatalf("ValidBefore = %d, want ≈ %d", cert.ValidBefore, validUntil.Unix())
 	}
 
-	// The cert verifies against the CA.
+	// The cert verifies against the CA using a host-scoped principal.
 	checker := &ssh.CertChecker{
 		IsUserAuthority: func(auth ssh.PublicKey) bool {
 			return string(auth.Marshal()) == string(caAuthority(t, caLine).Marshal())
 		},
 	}
-	if err := checker.CheckCert("root", cert); err != nil {
-		t.Fatalf("CheckCert(root): %v", err)
+	// CheckCert validates the presented user is in ValidPrincipals; use the
+	// path-form principal (want[0]) since it matches the human-readable asset path.
+	if err := checker.CheckCert(want[0], cert); err != nil {
+		t.Fatalf("CheckCert(%s): %v", want[0], err)
 	}
 }
 
@@ -458,8 +490,12 @@ func TestIssueViaActiveGrant(t *testing.T) {
 		t.Fatalf("Issue via active grant: %v", err)
 	}
 	cert := parseCert(t, cred)
-	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "root" {
-		t.Fatalf("ValidPrincipals = %v, want [root]", cert.ValidPrincipals)
+	want := wantAssetPrincipals(t, q, asset, "root")
+	if !slices.Equal(cert.ValidPrincipals, want) {
+		t.Fatalf("ValidPrincipals = %v, want %v (host-scoped)", cert.ValidPrincipals, want)
+	}
+	if cert.ValidPrincipals[1] != "root@"+asset.String() {
+		t.Fatalf("id principal = %q, want root@%s", cert.ValidPrincipals[1], asset)
 	}
 
 	// Expired grant → no entitlement.

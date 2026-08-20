@@ -44,6 +44,17 @@ func jsonID(s string) string {
 	return m[1]
 }
 
+// jsonField returns the first top-level string value for key `field` in protojson
+// output, or "". Used to read the asset `path` from `assets ssh create -o json`.
+func jsonField(s, field string) string {
+	re := regexp.MustCompile(`"` + regexp.QuoteMeta(field) + `":\s*"([^"]+)"`)
+	m := re.FindStringSubmatch(s)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
 // run executes name with args, returns combined stdout+stderr, and fails the test
 // on non-zero exit (with the output attached for diagnosis).
 func run(t *testing.T, extraEnv []string, name string, args ...string) string {

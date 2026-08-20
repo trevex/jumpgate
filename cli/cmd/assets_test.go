@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +27,11 @@ type stubAssets struct {
 	gotCreateAsset       *catalogv1.CreateAssetRequest
 	gotUpdateAssetConfig *catalogv1.UpdateAssetConfigRequest
 
+	// createAssetOverride, when non-nil, is returned verbatim by CreateAsset
+	// instead of the default constructed asset.  Use this to inject fields (e.g.
+	// Path) that the default stub does not set.
+	createAssetOverride *catalogv1.Asset
+
 	// getAssetSSH is the config GetAsset returns (the current state the
 	// read-modify-write starts from).
 	getAssetSSH *catalogv1.SSHConfig
@@ -36,6 +42,9 @@ type stubAssets struct {
 
 func (s *stubAssets) CreateAsset(_ context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
 	s.gotCreateAsset = req.Msg
+	if s.createAssetOverride != nil {
+		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.createAssetOverride}), nil
+	}
 	asset := &catalogv1.Asset{
 		Id:       "a-123",
 		FolderId: req.Msg.GetFolderId(),
@@ -435,5 +444,49 @@ func TestAssetsSSHCreatePathColumn(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "PATH") {
 		t.Fatalf("assets ssh create table missing PATH column:\n%s", got)
+	}
+}
+
+// TestAssetsSSHCreateJSONHasIDAndPath guarantees that `assets ssh create -o json`
+// emits both "id" and "path" fields so provisioning automation can read them
+// from `jumpgate assets ssh create -o json` without fragility.
+func TestAssetsSSHCreateJSONHasIDAndPath(t *testing.T) {
+	const folderID = "77777777-7777-7777-7777-777777777777"
+	s := &stubAssets{
+		createAssetOverride: &catalogv1.Asset{
+			Id:       "a1",
+			Name:     "web",
+			Kind:     "ssh",
+			FolderId: "f1",
+			Path:     "prod.db.web",
+		},
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{
+		"assets", "ssh", "create", "web",
+		"--folder", folderID,
+		"--target", "10.0.0.1:22",
+		"--login", "deploy",
+		"-o", "json",
+	})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	var got struct {
+		ID   string `json:"id"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
+		t.Fatalf("create output not JSON: %v\n%s", err, out.String())
+	}
+	if got.ID == "" || got.Path == "" {
+		t.Fatalf("create JSON missing id/path for automation: id=%q path=%q\n%s", got.ID, got.Path, out.String())
 	}
 }
