@@ -1135,3 +1135,47 @@ func TestRoleContainment(t *testing.T) {
 		t.Fatalf("scope-less scoped policy = %v, want FailedPrecondition", connect.CodeOf(err))
 	}
 }
+
+// TestListRolesFolderPath verifies ListRoles populates folder_path for scoped roles.
+func TestListRolesFolderPath(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	pr, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("folder: %v", err)
+	}
+	prod := pr.Msg.GetFolder().GetId()
+	if _, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "engineer", FolderId: prod, Capabilities: []string{"ssh:login:deploy"}}), tok)); err != nil {
+		t.Fatalf("scoped role: %v", err)
+	}
+	if _, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "everywhere", Capabilities: []string{"ssh:login:deploy"}}), tok)); err != nil {
+		t.Fatalf("global role: %v", err)
+	}
+	resp, err := access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), tok))
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var sawScoped, sawGlobal bool
+	for _, r := range resp.Msg.Roles {
+		switch r.Name {
+		case "engineer":
+			sawScoped = true
+			if r.FolderPath != "prod" {
+				t.Fatalf("engineer folder_path = %q, want prod", r.FolderPath)
+			}
+		case "everywhere":
+			sawGlobal = true
+			if r.FolderPath != "" {
+				t.Fatalf("everywhere folder_path = %q, want empty", r.FolderPath)
+			}
+		}
+	}
+	if !sawScoped || !sawGlobal {
+		t.Fatalf("missing roles in list (scoped=%v global=%v)", sawScoped, sawGlobal)
+	}
+}

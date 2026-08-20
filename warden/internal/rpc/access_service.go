@@ -214,8 +214,22 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRolesResponse{}
+	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
-		out.Roles = append(out.Roles, toAccessRoleMsg(rows[i]))
+		m := toAccessRoleMsg(rows[i])
+		if rows[i].FolderID.Valid {
+			fid := uuidFromPg(rows[i].FolderID)
+			p, ok := pathByFolder[fid]
+			if !ok {
+				p, err = s.q.FolderPath(ctx, fid)
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				pathByFolder[fid] = p
+			}
+			m.FolderPath = p
+		}
+		out.Roles = append(out.Roles, m)
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
 		out.NextPageToken = rows[len(rows)-1].ID.String()
