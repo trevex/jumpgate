@@ -68,6 +68,8 @@ type Querier interface {
 	// Scoped to the owning asset: a config referencing another asset's secret (admin
 	// misconfiguration) fails closed rather than leaking a secret cross-asset.
 	GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error)
+	// Loads a secret by id alone (for management scope-derivation → owning asset).
+	GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)

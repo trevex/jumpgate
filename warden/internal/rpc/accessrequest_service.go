@@ -104,9 +104,6 @@ func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
 
 // ResolveApproval returns the effective request policy for a (role, asset) pair (admin only).
 func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.Request[accessrequestv1.ResolveApprovalRequest]) (*connect.Response[accessrequestv1.ResolveApprovalResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -114,6 +111,9 @@ func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if err := s.requireCap(ctx, "access:policy:read", authz.AssetScope(assetID)); err != nil {
+		return nil, err
 	}
 	rule, err := s.resolver.EffectiveRule(ctx, roleID, assetID)
 	if err != nil {
@@ -276,7 +276,7 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, _ *connect.Reque
 
 // ListGrants lists grants for admin introspection (admin only).
 func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "access:grant:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	filter := accessrequest.GrantFilter{ActiveOnly: req.Msg.ActiveOnly}

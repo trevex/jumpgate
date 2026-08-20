@@ -75,9 +75,6 @@ func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
 // ListRecordings lists recordings filtered by the optional user_id/asset_id
 // (empty → no filter), newest first (admin only).
 func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Request[recordingv1.ListRecordingsRequest]) (*connect.Response[recordingv1.ListRecordingsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	userFilter := uuid.Nil
 	if req.Msg.UserId != "" {
 		id, err := uuid.Parse(req.Msg.UserId)
@@ -93,6 +90,15 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
 		}
 		assetFilter = id
+	}
+	// An asset-scoped filter narrows the required cap to that asset; an unfiltered
+	// (fleet-wide) list requires the global recording:read.
+	scope := authz.GlobalScope()
+	if assetFilter != uuid.Nil {
+		scope = authz.AssetScope(assetFilter)
+	}
+	if err := s.requireCap(ctx, "recording:read", scope); err != nil {
+		return nil, err
 	}
 	limit := req.Msg.PageSize
 	if limit <= 0 {
@@ -118,9 +124,6 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 
 // GetRecording fetches a single recording's metadata by session id (admin only).
 func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.Recording], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	sessionID, err := uuid.Parse(req.Msg.SessionId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad session_id"))
@@ -131,6 +134,9 @@ func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("recording not found"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID)); err != nil {
+		return nil, err
 	}
 	return connect.NewResponse(toRecordingMsg(row)), nil
 }
@@ -139,9 +145,6 @@ func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request
 // recorded object (admin only). Issuing the URL is audited (recording.accessed).
 // A nil presigner returns FailedPrecondition (recording retrieval not configured).
 func (s *RecordingServer) GetRecordingDownload(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.GetRecordingDownloadResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	sessionID, err := uuid.Parse(req.Msg.SessionId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad session_id"))
@@ -152,6 +155,9 @@ func (s *RecordingServer) GetRecordingDownload(ctx context.Context, req *connect
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("recording not found"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID)); err != nil {
+		return nil, err
 	}
 	if s.presign == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("recording retrieval not configured"))

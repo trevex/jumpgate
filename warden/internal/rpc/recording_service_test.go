@@ -146,3 +146,84 @@ func userIDByEmail(t *testing.T, pool *pgxpool.Pool, email string) uuid.UUID {
 	}
 	return id
 }
+
+// seedRecordingRow inserts a completed recording for (userID, assetID) and
+// returns its session id.
+func seedRecordingRow(t *testing.T, pool *pgxpool.Pool, userID, assetID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	sessionID := uuid.New()
+	if err := gen.New(pool).UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+		SessionID: sessionID,
+		UserID:    userID,
+		AssetID:   assetID,
+		WorkerID:  "worker-1",
+		Protocol:  "ssh",
+		Format:    "asciicast",
+		ObjectKey: "recordings/" + sessionID.String() + ".cast",
+		SizeBytes: 1,
+		Sha256:    "deadbeef",
+		Status:    "completed",
+		StartedAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+		EndedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}); err != nil {
+		t.Fatalf("seedRecordingRow: %v", err)
+	}
+	return sessionID
+}
+
+// TestRecordingCapabilityGating asserts recording reads are gated by scoped
+// recording:read: a user holding it at asset A can ListRecordings --asset A and
+// GetRecording a recording of A, but is denied for asset B and for an
+// unfiltered (global) ListRecordings. The bootstrap admin (**) can do all.
+func TestRecordingCapabilityGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "rec@x", "password123", false)
+	atok := adminToken(t, url)
+	rtok := authClient(t, url, "rec@x", "password123")
+	ctx := context.Background()
+
+	userID := userIDByEmail(t, pool, "rec@x")
+	// Real catalog assets: role_bindings.scope_asset_id has an FK to assets.
+	assetA := newAsset(t, url, atok, "ssh")
+	assetB := newAsset(t, url, atok, "ssh")
+	assetAID := uuid.MustParse(assetA.Id)
+	assetBID := uuid.MustParse(assetB.Id)
+	sessA := seedRecordingRow(t, pool, userID, assetAID)
+	sessB := seedRecordingRow(t, pool, userID, assetBID)
+
+	// rec holds recording:read bound at asset A only.
+	bindScopedCap(t, pool, userID, `["recording:read"]`, uuid.Nil, assetAID)
+
+	rc := recordingv1connect.NewRecordingServiceClient(http.DefaultClient, url)
+
+	// Allowed: ListRecordings filtered to A.
+	if _, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{AssetId: assetA.Id}), rtok)); err != nil {
+		t.Fatalf("rec ListRecordings --asset A = %v, want ok", err)
+	}
+	// Allowed: GetRecording of a recording on A.
+	if _, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessA.String()}), rtok)); err != nil {
+		t.Fatalf("rec GetRecording A = %v, want ok", err)
+	}
+	// Denied: ListRecordings filtered to B.
+	if _, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{AssetId: assetB.Id}), rtok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("rec ListRecordings --asset B = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// Denied: GetRecording of a recording on B.
+	if _, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessB.String()}), rtok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("rec GetRecording B = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// Denied: unfiltered ListRecordings (needs recording:read globally).
+	if _, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{}), rtok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("rec ListRecordings (unfiltered) = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Admin (**) can do all.
+	if _, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{}), atok)); err != nil {
+		t.Fatalf("admin ListRecordings = %v, want ok", err)
+	}
+	if _, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessB.String()}), atok)); err != nil {
+		t.Fatalf("admin GetRecording B = %v, want ok", err)
+	}
+}
