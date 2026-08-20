@@ -61,7 +61,7 @@ func pgUUID(id uuid.UUID) pgtype.UUID {
 
 // CreateUser creates a local user (admin only).
 func (s *IdentityServer) CreateUser(ctx context.Context, req *connect.Request[identityv1.CreateUserRequest]) (*connect.Response[identityv1.CreateUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:create", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	hash, err := auth.HashPassword(req.Msg.Password)
@@ -82,7 +82,7 @@ func (s *IdentityServer) CreateUser(ctx context.Context, req *connect.Request[id
 
 // GetUser returns a user by ID (admin only). Unknown IDs return NotFound.
 func (s *IdentityServer) GetUser(ctx context.Context, req *connect.Request[identityv1.GetUserRequest]) (*connect.Response[identityv1.GetUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	id, err := uuid.Parse(req.Msg.Id)
@@ -98,7 +98,7 @@ func (s *IdentityServer) GetUser(ctx context.Context, req *connect.Request[ident
 
 // ResolveUser resolves a user email to an id (admin only). Unknown emails return NotFound.
 func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[identityv1.ResolveUserRequest]) (*connect.Response[identityv1.ResolveUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	u, err := s.q.GetUserByEmail(ctx, req.Msg.Email)
@@ -113,7 +113,7 @@ func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[i
 
 // ListUsers returns a page of users (admin only), ordered by id.
 func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	limit := req.Msg.PageSize
@@ -144,7 +144,7 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 
 // CreateGroup creates a group (admin only).
 func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:create", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	g, err := s.q.CreateGroup(ctx, req.Msg.Name)
@@ -156,7 +156,7 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 
 // ResolveGroup resolves a group name to an id (admin only). Unknown names return NotFound.
 func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	g, err := s.q.GetGroupByName(ctx, req.Msg.Name)
@@ -171,7 +171,7 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 
 // ListGroups returns a page of groups (admin only), ordered by id.
 func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	limit := req.Msg.PageSize
@@ -202,7 +202,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 
 // AddUserToGroup adds a user as a member of a group (admin only).
 func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Request[identityv1.AddUserToGroupRequest]) (*connect.Response[identityv1.AddUserToGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:add-member", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
@@ -221,7 +221,7 @@ func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Reques
 
 // AddGroupToGroup nests one group inside another (admin only).
 func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Request[identityv1.AddGroupToGroupRequest]) (*connect.Response[identityv1.AddGroupToGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:add-member", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
@@ -240,7 +240,7 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 
 // RemoveUserFromGroup removes a user from a group (admin only). No-op if absent.
 func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveUserFromGroupRequest]) (*connect.Response[identityv1.RemoveUserFromGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:remove-member", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
@@ -259,7 +259,7 @@ func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.R
 
 // RemoveGroupFromGroup removes a nested group membership (admin only). No-op if absent.
 func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveGroupFromGroupRequest]) (*connect.Response[identityv1.RemoveGroupFromGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:remove-member", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
@@ -278,7 +278,7 @@ func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.
 
 // ListGroupMembers lists a group's direct member users and member groups (admin only).
 func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Request[identityv1.ListGroupMembersRequest]) (*connect.Response[identityv1.ListGroupMembersResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
@@ -306,7 +306,7 @@ func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Requ
 // DeactivateUser marks a user deactivated, blocking all authenticated RPCs for
 // them at token lookup (admin only). Idempotent; unknown ids are a no-op.
 func (s *IdentityServer) DeactivateUser(ctx context.Context, req *connect.Request[identityv1.DeactivateUserRequest]) (*connect.Response[identityv1.DeactivateUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:deactivate", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -338,7 +338,7 @@ func (s *IdentityServer) DeactivateUser(ctx context.Context, req *connect.Reques
 
 // ReactivateUser clears a user's deactivation (admin only). Idempotent.
 func (s *IdentityServer) ReactivateUser(ctx context.Context, req *connect.Request[identityv1.ReactivateUserRequest]) (*connect.Response[identityv1.ReactivateUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:deactivate", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -354,7 +354,7 @@ func (s *IdentityServer) ReactivateUser(ctx context.Context, req *connect.Reques
 // DeleteUser deletes a user; memberships, bindings, and policy subjects cascade
 // (admin only). Deleting a non-existent id is a no-op.
 func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[identityv1.DeleteUserRequest]) (*connect.Response[identityv1.DeleteUserResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:user:delete", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -370,7 +370,7 @@ func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[id
 // DeleteGroup deletes a group; memberships, bindings, and policy subjects cascade
 // (admin only). Deleting a non-existent id is a no-op.
 func (s *IdentityServer) DeleteGroup(ctx context.Context, req *connect.Request[identityv1.DeleteGroupRequest]) (*connect.Response[identityv1.DeleteGroupResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "identity:group:delete", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	gid, err := uuid.Parse(req.Msg.GroupId)

@@ -6,11 +6,16 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 func adminToken(t *testing.T, url string) string {
@@ -72,6 +77,109 @@ func TestUsersCRUDRequiresAdmin(t *testing.T) {
 	}
 	if len(list.Msg.Users) < 2 {
 		t.Fatalf("list returned %d users, want >=2", len(list.Msg.Users))
+	}
+}
+
+// seedCapUser creates a non-admin local user bound GLOBALLY to a fresh role
+// carrying the given capabilities, and returns the user id. It mirrors the
+// admin path in seedUser but with a scoped capability set instead of `**`.
+func seedCapUser(t *testing.T, pool *pgxpool.Pool, email, pw string, capsJSON string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+		t.Fatal(err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "role-" + uuid.NewString(), Capabilities: []byte(capsJSON)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        role.ID,
+		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return u.ID
+}
+
+func TestIdentityCapabilityGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedCapUser(t, pool, "reader@x", "readerpass", `["identity:user:read"]`)
+	seedCapUser(t, pool, "groupmgr@x", "groupmgrpass", `["identity:group:add-member","identity:group:read"]`)
+
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	adminTok := adminToken(t, url)
+	readerTok := authClient(t, url, "reader@x", "readerpass")
+	groupmgrTok := authClient(t, url, "groupmgr@x", "groupmgrpass")
+
+	// admin (**) can do everything: create a user and a group to operate on.
+	createdUser, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "target@x", DisplayName: "Target", Password: "password123",
+	}), adminTok))
+	if err != nil {
+		t.Fatalf("admin create user: %v", err)
+	}
+	createdGroup, err := c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "gcap",
+	}), adminTok))
+	if err != nil {
+		t.Fatalf("admin create group: %v", err)
+	}
+
+	// reader holds identity:user:read globally → CAN read.
+	if _, err := c.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 50}), readerTok)); err != nil {
+		t.Fatalf("reader ListUsers: %v", err)
+	}
+	if _, err := c.GetUser(ctx, withToken(connect.NewRequest(&identityv1.GetUserRequest{Id: createdUser.Msg.User.Id}), readerTok)); err != nil {
+		t.Fatalf("reader GetUser: %v", err)
+	}
+
+	// reader lacks identity:user:create → PermissionDenied.
+	_, err = c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "nope@x", DisplayName: "Nope", Password: "password123",
+	}), readerTok))
+	if code := connect.CodeOf(err); code != connect.CodePermissionDenied {
+		t.Fatalf("reader CreateUser code = %v, want PermissionDenied", code)
+	}
+
+	// reader lacks identity:group:create → PermissionDenied.
+	_, err = c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "nope-group"}), readerTok))
+	if code := connect.CodeOf(err); code != connect.CodePermissionDenied {
+		t.Fatalf("reader CreateGroup code = %v, want PermissionDenied", code)
+	}
+
+	// groupmgr holds identity:group:add-member → CAN add a user to the group.
+	if _, err := c.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: createdGroup.Msg.Group.Id, UserId: createdUser.Msg.User.Id,
+	}), groupmgrTok)); err != nil {
+		t.Fatalf("groupmgr AddUserToGroup: %v", err)
+	}
+
+	// groupmgr lacks identity:group:delete → PermissionDenied.
+	_, err = c.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{
+		GroupId: createdGroup.Msg.Group.Id,
+	}), groupmgrTok))
+	if code := connect.CodeOf(err); code != connect.CodePermissionDenied {
+		t.Fatalf("groupmgr DeleteGroup code = %v, want PermissionDenied", code)
+	}
+
+	// admin (**) can delete the group.
+	if _, err := c.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{
+		GroupId: createdGroup.Msg.Group.Id,
+	}), adminTok)); err != nil {
+		t.Fatalf("admin DeleteGroup: %v", err)
 	}
 }
 
