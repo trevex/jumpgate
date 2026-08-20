@@ -1053,3 +1053,85 @@ func TestResolveRole(t *testing.T) {
 		t.Fatalf("GetRole folder_path = %q, want prod", grow.Msg.Role.FolderPath)
 	}
 }
+
+// TestRoleContainment pins that a folder-scoped role is bindable/requestable only
+// within its subtree, while a global role is unrestricted.
+func TestRoleContainment(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	mkFolder := func(name, parent string) string {
+		r, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: name, ParentId: parent}), tok))
+		if err != nil {
+			t.Fatalf("folder %s: %v", name, err)
+		}
+		return r.Msg.GetFolder().GetId()
+	}
+	mkAsset := func(name, folder string) string {
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name}), tok))
+		if err != nil {
+			t.Fatalf("asset %s: %v", name, err)
+		}
+		return r.Msg.GetAsset().GetId()
+	}
+	subj, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "subject@x", DisplayName: "Subject", Password: "password123"}), tok))
+	if err != nil {
+		t.Fatalf("create subject: %v", err)
+	}
+	u := subj.Msg.User.Id
+
+	prod := mkFolder("prod", "")
+	dev := mkFolder("dev", "")
+	inProd := mkAsset("box", prod)
+	inDev := mkAsset("box", dev)
+
+	scoped, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "engineer", FolderId: prod, Capabilities: []string{"ssh:login:deploy"}}), tok))
+	if err != nil {
+		t.Fatalf("scoped role: %v", err)
+	}
+	global, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "everywhere", Capabilities: []string{"ssh:login:deploy"}}), tok))
+	if err != nil {
+		t.Fatalf("global role: %v", err)
+	}
+
+	bind := func(roleID, assetID string) error {
+		_, err := access.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+			RoleId: roleID, ScopeAssetId: assetID, SubjectUserId: u,
+		}), tok))
+		return err
+	}
+	if err := bind(scoped.Msg.Role.Id, inProd); err != nil {
+		t.Fatalf("bind in-subtree: %v", err)
+	}
+	if err := bind(scoped.Msg.Role.Id, inDev); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("bind out-of-subtree = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+	if err := bind(global.Msg.Role.Id, inDev); err != nil {
+		t.Fatalf("bind global: %v", err)
+	}
+
+	mkPolicy := func(name, roleID, assetID string) error {
+		_, err := access.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+			Name: name, RoleId: roleID, ScopeAssetId: assetID, RequiredApprovals: 1,
+		}), tok))
+		return err
+	}
+	if err := mkPolicy("p1", scoped.Msg.Role.Id, inDev); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("policy out-of-subtree = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+	if err := mkPolicy("p2", scoped.Msg.Role.Id, inProd); err != nil {
+		t.Fatalf("policy in-subtree: %v", err)
+	}
+	// scoped role in a scope-less policy → FailedPrecondition
+	_, err = access.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		Name: "nofolder", RoleId: scoped.Msg.Role.Id, RequiredApprovals: 1,
+	}), tok))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("scope-less scoped policy = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+}

@@ -315,6 +315,45 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(out), nil
 }
 
+// containedInRoleSubtree enforces folder-scoped role containment: if the role is
+// folder-scoped, the binding/policy scope (an asset's folder, or a folder directly)
+// must lie within the role's folder subtree. Global roles (folder NULL) are
+// unrestricted. A folder-scoped role with no scope at all is rejected.
+func (s *AccessServer) containedInRoleSubtree(ctx context.Context, roleID uuid.UUID, scopeFolder, scopeAsset pgtype.UUID) error {
+	role, err := s.q.GetRole(ctx, roleID)
+	if err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	if !role.FolderID.Valid {
+		return nil // global role: no containment
+	}
+	var target uuid.UUID
+	switch {
+	case scopeFolder.Valid:
+		target = uuidFromPg(scopeFolder)
+	case scopeAsset.Valid:
+		a, err := s.q.GetAsset(ctx, uuidFromPg(scopeAsset))
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
+		}
+		target = a.FolderID
+	default:
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a folder-scoped role requires a scope within its folder subtree"))
+	}
+	// The role's folder must be an ancestor-or-self of the scope's folder.
+	ancestors, err := s.q.FolderAncestorsAndSelf(ctx, target)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	roleFolder := uuidFromPg(role.FolderID)
+	for _, a := range ancestors {
+		if a == roleFolder {
+			return nil
+		}
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, errors.New("role is scoped to a folder and can only be bound within its subtree"))
+}
+
 // CreateRoleBinding grants a role to a subject at a scope (admin only).
 func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Request[accessv1.CreateRoleBindingRequest]) (*connect.Response[accessv1.CreateRoleBindingResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
@@ -345,6 +384,9 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	}
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
+	}
+	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
+		return nil, err
 	}
 	rb, err := s.q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        roleID,
@@ -442,6 +484,9 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 	approverRole, _, err := optUUID(req.Msg.ApproverRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
+	}
+	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
+		return nil, err
 	}
 	policy, err := s.q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            roleID,
