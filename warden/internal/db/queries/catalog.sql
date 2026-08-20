@@ -84,3 +84,11 @@ WITH RECURSIVE chain AS (
     FROM folders f JOIN chain c ON f.parent_id = c.id
 )
 SELECT chain.id, chain.path FROM chain;
+
+-- name: FolderByParentName :one
+-- One folder by (parent, name). parent_id NULL matches a top-level folder
+-- (IS NOT DISTINCT FROM treats NULL = NULL as a match).
+SELECT * FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2;
+
+-- name: AssetByFolderName :one
+SELECT * FROM assets WHERE folder_id = $1 AND name = $2;
