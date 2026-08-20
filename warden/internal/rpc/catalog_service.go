@@ -83,6 +83,27 @@ func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
+// joinPath appends a leaf name to a dotted folder path. folderPath is the containing
+// folder's own dotted path (never empty for a real folder); the asset lives one level
+// below it.
+func joinPath(folderPath, name string) string {
+	if folderPath == "" {
+		return name
+	}
+	return folderPath + "." + name
+}
+
+// assetMsgWithPath sets msg.Path = "<folder path>.<asset name>" via a post-commit
+// FolderPath lookup. Best-effort: on a lookup error the path is left empty rather than
+// failing the create, since the asset is already committed.
+func (s *CatalogServer) assetMsgWithPath(ctx context.Context, msg *catalogv1.Asset, folderID uuid.UUID, name string) *catalogv1.Asset {
+	fp, err := s.q.FolderPath(ctx, folderID)
+	if err == nil {
+		msg.Path = joinPath(fp, name)
+	}
+	return msg
+}
+
 // toAssetMsgWithConfig builds an Asset carrying its typed SSH config (host/target
 // from the config row plus the per-login rows).
 func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig, logins []gen.SshAssetLogin) *catalogv1.Asset {
@@ -202,11 +223,9 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 	}
 
 	msg := toFolderMsg(f)
-	path, err := s.q.FolderPath(ctx, f.ID)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+	if path, err := s.q.FolderPath(ctx, f.ID); err == nil {
+		msg.Path = path
 	}
-	msg.Path = path
 	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: msg}), nil
 }
 
@@ -241,7 +260,8 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	return connect.NewResponse(out), nil
 }
 
-// CreateAsset creates an asset in a folder (admin only).
+// CreateAsset creates an asset in a folder (admin only). The asset row, its
+// catalog_names entry, and any inline SSH config are written in one transaction.
 func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
 		return nil, err
@@ -254,33 +274,39 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if kind == "" {
 		kind = "ssh"
 	}
-	params := gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: kind}
+	name := strings.ToLower(req.Msg.Name)
+	params := gen.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: kind}
 
-	// Without inline config, a single insert suffices.
 	ssh := req.Msg.GetSsh()
-	if ssh == nil {
-		a, err := s.q.CreateAsset(ctx, params)
-		if err != nil {
-			return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
+	if ssh != nil {
+		if err := validateSSHConfig(ssh); err != nil {
+			return nil, err
 		}
-		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsg(a)}), nil
 	}
 
-	// With inline config, create the asset and its config atomically so a bad config
-	// leaves no orphan bare asset.
-	if err := validateSSHConfig(ssh); err != nil {
-		return nil, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
+
 	a, err := qtx.CreateAsset(ctx, params)
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}
+	if err := qtx.InsertAssetName(ctx, gen.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
+		return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+	}
+
+	// Without inline config we still commit the tx (asset + registry row).
+	if ssh == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
+	}
+
 	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh))
 	if err != nil {
 		return nil, mapWriteErr(err)
@@ -295,7 +321,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if err := tx.Commit(ctx); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
+	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
 // GetAsset returns an asset with its typed config (admin only). NotFound if the

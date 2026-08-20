@@ -351,6 +351,52 @@ func TestCreateFolderSiblingUniqueness(t *testing.T) {
 	}
 }
 
+func TestCreateAssetSiblingUniqueness(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	fid := f.Msg.Folder.Id
+	mkAsset := func(name string) error {
+		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name}), tok))
+		return err
+	}
+
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: "web"}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	if a.Msg.Asset.Path != "prod.web" {
+		t.Fatalf("asset path = %q, want %q", a.Msg.Asset.Path, "prod.web")
+	}
+	// duplicate asset name in the same folder
+	if err := mkAsset("web"); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup asset = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	// case-folded collision
+	if err := mkAsset("WEB"); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("case-folded asset = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	// cross-table: a subfolder named 'web' under prod collides with the asset 'web'
+	if _, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "web", ParentId: fid}), tok)); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("folder colliding with sibling asset = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	// reverse cross-table: create a subfolder 'api' under prod, then an asset 'api'
+	// under prod must collide with it.
+	if _, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "api", ParentId: fid}), tok)); err != nil {
+		t.Fatalf("create subfolder api: %v", err)
+	}
+	if err := mkAsset("api"); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("asset colliding with sibling folder = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+}
+
 // TestCatalogAssetConfigRequiresAdmin locks the admin guard on the config reads/writes.
 func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 	pool, url := newServer(t)
