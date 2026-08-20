@@ -587,12 +587,10 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}
-	// A folder-scoped binding confers on the folder object; a via='parent' self-grant
-	// cascades the role's caps onto assets inside the bound folder so dana can read
-	// (AssetScope) the assets she creates under team.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
-		t.Fatalf("create role grant: %v", err)
-	}
+	// A folder-scoped binding on `team` confers management authority that CASCADES
+	// structurally down the folder tree (CapabilitiesOnScope walks the folder
+	// ancestor chain), so dana can read (AssetScope) the child assets she creates
+	// under team WITHOUT any via='parent' self-grant.
 	dana, err := q.GetUserByEmail(ctx, "dana@x")
 	if err != nil {
 		t.Fatalf("get dana: %v", err)
