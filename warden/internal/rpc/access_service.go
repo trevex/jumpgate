@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -452,10 +453,27 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	return connect.NewResponse(out), nil
 }
 
-// ResolvePolicy maps a (name, asset scope) to a policy id (admin only).
-// Task 4 replaces this stub with a real DB lookup.
+// ResolvePolicy maps a (name, asset scope) to a policy id (admin only). NotFound if
+// no policy of that name is scoped to that asset.
 func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	p, err := s.q.GetPolicyByNameAndAsset(ctx, gen.GetPolicyByNameAndAssetParams{
+		Name:         pgText(strings.ToLower(req.Msg.Name)),
+		ScopeAssetID: pgUUID(assetID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such policy"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&accessv1.ResolvePolicyResponse{PolicyId: p.ID.String()}), nil
 }
 
 // AddPolicySubject adds a requester/approver subject to a policy (admin only).
