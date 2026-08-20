@@ -38,12 +38,18 @@ const (
 	IdentityServiceCreateUserProcedure = "/jumpgate.identity.v1.IdentityService/CreateUser"
 	// IdentityServiceGetUserProcedure is the fully-qualified name of the IdentityService's GetUser RPC.
 	IdentityServiceGetUserProcedure = "/jumpgate.identity.v1.IdentityService/GetUser"
+	// IdentityServiceResolveUserProcedure is the fully-qualified name of the IdentityService's
+	// ResolveUser RPC.
+	IdentityServiceResolveUserProcedure = "/jumpgate.identity.v1.IdentityService/ResolveUser"
 	// IdentityServiceListUsersProcedure is the fully-qualified name of the IdentityService's ListUsers
 	// RPC.
 	IdentityServiceListUsersProcedure = "/jumpgate.identity.v1.IdentityService/ListUsers"
 	// IdentityServiceCreateGroupProcedure is the fully-qualified name of the IdentityService's
 	// CreateGroup RPC.
 	IdentityServiceCreateGroupProcedure = "/jumpgate.identity.v1.IdentityService/CreateGroup"
+	// IdentityServiceResolveGroupProcedure is the fully-qualified name of the IdentityService's
+	// ResolveGroup RPC.
+	IdentityServiceResolveGroupProcedure = "/jumpgate.identity.v1.IdentityService/ResolveGroup"
 	// IdentityServiceListGroupsProcedure is the fully-qualified name of the IdentityService's
 	// ListGroups RPC.
 	IdentityServiceListGroupsProcedure = "/jumpgate.identity.v1.IdentityService/ListGroups"
@@ -80,8 +86,10 @@ const (
 type IdentityServiceClient interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	CreateGroup(context.Context, *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error)
+	ResolveGroup(context.Context, *connect.Request[v1.ResolveGroupRequest]) (*connect.Response[v1.ResolveGroupResponse], error)
 	ListGroups(context.Context, *connect.Request[v1.ListGroupsRequest]) (*connect.Response[v1.ListGroupsResponse], error)
 	AddUserToGroup(context.Context, *connect.Request[v1.AddUserToGroupRequest]) (*connect.Response[v1.AddUserToGroupResponse], error)
 	AddGroupToGroup(context.Context, *connect.Request[v1.AddGroupToGroupRequest]) (*connect.Response[v1.AddGroupToGroupResponse], error)
@@ -117,6 +125,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("GetUser")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveUser: connect.NewClient[v1.ResolveUserRequest, v1.ResolveUserResponse](
+			httpClient,
+			baseURL+IdentityServiceResolveUserProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ResolveUser")),
+			connect.WithClientOptions(opts...),
+		),
 		listUsers: connect.NewClient[v1.ListUsersRequest, v1.ListUsersResponse](
 			httpClient,
 			baseURL+IdentityServiceListUsersProcedure,
@@ -127,6 +141,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IdentityServiceCreateGroupProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("CreateGroup")),
+			connect.WithClientOptions(opts...),
+		),
+		resolveGroup: connect.NewClient[v1.ResolveGroupRequest, v1.ResolveGroupResponse](
+			httpClient,
+			baseURL+IdentityServiceResolveGroupProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("ResolveGroup")),
 			connect.WithClientOptions(opts...),
 		),
 		listGroups: connect.NewClient[v1.ListGroupsRequest, v1.ListGroupsResponse](
@@ -196,8 +216,10 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type identityServiceClient struct {
 	createUser           *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
 	getUser              *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
+	resolveUser          *connect.Client[v1.ResolveUserRequest, v1.ResolveUserResponse]
 	listUsers            *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
 	createGroup          *connect.Client[v1.CreateGroupRequest, v1.CreateGroupResponse]
+	resolveGroup         *connect.Client[v1.ResolveGroupRequest, v1.ResolveGroupResponse]
 	listGroups           *connect.Client[v1.ListGroupsRequest, v1.ListGroupsResponse]
 	addUserToGroup       *connect.Client[v1.AddUserToGroupRequest, v1.AddUserToGroupResponse]
 	addGroupToGroup      *connect.Client[v1.AddGroupToGroupRequest, v1.AddGroupToGroupResponse]
@@ -220,6 +242,11 @@ func (c *identityServiceClient) GetUser(ctx context.Context, req *connect.Reques
 	return c.getUser.CallUnary(ctx, req)
 }
 
+// ResolveUser calls jumpgate.identity.v1.IdentityService.ResolveUser.
+func (c *identityServiceClient) ResolveUser(ctx context.Context, req *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error) {
+	return c.resolveUser.CallUnary(ctx, req)
+}
+
 // ListUsers calls jumpgate.identity.v1.IdentityService.ListUsers.
 func (c *identityServiceClient) ListUsers(ctx context.Context, req *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error) {
 	return c.listUsers.CallUnary(ctx, req)
@@ -228,6 +255,11 @@ func (c *identityServiceClient) ListUsers(ctx context.Context, req *connect.Requ
 // CreateGroup calls jumpgate.identity.v1.IdentityService.CreateGroup.
 func (c *identityServiceClient) CreateGroup(ctx context.Context, req *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error) {
 	return c.createGroup.CallUnary(ctx, req)
+}
+
+// ResolveGroup calls jumpgate.identity.v1.IdentityService.ResolveGroup.
+func (c *identityServiceClient) ResolveGroup(ctx context.Context, req *connect.Request[v1.ResolveGroupRequest]) (*connect.Response[v1.ResolveGroupResponse], error) {
+	return c.resolveGroup.CallUnary(ctx, req)
 }
 
 // ListGroups calls jumpgate.identity.v1.IdentityService.ListGroups.
@@ -284,8 +316,10 @@ func (c *identityServiceClient) DeleteGroup(ctx context.Context, req *connect.Re
 type IdentityServiceHandler interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	CreateGroup(context.Context, *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error)
+	ResolveGroup(context.Context, *connect.Request[v1.ResolveGroupRequest]) (*connect.Response[v1.ResolveGroupResponse], error)
 	ListGroups(context.Context, *connect.Request[v1.ListGroupsRequest]) (*connect.Response[v1.ListGroupsResponse], error)
 	AddUserToGroup(context.Context, *connect.Request[v1.AddUserToGroupRequest]) (*connect.Response[v1.AddUserToGroupResponse], error)
 	AddGroupToGroup(context.Context, *connect.Request[v1.AddGroupToGroupRequest]) (*connect.Response[v1.AddGroupToGroupResponse], error)
@@ -317,6 +351,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("GetUser")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceResolveUserHandler := connect.NewUnaryHandler(
+		IdentityServiceResolveUserProcedure,
+		svc.ResolveUser,
+		connect.WithSchema(identityServiceMethods.ByName("ResolveUser")),
+		connect.WithHandlerOptions(opts...),
+	)
 	identityServiceListUsersHandler := connect.NewUnaryHandler(
 		IdentityServiceListUsersProcedure,
 		svc.ListUsers,
@@ -327,6 +367,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		IdentityServiceCreateGroupProcedure,
 		svc.CreateGroup,
 		connect.WithSchema(identityServiceMethods.ByName("CreateGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceResolveGroupHandler := connect.NewUnaryHandler(
+		IdentityServiceResolveGroupProcedure,
+		svc.ResolveGroup,
+		connect.WithSchema(identityServiceMethods.ByName("ResolveGroup")),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceListGroupsHandler := connect.NewUnaryHandler(
@@ -395,10 +441,14 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceCreateUserHandler.ServeHTTP(w, r)
 		case IdentityServiceGetUserProcedure:
 			identityServiceGetUserHandler.ServeHTTP(w, r)
+		case IdentityServiceResolveUserProcedure:
+			identityServiceResolveUserHandler.ServeHTTP(w, r)
 		case IdentityServiceListUsersProcedure:
 			identityServiceListUsersHandler.ServeHTTP(w, r)
 		case IdentityServiceCreateGroupProcedure:
 			identityServiceCreateGroupHandler.ServeHTTP(w, r)
+		case IdentityServiceResolveGroupProcedure:
+			identityServiceResolveGroupHandler.ServeHTTP(w, r)
 		case IdentityServiceListGroupsProcedure:
 			identityServiceListGroupsHandler.ServeHTTP(w, r)
 		case IdentityServiceAddUserToGroupProcedure:
@@ -436,12 +486,20 @@ func (UnimplementedIdentityServiceHandler) GetUser(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.GetUser is not implemented"))
 }
 
+func (UnimplementedIdentityServiceHandler) ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.ResolveUser is not implemented"))
+}
+
 func (UnimplementedIdentityServiceHandler) ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.ListUsers is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) CreateGroup(context.Context, *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.CreateGroup is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) ResolveGroup(context.Context, *connect.Request[v1.ResolveGroupRequest]) (*connect.Response[v1.ResolveGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.ResolveGroup is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) ListGroups(context.Context, *connect.Request[v1.ListGroupsRequest]) (*connect.Response[v1.ListGroupsResponse], error) {

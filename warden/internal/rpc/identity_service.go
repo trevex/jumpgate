@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
@@ -93,6 +94,21 @@ func (s *IdentityServer) GetUser(ctx context.Context, req *connect.Request[ident
 	return connect.NewResponse(&identityv1.GetUserResponse{User: toUserMsg(u)}), nil
 }
 
+// ResolveUser resolves a user email to an id (admin only). Unknown emails return NotFound.
+func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[identityv1.ResolveUserRequest]) (*connect.Response[identityv1.ResolveUserResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	u, err := s.q.GetUserByEmail(ctx, req.Msg.Email)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("user not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.ResolveUserResponse{UserId: u.ID.String()}), nil
+}
+
 // ListUsers returns a page of users (admin only), ordered by id.
 func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
@@ -134,6 +150,21 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("group name already exists"))
 	}
 	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: toGroupMsg(g)}), nil
+}
+
+// ResolveGroup resolves a group name to an id (admin only). Unknown names return NotFound.
+func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	g, err := s.q.GetGroupByName(ctx, req.Msg.Name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: g.ID.String()}), nil
 }
 
 // ListGroups returns a page of groups (admin only), ordered by id.
