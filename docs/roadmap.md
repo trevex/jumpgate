@@ -124,6 +124,25 @@ access, one connects and runs a command, and the admin auditor downloads the rec
 and confirms it captured the session. A narrated walkthrough (`docs/demo/walkthrough.md`)
 follows the same command sequence for a live demo. This also bootstraps M7 packaging.
 
+**SSH per-login auth (ca / password / key) ✅.** SSH asset config gained a per-login
+auth table (`ssh_asset_logins`): each login names an `auth kind` (`ca`, `password`, or
+`key`) and, for the stored-secret kinds, a `secret_id` bound by a composite FK to a
+secret of the same asset. The `CredentialBroker` enforces the `ssh:login:<login>`
+capability uniformly for every kind before issuing any credential, closing the
+stored-secret authorization gap. The worker injects the right credential type at the
+target hop — CA cert, plain password, or OpenSSH private key. All three kinds are
+exercised by the e2e suite against real sshd workloads.
+
+**Host-scoped SSH CA principals ✅.** CA-kind SSH certs now carry **host-scoped**
+principals `[<login>@<asset-path>, <login>@<asset-id>]` instead of a bare login.
+The path form (`deploy@prod.servers.web-01`) is the stable, human-readable identifier
+that automation writes into the target's `AuthorizedPrincipalsFile`; the UUID form
+(`deploy@<asset-id>`) provides rename safety. The worker validates that every cert
+principal is of the form `<login>@<scope>` (binding the login identity); the target
+enforces the host-binding at connect time via the `AuthorizedPrincipalsFile`. The
+`CreateAsset` response already returns both `id` and `path` on the `Asset` message,
+giving automation everything it needs to write the principals file.
+
 **Catalog path uniqueness ✅.** Folder and asset names are now sibling-unique
 within their parent: folders share one namespace with assets, so no two siblings
 can collide regardless of kind. Uniqueness is enforced by a `catalog_names`

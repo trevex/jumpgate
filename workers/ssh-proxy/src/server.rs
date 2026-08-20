@@ -11,12 +11,15 @@
 //! 2. calls `SetupSession(token, worker_id, Kc.pub, Kw.pub)` on warden,
 //! 3. warden verifies `cnf == fp(Kc)`, re-checks the entitlement, and returns
 //!    `{session_id, target_address, cert-over-Kw}`,
-//! 4. the worker requires `login ∈ cert.valid_principals`, that the cert is over
-//!    `Kw`, caches the session, and **Accepts** (russh then verifies the client's
-//!    signature over `Kc` — proof-of-possession).
+//! 4. the worker requires every cert principal to be `<login>@<scope>`
+//!    (host-scoped), that the cert is over `Kw`, caches the session, and
+//!    **Accepts** (russh then verifies the client's signature over `Kc` —
+//!    proof-of-possession). The host binding is enforced by the target's
+//!    `AuthorizedPrincipalsFile`.
 //!
 //! Any failure — SetupSession error, cert parse failure, cert not over `Kw`,
-//! login not in principals — is a hard **Reject**. We NEVER accept on error.
+//! principals not scoped to the requested login — is a hard **Reject**. We NEVER
+//! accept on error.
 //!
 //! The security decision is isolated in [`authorize`] (a pure async fn over an
 //! injected [`SetupFn`]) so it is unit-testable without a real warden or a live
@@ -148,8 +151,8 @@ pub enum AuthError {
     CertParse(String),
     #[error("certificate is not over the worker's per-session key Kw")]
     CertNotOverKw,
-    #[error("login {login:?} not in certificate principals {principals:?}")]
-    PrincipalNotAllowed {
+    #[error("certificate principals {principals:?} are not all scoped to login {login:?}")]
+    PrincipalNotForLogin {
         login: String,
         principals: Vec<String>,
     },
@@ -187,7 +190,9 @@ fn public_key_line(pk: &PublicKey) -> Result<Vec<u8>, AuthError> {
 /// branches:
 /// - `Cert` (ca): the returned certificate must parse, be **over `Kw`** (defence
 ///   against a swapped/confused cert — we only ever present `Kw` on the target
-///   hop), and carry `login` in its `valid_principals`. `Kw` + the cert are cached.
+///   hop), and have every principal of the form `<login>@<scope>` (host-scoped).
+///   The host binding is enforced by the target's `AuthorizedPrincipalsFile`.
+///   `Kw` + the cert are cached.
 /// - `Password`/`Key`: `Kw` is discarded; the plain secret is cached for the
 ///   target hop. warden already enforced the login entitlement.
 ///
@@ -228,10 +233,16 @@ pub async fn authorize(
                 return Err(AuthError::CertNotOverKw);
             }
 
-            // The requested login MUST be one of the cert's principals.
+            // Every principal MUST be host-scoped to the requested login
+            // (`<login>@<scope>`), binding the cert to the login the worker
+            // authenticates as. The *host* binding (which asset) is enforced by the
+            // target's AuthorizedPrincipalsFile — the worker need not know the path/id.
+            // (Prefix-only by design: the worker binds login, the target's
+            // AuthorizedPrincipalsFile enforces the exact <login>@<scope> match.)
             let principals = certificate.valid_principals();
-            if !principals.iter().any(|p| p == login) {
-                return Err(AuthError::PrincipalNotAllowed {
+            let login_prefix = format!("{login}@");
+            if principals.is_empty() || !principals.iter().all(|p| p.starts_with(&login_prefix)) {
+                return Err(AuthError::PrincipalNotForLogin {
                     login: login.to_string(),
                     principals: principals.to_vec(),
                 });
@@ -989,23 +1000,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepts_when_login_in_principals_and_caches_state() {
+    async fn accepts_when_all_principals_scoped_to_login() {
         let ca = ed25519();
         let kc = ed25519();
-        let setup = stub_ok(ca, vec!["deploy".into(), "root".into()]);
+        // Warden mints [deploy@<path>, deploy@<id>]; both are scoped to `deploy`.
+        let setup = stub_ok(ca, vec!["deploy@prod.db".into(), "deploy@a1b2c3".into()]);
 
         let state = authorize("deploy", kc.public_key(), &setup)
             .await
-            .expect("deploy is a principal → accept");
+            .expect("all principals scoped to deploy → accept");
 
         assert_eq!(state.session_id, "sess-1");
         assert_eq!(state.target_address, "10.0.0.5:22");
-        // The ca path caches a cert-over-Kw with the login among its principals.
         let TargetAuth::Cert { certificate, kw } = &state.target_auth else {
             panic!("ca credential must select the Cert target-auth branch");
         };
         assert_eq!(certificate.public_key(), kw.public_key().key_data());
-        assert!(certificate.valid_principals().iter().any(|p| p == "deploy"));
+        assert!(certificate
+            .valid_principals()
+            .iter()
+            .all(|p| p.starts_with("deploy@")));
     }
 
     #[tokio::test]
@@ -1056,7 +1070,7 @@ mod tests {
         // does not clobber the cached state with a bogus one.
         let ca = ed25519();
         let kc = ed25519();
-        let mut handler = test_handler(stub_ok(ca, vec!["deploy".into()]));
+        let mut handler = test_handler(stub_ok(ca, vec!["deploy@prod.db".into()]));
 
         let auth = handler
             .auth_publickey("deploy", kc.public_key())
@@ -1080,16 +1094,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_when_login_not_in_principals() {
+    async fn rejects_when_principal_not_scoped_to_login() {
         let ca = ed25519();
         let kc = ed25519();
-        // Cert only carries "deploy"; the client asks for "root".
-        let setup = stub_ok(ca, vec!["deploy".into()]);
+        // Cert is scoped to "deploy"; the client asks for "root".
+        let setup = stub_ok(ca, vec!["deploy@prod.db".into()]);
 
         let err = authorize("root", kc.public_key(), &setup)
             .await
-            .expect_err("root not in principals → reject");
-        assert!(matches!(err, AuthError::PrincipalNotAllowed { .. }));
+            .expect_err("principals not scoped to root → reject");
+        assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_bare_login_principal() {
+        let ca = ed25519();
+        let kc = ed25519();
+        // A legacy bare-login cert ("deploy", no @scope) must no longer be accepted.
+        let setup = stub_ok(ca, vec!["deploy".into()]);
+
+        let err = authorize("deploy", kc.public_key(), &setup)
+            .await
+            .expect_err("bare (unscoped) principal → reject");
+        assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
     }
 
     #[tokio::test]
@@ -1111,7 +1138,7 @@ mod tests {
             let ca = ca.clone();
             Box::pin(async move {
                 let other = ed25519();
-                let cert = mint_cert(&ca, other.public_key(), &["deploy"]);
+                let cert = mint_cert(&ca, other.public_key(), &["deploy@prod.db"]);
                 Ok(SetupOutcome {
                     session_id: "sess-x".into(),
                     target_address: "t:22".into(),
@@ -1153,12 +1180,12 @@ mod tests {
     /// errors, and `start_hop` turns that into a refuse (no bridge).
     #[tokio::test]
     async fn build_recorder_fails_closed_without_a_bucket() {
-        let handler = test_handler(stub_ok(ed25519(), vec!["deploy".into()]));
+        let handler = test_handler(stub_ok(ed25519(), vec!["deploy@prod.db".into()]));
         // A minimal required-recording session state (the cert/kw are unused by
         // build_recorder; only the object key + the disabled bucket matter).
         let kw = ed25519();
         let ca = ed25519();
-        let cert_bytes = mint_cert(&ca, kw.public_key(), &["deploy"]);
+        let cert_bytes = mint_cert(&ca, kw.public_key(), &["deploy@prod.db"]);
         let cert =
             Certificate::from_openssh(std::str::from_utf8(&cert_bytes).unwrap().trim()).unwrap();
         let state = SessionState {
