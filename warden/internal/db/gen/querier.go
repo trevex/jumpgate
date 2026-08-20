@@ -18,6 +18,7 @@ type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountOutbox(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
@@ -50,9 +51,12 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
-	// Dotted root->leaf path of a single folder (includes the folder itself).
+	// One folder by (parent, name). parent_id NULL matches a top-level folder
+	// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
+	FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error)
+	// Dotted leaf->root path of a single folder (the folder's own name first).
 	FolderPath(ctx context.Context, id uuid.UUID) (string, error)
-	// Every folder's full dotted path in one query (for list responses).
+	// Every folder's full leaf->root dotted path in one query (for list responses).
 	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)

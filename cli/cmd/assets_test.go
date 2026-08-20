@@ -398,7 +398,7 @@ func TestAssetsGet(t *testing.T) {
 func TestAssetsListByFolderPathColumn(t *testing.T) {
 	const folderID = "55555555-5555-5555-5555-555555555555"
 	s := &stubAssets{byFolder: []*catalogv1.Asset{
-		{Id: "a-99", Name: "pg-primary", Kind: "ssh", FolderId: folderID, Path: "prod.db.pg-primary"},
+		{Id: "a-99", Name: "pg-primary", Kind: "ssh", FolderId: folderID, Path: "pg-primary.db.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
@@ -415,7 +415,7 @@ func TestAssetsListByFolderPathColumn(t *testing.T) {
 	if !strings.Contains(got, "PATH") {
 		t.Fatalf("assets table missing PATH column:\n%s", got)
 	}
-	if !strings.Contains(got, "prod.db.pg-primary") {
+	if !strings.Contains(got, "pg-primary.db.prod") {
 		t.Fatalf("assets table missing path value:\n%s", got)
 	}
 }
@@ -458,7 +458,7 @@ func TestAssetsSSHCreateJSONHasIDAndPath(t *testing.T) {
 			Name:     "web",
 			Kind:     "ssh",
 			FolderId: "f1",
-			Path:     "prod.db.web",
+			Path:     "web.db.prod",
 		},
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

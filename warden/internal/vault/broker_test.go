@@ -177,11 +177,10 @@ func wantAssetPrincipals(t *testing.T, q *gen.Queries, assetID uuid.UUID, login 
 	if err != nil {
 		t.Fatalf("folder path: %v", err)
 	}
-	path := fp
-	if path != "" {
-		path += "."
+	path := a.Name
+	if fp != "" {
+		path += "." + fp
 	}
-	path += a.Name
 	return []string{login + "@" + path, login + "@" + a.ID.String()}
 }
 

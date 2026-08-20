@@ -37,7 +37,6 @@ type stubWarden struct {
 	catalogv1connect.UnimplementedCatalogServiceHandler
 	sessionv1connect.UnimplementedSessionServiceHandler
 
-	assetName       string
 	assetID         string
 	gatewayEndpoint string
 	sessionToken    string
@@ -46,16 +45,11 @@ type stubWarden struct {
 	gotKcPub   []byte
 }
 
-func (s *stubWarden) ListVisibleAssets(_ context.Context, req *connect.Request[catalogv1.ListVisibleAssetsRequest]) (*connect.Response[catalogv1.ListVisibleAssetsResponse], error) {
+func (s *stubWarden) ResolveAsset(_ context.Context, req *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
 	if req.Header().Get("Authorization") != "Bearer "+testToken {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("bad token"))
 	}
-	return connect.NewResponse(&catalogv1.ListVisibleAssetsResponse{
-		Assets: []*catalogv1.VisibleAsset{
-			{Id: s.assetID, Name: s.assetName, Active: true},
-			{Id: "other-id", Name: "otherhost", Active: true},
-		},
-	}), nil
+	return connect.NewResponse(&catalogv1.ResolveAssetResponse{AssetId: s.assetID, Path: req.Msg.GetRef()}), nil
 }
 
 func (s *stubWarden) CreateSession(_ context.Context, req *connect.Request[sessionv1.CreateSessionRequest]) (*connect.Response[sessionv1.CreateSessionResponse], error) {
@@ -152,7 +146,6 @@ func TestRunConnectEstablishesTunnel(t *testing.T) {
 	gwEndpoint, caFile := startEchoGateway(t)
 
 	sw := &stubWarden{
-		assetName:       "myhost",
 		assetID:         "asset-uuid-1",
 		gatewayEndpoint: gwEndpoint,
 		sessionToken:    "sess-tok",

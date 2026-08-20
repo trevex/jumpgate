@@ -83,17 +83,17 @@ func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
-// joinPath appends a leaf name to a dotted folder path. folderPath is the containing
-// folder's own dotted path (never empty for a real folder); the asset lives one level
-// below it.
+// joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
+// its folder's leaf->root path. folderPath is the containing folder's own leaf-first
+// path (empty only defensively — a real asset always has a folder).
 func joinPath(folderPath, name string) string {
 	if folderPath == "" {
 		return name
 	}
-	return folderPath + "." + name
+	return name + "." + folderPath
 }
 
-// assetMsgWithPath sets msg.Path = "<folder path>.<asset name>" via a post-commit
+// assetMsgWithPath sets msg.Path = "<asset name>.<folder path>" via a post-commit
 // FolderPath lookup. Best-effort: on a lookup error the path is left empty rather than
 // failing the create, since the asset is already committed.
 func (s *CatalogServer) assetMsgWithPath(ctx context.Context, msg *catalogv1.Asset, folderID uuid.UUID, name string) *catalogv1.Asset {
@@ -466,6 +466,82 @@ func (s *CatalogServer) ListVisibleAssets(ctx context.Context, _ *connect.Reques
 		})
 	}
 	return connect.NewResponse(out), nil
+}
+
+// ResolveAsset maps a uuid or DNS-style dotted path to an asset id, but only for an
+// asset the caller can reach. Unknown-ref and no-access both return NotFound
+// (existence hiding). The response path is the canonical DNS path.
+func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	ref := req.Msg.Ref
+
+	var assetID, folderID uuid.UUID
+	var assetName string
+	if id, perr := uuid.Parse(ref); perr == nil {
+		a, err := s.q.GetAsset(ctx, id)
+		if err != nil {
+			return nil, notFoundOrInternal(err)
+		}
+		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+	} else {
+		segs := strings.Split(ref, ".")
+		if len(segs) < 2 {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+		}
+		name := segs[0]
+		var parent pgtype.UUID // NULL = top level
+		var fid uuid.UUID
+		for i := len(segs) - 1; i >= 1; i-- { // walk root→leaf (segs reversed: leaf is segs[0])
+			f, err := s.q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
+			if err != nil {
+				return nil, notFoundOrInternal(err)
+			}
+			fid = f.ID
+			parent = pgUUID(f.ID)
+		}
+		a, err := s.q.AssetByFolderName(ctx, gen.AssetByFolderNameParams{FolderID: fid, Name: name})
+		if err != nil {
+			return nil, notFoundOrInternal(err)
+		}
+		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+	}
+
+	// Access check + existence hiding: only reveal assets the caller can see.
+	vis, err := s.authorizer.VisibleAssets(ctx, u.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	seen := false
+	for _, v := range vis {
+		if v.AssetID == assetID {
+			seen = true
+			break
+		}
+	}
+	if !seen {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+
+	fp, err := s.q.FolderPath(ctx, folderID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.ResolveAssetResponse{
+		AssetId: assetID.String(),
+		Path:    joinPath(fp, assetName),
+	}), nil
+}
+
+// notFoundOrInternal maps pgx.ErrNoRows to NotFound (existence hiding) and any other
+// error to Internal.
+func notFoundOrInternal(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+	return connect.NewError(connect.CodeInternal, err)
 }
 
 // GetAssetAccess returns the caller's roles on one asset; NotFound if invisible.
