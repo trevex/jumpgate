@@ -27,6 +27,7 @@ type Folder struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	ParentId      string                 `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,6 +83,13 @@ func (x *Folder) GetParentId() string {
 	return ""
 }
 
+func (x *Folder) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
 // Asset is a target in the catalog. The typed per-kind connection config (config)
 // is populated only by single-asset reads (GetAsset); list responses leave it empty
 // so they never carry connection details like stored_secret_id/target_address.
@@ -95,6 +103,7 @@ type Asset struct {
 	//
 	//	*Asset_Ssh
 	Config        isAsset_Config `protobuf_oneof:"config"`
+	Path          string         `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -171,6 +180,13 @@ func (x *Asset) GetSsh() *SSHConfig {
 		}
 	}
 	return nil
+}
+
+func (x *Asset) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
 }
 
 type isAsset_Config interface {
@@ -1186,17 +1202,19 @@ var File_jumpgate_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\n" +
-	"!jumpgate/catalog/v1/catalog.proto\x12\x13jumpgate.catalog.v1\x1a\x1bbuf/validate/validate.proto\"I\n" +
+	"!jumpgate/catalog/v1/catalog.proto\x12\x13jumpgate.catalog.v1\x1a\x1bbuf/validate/validate.proto\"]\n" +
 	"\x06Folder\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
-	"\tparent_id\x18\x03 \x01(\tR\bparentId\"\x9a\x01\n" +
+	"\tparent_id\x18\x03 \x01(\tR\bparentId\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\"\xae\x01\n" +
 	"\x05Asset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tfolder_id\x18\x02 \x01(\tR\bfolderId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x122\n" +
-	"\x03ssh\x18\x05 \x01(\v2\x1e.jumpgate.catalog.v1.SSHConfigH\x00R\x03sshB\b\n" +
+	"\x03ssh\x18\x05 \x01(\v2\x1e.jumpgate.catalog.v1.SSHConfigH\x00R\x03ssh\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04pathB\b\n" +
 	"\x06config\"\x91\x01\n" +
 	"\tSSHConfig\x125\n" +
 	"\x06logins\x18\x01 \x03(\v2\x1d.jumpgate.catalog.v1.SSHLoginR\x06logins\x12&\n" +
@@ -1205,10 +1223,9 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\bSSHLogin\x12\x1d\n" +
 	"\x05login\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12,\n" +
 	"\x04kind\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\x02caR\bpasswordR\x03keyR\x04kind\x12\x1b\n" +
-	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"R\n" +
-	"\x13CreateFolderRequest\x12\x1e\n" +
-	"\x04name\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\x12\x1b\n" +
+	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"d\n" +
+	"\x13CreateFolderRequest\x120\n" +
+	"\x04name\x18\x01 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18\xc8\x012\x10^[a-zA-Z0-9_-]+$R\x04name\x12\x1b\n" +
 	"\tparent_id\x18\x02 \x01(\tR\bparentId\"K\n" +
 	"\x14CreateFolderResponse\x123\n" +
 	"\x06folder\x18\x01 \x01(\v2\x1b.jumpgate.catalog.v1.FolderR\x06folder\"[\n" +
@@ -1218,11 +1235,10 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"t\n" +
 	"\x13ListFoldersResponse\x125\n" +
 	"\afolders\x18\x01 \x03(\v2\x1b.jumpgate.catalog.v1.FolderR\afolders\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xca\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xdc\x01\n" +
 	"\x12CreateAssetRequest\x12%\n" +
-	"\tfolder_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bfolderId\x12\x1e\n" +
-	"\x04name\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\x12/\n" +
+	"\tfolder_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bfolderId\x120\n" +
+	"\x04name\x18\x02 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18\xc8\x012\x10^[a-zA-Z0-9_-]+$R\x04name\x12/\n" +
 	"\x04kind\x18\x03 \x01(\tB\x1b\xbaH\x18r\x16R\x03sshR\bpostgresR\x03k8sR\x00R\x04kind\x122\n" +
 	"\x03ssh\x18\x04 \x01(\v2\x1e.jumpgate.catalog.v1.SSHConfigH\x00R\x03sshB\b\n" +
 	"\x06config\"G\n" +
