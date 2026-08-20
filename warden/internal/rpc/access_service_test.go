@@ -628,6 +628,99 @@ func TestRequestPolicyCRUD(t *testing.T) {
 	}
 }
 
+// TestCreateRequestPolicyName verifies the optional policy name field:
+// - a named asset-scoped policy round-trips GetName()
+// - a second policy with the same name on the same asset returns AlreadyExists
+// - existing nameless policies still create fine (name is optional)
+func TestCreateRequestPolicyName(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	ctx := context.Background()
+
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "deploy-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := role.Msg.Role.Id
+
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folder.Msg.Folder.Id, Name: "web-server",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	assetID := asset.Msg.Asset.Id
+
+	// Named asset-scoped policy: name must round-trip.
+	p1, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            roleID,
+		ScopeAssetId:      assetID,
+		RequiredApprovals: 1,
+		Name:              "approve-deploy",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create named policy: %v", err)
+	}
+	if p1.Msg.Policy.GetName() != "approve-deploy" {
+		t.Fatalf("name = %q, want %q", p1.Msg.Policy.GetName(), "approve-deploy")
+	}
+
+	// Second policy with the same name on the same asset → AlreadyExists.
+	// Use a DIFFERENT role so the per-role uq_rule_role_asset index doesn't
+	// fire first: this must fail specifically on uq_policy_name_asset, which
+	// is the name-uniqueness constraint under test.
+	dupRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "deploy-role-dup", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create dup role: %v", err)
+	}
+	_, err = acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            dupRole.Msg.Role.Id,
+		ScopeAssetId:      assetID,
+		RequiredApprovals: 2,
+		Name:              "approve-deploy",
+	}), tok))
+	if connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("duplicate name = %v (code %v), want AlreadyExists", err, connect.CodeOf(err))
+	}
+
+	// Nameless policy on a different role+asset still creates fine (name is optional).
+	role2, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "ops-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role2: %v", err)
+	}
+	asset2, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folder.Msg.Folder.Id, Name: "db-server",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset2: %v", err)
+	}
+	p3, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            role2.Msg.Role.Id,
+		ScopeAssetId:      asset2.Msg.Asset.Id,
+		RequiredApprovals: 1,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create nameless policy: %v", err)
+	}
+	if p3.Msg.Policy.GetName() != "" {
+		t.Fatalf("nameless policy name = %q, want empty", p3.Msg.Policy.GetName())
+	}
+}
+
 // TestRequestPolicySelfServiceAndMaxDuration covers M3c policy-config surface
 // additions: required_approvals=0 (self-service) is now accepted, and
 // max_duration_seconds round-trips through Create → ListRequestPolicies.
@@ -695,6 +788,71 @@ func TestRequestPolicySelfServiceAndMaxDuration(t *testing.T) {
 	}
 	if upd.Msg.Policy.MaxDurationSeconds != 0 {
 		t.Fatalf("updated max_duration_seconds = %d, want 0 (NULL)", upd.Msg.Policy.MaxDurationSeconds)
+	}
+}
+
+// TestResolvePolicy verifies AccessService.ResolvePolicy: admin resolves
+// (name, asset_id) → policy_id; wrong name → NotFound; non-admin → PermissionDenied.
+func TestResolvePolicy(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	ctx := context.Background()
+
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "deploy-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := role.Msg.Role.Id
+
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folder.Msg.Folder.Id, Name: "web-server",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	assetID := asset.Msg.Asset.Id
+
+	// Create a named asset-scoped policy.
+	p1, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            roleID,
+		ScopeAssetId:      assetID,
+		RequiredApprovals: 1,
+		Name:              "approve-deploy",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create named policy: %v", err)
+	}
+	polID := p1.Msg.Policy.Id
+
+	ac := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	// admin resolves by (name, asset_id)
+	got, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "approve-deploy", AssetId: assetID}), tok))
+	if err != nil || got.Msg.PolicyId != polID {
+		var gotID string
+		if got != nil {
+			gotID = got.Msg.PolicyId
+		}
+		t.Fatalf("resolve = %v / %q, want %s", err, gotID, polID)
+	}
+	// wrong name → NotFound
+	if _, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "nope", AssetId: assetID}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("wrong name = %v, want NotFound", connect.CodeOf(err))
+	}
+	// non-admin → PermissionDenied
+	seedUser(t, pool, "u2@x", "password123", false)
+	utok := authClient(t, url, "u2@x", "password123")
+	if _, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "approve-deploy", AssetId: assetID}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 }
 

@@ -1,6 +1,6 @@
 -- name: CreateRequestPolicy :one
-INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id, max_duration)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO request_policies (role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, requester_role_id, max_duration, name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateRequestPolicy :one
@@ -28,3 +28,6 @@ DELETE FROM request_policy_subjects WHERE id = $1;
 
 -- name: ListPolicySubjects :many
 SELECT * FROM request_policy_subjects WHERE policy_id = $1 ORDER BY id;
+
+-- name: GetPolicyByNameAndAsset :one
+SELECT * FROM request_policies WHERE name = $1 AND scope_asset_id = $2;

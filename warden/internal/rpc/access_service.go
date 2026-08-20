@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -65,7 +67,16 @@ func toRequestPolicyMsg(r gen.RequestPolicy) *accessv1.RequestPolicy {
 		RequesterRoleId:    pgUUIDToString(r.RequesterRoleID),
 		ApproverRoleId:     pgUUIDToString(r.ApproverRoleID),
 		MaxDurationSeconds: intervalToSeconds(r.MaxDuration),
+		Name:               r.Name.String,
 	}
+}
+
+// pgText maps "" to a NULL pgtype.Text, else a valid one.
+func pgText(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
 }
 
 // secondsToInterval maps a non-negative seconds count to a pgtype.Interval.
@@ -369,6 +380,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 		ApproverRoleID:    approverRole,
 		RequesterRoleID:   requesterRole,
 		MaxDuration:       secondsToInterval(req.Msg.MaxDurationSeconds),
+		Name:              pgText(strings.ToLower(req.Msg.GetName())),
 	})
 	if err != nil {
 		return nil, mapWriteErr(err)
@@ -439,6 +451,29 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 		out.Policies = append(out.Policies, toRequestPolicyMsg(rows[i]))
 	}
 	return connect.NewResponse(out), nil
+}
+
+// ResolvePolicy maps a (name, asset scope) to a policy id (admin only). NotFound if
+// no policy of that name is scoped to that asset.
+func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	p, err := s.q.GetPolicyByNameAndAsset(ctx, gen.GetPolicyByNameAndAssetParams{
+		Name:         pgText(strings.ToLower(req.Msg.Name)),
+		ScopeAssetID: pgUUID(assetID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such policy"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&accessv1.ResolvePolicyResponse{PolicyId: p.ID.String()}), nil
 }
 
 // AddPolicySubject adds a requester/approver subject to a policy (admin only).
