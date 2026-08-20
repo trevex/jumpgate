@@ -27,6 +27,8 @@ CREATE TABLE group_memberships (
 );
 CREATE UNIQUE INDEX uq_membership_user  ON group_memberships(group_id, member_user_id)  WHERE member_user_id  IS NOT NULL;
 CREATE UNIQUE INDEX uq_membership_group ON group_memberships(group_id, member_group_id) WHERE member_group_id IS NOT NULL;
+CREATE INDEX idx_gm_member_user  ON group_memberships(member_user_id)  WHERE member_user_id  IS NOT NULL;
+CREATE INDEX idx_gm_member_group ON group_memberships(member_group_id) WHERE member_group_id IS NOT NULL;
 
 CREATE TABLE folders (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
