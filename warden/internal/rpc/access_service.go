@@ -130,9 +130,6 @@ func toPolicySubjectMsg(s gen.RequestPolicySubject) *accessv1.PolicySubject {
 
 // CreateRole creates a custom role (admin only).
 func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[accessv1.CreateRoleRequest]) (*connect.Response[accessv1.CreateRoleResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	capsJSON, err := json.Marshal(req.Msg.Capabilities)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -140,6 +137,9 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	folderID, _, err := optUUID(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	if err := s.requireCap(ctx, "access:role:create", scopeOfFolderID(folderID)); err != nil {
+		return nil, err
 	}
 	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID, Capabilities: capsJSON})
 	if err != nil {
@@ -154,9 +154,6 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 
 // ResolveRole resolves uuid | name (global) | <role>.<folder-path> (scoped) to a role id (admin only).
 func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[accessv1.ResolveRoleRequest]) (*connect.Response[accessv1.ResolveRoleResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	ref := req.Msg.Ref
 	var role gen.Role
 	if id, perr := uuid.Parse(ref); perr == nil {
@@ -182,6 +179,9 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 		}
 		role = r
 	}
+	if err := s.requireCap(ctx, "access:role:read", scopeOfFolderID(role.FolderID)); err != nil {
+		return nil, err
+	}
 	m, err := s.roleMsgWithPath(ctx, role)
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 
 // ListRoles lists roles (admin only).
 func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[accessv1.ListRolesRequest]) (*connect.Response[accessv1.ListRolesResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "access:role:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	limit := req.Msg.PageSize
@@ -240,9 +240,6 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 
 // GetRole fetches a single role by id (admin only).
 func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv1.GetRoleRequest]) (*connect.Response[accessv1.GetRoleResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
@@ -250,6 +247,9 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	r, err := s.q.GetRole(ctx, id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
+	}
+	if err := s.requireCap(ctx, "access:role:read", scopeOfFolderID(r.FolderID)); err != nil {
+		return nil, err
 	}
 	m, err := s.roleMsgWithPath(ctx, r)
 	if err != nil {
@@ -262,9 +262,6 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 // (admin only). Mirrors the DB constraints: same-object self-reference is
 // rejected; a duplicate rule is AlreadyExists; an unknown role is InvalidArgument.
 func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[accessv1.AddRoleGrantRequest]) (*connect.Response[accessv1.AddRoleGrantResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -272,6 +269,20 @@ func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[ac
 	sourceRoleID, err := uuid.Parse(req.Msg.SourceRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad source_role_id"))
+	}
+	scope, err := s.scopeOfRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:role:update", scope); err != nil {
+		return nil, err
+	}
+	caps, err := s.roleCaps(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireGrantable(ctx, caps, scope); err != nil {
+		return nil, err
 	}
 	if req.Msg.Via == "same_object" && roleID == sourceRoleID {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("same-object self-reference not allowed"))
@@ -295,14 +306,29 @@ func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[ac
 }
 
 // RemoveRoleGrant deletes a role-rewrite rule by id (admin only). Deleting a
-// non-existent id is a no-op.
+// non-existent id is a no-op (gated by the capability at global scope). Removing
+// a grant only REMOVES conferred authority (de-escalation), so no grantable
+// subset check is required.
 func (s *AccessServer) RemoveRoleGrant(ctx context.Context, req *connect.Request[accessv1.RemoveRoleGrantRequest]) (*connect.Response[accessv1.RemoveRoleGrantResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	g, err := s.q.GetRoleGrant(ctx, id)
+	if err != nil {
+		// Deleting a non-existent grant is a no-op. With no row to derive a scope
+		// from we fail closed, requiring the capability globally before the no-op.
+		if err := s.requireCap(ctx, "access:role:update", authz.GlobalScope()); err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&accessv1.RemoveRoleGrantResponse{}), nil
+	}
+	scope, err := s.scopeOfRole(ctx, g.RoleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:role:update", scope); err != nil {
+		return nil, err
 	}
 	if err := s.q.DeleteRoleGrant(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -312,12 +338,16 @@ func (s *AccessServer) RemoveRoleGrant(ctx context.Context, req *connect.Request
 
 // ListRoleGrants lists the rewrite rules conferring role_id (admin only).
 func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[accessv1.ListRoleGrantsRequest]) (*connect.Response[accessv1.ListRoleGrantsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	scope, err := s.scopeOfRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:role:read", scope); err != nil {
+		return nil, err
 	}
 	rows, err := s.q.ListRoleGrants(ctx, roleID)
 	if err != nil {
@@ -371,9 +401,6 @@ func (s *AccessServer) containedInRoleSubtree(ctx context.Context, roleID uuid.U
 
 // CreateRoleBinding grants a role to a subject at a scope (admin only).
 func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Request[accessv1.CreateRoleBindingRequest]) (*connect.Response[accessv1.CreateRoleBindingResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -400,6 +427,17 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
 	}
+	bindScope := scopeOfObject(scopeFolder, scopeAsset)
+	if err := s.requireCap(ctx, "access:binding:create", bindScope); err != nil {
+		return nil, err
+	}
+	caps, err := s.roleCaps(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireGrantable(ctx, caps, bindScope); err != nil {
+		return nil, err
+	}
 	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
 		return nil, err
 	}
@@ -414,14 +452,19 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	return connect.NewResponse(&accessv1.CreateRoleBindingResponse{Id: rb.ID.String()}), nil
 }
 
-// DeleteRoleBinding removes a binding (admin only). Deleting a non-existent id is a no-op.
+// DeleteRoleBinding removes a binding (admin only). Loads the binding to derive
+// its scope, so a missing id returns NotFound.
 func (s *AccessServer) DeleteRoleBinding(ctx context.Context, req *connect.Request[accessv1.DeleteRoleBindingRequest]) (*connect.Response[accessv1.DeleteRoleBindingResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	scope, err := s.scopeOfBinding(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:binding:delete", scope); err != nil {
+		return nil, err
 	}
 	if err := s.q.DeleteRoleBinding(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -431,7 +474,7 @@ func (s *AccessServer) DeleteRoleBinding(ctx context.Context, req *connect.Reque
 
 // ListRoleBindings lists bindings matching the (all-optional) filters (admin only).
 func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Request[accessv1.ListRoleBindingsRequest]) (*connect.Response[accessv1.ListRoleBindingsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "access:binding:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	roleID, _, err := optUUID(req.Msg.RoleId)
@@ -473,9 +516,6 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 
 // CreateRequestPolicy creates a JIT request policy for a role (admin only).
 func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Request[accessv1.CreateRequestPolicyRequest]) (*connect.Response[accessv1.CreateRequestPolicyResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -500,6 +540,17 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
+	policyScope := scopeOfObject(scopeFolder, scopeAsset)
+	if err := s.requireCap(ctx, "access:policy:create", policyScope); err != nil {
+		return nil, err
+	}
+	caps, err := s.roleCaps(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireGrantable(ctx, caps, policyScope); err != nil {
+		return nil, err
+	}
 	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
 		return nil, err
 	}
@@ -521,12 +572,16 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 
 // UpdateRequestPolicy updates a policy's approvals + role sources (admin only).
 func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Request[accessv1.UpdateRequestPolicyRequest]) (*connect.Response[accessv1.UpdateRequestPolicyResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	scope, err := s.scopeOfPolicy(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:policy:update", scope); err != nil {
+		return nil, err
 	}
 	requesterRole, _, err := optUUID(req.Msg.RequesterRoleId)
 	if err != nil {
@@ -551,12 +606,16 @@ func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Req
 
 // DeleteRequestPolicy removes a request policy (admin only).
 func (s *AccessServer) DeleteRequestPolicy(ctx context.Context, req *connect.Request[accessv1.DeleteRequestPolicyRequest]) (*connect.Response[accessv1.DeleteRequestPolicyResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	scope, err := s.scopeOfPolicy(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:policy:delete", scope); err != nil {
+		return nil, err
 	}
 	if err := s.q.DeleteRequestPolicy(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -566,7 +625,7 @@ func (s *AccessServer) DeleteRequestPolicy(ctx context.Context, req *connect.Req
 
 // ListRequestPolicies lists all request policies for a role (admin only).
 func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Request[accessv1.ListRequestPoliciesRequest]) (*connect.Response[accessv1.ListRequestPoliciesResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "access:policy:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
@@ -587,12 +646,12 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 // ResolvePolicy maps a (name, asset scope) to a policy id (admin only). NotFound if
 // no policy of that name is scoped to that asset.
 func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if err := s.requireCap(ctx, "access:policy:read", authz.AssetScope(assetID)); err != nil {
+		return nil, err
 	}
 	p, err := s.q.GetPolicyByNameAndAsset(ctx, gen.GetPolicyByNameAndAssetParams{
 		Name:         pgText(strings.ToLower(req.Msg.Name)),
@@ -609,12 +668,16 @@ func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[a
 
 // AddPolicySubject adds a requester/approver subject to a policy (admin only).
 func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Request[accessv1.AddPolicySubjectRequest]) (*connect.Response[accessv1.AddPolicySubjectResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	policyID, err := uuid.Parse(req.Msg.PolicyId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad policy_id"))
+	}
+	scope, err := s.scopeOfPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:policy:manage-subjects", scope); err != nil {
+		return nil, err
 	}
 	subjUser, hasUser, err := optUUID(req.Msg.SubjectUserId)
 	if err != nil {
@@ -639,14 +702,23 @@ func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&accessv1.AddPolicySubjectResponse{Id: ps.ID.String()}), nil
 }
 
-// RemovePolicySubject removes a subject from a policy (admin only).
+// RemovePolicySubject removes a subject from a policy (admin only). Loads the
+// subject to derive its scope, so a missing id returns NotFound.
 func (s *AccessServer) RemovePolicySubject(ctx context.Context, req *connect.Request[accessv1.RemovePolicySubjectRequest]) (*connect.Response[accessv1.RemovePolicySubjectResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	ps, err := s.q.GetPolicySubject(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("policy subject not found"))
+	}
+	scope, err := s.scopeOfPolicy(ctx, ps.PolicyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:policy:manage-subjects", scope); err != nil {
+		return nil, err
 	}
 	if err := s.q.RemovePolicySubject(ctx, id); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -656,12 +728,16 @@ func (s *AccessServer) RemovePolicySubject(ctx context.Context, req *connect.Req
 
 // ListPolicySubjects lists the subjects attached to a policy (admin only).
 func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Request[accessv1.ListPolicySubjectsRequest]) (*connect.Response[accessv1.ListPolicySubjectsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	policyID, err := uuid.Parse(req.Msg.PolicyId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad policy_id"))
+	}
+	scope, err := s.scopeOfPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:policy:read", scope); err != nil {
+		return nil, err
 	}
 	rows, err := s.q.ListPolicySubjects(ctx, policyID)
 	if err != nil {

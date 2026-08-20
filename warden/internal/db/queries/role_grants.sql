@@ -1,6 +1,9 @@
 -- name: CreateRoleGrant :one
 INSERT INTO role_grants (role_id, source_role_id, via) VALUES ($1, $2, $3) RETURNING *;
 
+-- name: GetRoleGrant :one
+SELECT * FROM role_grants WHERE id = $1;
+
 -- name: DeleteRoleGrant :exec
 DELETE FROM role_grants WHERE id = $1;
 
