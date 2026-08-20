@@ -446,6 +446,50 @@ func TestCatalogReadsPopulatePath(t *testing.T) {
 	}
 }
 
+func TestCreateFolderAssetRaceSingleWinner(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	parent, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("parent: %v", err)
+	}
+	pid := parent.Msg.Folder.Id
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	go func() {
+		<-start
+		_, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "web", ParentId: pid}), tok))
+		errs <- err
+	}()
+	go func() {
+		<-start
+		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: pid, Name: "web"}), tok))
+		errs <- err
+	}()
+	close(start)
+
+	var ok, already int
+	for i := 0; i < 2; i++ {
+		err := <-errs
+		switch {
+		case err == nil:
+			ok++
+		case connect.CodeOf(err) == connect.CodeAlreadyExists:
+			already++
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if ok != 1 || already != 1 {
+		t.Fatalf("race result ok=%d already=%d, want exactly 1 and 1", ok, already)
+	}
+}
+
 // TestCatalogAssetConfigRequiresAdmin locks the admin guard on the config reads/writes.
 func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 	pool, url := newServer(t)
