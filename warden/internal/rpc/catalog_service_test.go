@@ -397,6 +397,55 @@ func TestCreateAssetSiblingUniqueness(t *testing.T) {
 	}
 }
 
+func TestCatalogReadsPopulatePath(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	prod, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("prod: %v", err)
+	}
+	db, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg-primary"}), tok))
+	if err != nil {
+		t.Fatalf("asset: %v", err)
+	}
+
+	got, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: a.Msg.Asset.Id}), tok))
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Msg.Asset.Path != "prod.db.pg-primary" {
+		t.Fatalf("GetAsset path = %q, want prod.db.pg-primary", got.Msg.Asset.Path)
+	}
+
+	list, err := c.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: db.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("list assets: %v", err)
+	}
+	if len(list.Msg.Assets) != 1 || list.Msg.Assets[0].Path != "prod.db.pg-primary" {
+		t.Fatalf("ListAssetsByFolder path = %v, want prod.db.pg-primary", list.Msg.Assets)
+	}
+
+	folders, err := c.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100}), tok))
+	if err != nil {
+		t.Fatalf("list folders: %v", err)
+	}
+	paths := map[string]string{}
+	for _, f := range folders.Msg.Folders {
+		paths[f.Id] = f.Path
+	}
+	if paths[db.Msg.Folder.Id] != "prod.db" {
+		t.Fatalf("ListFolders path for db = %q, want prod.db", paths[db.Msg.Folder.Id])
+	}
+}
+
 // TestCatalogAssetConfigRequiresAdmin locks the admin guard on the config reads/writes.
 func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 	pool, url := newServer(t)

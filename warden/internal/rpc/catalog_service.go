@@ -250,9 +250,19 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	allPaths, err := s.q.FolderPaths(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	pathByID := make(map[string]string, len(allPaths))
+	for _, p := range allPaths {
+		pathByID[p.ID.String()] = p.Path
+	}
 	out := &catalogv1.ListFoldersResponse{}
 	for i := range rows {
-		out.Folders = append(out.Folders, toFolderMsg(rows[i]))
+		m := toFolderMsg(rows[i])
+		m.Path = pathByID[rows[i].ID.String()]
+		out.Folders = append(out.Folders, m)
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
 		out.NextPageToken = rows[len(rows)-1].ID.String()
@@ -344,7 +354,7 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsg(a)}), nil
+			return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -352,7 +362,7 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
+	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
 // UpdateAssetConfig upserts an asset's typed config (admin only). The
@@ -407,9 +417,15 @@ func (s *CatalogServer) ListAssetsByFolder(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	folderPath, err := s.q.FolderPath(ctx, fid)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 	out := &catalogv1.ListAssetsByFolderResponse{}
 	for i := range rows {
-		out.Assets = append(out.Assets, toAssetMsg(rows[i]))
+		m := toAssetMsg(rows[i])
+		m.Path = joinPath(folderPath, rows[i].Name)
+		out.Assets = append(out.Assets, m)
 	}
 	return connect.NewResponse(out), nil
 }
