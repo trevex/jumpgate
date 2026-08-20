@@ -468,10 +468,80 @@ func (s *CatalogServer) ListVisibleAssets(ctx context.Context, _ *connect.Reques
 	return connect.NewResponse(out), nil
 }
 
-// ResolveAsset maps a ref (uuid or dotted path) to an asset id the caller can reach.
-// Stub: full implementation is in Task 4.
-func (s *CatalogServer) ResolveAsset(_ context.Context, _ *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// ResolveAsset maps a uuid or DNS-style dotted path to an asset id, but only for an
+// asset the caller can reach. Unknown-ref and no-access both return NotFound
+// (existence hiding). The response path is the canonical DNS path.
+func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	ref := req.Msg.Ref
+
+	var assetID, folderID uuid.UUID
+	var assetName string
+	if id, perr := uuid.Parse(ref); perr == nil {
+		a, err := s.q.GetAsset(ctx, id)
+		if err != nil {
+			return nil, notFoundOrInternal(err)
+		}
+		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+	} else {
+		segs := strings.Split(ref, ".")
+		if len(segs) < 2 {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+		}
+		name := segs[0]
+		var parent pgtype.UUID // NULL = top level
+		var fid uuid.UUID
+		for i := len(segs) - 1; i >= 1; i-- { // walk root→leaf (segs reversed: leaf is segs[0])
+			f, err := s.q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
+			if err != nil {
+				return nil, notFoundOrInternal(err)
+			}
+			fid = f.ID
+			parent = pgUUID(f.ID)
+		}
+		a, err := s.q.AssetByFolderName(ctx, gen.AssetByFolderNameParams{FolderID: fid, Name: name})
+		if err != nil {
+			return nil, notFoundOrInternal(err)
+		}
+		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+	}
+
+	// Access check + existence hiding: only reveal assets the caller can see.
+	vis, err := s.authorizer.VisibleAssets(ctx, u.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	seen := false
+	for _, v := range vis {
+		if v.AssetID == assetID {
+			seen = true
+			break
+		}
+	}
+	if !seen {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+
+	fp, err := s.q.FolderPath(ctx, folderID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.ResolveAssetResponse{
+		AssetId: assetID.String(),
+		Path:    joinPath(fp, assetName),
+	}), nil
+}
+
+// notFoundOrInternal maps pgx.ErrNoRows to NotFound (existence hiding) and any other
+// error to Internal.
+func notFoundOrInternal(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+	return connect.NewError(connect.CodeInternal, err)
 }
 
 // GetAssetAccess returns the caller's roles on one asset; NotFound if invisible.

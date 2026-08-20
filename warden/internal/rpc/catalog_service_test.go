@@ -10,11 +10,13 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	gossh "golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // seedAssetSecret inserts an asset_secrets row directly (a dummy sealed blob is
@@ -512,5 +514,89 @@ func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 	}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin UpdateAssetConfig = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+// giveAssetAccess grants the user (looked up by email) a standing role with
+// ssh:login:* on the given asset, seeded directly via DB queries. This mirrors
+// the authz-seeding pattern used by the m4a e2e and authz unit tests.
+func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	u, err := q.GetUserByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("giveAssetAccess: GetUserByEmail(%s): %v", email, err)
+	}
+	aid, err := uuid.Parse(assetID)
+	if err != nil {
+		t.Fatalf("giveAssetAccess: parse assetID %s: %v", assetID, err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "resolve-test-" + uuid.NewString(),
+		ResourceType: "asset",
+		Capabilities: []byte(`["ssh:login:*"]`),
+	})
+	if err != nil {
+		t.Fatalf("giveAssetAccess: CreateRole: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:       role.ID,
+		ScopeAssetID: pgtype.UUID{Bytes: aid, Valid: true},
+		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("giveAssetAccess: CreateRoleBinding: %v", err)
+	}
+}
+
+func TestResolveAsset(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	prod, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("prod: %v", err)
+	}
+	db, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Kind: "ssh"}), tok))
+	if err != nil {
+		t.Fatalf("asset: %v", err)
+	}
+
+	// A non-admin user WITH access to the asset (role w/ ssh:login:* + standing binding).
+	seedUser(t, pool, "u@x", "password123", false)
+	utok := authClient(t, url, "u@x", "password123")
+	giveAssetAccess(t, pool, "u@x", a.Msg.Asset.Id)
+	uc := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+
+	// path ref resolves for the entitled user → canonical DNS path
+	got, err := uc.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), utok))
+	if err != nil {
+		t.Fatalf("resolve path: %v", err)
+	}
+	if got.Msg.AssetId != a.Msg.Asset.Id || got.Msg.Path != "pg.db.prod" {
+		t.Fatalf("resolve = {%s,%s}, want {%s, pg.db.prod}", got.Msg.AssetId, got.Msg.Path, a.Msg.Asset.Id)
+	}
+	// uuid ref round-trips to the canonical path
+	gotID, err := uc.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: a.Msg.Asset.Id}), utok))
+	if err != nil || gotID.Msg.Path != "pg.db.prod" {
+		t.Fatalf("resolve uuid = %v / path=%q", err, gotID.Msg.GetPath())
+	}
+	// a user with NO access → NotFound (indistinguishable from absent)
+	seedUser(t, pool, "no@x", "password123", false)
+	notok := authClient(t, url, "no@x", "password123")
+	if _, err := uc.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), notok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("no-access = %v, want NotFound", connect.CodeOf(err))
+	}
+	// a wrong path → NotFound even for the entitled user
+	if _, err := uc.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "nope.db.prod"}), utok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("bad path = %v, want NotFound", connect.CodeOf(err))
 	}
 }
