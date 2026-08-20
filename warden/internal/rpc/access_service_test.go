@@ -791,6 +791,71 @@ func TestRequestPolicySelfServiceAndMaxDuration(t *testing.T) {
 	}
 }
 
+// TestResolvePolicy verifies AccessService.ResolvePolicy: admin resolves
+// (name, asset_id) → policy_id; wrong name → NotFound; non-admin → PermissionDenied.
+func TestResolvePolicy(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	ctx := context.Background()
+
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "deploy-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := role.Msg.Role.Id
+
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folder.Msg.Folder.Id, Name: "web-server",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	assetID := asset.Msg.Asset.Id
+
+	// Create a named asset-scoped policy.
+	p1, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            roleID,
+		ScopeAssetId:      assetID,
+		RequiredApprovals: 1,
+		Name:              "approve-deploy",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create named policy: %v", err)
+	}
+	polID := p1.Msg.Policy.Id
+
+	ac := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	// admin resolves by (name, asset_id)
+	got, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "approve-deploy", AssetId: assetID}), tok))
+	if err != nil || got.Msg.PolicyId != polID {
+		var gotID string
+		if got != nil {
+			gotID = got.Msg.PolicyId
+		}
+		t.Fatalf("resolve = %v / %q, want %s", err, gotID, polID)
+	}
+	// wrong name → NotFound
+	if _, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "nope", AssetId: assetID}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("wrong name = %v, want NotFound", connect.CodeOf(err))
+	}
+	// non-admin → PermissionDenied
+	seedUser(t, pool, "u2@x", "password123", false)
+	utok := authClient(t, url, "u2@x", "password123")
+	if _, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "approve-deploy", AssetId: assetID}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
 // TestRequestPolicyRequesterSide is the additive requester-side coverage:
 // CreateRequestPolicy with requester_role_id set + a kind='requester' subject
 // that round-trips via ListPolicySubjects.
