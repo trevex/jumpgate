@@ -74,6 +74,12 @@ func TestScenario(t *testing.T) {
 		e.asActor(t, "admin", "users", "create", st.aliceEmail, "--name", "Alice", "--password", alicePass)
 		e.asActor(t, "admin", "users", "create", st.bobEmail, "--name", "Bob", "--password", bobPass)
 
+		// An "sre" group with both users as members. Permissions below are assigned
+		// to the group, not the individuals — access flows through group membership.
+		e.asActor(t, "admin", "groups", "create", e.name("sre"))
+		e.asActor(t, "admin", "groups", "add-member", e.name("sre"), st.aliceEmail)
+		e.asActor(t, "admin", "groups", "add-member", e.name("sre"), st.bobEmail)
+
 		// Request policy: the ssh-deploy role is requestable at the asset scope,
 		// requiring one approval.
 		polOut := e.asActor(t, "admin", "policies", "create",
@@ -84,12 +90,10 @@ func TestScenario(t *testing.T) {
 		if polID == "" {
 			t.Fatalf("no policy id:\n%s", polOut)
 		}
-		// Alice and bob are BOTH requester and approver, so either can request and
-		// either can approve the other.
-		for _, email := range []string{st.aliceEmail, st.bobEmail} {
-			e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "requester", "--user", email)
-			e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "approver", "--user", email)
-		}
+		// The sre group is BOTH requester and approver, so any member can request and
+		// any other member can approve — cross-approval via group membership.
+		e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "requester", "--group", e.name("sre"))
+		e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "approver", "--group", e.name("sre"))
 	})
 
 	t.Run("act0b_stored_secret_setup", func(t *testing.T) {
@@ -126,11 +130,12 @@ func TestScenario(t *testing.T) {
 		e.asActor(t, "admin", "assets", "ssh", "login", "set", st.keyAssetID,
 			"--login", "demo", "--kind", "key", "--key-file", "../env/testworkload/demo_key")
 
-		// Standing bindings for alice on both assets (resolve assets by id — admin
-		// has no visibility to a not-yet-granted asset by name).
+		// Standing bindings for the sre group on both assets (resolve assets by id —
+		// admin has no visibility to a not-yet-granted asset by name). Alice reaches
+		// them through her sre membership, not a direct user binding.
 		for _, id := range []string{st.pwAssetID, st.keyAssetID} {
 			e.asActor(t, "admin", "bindings", "create",
-				"--role", e.name("ssh-demo"), "--user", st.aliceEmail, "--asset", id)
+				"--role", e.name("ssh-demo"), "--group", e.name("sre"), "--asset", id)
 		}
 	})
 
