@@ -996,3 +996,60 @@ func TestRoleFolderScopeUniqueness(t *testing.T) {
 		t.Fatalf("bad name = %v, want InvalidArgument", connect.CodeOf(err))
 	}
 }
+
+// TestResolveRole resolves a role by uuid, bare global name, and <role>.<folder-path>,
+// and hides misses as NotFound; non-admins are denied.
+func TestResolveRole(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	seedUser(t, pool, "user@x", "password123", false)
+	utok := authClient(t, url, "user@x", "password123")
+	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	pr, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("folder: %v", err)
+	}
+	prod := pr.Msg.GetFolder().GetId()
+	gr, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "engineer", Capabilities: []string{"ssh:login:deploy"}}), tok))
+	if err != nil {
+		t.Fatalf("global role: %v", err)
+	}
+	sr, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "engineer", FolderId: prod, Capabilities: []string{"ssh:login:deploy"}}), tok))
+	if err != nil {
+		t.Fatalf("scoped role: %v", err)
+	}
+
+	got, err := access.ResolveRole(ctx, withToken(connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: sr.Msg.Role.Id}), tok))
+	if err != nil || got.Msg.RoleId != sr.Msg.Role.Id {
+		t.Fatalf("resolve by uuid: %v / %s", err, got.Msg.GetRoleId())
+	}
+	got, err = access.ResolveRole(ctx, withToken(connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: "engineer"}), tok))
+	if err != nil || got.Msg.RoleId != gr.Msg.Role.Id {
+		t.Fatalf("resolve global: %v / %s", err, got.Msg.GetRoleId())
+	}
+	got, err = access.ResolveRole(ctx, withToken(connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: "engineer.prod"}), tok))
+	if err != nil || got.Msg.RoleId != sr.Msg.Role.Id {
+		t.Fatalf("resolve scoped: %v / %s", err, got.Msg.GetRoleId())
+	}
+	if got.Msg.Path != "engineer.prod" {
+		t.Fatalf("path = %q, want engineer.prod", got.Msg.Path)
+	}
+	if _, err := access.ResolveRole(ctx, withToken(connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: "engineer.nope"}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("miss = %v, want NotFound", connect.CodeOf(err))
+	}
+	if _, err := access.ResolveRole(ctx, withToken(connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: "engineer"}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// folder_path is now populated on single-role GET reads
+	grow, err := access.GetRole(ctx, withToken(connect.NewRequest(&accessv1.GetRoleRequest{Id: sr.Msg.Role.Id}), tok))
+	if err != nil {
+		t.Fatalf("get scoped role: %v", err)
+	}
+	if grow.Msg.Role.FolderPath != "prod" {
+		t.Fatalf("GetRole folder_path = %q, want prod", grow.Msg.Role.FolderPath)
+	}
+}
