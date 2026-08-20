@@ -10,9 +10,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
-	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 )
 
 type stubCatalog struct {
