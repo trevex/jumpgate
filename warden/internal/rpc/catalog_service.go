@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -166,7 +167,8 @@ func optUUID(s string) (pgtype.UUID, bool, error) {
 	return pgUUID(id), true, nil
 }
 
-// CreateFolder creates a folder (admin only).
+// CreateFolder creates a folder (admin only). The folder row and its catalog_names
+// entry are written in one transaction so sibling uniqueness is enforced atomically.
 func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[catalogv1.CreateFolderRequest]) (*connect.Response[catalogv1.CreateFolderResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
 		return nil, err
@@ -179,11 +181,33 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 		}
 		parent = pgUUID(pid)
 	}
-	f, err := s.q.CreateFolder(ctx, gen.CreateFolderParams{Name: req.Msg.Name, ParentID: parent})
+	name := strings.ToLower(req.Msg.Name)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+
+	f, err := qtx.CreateFolder(ctx, gen.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad parent_id is InvalidArgument, not Internal
 	}
-	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: toFolderMsg(f)}), nil
+	if err := qtx.InsertFolderName(ctx, gen.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
+		return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	msg := toFolderMsg(f)
+	path, err := s.q.FolderPath(ctx, f.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	msg.Path = path
+	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: msg}), nil
 }
 
 // ListFolders lists folders (admin only).
