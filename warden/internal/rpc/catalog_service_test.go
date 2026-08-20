@@ -309,6 +309,48 @@ func TestCatalogGetAsset(t *testing.T) {
 	}
 }
 
+func TestCreateFolderSiblingUniqueness(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+	mk := func(name, parent string) error {
+		req := &catalogv1.CreateFolderRequest{Name: name}
+		if parent != "" {
+			req.ParentId = parent
+		}
+		_, err := c.CreateFolder(ctx, withToken(connect.NewRequest(req), tok))
+		return err
+	}
+
+	if err := mk("prod", ""); err != nil {
+		t.Fatalf("first top-level: %v", err)
+	}
+	if err := mk("prod", ""); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup top-level = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	// case-folded: 'PROD' collides with 'prod'
+	if err := mk("PROD", ""); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("case-folded dup = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	// same name under a different parent is fine
+	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db"}), tok))
+	if err != nil {
+		t.Fatalf("create db: %v", err)
+	}
+	if f.Msg.Folder.Path != "db" {
+		t.Fatalf("top-level folder path = %q, want %q", f.Msg.Folder.Path, "db")
+	}
+	child, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod", ParentId: f.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("prod under db should be allowed: %v", err)
+	}
+	if child.Msg.Folder.Path != "db.prod" {
+		t.Fatalf("child folder path = %q, want %q", child.Msg.Folder.Path, "db.prod")
+	}
+}
+
 // TestCatalogAssetConfigRequiresAdmin locks the admin guard on the config reads/writes.
 func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 	pool, url := newServer(t)
