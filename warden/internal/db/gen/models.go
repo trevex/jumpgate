@@ -153,6 +153,7 @@ type RequestPolicy struct {
 	CreatedAt         time.Time       `json:"created_at"`
 	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
 	MaxDuration       pgtype.Interval `json:"max_duration"`
+	Name              pgtype.Text     `json:"name"`
 }
 
 type RequestPolicySubject struct {

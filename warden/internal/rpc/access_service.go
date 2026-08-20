@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -65,7 +66,16 @@ func toRequestPolicyMsg(r gen.RequestPolicy) *accessv1.RequestPolicy {
 		RequesterRoleId:    pgUUIDToString(r.RequesterRoleID),
 		ApproverRoleId:     pgUUIDToString(r.ApproverRoleID),
 		MaxDurationSeconds: intervalToSeconds(r.MaxDuration),
+		Name:               r.Name.String,
 	}
+}
+
+// pgText maps "" to a NULL pgtype.Text, else a valid one.
+func pgText(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
 }
 
 // secondsToInterval maps a non-negative seconds count to a pgtype.Interval.
@@ -369,6 +379,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 		ApproverRoleID:    approverRole,
 		RequesterRoleID:   requesterRole,
 		MaxDuration:       secondsToInterval(req.Msg.MaxDurationSeconds),
+		Name:              pgText(strings.ToLower(req.Msg.GetName())),
 	})
 	if err != nil {
 		return nil, mapWriteErr(err)
