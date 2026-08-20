@@ -130,7 +130,7 @@ The tunnel is already mutually authenticated all the way to the pinned worker
 deliberate no-op.
 
 Beyond `connect`, the CLI covers the full product surface: **admin** (`users`,
-`groups`, `folders`, `assets onboard/list/get`, `roles`, `bindings`, `policies`),
+`groups`, `folders`, `assets ssh create/login/list/get`, `roles`, `bindings`, `policies`),
 **access requests** (`access request/list/approve/deny/grants`), and **recordings**
 (`recordings list/get/download` — the last fetching a presigned URL to a local
 `.cast`). Every command maps to a warden ConnectRPC service and takes a global
@@ -329,19 +329,26 @@ per kind), initialized once via `VaultService.InitCA(kind)`:
 
 ### The broker + providers ✅
 
-`CredentialBroker.Issue(ctx, userID, assetID, {ClientSSHPubKey, ValidUntil,
-KeyID})` (`warden/internal/vault`) is an **internal Go seam — not an RPC**. It
-loads the asset (`kind`) → its typed config → runs the matching provider:
+`CredentialBroker.Issue(ctx, userID, assetID, {Login, ClientSSHPubKey, ValidUntil,
+KeyID})` (`warden/internal/vault`) is an **internal Go seam — not an RPC**. SSH auth
+is **per-login**: it loads the asset's `ssh_asset_login` rows, enforces the
+`ssh:login:<Login>` capability for the requested `Login` (uniformly, for every kind),
+then runs the provider for that login's `kind`:
 
-- **ssh-ca** (`ssh` asset, `auth_method='ca-cert'`): derives the entitled
-  principals (below), signs `ClientSSHPubKey` with the SSH CA into an SSH **user
-  cert** with `ValidPrincipals = principals`, `ValidBefore = ValidUntil`, and the
-  audit `KeyId`. Returns `{Kind:"ssh-cert"}`.
-- **stored-key / stored-secret** (`ssh` asset, `auth_method='stored-key'`): `Open`s
-  the linked `asset_secret` and returns `{Kind:"secret"}` (no cert).
+- **ca** (`kind='ca'`): signs `ClientSSHPubKey` with the SSH CA into an SSH **user
+  cert** with a **single principal** (`ValidPrincipals = [Login]`), `ValidBefore =
+  ValidUntil`, audit `KeyId`. Returns `{Kind:"ssh-cert"}`.
+- **password** (`kind='password'`): `Open`s the login's linked `asset_secret` and
+  returns `{Kind:"ssh-password"}` (the plain password bytes).
+- **key** (`kind='key'`): `Open`s the login's linked `asset_secret` and returns
+  `{Kind:"ssh-key"}` (the OpenSSH private-key PEM).
 - **x509** provider: mints a short-lived client cert (CN = user identity, `NotAfter
-  = ValidUntil`) via the X.509 CA. **Built + tested, not reachable via a kind yet
-  (M5).**
+  = ValidUntil`) via the X.509 CA. **Built + tested, not reachable via a kind yet.**
+
+The stored secret is **plain** (just the password or private key); the username is the
+login and the kind lives in the `ssh_asset_login` row. A login's `secret_id` is bound
+by a composite FK to a secret **of the same asset**, so one asset's login cannot
+reference another asset's secret.
 
 `ValidUntil` / `KeyID` are **caller-supplied**; in M4 the worker passes the
 granting `access_grant`'s remaining TTL and id so **a credential never outlives its
@@ -352,12 +359,13 @@ validity), post-fact and best-effort like the JIT events.
 ### Capability-driven SSH principals ✅ (Teleport-style)
 
 The broker is the enforcement point for **which OS accounts a user may log in as**.
-It does **not** trust the host's `allowed_logins` wholesale — it intersects that
-list with the user's live capabilities:
+It does **not** trust the asset's login rows wholesale — the requested login must
+survive the intersection with the user's live capabilities, for **every** kind
+(ca/password/key), before any credential is minted:
 
 ```
-principals = { L ∈ ssh_asset_config.allowed_logins
-               : authz.Check(user, asset, "ssh:login:" + L) }
+allow(Login) ⇔ Login ∈ {rows of ssh_asset_login for asset}
+             ∧ authz.Check(user, asset, "ssh:login:" + Login)
 ```
 
 `Check` is the same glob-aware, grant-aware authorizer used everywhere: a role
@@ -381,10 +389,12 @@ Admin-guarded ConnectRPC: `InitCA(kind)` / `GetCAPublic(kind)`; `SetAssetSecret`
 `DeleteAssetSecret` / `ListAssetSecrets` (**metadata only — id/name/created_at,
 never the value**). Sealed private material never leaves the server.
 
-SSH asset connection config (allowed logins, auth method, `stored_secret_id`
-reference, host key, target address) lives on **`CatalogService`**, which owns the
-asset: `CreateAsset` takes an inline typed `config` (so onboarding is one call),
-`GetAsset` returns the asset with its config, and `UpdateAssetConfig` upserts it.
+SSH asset config lives on **`CatalogService`**, which owns the asset: a per-login
+`logins[] {login, kind: ca|password|key, secret_id}` plus host key + target address.
+`CreateAsset` takes an inline typed `config`, `GetAsset` returns the asset with its
+config, and `UpdateAssetConfig` upserts it. The `jumpgate assets ssh` CLI drives it
+(`create` / `login set --kind …` / `login list`); a `password`/`key` login seals its
+secret via `VaultService.SetAssetSecret` and links it by `secret_id`.
 `stored_secret_id` is a reference into the vault's `asset_secrets`; the sealed
 bytes stay in the vault.
 

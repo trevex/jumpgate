@@ -75,6 +75,21 @@ func (e *env) login(t *testing.T, ctx, email, pass string) {
 		"--email", email, "--password", pass)
 }
 
+// asActorStdin is asActor but feeds stdinData to the command's stdin (for
+// `assets ssh login set --password-stdin`).
+func (e *env) asActorStdin(t *testing.T, ctx, stdinData string, args ...string) string {
+	t.Helper()
+	full := append([]string{"--context", ctx}, args...)
+	cmd := exec.Command(e.jgBin, full...)
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+e.configDir)
+	cmd.Stdin = strings.NewReader(stdinData)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("jumpgate %s\nexit: %v\noutput:\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
 // kubectl runs kubectl with the ambient kubeconfig and returns stdout+stderr.
 func (e *env) kubectl(t *testing.T, args ...string) string {
 	t.Helper()

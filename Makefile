@@ -47,11 +47,13 @@ e2e-ssh: ## Opt-in full-stack SSH connect e2e (real warden+gateway+worker binari
 	cd cli && go build ./...
 	cd warden && go test -tags e2e -count=1 -timeout 300s ./e2e/...
 
-kind-images: ## Build the four container images used by the kind env
+kind-images: ## Build the container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/gateway.Dockerfile -t jumpgate/gateway:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/ssh-proxy.Dockerfile -t jumpgate/ssh-proxy:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd.Dockerfile -t jumpgate/testworkload-sshd:dev .
+	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd-password.Dockerfile -t jumpgate/testworkload-sshd-password:dev test/env/testworkload
+	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd-key.Dockerfile -t jumpgate/testworkload-sshd-key:dev test/env/testworkload
 
 kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the ssh test workload
 	kind create cluster --name $(KIND_CLUSTER) --config test/env/cluster.yaml
@@ -60,11 +62,14 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 	$(MAKE) kind-images
 	docker pull $(KUBECTL_IMAGE)
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
 	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f test/env/testworkload/sshd.yaml
 	kubectl rollout status deploy/ssh-target --timeout=120s
+	kubectl apply -f test/env/testworkload/sshd-password.yaml -f test/env/testworkload/sshd-key.yaml
+	kubectl rollout status deploy/ssh-target-password --timeout=120s
+	kubectl rollout status deploy/ssh-target-key --timeout=120s
 
 kind-down: ## Delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER)

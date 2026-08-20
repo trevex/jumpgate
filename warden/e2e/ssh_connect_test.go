@@ -486,12 +486,15 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 
 	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
 		AssetID:       asset.ID,
-		AllowedLogins: []string{login},
-		AuthMethod:    "ca-cert",
 		HostPublicKey: targetHostPub,
 		TargetAddress: targetAddr,
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
+	}
+	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+		AssetID: asset.ID, Login: login, Kind: "ca",
+	}); err != nil {
+		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{

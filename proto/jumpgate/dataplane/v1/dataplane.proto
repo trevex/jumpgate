@@ -63,12 +63,18 @@ message SetupSessionRequest {
   string session_token = 1 [(buf.validate.field).string.min_len = 1];
   string worker_id = 2 [(buf.validate.field).string.min_len = 1];
   bytes client_ssh_public_key = 3 [(buf.validate.field).bytes.min_len = 1]; // Kc — cnf-bound
-  bytes target_public_key = 4 [(buf.validate.field).bytes.min_len = 1]; // Kw — certified for the target
+  bytes target_public_key = 4 [(buf.validate.field).bytes.min_len = 1]; // Kw — certified for the target (ca path)
+  string login = 6 [(buf.validate.field).string.min_len = 1]; // requested target login; warden picks the credential
 }
 message SetupSessionResponse {
   string target_address = 1;
-  bytes ssh_certificate = 2; // over Kw
   string session_id = 3; // token jti / live_sessions PK
   bool recording_required = 4; // worker MUST record or refuse the session
   string recording_object_key = 5; // object key warden assigns for this session's recording
+  // The credential the worker uses to authenticate to the target as the login.
+  oneof credential {
+    bytes ssh_certificate = 2; // ca: OpenSSH cert over Kw
+    string password = 6; // password auth
+    bytes private_key = 7; // key auth: OpenSSH private key PEM
+  }
 }

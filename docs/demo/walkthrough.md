@@ -52,10 +52,23 @@ by name (you will pass the id explicitly below):
 ```bash
 jumpgate --context admin folders create demo
 
-jumpgate --context admin assets onboard ssh demo-box \
+jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
   --login deploy -o json      # note the "id" -> ASSET_ID
+```
+
+`--login deploy` adds a `ca` login (a short-lived signed cert). SSH auth is per-login;
+you can also add password/key logins backed by a stored secret:
+
+```bash
+# a password login (reads the password from stdin, seals it into the vault):
+printf 'the-password\n' | jumpgate --context admin assets ssh login set demo-box \
+  --login svc --kind password --password-stdin
+# a key login (seals the private key file):
+jumpgate --context admin assets ssh login set demo-box \
+  --login svc --kind key --key-file ./id_ed25519
+jumpgate --context admin assets ssh login list demo-box
 ```
 
 Create the role the users will request. Its capability grants the `deploy` SSH login:
