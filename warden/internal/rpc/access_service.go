@@ -24,11 +24,12 @@ import (
 type AccessServer struct {
 	q     *gen.Queries
 	roles *authz.RoleResolver
+	capGuard
 }
 
 // NewAccessServer constructs the AccessService implementation.
-func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver) *AccessServer {
-	return &AccessServer{q: q, roles: roles}
+func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer) *AccessServer {
+	return &AccessServer{q: q, roles: roles, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toAccessRoleMsg(r gen.Role) *accessv1.Role {

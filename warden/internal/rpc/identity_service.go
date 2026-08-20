@@ -12,6 +12,7 @@ import (
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
@@ -35,14 +36,15 @@ type IdentityServer struct {
 	tokens  *auth.TokenService
 	revoker grantRevoker
 	evictor sessionEvictor
+	capGuard
 }
 
 // NewIdentityServer constructs the IdentityService implementation. revoker is
 // used by DeactivateUser to cascade grant revocation and evictor to force-evict
 // the user's remaining live sessions; either may be nil in tests that don't
 // exercise deactivation teardown.
-func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor) *IdentityServer {
-	return &IdentityServer{q: q, tokens: tokens, revoker: revoker, evictor: evictor}
+func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
+	return &IdentityServer{q: q, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toUserMsg(u gen.User) *identityv1.User {

@@ -13,6 +13,7 @@ import (
 	recordingv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
@@ -40,12 +41,13 @@ type RecordingServer struct {
 	audit   *audit.Logger
 	presign Presigner // may be nil → download fails closed
 	urlTTL  time.Duration
+	capGuard
 }
 
 // NewRecordingServer constructs the RecordingService implementation. presign may
 // be nil, in which case GetRecordingDownload returns FailedPrecondition.
-func NewRecordingServer(q *gen.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration) *RecordingServer {
-	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL}
+func NewRecordingServer(q *gen.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer) *RecordingServer {
+	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {

@@ -12,6 +12,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // AccessRequestServer implements accessrequestv1connect.AccessRequestServiceHandler:
@@ -21,11 +23,12 @@ import (
 type AccessRequestServer struct {
 	resolver *approvals.Resolver
 	svc      *accessrequest.Service
+	capGuard
 }
 
 // NewAccessRequestServer constructs the AccessRequestService implementation.
-func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service) *AccessRequestServer {
-	return &AccessRequestServer{resolver: resolver, svc: svc}
+func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *gen.Queries) *AccessRequestServer {
+	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{authz: a, q: q}}
 }
 
 // mapAccessRequestErr maps a domain sentinel to a Connect error.
