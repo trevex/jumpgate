@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
@@ -45,11 +46,14 @@ func TestVaultNilSealerFailsClosed(t *testing.T) {
 }
 
 // newAsset creates a folder + asset (of the given kind) and returns the asset id.
+// Each call uses a unique folder name so multiple calls within a single test do not
+// collide on the catalog_names uniqueness constraint.
 func newAsset(t *testing.T, url, tok, kind string) *catalogv1.Asset {
 	t.Helper()
 	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
-	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "vault-folder"}), tok))
+	folderName := "f-" + uuid.New().String()
+	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: folderName}), tok))
 	if err != nil {
 		t.Fatalf("create folder: %v", err)
 	}
