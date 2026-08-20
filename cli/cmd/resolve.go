@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -13,64 +12,34 @@ import (
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 )
 
-// resolveUserID returns s unchanged if it is already a UUID; otherwise it looks
-// up a user by email via ListUsers and returns the matching id. A missing or
-// ambiguous match is a clear error.
+// resolveUserID returns s unchanged if it is already a UUID; otherwise it resolves
+// a user by email via warden's ResolveUser (admin only).
 func resolveUserID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
 	if _, err := uuid.Parse(s); err == nil {
 		return s, nil
 	}
-
-	req := connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 100})
+	req := connect.NewRequest(&identityv1.ResolveUserRequest{Email: s})
 	cl.Authorize(req)
-	resp, err := cl.Identity().ListUsers(ctx, req)
+	resp, err := cl.Identity().ResolveUser(ctx, req)
 	if err != nil {
 		return "", err
 	}
-
-	var match string
-	for _, u := range resp.Msg.GetUsers() {
-		if u.GetEmail() == s {
-			if match != "" {
-				return "", fmt.Errorf("multiple users match email %q; use the user id", s)
-			}
-			match = u.GetId()
-		}
-	}
-	if match == "" {
-		return "", fmt.Errorf("no user found with email %q", s)
-	}
-	return match, nil
+	return resp.Msg.GetUserId(), nil
 }
 
-// resolveGroupID returns s unchanged if it is already a UUID; otherwise it looks
-// up a group by name via ListGroups and returns the matching id. A missing or
-// ambiguous match is a clear error.
+// resolveGroupID returns s unchanged if it is already a UUID; otherwise it resolves
+// a group by name via warden's ResolveGroup (admin only).
 func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
 	if _, err := uuid.Parse(s); err == nil {
 		return s, nil
 	}
-
-	req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100})
+	req := connect.NewRequest(&identityv1.ResolveGroupRequest{Name: s})
 	cl.Authorize(req)
-	resp, err := cl.Identity().ListGroups(ctx, req)
+	resp, err := cl.Identity().ResolveGroup(ctx, req)
 	if err != nil {
 		return "", err
 	}
-
-	var match string
-	for _, g := range resp.Msg.GetGroups() {
-		if g.GetName() == s {
-			if match != "" {
-				return "", fmt.Errorf("multiple groups match name %q; use the group id", s)
-			}
-			match = g.GetId()
-		}
-	}
-	if match == "" {
-		return "", fmt.Errorf("no group found with name %q", s)
-	}
-	return match, nil
+	return resp.Msg.GetGroupId(), nil
 }
 
 // resolveRoleID maps a uuid | name | <role>.<folder-path> to a role id via warden's
