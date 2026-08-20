@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +44,7 @@ import (
 //  1. SessionService.CreateSession(asset, clientPubKey) → admission token.
 //  2. Worker opens DataplaneService.WorkerStream, Registers, gets an Ack.
 //  3. DataplaneService.SetupSession(token, "w1", clientPubKey) → target + SSH cert
-//     (ValidPrincipals == [deploy]); a live_sessions row exists.
+//     (ValidPrincipals == [deploy@<path>, deploy@<id>]); a live_sessions row exists.
 //  4. AccessRequestService.RevokeGrant (admin) → terminator → LISTEN/NOTIFY →
 //     Listener → registry → worker RECEIVES a Teardown frame; session.terminated audited.
 //  5. Worker replies SessionEnded → the live_sessions row is deleted, session.ended
@@ -270,8 +271,15 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("parsed key is %T, want *ssh.Certificate", pk)
 	}
-	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "deploy" {
-		t.Fatalf("cert ValidPrincipals = %v, want [deploy]", cert.ValidPrincipals)
+	// Principals are host-scoped: [deploy@<path>, deploy@<uuid>].
+	if len(cert.ValidPrincipals) != 2 {
+		t.Fatalf("cert ValidPrincipals = %v, want 2 host-scoped principals", cert.ValidPrincipals)
+	}
+	if !strings.HasPrefix(cert.ValidPrincipals[0], "deploy@") {
+		t.Fatalf("cert ValidPrincipals[0] = %q, want deploy@<path>", cert.ValidPrincipals[0])
+	}
+	if !strings.HasPrefix(cert.ValidPrincipals[1], "deploy@") {
+		t.Fatalf("cert ValidPrincipals[1] = %q, want deploy@<asset-id>", cert.ValidPrincipals[1])
 	}
 
 	// The session id the setup service assigned (== the token's session id).

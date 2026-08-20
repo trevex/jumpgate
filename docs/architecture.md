@@ -336,8 +336,16 @@ is **per-login**: it loads the asset's `ssh_asset_login` rows, enforces the
 then runs the provider for that login's `kind`:
 
 - **ca** (`kind='ca'`): signs `ClientSSHPubKey` with the SSH CA into an SSH **user
-  cert** with a **single principal** (`ValidPrincipals = [Login]`), `ValidBefore =
-  ValidUntil`, audit `KeyId`. Returns `{Kind:"ssh-cert"}`.
+  cert** with **host-scoped principals** (`ValidPrincipals = [login@<asset-path>,
+  login@<asset-id>]`), `ValidBefore = ValidUntil`, audit `KeyId`. Returns
+  `{Kind:"ssh-cert"}`. The cert binds the login to the specific asset: targets
+  accept it via an `AuthorizedPrincipalsFile` listing the expected principal(s)
+  for each login (`<login>@<asset-path>` is the stable, human-readable form
+  automation writes into the file; `<login>@<asset-id>` is the UUID form for
+  rename-safety). The worker validates that every `ValidPrincipal` is of the
+  form `<login>@<scope>`, binding the login identity before forwarding to the
+  target — the target then enforces the host-binding through the
+  `AuthorizedPrincipalsFile` check.
 - **password** (`kind='password'`): `Open`s the login's linked `asset_secret` and
   returns `{Kind:"ssh-password"}` (the plain password bytes).
 - **key** (`kind='key'`): `Open`s the login's linked `asset_secret` and returns
