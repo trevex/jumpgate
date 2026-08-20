@@ -56,13 +56,16 @@ CREATE INDEX idx_assets_folder ON assets(folder_id);
 CREATE INDEX idx_assets_labels ON assets USING gin (labels);
 
 CREATE TABLE roles (
-    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name          text NOT NULL,
-    resource_type text NOT NULL CHECK (resource_type IN ('folder','asset')),
-    capabilities  jsonb NOT NULL DEFAULT '[]'::jsonb,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (name, resource_type)
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name         text NOT NULL CHECK (name ~ '^[a-z0-9_-]+$'),
+    folder_id    uuid REFERENCES folders(id) ON DELETE CASCADE,   -- NULL = global role
+    capabilities jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at   timestamptz NOT NULL DEFAULT now()
 );
+-- Name unique globally among global roles, and per-folder among scoped roles.
+CREATE UNIQUE INDEX uq_role_name_global ON roles(name)            WHERE folder_id IS NULL;
+CREATE UNIQUE INDEX uq_role_name_folder ON roles(folder_id, name) WHERE folder_id IS NOT NULL;
+CREATE INDEX idx_roles_folder ON roles(folder_id) WHERE folder_id IS NOT NULL;
 
 CREATE TABLE role_bindings (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),

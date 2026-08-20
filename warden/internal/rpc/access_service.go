@@ -34,7 +34,12 @@ func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver) *AccessServer {
 func toAccessRoleMsg(r gen.Role) *accessv1.Role {
 	var caps []string
 	_ = json.Unmarshal(r.Capabilities, &caps)
-	return &accessv1.Role{Id: r.ID.String(), Name: r.Name, ResourceType: r.ResourceType, Capabilities: caps}
+	return &accessv1.Role{
+		Id:           r.ID.String(),
+		Name:         r.Name,
+		Capabilities: caps,
+		FolderId:     pgUUIDToString(r.FolderID),
+	}
 }
 
 func toAccessRoleGrantMsg(g gen.RoleGrant) *accessv1.RoleGrant {
@@ -118,9 +123,13 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, ResourceType: req.Msg.ResourceType, Capabilities: capsJSON})
+	folderID, _, err := optUUID(req.Msg.FolderId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("role already exists"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID, Capabilities: capsJSON})
+	if err != nil {
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: toAccessRoleMsg(r)}), nil
 }

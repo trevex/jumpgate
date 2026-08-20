@@ -11,10 +11,14 @@ import (
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 )
 
-var roleHeaders = []string{"ID", "NAME", "RESOURCE TYPE", "CAPABILITIES"}
+var roleHeaders = []string{"ID", "NAME", "FOLDER", "CAPABILITIES"}
 
 func roleRow(r *accessv1.Role) []string {
-	return []string{r.GetId(), r.GetName(), r.GetResourceType(), strings.Join(r.GetCapabilities(), ", ")}
+	folder := r.GetFolderPath()
+	if folder == "" {
+		folder = "global"
+	}
+	return []string{r.GetId(), r.GetName(), folder, strings.Join(r.GetCapabilities(), ", ")}
 }
 
 var rolesCmd = &cobra.Command{
@@ -23,7 +27,6 @@ var rolesCmd = &cobra.Command{
 }
 
 var (
-	rolesCreateResourceType string
 	rolesCreateCapabilities []string
 )
 
@@ -42,7 +45,6 @@ var rolesListCmd = &cobra.Command{
 }
 
 func init() {
-	rolesCreateCmd.Flags().StringVar(&rolesCreateResourceType, "resource-type", "asset", "resource type the role applies to")
 	rolesCreateCmd.Flags().StringSliceVar(&rolesCreateCapabilities, "capability", nil, "capability, e.g. ssh:login:deploy (repeatable or comma-separated)")
 
 	rolesCmd.AddCommand(rolesCreateCmd)
@@ -58,7 +60,6 @@ func runRolesCreate(cmd *cobra.Command, args []string) error {
 
 	req := connect.NewRequest(&accessv1.CreateRoleRequest{
 		Name:         args[0],
-		ResourceType: rolesCreateResourceType,
 		Capabilities: rolesCreateCapabilities,
 	})
 	cl.Authorize(req)

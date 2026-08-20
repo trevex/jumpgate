@@ -535,7 +535,6 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 	}
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
 		Name:         "resolve-test-" + uuid.NewString(),
-		ResourceType: "asset",
 		Capabilities: []byte(`["ssh:login:*"]`),
 	})
 	if err != nil {

@@ -166,11 +166,11 @@ type RequestPolicySubject struct {
 }
 
 type Role struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	ResourceType string    `json:"resource_type"`
-	Capabilities []byte    `json:"capabilities"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           uuid.UUID   `json:"id"`
+	Name         string      `json:"name"`
+	FolderID     pgtype.UUID `json:"folder_id"`
+	Capabilities []byte      `json:"capabilities"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 type RoleBinding struct {

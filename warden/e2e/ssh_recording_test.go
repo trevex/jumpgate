@@ -417,7 +417,7 @@ func seedExemptUser(t *testing.T, pool *pgxpool.Pool) string {
 	assetID := lookupAssetID(t, pool, assetName)
 
 	loginRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-deploy-exempt-login", ResourceType: "asset", Capabilities: capsJSON("ssh:login:" + login),
+		Name: "ssh-deploy-exempt-login", Capabilities: capsJSON("ssh:login:" + login),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole(exempt login): %v", err)
@@ -429,7 +429,7 @@ func seedExemptUser(t *testing.T, pool *pgxpool.Pool) string {
 	}
 
 	exemptRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-record-exempt", ResourceType: "asset", Capabilities: capsJSON("ssh:record:exempt"),
+		Name: "ssh-record-exempt", Capabilities: capsJSON("ssh:record:exempt"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole(exempt): %v", err)

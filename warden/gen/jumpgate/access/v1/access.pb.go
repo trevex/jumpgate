@@ -26,8 +26,9 @@ type Role struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	ResourceType  string                 `protobuf:"bytes,3,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
 	Capabilities  []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	FolderId      string                 `protobuf:"bytes,5,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`       // empty = global
+	FolderPath    string                 `protobuf:"bytes,6,opt,name=folder_path,json=folderPath,proto3" json:"folder_path,omitempty"` // DNS path; empty = global (populated on single-role reads)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -76,13 +77,6 @@ func (x *Role) GetName() string {
 	return ""
 }
 
-func (x *Role) GetResourceType() string {
-	if x != nil {
-		return x.ResourceType
-	}
-	return ""
-}
-
 func (x *Role) GetCapabilities() []string {
 	if x != nil {
 		return x.Capabilities
@@ -90,10 +84,23 @@ func (x *Role) GetCapabilities() []string {
 	return nil
 }
 
+func (x *Role) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
+func (x *Role) GetFolderPath() string {
+	if x != nil {
+		return x.FolderPath
+	}
+	return ""
+}
+
 type CreateRoleRequest struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ResourceType string                 `protobuf:"bytes,2,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Each capability is a colon-delimited scoped path: scope:action[:qualifier…]
 	// (≥2 segments). A segment is lowercase-alphanumeric with internal hyphens.
 	// Glob patterns are permitted in a role's stored list: '*' matches exactly one
@@ -101,6 +108,7 @@ type CreateRoleRequest struct {
 	// final segment). Rejects unscoped ("admin"), empty segments ("k8s:"),
 	// non-final '**' ("k8s:**:x"), and uppercase/junk.
 	Capabilities  []string `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	FolderId      string   `protobuf:"bytes,4,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"` // empty = global
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -142,18 +150,18 @@ func (x *CreateRoleRequest) GetName() string {
 	return ""
 }
 
-func (x *CreateRoleRequest) GetResourceType() string {
-	if x != nil {
-		return x.ResourceType
-	}
-	return ""
-}
-
 func (x *CreateRoleRequest) GetCapabilities() []string {
 	if x != nil {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *CreateRoleRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
 }
 
 type CreateRoleResponse struct {
@@ -2375,17 +2383,18 @@ var File_jumpgate_access_v1_access_proto protoreflect.FileDescriptor
 
 const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\n" +
-	"\x1fjumpgate/access/v1/access.proto\x12\x12jumpgate.access.v1\x1a\x1bbuf/validate/validate.proto\"s\n" +
+	"\x1fjumpgate/access/v1/access.proto\x12\x12jumpgate.access.v1\x1a\x1bbuf/validate/validate.proto\"\xa1\x01\n" +
 	"\x04Role\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
-	"\rresource_type\x18\x03 \x01(\tR\fresourceType\x12\"\n" +
-	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\xfe\x01\n" +
-	"\x11CreateRoleRequest\x12\x1e\n" +
-	"\x04name\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\x129\n" +
-	"\rresource_type\x18\x02 \x01(\tB\x14\xbaH\x11r\x0fR\x06folderR\x05assetR\fresourceType\x12\x8d\x01\n" +
-	"\fcapabilities\x18\x03 \x03(\tBi\xbaHf\x92\x01c\"ar_2]^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$R\fcapabilities\"B\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12\x1b\n" +
+	"\tfolder_id\x18\x05 \x01(\tR\bfolderId\x12\x1f\n" +
+	"\vfolder_path\x18\x06 \x01(\tR\n" +
+	"folderPathJ\x04\b\x03\x10\x04R\rresource_type\"\x91\x02\n" +
+	"\x11CreateRoleRequest\x12-\n" +
+	"\x04name\x18\x01 \x01(\tB\x19\xbaH\x16r\x14\x10\x01\x18\xc8\x012\r^[a-z0-9_-]+$R\x04name\x12\x8d\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\tBi\xbaHf\x92\x01c\"ar_2]^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$R\fcapabilities\x12(\n" +
+	"\tfolder_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderIdJ\x04\b\x02\x10\x03R\rresource_type\"B\n" +
 	"\x12CreateRoleResponse\x12,\n" +
 	"\x04role\x18\x01 \x01(\v2\x18.jumpgate.access.v1.RoleR\x04role\"Y\n" +
 	"\x10ListRolesRequest\x12&\n" +

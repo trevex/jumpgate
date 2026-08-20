@@ -75,6 +75,8 @@ type Querier interface {
 	GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNameAndAssetParams) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
+	GetRoleByFolderAndName(ctx context.Context, arg GetRoleByFolderAndNameParams) (Role, error)
+	GetRoleByNameGlobal(ctx context.Context, name string) (Role, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)

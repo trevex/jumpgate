@@ -39,11 +39,20 @@ service AccessService {
   rpc ExplainRole(ExplainRoleRequest) returns (ExplainRoleResponse) {}
 }
 
-message Role { string id = 1; string name = 2; string resource_type = 3; repeated string capabilities = 4; }
+message Role {
+  string id = 1;
+  string name = 2;
+  reserved 3;                 // was resource_type
+  reserved "resource_type";
+  repeated string capabilities = 4;
+  string folder_id = 5;       // empty = global
+  string folder_path = 6;     // DNS path; empty = global (populated on single-role reads)
+}
 
 message CreateRoleRequest {
-  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
-  string resource_type = 2 [(buf.validate.field).string = {in: ["folder", "asset"]}];
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-z0-9_-]+$"}];
+  reserved 2;                 // was resource_type
+  reserved "resource_type";
   // Each capability is a colon-delimited scoped path: scope:action[:qualifier…]
   // (≥2 segments). A segment is lowercase-alphanumeric with internal hyphens.
   // Glob patterns are permitted in a role's stored list: '*' matches exactly one
@@ -51,6 +60,7 @@ message CreateRoleRequest {
   // final segment). Rejects unscoped ("admin"), empty segments ("k8s:"),
   // non-final '**' ("k8s:**:x"), and uppercase/junk.
   repeated string capabilities = 3 [(buf.validate.field).repeated.items.string.pattern = "^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$"];
+  string folder_id = 4 [(buf.validate.field).string.uuid = true, (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE];  // empty = global
 }
 message CreateRoleResponse { Role role = 1; }
 

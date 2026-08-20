@@ -110,15 +110,15 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	pgstaging = mkAsset(staging.ID, "pg-staging")
 	topsecret = mkAsset(secret.ID, "top-secret")
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "operator", ResourceType: "asset", Capabilities: caps("ssh:connect", "db:read", "db:write")})
+	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "operator", Capabilities: caps("ssh:connect", "db:read", "db:write")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	vw, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "viewer", ResourceType: "asset", Capabilities: caps("db:read")})
+	vw, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "viewer", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps("db:admin")})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps("db:admin")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,11 +240,11 @@ func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-owner", ResourceType: "asset", Capabilities: caps("db:read")})
+	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-owner", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	editor, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-editor", ResourceType: "asset", Capabilities: caps("db:write")})
+	editor, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-editor", Capabilities: caps("db:write")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func TestRequestableViaExplicitSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	breakglass, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "breakglass", ResourceType: "asset", Capabilities: caps("db:admin")})
+	breakglass, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "breakglass", Capabilities: caps("db:admin")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +678,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", ResourceType: "asset", Capabilities: caps("db:read")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,7 +751,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", ResourceType: "asset", Capabilities: caps("db:read")})
+	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,11 +849,11 @@ func TestCheckSameObjectComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", ResourceType: "asset", Capabilities: caps("db:read")})
+	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", ResourceType: "asset", Capabilities: caps("db:write")})
+	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", Capabilities: caps("db:write")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -914,7 +914,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, ResourceType: "asset", Capabilities: caps(patterns...)})
+		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: caps(patterns...)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1055,11 +1055,11 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prereq, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-prereq", ResourceType: "asset", Capabilities: caps("db:read")})
+	prereq, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-prereq", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-target", ResourceType: "asset", Capabilities: caps("db:admin")})
+	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-target", Capabilities: caps("db:admin")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1114,11 +1114,11 @@ func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	granted, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-granted", ResourceType: "asset", Capabilities: caps()})
+	granted, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-granted", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	standing, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-standing", ResourceType: "asset", Capabilities: caps()})
+	standing, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-standing", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1171,11 +1171,11 @@ func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-requester", ResourceType: "asset", Capabilities: caps()})
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-requester", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-target", ResourceType: "asset", Capabilities: caps("db:admin")})
+	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-target", Capabilities: caps("db:admin")})
 	if err != nil {
 		t.Fatal(err)
 	}

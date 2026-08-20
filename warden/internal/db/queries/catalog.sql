@@ -13,6 +13,12 @@ SELECT * FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
 -- name: GetRole :one
 SELECT * FROM roles WHERE id = $1;
 
+-- name: GetRoleByNameGlobal :one
+SELECT * FROM roles WHERE name = $1 AND folder_id IS NULL;
+
+-- name: GetRoleByFolderAndName :one
+SELECT * FROM roles WHERE folder_id = $1 AND name = $2;
+
 -- name: ListRolesByIDs :many
 SELECT * FROM roles WHERE id = ANY($1::uuid[]);
 
