@@ -548,17 +548,12 @@ func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[
 		}
 		folderID = f.ID
 	} else {
-		// Every segment is a folder; the chain is leaf->root, so walk root->leaf.
-		segs := strings.Split(ref, ".")
-		var parent pgtype.UUID // NULL = top level
-		for i := len(segs) - 1; i >= 0; i-- {
-			f, err := s.q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
-			if err != nil {
-				return nil, folderNotFoundOrInternal(err)
-			}
-			folderID = f.ID
-			parent = pgUUID(f.ID)
+		// Every segment is a folder; walk the shared leaf->root path resolver.
+		id, err := resolveFolderIDByPath(ctx, s.q, ref)
+		if err != nil {
+			return nil, folderNotFoundOrInternal(err)
 		}
+		folderID = id
 	}
 
 	fp, err := s.q.FolderPath(ctx, folderID)

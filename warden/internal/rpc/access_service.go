@@ -42,6 +42,19 @@ func toAccessRoleMsg(r gen.Role) *accessv1.Role {
 	}
 }
 
+// roleMsgWithPath returns the role message with folder_path populated (empty for global).
+func (s *AccessServer) roleMsgWithPath(ctx context.Context, r gen.Role) (*accessv1.Role, error) {
+	m := toAccessRoleMsg(r)
+	if r.FolderID.Valid {
+		fp, err := s.q.FolderPath(ctx, uuidFromPg(r.FolderID))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		m.FolderPath = fp
+	}
+	return m, nil
+}
+
 func toAccessRoleGrantMsg(g gen.RoleGrant) *accessv1.RoleGrant {
 	return &accessv1.RoleGrant{
 		Id:           g.ID.String(),
@@ -131,7 +144,52 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, mapWriteErr(err)
 	}
-	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: toAccessRoleMsg(r)}), nil
+	m, err := s.roleMsgWithPath(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: m}), nil
+}
+
+// ResolveRole resolves uuid | name (global) | <role>.<folder-path> (scoped) to a role id (admin only).
+func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[accessv1.ResolveRoleRequest]) (*connect.Response[accessv1.ResolveRoleResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	ref := req.Msg.Ref
+	var role gen.Role
+	if id, perr := uuid.Parse(ref); perr == nil {
+		r, err := s.q.GetRole(ctx, id)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	} else if name, folderPath, ok := strings.Cut(ref, "."); ok {
+		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		r, err := s.q.GetRoleByFolderAndName(ctx, gen.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	} else {
+		r, err := s.q.GetRoleByNameGlobal(ctx, ref)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	}
+	m, err := s.roleMsgWithPath(ctx, role)
+	if err != nil {
+		return nil, err
+	}
+	path := m.Name
+	if m.FolderPath != "" {
+		path = m.Name + "." + m.FolderPath
+	}
+	return connect.NewResponse(&accessv1.ResolveRoleResponse{RoleId: role.ID.String(), Path: path}), nil
 }
 
 // ListRoles lists roles (admin only).
@@ -178,7 +236,11 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	return connect.NewResponse(&accessv1.GetRoleResponse{Role: toAccessRoleMsg(r)}), nil
+	m, err := s.roleMsgWithPath(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&accessv1.GetRoleResponse{Role: m}), nil
 }
 
 // AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"
