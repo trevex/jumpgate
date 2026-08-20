@@ -234,7 +234,6 @@ type User struct {
 	DisplayName   string             `json:"display_name"`
 	CreatedAt     time.Time          `json:"created_at"`
 	PasswordHash  string             `json:"password_hash"`
-	IsAdmin       bool               `json:"is_admin"`
 	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
 }
 

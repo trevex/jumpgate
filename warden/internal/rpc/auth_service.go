@@ -46,7 +46,7 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&authv1.LoginResponse{Token: tok, UserId: u.ID.String(), IsAdmin: u.IsAdmin}), nil
+	return connect.NewResponse(&authv1.LoginResponse{Token: tok, UserId: u.ID.String()}), nil
 }
 
 // WhoAmI returns the caller's identity.
@@ -59,5 +59,5 @@ func (s *AuthServer) WhoAmI(ctx context.Context, _ *connect.Request[authv1.WhoAm
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&authv1.WhoAmIResponse{UserId: full.ID.String(), Email: full.Email, DisplayName: full.DisplayName, IsAdmin: full.IsAdmin}), nil
+	return connect.NewResponse(&authv1.WhoAmIResponse{UserId: full.ID.String(), Email: full.Email, DisplayName: full.DisplayName}), nil
 }

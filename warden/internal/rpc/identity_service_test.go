@@ -33,6 +33,35 @@ func withToken[T any](req *connect.Request[T], tok string) *connect.Request[T] {
 	return req
 }
 
+// TestManagementIsCapabilityOnly proves management authz is capability-only:
+// there is no is_admin path. A freshly-created user with NO role bindings is
+// PermissionDenied on a management RPC, while the bootstrap/harness admin (who is
+// admitted ONLY by holding `**` via a global role binding) is allowed.
+func TestManagementIsCapabilityOnly(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)  // admin=true seeds `**` globally
+	seedUser(t, pool, "nobody@x", "nobodypass", false) // no caps, no bindings
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Capless user → PermissionDenied on a management RPC.
+	nobodyTok := authClient(t, url, "nobody@x", "nobodypass")
+	_, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "x1@x", DisplayName: "X1", Password: "password123",
+	}), nobodyTok))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("capless create code = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// Admin holding `**` → allowed.
+	adminTok := adminToken(t, url)
+	if _, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "x2@x", DisplayName: "X2", Password: "password123",
+	}), adminTok)); err != nil {
+		t.Fatalf("admin create: %v", err)
+	}
+}
+
 func TestUsersCRUDRequiresAdmin(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -87,7 +116,7 @@ func seedCapUser(t *testing.T, pool *pgxpool.Pool, email, pw string, capsJSON st
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: false})
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatal(err)
 	}

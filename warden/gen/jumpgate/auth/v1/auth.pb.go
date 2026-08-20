@@ -78,7 +78,6 @@ type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	IsAdmin       bool                   `protobuf:"varint,3,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -127,13 +126,6 @@ func (x *LoginResponse) GetUserId() string {
 	return ""
 }
 
-func (x *LoginResponse) GetIsAdmin() bool {
-	if x != nil {
-		return x.IsAdmin
-	}
-	return false
-}
-
 type WhoAmIRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -175,7 +167,6 @@ type WhoAmIResponse struct {
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	IsAdmin       bool                   `protobuf:"varint,4,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -231,13 +222,6 @@ func (x *WhoAmIResponse) GetDisplayName() string {
 	return ""
 }
 
-func (x *WhoAmIResponse) GetIsAdmin() bool {
-	if x != nil {
-		return x.IsAdmin
-	}
-	return false
-}
-
 var File_jumpgate_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
@@ -245,17 +229,15 @@ const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
 	"\x1bjumpgate/auth/v1/auth.proto\x12\x10jumpgate.auth.v1\x1a\x1bbuf/validate/validate.proto\"R\n" +
 	"\fLoginRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
-	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"Y\n" +
+	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"N\n" +
 	"\rLoginResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x19\n" +
-	"\bis_admin\x18\x03 \x01(\bR\aisAdmin\"\x0f\n" +
-	"\rWhoAmIRequest\"}\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userIdJ\x04\b\x03\x10\x04R\bis_admin\"\x0f\n" +
+	"\rWhoAmIRequest\"r\n" +
 	"\x0eWhoAmIResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x19\n" +
-	"\bis_admin\x18\x04 \x01(\bR\aisAdmin2\xa8\x01\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin2\xa8\x01\n" +
 	"\vAuthService\x12J\n" +
 	"\x05Login\x12\x1e.jumpgate.auth.v1.LoginRequest\x1a\x1f.jumpgate.auth.v1.LoginResponse\"\x00\x12M\n" +
 	"\x06WhoAmI\x12\x1f.jumpgate.auth.v1.WhoAmIRequest\x1a .jumpgate.auth.v1.WhoAmIResponse\"\x00B?Z=github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1b\x06proto3"

@@ -20,9 +20,10 @@ message LoginRequest {
 }
 
 message LoginResponse {
-  string token    = 1;
-  string user_id  = 2;
-  bool   is_admin = 3;
+  string token   = 1;
+  string user_id = 2;
+  reserved 3;
+  reserved "is_admin";
 }
 
 message WhoAmIRequest {}
@@ -31,5 +32,6 @@ message WhoAmIResponse {
   string user_id      = 1;
   string email        = 2;
   string display_name = 3;
-  bool   is_admin     = 4;
+  reserved 4;
+  reserved "is_admin";
 }

@@ -29,13 +29,6 @@ func TestUpCreatesAuthObjects(t *testing.T) {
 	if !exists {
 		t.Fatal("auth_tokens table not created")
 	}
-	if err := pool.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_admin')`).Scan(&exists); err != nil {
-		t.Fatal(err)
-	}
-	if !exists {
-		t.Fatal("users.is_admin column not created")
-	}
 }
 
 func TestUpCreatesSchema(t *testing.T) {

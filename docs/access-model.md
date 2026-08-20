@@ -19,7 +19,7 @@ conceptual reference behind the `Authorizer` and the approval `Resolver`.
 
 | Entity | What it is |
 |---|---|
-| **User** | A local account (email, argon2id password, `is_admin` flag, `deactivated_at`). |
+| **User** | A local account (email, argon2id password, `deactivated_at`). There is no admin flag: administrative power comes solely from holding capabilities (the bootstrap admin holds `**` via a global role binding). |
 | **Group** | A named set of subjects. A group's members are users *and/or other groups* → **nested groups**. |
 | **Folder** | A container in a hierarchy (`parent_id`). Organizes assets and is the unit of folder-scoped **inheritance**. |
 | **Asset** | A protected resource (an SSH host, a Postgres DB, a k8s cluster, …). Belongs to exactly one folder; carries free-form `labels`. |

@@ -525,7 +525,7 @@ func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: true})
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
@@ -535,6 +535,19 @@ func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
 	}
 	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatalf("set admin password: %v", err)
+	}
+	// Mirror bootstrap.EnsureAdmin: the admin holds `**` globally via a scopeless
+	// standing binding so the capability-gated management handlers (e.g. RevokeGrant)
+	// admit it. There is no is_admin boolean anymore; authz is capability-only.
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
+	if err != nil {
+		t.Fatalf("create admin role: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        role.ID,
+		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("bind admin role: %v", err)
 	}
 }
 

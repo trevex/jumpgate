@@ -15,7 +15,7 @@ func seedConfig(t *testing.T) {
 	f := config.File{
 		CurrentContext: "prod",
 		Contexts: map[string]config.Context{
-			"prod": {WardenAddr: "https://prod:8080", Token: "p-tok", IsAdmin: true},
+			"prod": {WardenAddr: "https://prod:8080", Token: "p-tok"},
 			"dev":  {WardenAddr: "http://dev:8080", Token: "d-tok"},
 		},
 	}

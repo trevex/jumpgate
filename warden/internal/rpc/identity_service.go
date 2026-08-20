@@ -48,7 +48,7 @@ func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantR
 }
 
 func toUserMsg(u gen.User) *identityv1.User {
-	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, IsAdmin: u.IsAdmin}
+	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName}
 }
 
 func toGroupMsg(g gen.Group) *identityv1.Group {
@@ -69,7 +69,7 @@ func (s *IdentityServer) CreateUser(ctx context.Context, req *connect.Request[id
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	u, err := s.q.CreateUserFull(ctx, gen.CreateUserFullParams{
-		Email: req.Msg.Email, DisplayName: req.Msg.DisplayName, IsAdmin: req.Msg.IsAdmin,
+		Email: req.Msg.Email, DisplayName: req.Msg.DisplayName,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("email already exists"))

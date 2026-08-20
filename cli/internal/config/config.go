@@ -31,7 +31,6 @@ type Context struct {
 	WardenAddr string `json:"warden_addr"`
 	CAFile     string `json:"ca_file,omitempty"`
 	Token      string `json:"token"`
-	IsAdmin    bool   `json:"is_admin,omitempty"`
 }
 
 // File is the persisted CLI configuration: named contexts + the current one.

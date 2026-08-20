@@ -74,7 +74,7 @@ ORDER BY id
 LIMIT $2;
 
 -- name: CreateUserFull :one
-INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING *;
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING *;
 
 -- name: ListGroupsPaged :many
 SELECT * FROM groups

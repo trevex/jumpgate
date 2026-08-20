@@ -162,7 +162,7 @@ func (q *Queries) CreateRoleBinding(ctx context.Context, arg CreateRoleBindingPa
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, deactivated_at
 `
 
 type CreateUserParams struct {
@@ -179,24 +179,22 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DisplayName,
 		&i.CreatedAt,
 		&i.PasswordHash,
-		&i.IsAdmin,
 		&i.DeactivatedAt,
 	)
 	return i, err
 }
 
 const createUserFull = `-- name: CreateUserFull :one
-INSERT INTO users (email, display_name, is_admin) VALUES ($1, $2, $3) RETURNING id, email, display_name, created_at, password_hash, is_admin, deactivated_at
+INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING id, email, display_name, created_at, password_hash, deactivated_at
 `
 
 type CreateUserFullParams struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
-	IsAdmin     bool   `json:"is_admin"`
 }
 
 func (q *Queries) CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUserFull, arg.Email, arg.DisplayName, arg.IsAdmin)
+	row := q.db.QueryRow(ctx, createUserFull, arg.Email, arg.DisplayName)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -204,7 +202,6 @@ func (q *Queries) CreateUserFull(ctx context.Context, arg CreateUserFullParams) 
 		&i.DisplayName,
 		&i.CreatedAt,
 		&i.PasswordHash,
-		&i.IsAdmin,
 		&i.DeactivatedAt,
 	)
 	return i, err
@@ -324,7 +321,7 @@ func (q *Queries) ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) 
 }
 
 const listGroupMemberUsers = `-- name: ListGroupMemberUsers :many
-SELECT u.id, u.email, u.display_name, u.created_at, u.password_hash, u.is_admin, u.deactivated_at FROM users u
+SELECT u.id, u.email, u.display_name, u.created_at, u.password_hash, u.deactivated_at FROM users u
 JOIN group_memberships gm ON gm.member_user_id = u.id
 WHERE gm.group_id = $1
 ORDER BY u.id
@@ -345,7 +342,6 @@ func (q *Queries) ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) (
 			&i.DisplayName,
 			&i.CreatedAt,
 			&i.PasswordHash,
-			&i.IsAdmin,
 			&i.DeactivatedAt,
 		); err != nil {
 			return nil, err
@@ -391,7 +387,7 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, display_name, created_at, password_hash, is_admin, deactivated_at FROM users
+SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users
 WHERE ($1::uuid IS NULL OR id > $1)
 ORDER BY id
 LIMIT $2
@@ -417,7 +413,6 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.DisplayName,
 			&i.CreatedAt,
 			&i.PasswordHash,
-			&i.IsAdmin,
 			&i.DeactivatedAt,
 		); err != nil {
 			return nil, err

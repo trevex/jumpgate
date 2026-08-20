@@ -87,7 +87,6 @@ subject (XOR).
 | `email` | unique |
 | `display_name` | |
 | `password_hash` | argon2id (added in `0002`; default `''`) |
-| `is_admin` | admin guard flag (added in `0002`) |
 | `deactivated_at` | timestamptz, nullable (added in `0006`); **NULL = active**. Non-NULL ⇒ the account is rejected at Login and at the auth interceptor. See [security.md](security.md#account-deactivation). |
 
 ### `groups` — named subject sets

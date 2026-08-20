@@ -98,7 +98,7 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: admin})
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestLoginAndWhoAmI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if resp.Msg.Token == "" || !resp.Msg.IsAdmin {
+	if resp.Msg.Token == "" {
 		t.Fatalf("unexpected login response: %+v", resp.Msg)
 	}
 
@@ -151,7 +151,7 @@ func TestLoginAndWhoAmI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("whoami: %v", err)
 	}
-	if wr.Msg.Email != "admin@x" || !wr.Msg.IsAdmin {
+	if wr.Msg.Email != "admin@x" {
 		t.Fatalf("whoami mismatch: %+v", wr.Msg)
 	}
 
