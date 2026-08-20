@@ -36,3 +36,6 @@ jumpgate-mesh-ca.pem
 
 # e2e runtime fixtures (built CLI binary, exported mesh CA, per-actor config)
 /test/fixtures/
+
+# Local git worktrees for isolated task execution
+.claude/worktrees/
