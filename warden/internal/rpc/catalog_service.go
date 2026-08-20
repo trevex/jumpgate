@@ -535,6 +535,12 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 	}), nil
 }
 
+// ResolveFolder maps a uuid or DNS-style dotted path to a folder id (admin only).
+// Unknown ref returns NotFound. Implementation is provided by Task 2.
+func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[catalogv1.ResolveFolderRequest]) (*connect.Response[catalogv1.ResolveFolderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // notFoundOrInternal maps pgx.ErrNoRows to NotFound (existence hiding) and any other
 // error to Internal.
 func notFoundOrInternal(err error) error {

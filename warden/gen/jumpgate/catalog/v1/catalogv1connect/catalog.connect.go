@@ -59,6 +59,9 @@ const (
 	// CatalogServiceResolveAssetProcedure is the fully-qualified name of the CatalogService's
 	// ResolveAsset RPC.
 	CatalogServiceResolveAssetProcedure = "/jumpgate.catalog.v1.CatalogService/ResolveAsset"
+	// CatalogServiceResolveFolderProcedure is the fully-qualified name of the CatalogService's
+	// ResolveFolder RPC.
+	CatalogServiceResolveFolderProcedure = "/jumpgate.catalog.v1.CatalogService/ResolveFolder"
 )
 
 // CatalogServiceClient is a client for the jumpgate.catalog.v1.CatalogService service.
@@ -72,6 +75,7 @@ type CatalogServiceClient interface {
 	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
+	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
 }
 
 // NewCatalogServiceClient constructs a client for the jumpgate.catalog.v1.CatalogService service.
@@ -139,6 +143,12 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("ResolveAsset")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveFolder: connect.NewClient[v1.ResolveFolderRequest, v1.ResolveFolderResponse](
+			httpClient,
+			baseURL+CatalogServiceResolveFolderProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("ResolveFolder")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -153,6 +163,7 @@ type catalogServiceClient struct {
 	listVisibleAssets  *connect.Client[v1.ListVisibleAssetsRequest, v1.ListVisibleAssetsResponse]
 	getAssetAccess     *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
 	resolveAsset       *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
+	resolveFolder      *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
 }
 
 // CreateFolder calls jumpgate.catalog.v1.CatalogService.CreateFolder.
@@ -200,6 +211,11 @@ func (c *catalogServiceClient) ResolveAsset(ctx context.Context, req *connect.Re
 	return c.resolveAsset.CallUnary(ctx, req)
 }
 
+// ResolveFolder calls jumpgate.catalog.v1.CatalogService.ResolveFolder.
+func (c *catalogServiceClient) ResolveFolder(ctx context.Context, req *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error) {
+	return c.resolveFolder.CallUnary(ctx, req)
+}
+
 // CatalogServiceHandler is an implementation of the jumpgate.catalog.v1.CatalogService service.
 type CatalogServiceHandler interface {
 	CreateFolder(context.Context, *connect.Request[v1.CreateFolderRequest]) (*connect.Response[v1.CreateFolderResponse], error)
@@ -211,6 +227,7 @@ type CatalogServiceHandler interface {
 	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
+	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
 }
 
 // NewCatalogServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -274,6 +291,12 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("ResolveAsset")),
 		connect.WithHandlerOptions(opts...),
 	)
+	catalogServiceResolveFolderHandler := connect.NewUnaryHandler(
+		CatalogServiceResolveFolderProcedure,
+		svc.ResolveFolder,
+		connect.WithSchema(catalogServiceMethods.ByName("ResolveFolder")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.catalog.v1.CatalogService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CatalogServiceCreateFolderProcedure:
@@ -294,6 +317,8 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceGetAssetAccessHandler.ServeHTTP(w, r)
 		case CatalogServiceResolveAssetProcedure:
 			catalogServiceResolveAssetHandler.ServeHTTP(w, r)
+		case CatalogServiceResolveFolderProcedure:
+			catalogServiceResolveFolderHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -337,4 +362,8 @@ func (UnimplementedCatalogServiceHandler) GetAssetAccess(context.Context, *conne
 
 func (UnimplementedCatalogServiceHandler) ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ResolveAsset is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ResolveFolder is not implemented"))
 }
