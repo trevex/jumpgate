@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	}
 	// Build the CLI once into fixtures. The cli module resolves the warden dependency
 	// via its own go.mod replace, so this builds the same in or out of the workspace.
-	jgBin := filepath.Join(fixtures, "jumpgate-cli")
+	jgBin := filepath.Join(fixtures, "jumpgate")
 	build := exec.Command("go", "build", "-o", jgBin, ".")
 	build.Dir = filepath.Join("..", "..", "cli")
 	build.Env = os.Environ()

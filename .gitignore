@@ -31,7 +31,7 @@ warden/warden-meshcert
 warden/warden-bootstrap
 
 # kind smoke/demo artifacts
-jumpgate-cli
+/jumpgate
 jumpgate-mesh-ca.pem
 
 # e2e runtime fixtures (built CLI binary, exported mesh CA, per-actor config)

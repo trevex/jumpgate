@@ -74,11 +74,13 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 kind-down: ## Delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER)
 
-kind-demo: kind-up ## Bring up the env, export the mesh CA, and print CLI setup
+kind-demo: kind-up ## Bring up the env, export the mesh CA, build the CLI, and print setup
 	kubectl get secret jumpgate-gateway-ext -o go-template='{{index .data "ca.crt" | base64decode}}' > ./jumpgate-mesh-ca.pem
+	cd cli && go build -o ../jumpgate .
 	@echo "warden API:  http://localhost:8080"
 	@echo "gateway:     localhost:8443 (mesh CA: ./jumpgate-mesh-ca.pem)"
 	@echo "admin creds: admin@demo.test / admin-password-1234"
+	@echo "CLI built at ./jumpgate — it is not on PATH, so alias it: alias jumpgate=./jumpgate"
 	@echo "try: jumpgate login --context admin --warden-addr http://localhost:8080"
 
 kind-e2e: kind-up ## Bring up the env, run the Go e2e suite, then tear down (KEEP=1 to keep it up)

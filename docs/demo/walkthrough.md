@@ -20,11 +20,18 @@ TLS when the CLI connects):
 make kind-demo
 ```
 
-`kind-demo` creates the kind cluster, installs the chart, and writes the mesh CA to
-`./jumpgate-mesh-ca.pem`. It prints the endpoints:
+`kind-demo` creates the kind cluster, installs the chart, writes the mesh CA to
+`./jumpgate-mesh-ca.pem`, and builds the CLI to `./jumpgate`. It prints the endpoints:
 
 - warden user API: `http://localhost:8080`
 - gateway: `localhost:8443`
+
+The freshly built `./jumpgate` is not on your PATH. Alias it so the `jumpgate …` commands
+below work as written (skip this if `jumpgate` is already installed on your PATH):
+
+```bash
+alias jumpgate=./jumpgate
+```
 
 Recording downloads are served by the in-cluster object store exposed at
 `localhost:30900`; warden signs its download URLs for that host, so nothing extra is
