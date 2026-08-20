@@ -166,7 +166,7 @@ func TestScenario(t *testing.T) {
 		// With the grant, the asset resolves by name; connect over the tunnel and
 		// run a marker command whose output we can later find in the recording.
 		script := "echo " + marker + "; hostname; whoami; exit\n"
-		out := e.connectWithStdin(t, "alice", "deploy@"+e.name("demo-box"), script)
+		out := e.connectWithStdin(t, "alice", "deploy@"+e.name("demo-box")+"."+e.name("demo"), script)
 		if !strings.Contains(out, marker) {
 			t.Fatalf("connect output missing marker:\n%s", out)
 		}
@@ -175,7 +175,7 @@ func TestScenario(t *testing.T) {
 	t.Run("act3b_alice_connects_password", func(t *testing.T) {
 		// Standing binding + password login: the worker injects the stored password.
 		script := "echo " + marker + "; whoami; exit\n"
-		out := e.connectWithStdin(t, "alice", "demo@"+e.name("password-box"), script)
+		out := e.connectWithStdin(t, "alice", "demo@"+e.name("password-box")+"."+e.name("demo"), script)
 		if !strings.Contains(out, marker) {
 			t.Fatalf("password connect output missing marker:\n%s", out)
 		}
@@ -184,7 +184,7 @@ func TestScenario(t *testing.T) {
 	t.Run("act3c_alice_connects_key", func(t *testing.T) {
 		// Standing binding + key login: the worker injects the stored private key.
 		script := "echo " + marker + "; whoami; exit\n"
-		out := e.connectWithStdin(t, "alice", "demo@"+e.name("key-box"), script)
+		out := e.connectWithStdin(t, "alice", "demo@"+e.name("key-box")+"."+e.name("demo"), script)
 		if !strings.Contains(out, marker) {
 			t.Fatalf("key connect output missing marker:\n%s", out)
 		}
