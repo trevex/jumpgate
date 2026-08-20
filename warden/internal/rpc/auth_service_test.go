@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
@@ -106,6 +108,20 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	}
 	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
+	}
+	// Mirror bootstrap.EnsureAdmin: an admin also holds `**` globally via a scopeless
+	// standing binding so the capability-gated management handlers admit it.
+	if admin {
+		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID:        role.ID,
+			SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
