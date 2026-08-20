@@ -53,8 +53,8 @@ jumpgate login --context admin \
 ```
 
 Create a folder and onboard three sshd test workloads as SSH assets (cert, password, key).
-Capture each asset id — the admin has no standing access to a freshly onboarded asset, so
-it is not yet resolvable by name (you will pass the ids explicitly below):
+Capture the ca box id — non-admin users cannot resolve an asset they haven't been granted access
+to, so alice will pass the id explicitly when requesting:
 
 ```bash
 jumpgate --context admin folders create demo
@@ -62,7 +62,7 @@ jumpgate --context admin folders create demo
 jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
-  --login deploy -o json      # note "id" -> ASSET_ID, and "path" -> demo-box.demo
+  --login deploy -o json      # note "id" -> ASSET_ID (for alice's request); "path" = demo-box.demo
 ```
 
 A CA target only accepts a certificate whose principal it has been told to trust. Provision the
@@ -76,22 +76,22 @@ kubectl exec deploy/ssh-target -- sh -c \
 
 `--login deploy` adds a `ca` login (a short-lived signed cert); this ca box drives the
 request/approve flow below. To show the other two SSH auth kinds, onboard the two dedicated
-workloads as their own assets — each with a `demo` login. A freshly onboarded asset is not yet
-resolvable by name or path (even for the admin), so use the ids from `create`:
+workloads as their own assets — each with a `demo` login. Admin commands can address any asset
+by its DNS path once it exists in the catalog:
 
 ```bash
 # password workload:
 jumpgate --context admin assets ssh create password-box \
   --folder demo \
-  --target ssh-target-password.default.svc.cluster.local:22 -o json   # note the "id" -> PW_ASSET_ID
-printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set <PW_ASSET_ID> \
+  --target ssh-target-password.default.svc.cluster.local:22
+printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set password-box.demo \
   --login demo --kind password --password-stdin
 
 # key workload:
 jumpgate --context admin assets ssh create key-box \
   --folder demo \
-  --target ssh-target-key.default.svc.cluster.local:22 -o json        # note the "id" -> KEY_ASSET_ID
-jumpgate --context admin assets ssh login set <KEY_ASSET_ID> \
+  --target ssh-target-key.default.svc.cluster.local:22
+jumpgate --context admin assets ssh login set key-box.demo \
   --login demo --kind key --key-file test/env/testworkload/demo_key
 ```
 
@@ -124,23 +124,24 @@ jumpgate --context admin groups add-member sre bob@demo.test
 
 Grant the **sre** group **standing** access to the password and key boxes (no request needed — a
 contrast with the ca box's just-in-time flow). Bind `ssh-demo` to the group on each box — the role
-and group resolve by name, but a freshly onboarded asset must be referenced by its id:
+and group resolve by name, and once created the assets are addressable by their DNS path:
 
 ```bash
-jumpgate --context admin bindings create --role ssh-demo --group sre --asset <PW_ASSET_ID>
-jumpgate --context admin bindings create --role ssh-demo --group sre --asset <KEY_ASSET_ID>
+jumpgate --context admin bindings create --role ssh-demo --group sre --asset password-box.demo
+jumpgate --context admin bindings create --role ssh-demo --group sre --asset key-box.demo
 ```
 
 Create a request policy that makes `ssh-deploy` requestable at the asset scope, requiring
 one approval, then make the **sre** group **both** requester and approver — any member can request
-and any *other* member can approve (alice and bob approve each other via the group):
+and any *other* member can approve (alice and bob approve each other via the group). The policy
+is given a name so it can be addressed as `approve-deploy@demo-box.demo`:
 
 ```bash
 jumpgate --context admin policies create \
-  --request-role ssh-deploy --asset <ASSET_ID> --min-approvals 1 -o json   # note the "id" -> POLICY_ID
+  --name approve-deploy --request-role ssh-deploy --asset demo-box.demo --min-approvals 1
 
-jumpgate --context admin policies add-subject <POLICY_ID> --kind requester --group sre
-jumpgate --context admin policies add-subject <POLICY_ID> --kind approver  --group sre
+jumpgate --context admin policies add-subject approve-deploy@demo-box.demo --kind requester --group sre
+jumpgate --context admin policies add-subject approve-deploy@demo-box.demo --kind approver  --group sre
 ```
 
 ## Act 1 — alice requests access
