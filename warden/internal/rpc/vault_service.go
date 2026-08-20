@@ -13,6 +13,7 @@ import (
 
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/pgerr"
@@ -34,12 +35,13 @@ const meshCertTTL = 90 * 24 * time.Hour
 type VaultServer struct {
 	q      *gen.Queries
 	sealer *secrets.Sealer
+	capGuard
 }
 
 // NewVaultServer constructs the VaultService implementation. A nil sealer
 // disables the sealing write paths (vault disabled).
-func NewVaultServer(q *gen.Queries, sealer *secrets.Sealer) *VaultServer {
-	return &VaultServer{q: q, sealer: sealer}
+func NewVaultServer(q *gen.Queries, sealer *secrets.Sealer, a authz.Authorizer) *VaultServer {
+	return &VaultServer{q: q, sealer: sealer, capGuard: capGuard{authz: a, q: q}}
 }
 
 // InitCA generates and seals a new active CA of the requested kind, returning
