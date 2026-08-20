@@ -18,13 +18,23 @@ func (s stubAuthorizer) Check(_ context.Context, _, _ uuid.UUID, capability stri
 // allow, so Capabilities.Allows reproduces Check's answers (the seeded caps are
 // concrete, so CapMatch reduces to equality).
 func (s stubAuthorizer) CapabilitiesOnAsset(_ context.Context, _, _ uuid.UUID) (authz.Capabilities, error) {
+	return s.seededCaps(), nil
+}
+
+// CapabilitiesOnScope returns the same seeded caps for any scope, so Allows
+// reproduces Check globally and on every object.
+func (s stubAuthorizer) CapabilitiesOnScope(_ context.Context, _ uuid.UUID, _ authz.Scope) (authz.Capabilities, error) {
+	return s.seededCaps(), nil
+}
+
+func (s stubAuthorizer) seededCaps() authz.Capabilities {
 	var caps authz.Capabilities
 	for c, ok := range s.allow {
 		if ok {
 			caps = append(caps, c)
 		}
 	}
-	return caps, nil
+	return caps
 }
 func (stubAuthorizer) VisibleAssets(context.Context, uuid.UUID) ([]authz.AssetVisibility, error) {
 	return nil, nil

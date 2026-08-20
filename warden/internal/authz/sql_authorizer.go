@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -198,29 +199,44 @@ SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
 // matching happens in Go (CapMatch) via Capabilities.Allows, so the '*' / trailing
 // '**' semantics stay in one auditable function rather than embedded regex-in-SQL.
 func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
+	return s.CapabilitiesOnObject(ctx, userID, assetID, "asset")
+}
+
+// CapabilitiesOnObject returns every capability pattern the user holds on the
+// given object (kind "asset" or "folder") via the held (standing + active-grant)
+// closure — the object-dimension generalization of CapabilitiesOnAsset. It runs
+// the held closure once and flattens all matching roles' patterns into a single
+// Capabilities set (glob matching stays in Go via CapMatch/Allows).
+func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT r.capabilities
 FROM held h JOIN roles r ON r.id = h.role_id
-WHERE h.object_kind = 'asset' AND h.object_id = $2`, userID, assetID)
+WHERE h.object_kind = $3 AND h.object_id = $2`, userID, objectID, kind)
 	if err != nil {
-		return nil, fmt.Errorf("capabilities on asset: %w", err)
+		return nil, fmt.Errorf("capabilities on object: %w", err)
 	}
 	defer rows.Close()
+	return scanCapabilities(rows)
+}
 
+// scanCapabilities flattens every row's jsonb capability-pattern array (a single
+// `capabilities` column) into one Capabilities set. Shared by CapabilitiesOnObject
+// and the scopeless globalHeldCapabilities query.
+func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 	var caps Capabilities
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("capabilities on asset scan: %w", err)
+			return nil, fmt.Errorf("capabilities scan: %w", err)
 		}
 		var patterns []string
 		if err := json.Unmarshal(raw, &patterns); err != nil {
-			return nil, fmt.Errorf("capabilities on asset unmarshal capabilities: %w", err)
+			return nil, fmt.Errorf("capabilities unmarshal: %w", err)
 		}
 		caps = append(caps, patterns...)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("capabilities on asset rows: %w", err)
+		return nil, fmt.Errorf("capabilities rows: %w", err)
 	}
 	return caps, nil
 }
@@ -237,4 +253,34 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 		return false, err
 	}
 	return caps.Allows(capability), nil
+}
+
+// CapabilitiesOnScope returns the capability patterns the user holds at a
+// management scope: the globally-held caps (scopeless standing bindings, closed
+// over role_grants) ALWAYS apply, plus — for a folder/asset scope — the caps held
+// on that specific object. The two sets are concatenated (glob matching in Go via
+// Allows dedups semantically, so a duplicated pattern is harmless).
+func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	switch scope.Kind {
+	case ScopeGlobal:
+		return global, nil
+	case ScopeFolder:
+		obj, err := s.CapabilitiesOnObject(ctx, userID, scope.ID, "folder")
+		if err != nil {
+			return nil, err
+		}
+		return append(global, obj...), nil
+	case ScopeAsset:
+		obj, err := s.CapabilitiesOnObject(ctx, userID, scope.ID, "asset")
+		if err != nil {
+			return nil, err
+		}
+		return append(global, obj...), nil
+	default:
+		return nil, fmt.Errorf("unknown scope kind %d", scope.Kind)
+	}
 }
