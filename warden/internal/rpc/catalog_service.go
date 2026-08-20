@@ -83,17 +83,17 @@ func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
-// joinPath appends a leaf name to a dotted folder path. folderPath is the containing
-// folder's own dotted path (never empty for a real folder); the asset lives one level
-// below it.
+// joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
+// its folder's leaf->root path. folderPath is the containing folder's own leaf-first
+// path (empty only defensively — a real asset always has a folder).
 func joinPath(folderPath, name string) string {
 	if folderPath == "" {
 		return name
 	}
-	return folderPath + "." + name
+	return name + "." + folderPath
 }
 
-// assetMsgWithPath sets msg.Path = "<folder path>.<asset name>" via a post-commit
+// assetMsgWithPath sets msg.Path = "<asset name>.<folder path>" via a post-commit
 // FolderPath lookup. Best-effort: on a lookup error the path is left empty rather than
 // failing the create, since the asset is already committed.
 func (s *CatalogServer) assetMsgWithPath(ctx context.Context, msg *catalogv1.Asset, folderID uuid.UUID, name string) *catalogv1.Asset {

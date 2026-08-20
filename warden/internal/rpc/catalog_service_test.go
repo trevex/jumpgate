@@ -346,8 +346,8 @@ func TestCreateFolderSiblingUniqueness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prod under db should be allowed: %v", err)
 	}
-	if child.Msg.Folder.Path != "db.prod" {
-		t.Fatalf("child folder path = %q, want %q", child.Msg.Folder.Path, "db.prod")
+	if child.Msg.Folder.Path != "prod.db" {
+		t.Fatalf("child folder path = %q, want %q", child.Msg.Folder.Path, "prod.db")
 	}
 }
 
@@ -372,8 +372,8 @@ func TestCreateAssetSiblingUniqueness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
-	if a.Msg.Asset.Path != "prod.web" {
-		t.Fatalf("asset path = %q, want %q", a.Msg.Asset.Path, "prod.web")
+	if a.Msg.Asset.Path != "web.prod" {
+		t.Fatalf("asset path = %q, want %q", a.Msg.Asset.Path, "web.prod")
 	}
 	// duplicate asset name in the same folder
 	if err := mkAsset("web"); connect.CodeOf(err) != connect.CodeAlreadyExists {
@@ -421,16 +421,16 @@ func TestCatalogReadsPopulatePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.Msg.Asset.Path != "prod.db.pg-primary" {
-		t.Fatalf("GetAsset path = %q, want prod.db.pg-primary", got.Msg.Asset.Path)
+	if got.Msg.Asset.Path != "pg-primary.db.prod" {
+		t.Fatalf("GetAsset path = %q, want pg-primary.db.prod", got.Msg.Asset.Path)
 	}
 
 	list, err := c.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: db.Msg.Folder.Id}), tok))
 	if err != nil {
 		t.Fatalf("list assets: %v", err)
 	}
-	if len(list.Msg.Assets) != 1 || list.Msg.Assets[0].Path != "prod.db.pg-primary" {
-		t.Fatalf("ListAssetsByFolder path = %v, want prod.db.pg-primary", list.Msg.Assets)
+	if len(list.Msg.Assets) != 1 || list.Msg.Assets[0].Path != "pg-primary.db.prod" {
+		t.Fatalf("ListAssetsByFolder path = %v, want pg-primary.db.prod", list.Msg.Assets)
 	}
 
 	folders, err := c.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100}), tok))
@@ -441,8 +441,8 @@ func TestCatalogReadsPopulatePath(t *testing.T) {
 	for _, f := range folders.Msg.Folders {
 		paths[f.Id] = f.Path
 	}
-	if paths[db.Msg.Folder.Id] != "prod.db" {
-		t.Fatalf("ListFolders path for db = %q, want prod.db", paths[db.Msg.Folder.Id])
+	if paths[db.Msg.Folder.Id] != "db.prod" {
+		t.Fatalf("ListFolders path for db = %q, want db.prod", paths[db.Msg.Folder.Id])
 	}
 }
 
