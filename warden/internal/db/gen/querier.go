@@ -72,6 +72,7 @@ type Querier interface {
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
+	GetGroupByName(ctx context.Context, name string) (Group, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
 	GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error)

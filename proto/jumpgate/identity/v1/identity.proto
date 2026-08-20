@@ -11,9 +11,11 @@ option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1;
 service IdentityService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {}
   rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+  rpc ResolveUser(ResolveUserRequest) returns (ResolveUserResponse) {}
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {}
 
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
+  rpc ResolveGroup(ResolveGroupRequest) returns (ResolveGroupResponse) {}
   rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
   rpc AddUserToGroup(AddUserToGroupRequest) returns (AddUserToGroupResponse) {}
   rpc AddGroupToGroup(AddGroupToGroupRequest) returns (AddGroupToGroupResponse) {}
@@ -60,6 +62,20 @@ message CreateUserRequest {
 
 message GetUserRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ResolveUserRequest {
+  string email = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+message ResolveUserResponse {
+  string user_id = 1;
+}
+
+message ResolveGroupRequest {
+  string name = 1 [(buf.validate.field).string = {min_len: 1}];
+}
+message ResolveGroupResponse {
+  string group_id = 1;
 }
 
 message ListUsersRequest {
