@@ -767,8 +767,12 @@ func (s *AccessServer) ExplainRole(ctx context.Context, req *connect.Request[acc
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 	}
-	if !caller.IsAdmin && userID != caller.ID {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
+	// Callers may always explain their own access; explaining another user's
+	// access requires the management read cap (admins hold ** globally).
+	if userID != caller.ID {
+		if err := s.requireCap(ctx, "access:role:read", authz.GlobalScope()); err != nil {
+			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
+		}
 	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {

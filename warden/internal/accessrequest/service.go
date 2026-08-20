@@ -554,12 +554,14 @@ func (s *Service) enqueueGrant(ctx context.Context, q *gen.Queries, actor uuid.U
 	})
 }
 
-// RevokeGrant revokes a single access_grant. The caller may revoke if they are an
-// admin, the grant's subject (self-revoke), or a STANDING approver for the grant's
-// (role, asset) — symmetric with approval authority. On success the revocation is
-// audited and the terminator is notified so live sessions relying on the grant are
-// torn down (both post-commit, best-effort).
-func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, grantID uuid.UUID, reason string) (gen.AccessGrant, error) {
+// RevokeGrant revokes a single access_grant. The caller may revoke if they hold
+// the management revoke capability (mgmtAuthorized, decided by the RPC layer via a
+// capability check — admins hold ** so this is a no-op for them), the grant's
+// subject (self-revoke), or a STANDING approver for the grant's (role, asset) —
+// symmetric with approval authority. On success the revocation is audited and the
+// terminator is notified so live sessions relying on the grant are torn down (both
+// post-commit, best-effort).
+func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, mgmtAuthorized bool, grantID uuid.UUID, reason string) (gen.AccessGrant, error) {
 	g, err := gen.New(s.pool).GetGrant(ctx, grantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return gen.AccessGrant{}, ErrGrantNotFound
@@ -568,7 +570,7 @@ func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, gran
 		return gen.AccessGrant{}, fmt.Errorf("get grant: %w", err)
 	}
 
-	authorized := caller.IsAdmin || g.SubjectUserID == caller.ID
+	authorized := mgmtAuthorized || g.SubjectUserID == caller.ID
 	if !authorized {
 		ok, err := s.resolver.IsApprover(ctx, caller.ID, g.RoleID, g.ScopeAssetID)
 		if err != nil {

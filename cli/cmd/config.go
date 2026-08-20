@@ -47,7 +47,6 @@ func init() {
 type contextRow struct {
 	Name       string `json:"name"`
 	WardenAddr string `json:"warden_addr"`
-	IsAdmin    bool   `json:"is_admin"`
 	Current    bool   `json:"current"`
 }
 
@@ -72,17 +71,16 @@ func runConfigGetContexts(cmd *cobra.Command, _ []string) error {
 		if current {
 			marker = "*"
 		}
-		rows = append(rows, []string{marker, name, ctx.WardenAddr, fmt.Sprintf("%t", ctx.IsAdmin)})
+		rows = append(rows, []string{marker, name, ctx.WardenAddr})
 		items = append(items, contextRow{
 			Name:       name,
 			WardenAddr: ctx.WardenAddr,
-			IsAdmin:    ctx.IsAdmin,
 			Current:    current,
 		})
 	}
 
 	return output.Render(cmd.OutOrStdout(), flagOutput, items, &output.Table{
-		Headers: []string{"CURRENT", "NAME", "WARDEN_ADDR", "ADMIN"},
+		Headers: []string{"CURRENT", "NAME", "WARDEN_ADDR"},
 		Rows:    rows,
 	})
 }

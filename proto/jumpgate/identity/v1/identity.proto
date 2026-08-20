@@ -33,7 +33,8 @@ message User {
   string id           = 1;
   string email        = 2;
   string display_name = 3;
-  bool   is_admin     = 4;
+  reserved 4;
+  reserved "is_admin";
 }
 
 message Group {
@@ -57,7 +58,8 @@ message CreateUserRequest {
   string email        = 1 [(buf.validate.field).string.email = true];
   string display_name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
   string password     = 3 [(buf.validate.field).string.min_len = 8];
-  bool   is_admin     = 4;
+  reserved 4;
+  reserved "is_admin";
 }
 
 message GetUserRequest {

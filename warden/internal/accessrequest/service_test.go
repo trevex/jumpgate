@@ -267,8 +267,8 @@ func TestRevokeGrantByAdmin(t *testing.T) {
 		t.Fatal("precondition: active grant should confer the role")
 	}
 
-	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x"), IsAdmin: true}
-	revoked, err := h.svc.RevokeGrant(h.ctx, admin, gid, "cleanup")
+	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x")}
+	revoked, err := h.svc.RevokeGrant(h.ctx, admin, true, gid, "cleanup")
 	if err != nil {
 		t.Fatalf("RevokeGrant(admin): %v", err)
 	}
@@ -296,8 +296,8 @@ func TestRevokeGrantBySubject(t *testing.T) {
 	subjID := h.mkUser(t, "subj@x")
 	gid := h.activeGrant(t, subjID, time.Hour)
 
-	subject := auth.CurrentUser{ID: subjID, IsAdmin: false}
-	if _, err := h.svc.RevokeGrant(h.ctx, subject, gid, "self"); err != nil {
+	subject := auth.CurrentUser{ID: subjID}
+	if _, err := h.svc.RevokeGrant(h.ctx, subject, false, gid, "self"); err != nil {
 		t.Fatalf("self-revoke: %v", err)
 	}
 	if holds, _ := h.roles.HoldsRole(h.ctx, subjID, h.role, "asset", h.asset); holds {
@@ -316,8 +316,8 @@ func TestRevokeGrantByApprover(t *testing.T) {
 	// A standing approver for (role, asset) may revoke.
 	approverID := h.mkUser(t, "app@x")
 	h.bindStanding(t, approverID, h.approverRole)
-	approver := auth.CurrentUser{ID: approverID, IsAdmin: false}
-	if _, err := h.svc.RevokeGrant(h.ctx, approver, gid, "approver revoke"); err != nil {
+	approver := auth.CurrentUser{ID: approverID}
+	if _, err := h.svc.RevokeGrant(h.ctx, approver, false, gid, "approver revoke"); err != nil {
 		t.Fatalf("approver revoke: %v", err)
 	}
 	if holds, _ := h.roles.HoldsRole(h.ctx, subjID, h.role, "asset", h.asset); holds {
@@ -334,8 +334,8 @@ func TestRevokeGrantForbidden(t *testing.T) {
 	gid := h.activeGrant(t, subjID, time.Hour)
 
 	// An unrelated non-admin, non-approver may NOT revoke.
-	stranger := auth.CurrentUser{ID: h.mkUser(t, "stranger@x"), IsAdmin: false}
-	if _, err := h.svc.RevokeGrant(h.ctx, stranger, gid, "x"); !errors.Is(err, accessrequest.ErrRevokeForbidden) {
+	stranger := auth.CurrentUser{ID: h.mkUser(t, "stranger@x")}
+	if _, err := h.svc.RevokeGrant(h.ctx, stranger, false, gid, "x"); !errors.Is(err, accessrequest.ErrRevokeForbidden) {
 		t.Fatalf("stranger revoke: err = %v, want ErrRevokeForbidden", err)
 	}
 	// Grant still active.
@@ -349,20 +349,20 @@ func TestRevokeGrantForbidden(t *testing.T) {
 
 func TestRevokeGrantNotFoundAndInactive(t *testing.T) {
 	h := setup(t, 0, pgtype.Interval{})
-	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x"), IsAdmin: true}
+	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x")}
 
 	// Unknown id → ErrGrantNotFound.
-	if _, err := h.svc.RevokeGrant(h.ctx, admin, uuid.New(), "x"); !errors.Is(err, accessrequest.ErrGrantNotFound) {
+	if _, err := h.svc.RevokeGrant(h.ctx, admin, true, uuid.New(), "x"); !errors.Is(err, accessrequest.ErrGrantNotFound) {
 		t.Fatalf("unknown grant: err = %v, want ErrGrantNotFound", err)
 	}
 
 	// Already-revoked → ErrGrantInactive.
 	subj := h.mkUser(t, "subj@x")
 	gid := h.activeGrant(t, subj, time.Hour)
-	if _, err := h.svc.RevokeGrant(h.ctx, admin, gid, "first"); err != nil {
+	if _, err := h.svc.RevokeGrant(h.ctx, admin, true, gid, "first"); err != nil {
 		t.Fatalf("first revoke: %v", err)
 	}
-	if _, err := h.svc.RevokeGrant(h.ctx, admin, gid, "again"); !errors.Is(err, accessrequest.ErrGrantInactive) {
+	if _, err := h.svc.RevokeGrant(h.ctx, admin, true, gid, "again"); !errors.Is(err, accessrequest.ErrGrantInactive) {
 		t.Fatalf("re-revoke: err = %v, want ErrGrantInactive", err)
 	}
 }
@@ -416,11 +416,11 @@ func TestRevokeGrantsForUserCascade(t *testing.T) {
 func TestListMyGrantsAndListGrants(t *testing.T) {
 	h := setup(t, 0, pgtype.Interval{})
 	subject := h.mkUser(t, "subj@x")
-	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x"), IsAdmin: true}
+	admin := auth.CurrentUser{ID: h.mkUser(t, "admin@x")}
 
 	active := h.activeGrant(t, subject, time.Hour)
 	revoked := h.activeGrant(t, subject, time.Hour)
-	if _, err := h.svc.RevokeGrant(h.ctx, admin, revoked, "x"); err != nil {
+	if _, err := h.svc.RevokeGrant(h.ctx, admin, true, revoked, "x"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 

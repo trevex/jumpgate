@@ -249,7 +249,11 @@ func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad grant_id"))
 	}
-	g, err := s.svc.RevokeGrant(ctx, caller, grantID, req.Msg.Reason)
+	// Management revoke authority: holding the revoke cap globally lets a caller
+	// revoke any grant (admins hold ** so this is a no-op for them). Without it the
+	// service falls back to subject self-revoke / standing-approver authority.
+	mgmtAuthorized := s.requireCap(ctx, "access:grant:revoke", authz.GlobalScope()) == nil
+	g, err := s.svc.RevokeGrant(ctx, caller, mgmtAuthorized, grantID, req.Msg.Reason)
 	if err != nil {
 		return nil, mapAccessRequestErr(err)
 	}

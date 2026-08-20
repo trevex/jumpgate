@@ -110,9 +110,6 @@ func TestBootstrapProvisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByEmail(admin): %v", err)
 	}
-	if !admin.IsAdmin {
-		t.Fatalf("bootstrap admin is not is_admin")
-	}
 
 	// A global `admin` role exists carrying the `**` (match-everything) capability.
 	adminRole, err := q.GetRoleByNameGlobal(ctx, "admin")

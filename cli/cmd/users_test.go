@@ -25,13 +25,12 @@ func (s *stubIdentity) CreateUser(_ context.Context, req *connect.Request[identi
 		Id:          "u1",
 		Email:       req.Msg.GetEmail(),
 		DisplayName: req.Msg.GetDisplayName(),
-		IsAdmin:     req.Msg.GetIsAdmin(),
 	}}), nil
 }
 
 func (s *stubIdentity) ListUsers(_ context.Context, _ *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
 	return connect.NewResponse(&identityv1.ListUsersResponse{Users: []*identityv1.User{
-		{Id: "u1", Email: "a@x", DisplayName: "Alice", IsAdmin: true},
+		{Id: "u1", Email: "a@x", DisplayName: "Alice"},
 	}}), nil
 }
 
@@ -54,12 +53,12 @@ func TestUsersCreate(t *testing.T) {
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
-	rootCmd.SetArgs([]string{"users", "create", "alice@x", "--name", "Alice", "--admin", "-o", "json"})
+	rootCmd.SetArgs([]string{"users", "create", "alice@x", "--name", "Alice", "-o", "json"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 
-	if s.gotCreate.GetEmail() != "alice@x" || s.gotCreate.GetDisplayName() != "Alice" || !s.gotCreate.GetIsAdmin() {
+	if s.gotCreate.GetEmail() != "alice@x" || s.gotCreate.GetDisplayName() != "Alice" {
 		t.Fatalf("req=%+v", s.gotCreate)
 	}
 	if !strings.Contains(out.String(), "u1") {

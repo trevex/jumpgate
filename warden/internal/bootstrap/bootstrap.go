@@ -29,7 +29,7 @@ func EnsureAdmin(ctx context.Context, q *gen.Queries, email, password string) er
 	if err != nil {
 		return fmt.Errorf("hash: %w", err)
 	}
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email, IsAdmin: true})
+	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		return fmt.Errorf("create admin: %w", err)
 	}
@@ -37,10 +37,10 @@ func EnsureAdmin(ctx context.Context, q *gen.Queries, email, password string) er
 		return fmt.Errorf("set password: %w", err)
 	}
 
-	// Also grant the admin an `admin` role carrying `**` (match-everything) via a
-	// scopeless (global) standing binding. This admits the admin through the
-	// capability-gated management handlers. IsAdmin above remains set during the
-	// transitional period while handlers accept both gate styles.
+	// Grant the admin an `admin` role carrying `**` (match-everything) via a
+	// scopeless (global) standing binding. This is the ONLY thing that admits the
+	// admin through the capability-gated management handlers (there is no is_admin
+	// boolean anymore; management authz is capability-only).
 	caps, err := json.Marshal([]string{"**"})
 	if err != nil {
 		return fmt.Errorf("marshal admin caps: %w", err)
