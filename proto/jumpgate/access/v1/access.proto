@@ -60,7 +60,7 @@ message CreateRoleRequest {
   // segment; a trailing '**' matches one-or-more remaining segments (only as the
   // final segment). Rejects unscoped ("admin"), empty segments ("k8s:"),
   // non-final '**' ("k8s:**:x"), and uppercase/junk.
-  repeated string capabilities = 3 [(buf.validate.field).repeated.items.string.pattern = "^([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*)$"];
+  repeated string capabilities = 3 [(buf.validate.field).repeated.items.string.pattern = "^(\\*\\*|([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*))$"];
   string folder_id = 4 [(buf.validate.field).string.uuid = true, (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE];  // empty = global
 }
 message CreateRoleResponse { Role role = 1; }
