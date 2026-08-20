@@ -96,6 +96,16 @@ message VisibleAsset {
   string name = 2;
   bool active = 3;
   repeated string role_ids = 4;
+  // DNS-style dotted path (e.g. "pg-primary.db.prod") a requester can inspect/request.
+  string path = 5;
+}
+
+// RoleRef names a role for discovery: its id, name, and the leaf->root dotted path
+// of its scoped folder (empty = a global role).
+message RoleRef {
+  string id = 1;
+  string name = 2;
+  string folder_path = 3;
 }
 message ListVisibleAssetsRequest {}
 message ListVisibleAssetsResponse { repeated VisibleAsset assets = 1; }
@@ -104,6 +114,8 @@ message GetAssetAccessRequest { string asset_id = 1 [(buf.validate.field).string
 message GetAssetAccessResponse {
   repeated string active_role_ids = 1;
   repeated string requestable_role_ids = 2;
+  repeated RoleRef active_roles = 3;
+  repeated RoleRef requestable_roles = 4;
 }
 
 // ResolveAsset maps a caller-supplied reference (a uuid or a DNS-style dotted path

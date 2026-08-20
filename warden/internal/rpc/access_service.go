@@ -34,7 +34,25 @@ func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver) *AccessServer {
 func toAccessRoleMsg(r gen.Role) *accessv1.Role {
 	var caps []string
 	_ = json.Unmarshal(r.Capabilities, &caps)
-	return &accessv1.Role{Id: r.ID.String(), Name: r.Name, ResourceType: r.ResourceType, Capabilities: caps}
+	return &accessv1.Role{
+		Id:           r.ID.String(),
+		Name:         r.Name,
+		Capabilities: caps,
+		FolderId:     pgUUIDToString(r.FolderID),
+	}
+}
+
+// roleMsgWithPath returns the role message with folder_path populated (empty for global).
+func (s *AccessServer) roleMsgWithPath(ctx context.Context, r gen.Role) (*accessv1.Role, error) {
+	m := toAccessRoleMsg(r)
+	if r.FolderID.Valid {
+		fp, err := s.q.FolderPath(ctx, uuidFromPg(r.FolderID))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		m.FolderPath = fp
+	}
+	return m, nil
 }
 
 func toAccessRoleGrantMsg(g gen.RoleGrant) *accessv1.RoleGrant {
@@ -118,11 +136,60 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, ResourceType: req.Msg.ResourceType, Capabilities: capsJSON})
+	folderID, _, err := optUUID(req.Msg.FolderId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("role already exists"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
-	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: toAccessRoleMsg(r)}), nil
+	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID, Capabilities: capsJSON})
+	if err != nil {
+		return nil, mapWriteErr(err)
+	}
+	m, err := s.roleMsgWithPath(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: m}), nil
+}
+
+// ResolveRole resolves uuid | name (global) | <role>.<folder-path> (scoped) to a role id (admin only).
+func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[accessv1.ResolveRoleRequest]) (*connect.Response[accessv1.ResolveRoleResponse], error) {
+	if err := auth.RequireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	ref := req.Msg.Ref
+	var role gen.Role
+	if id, perr := uuid.Parse(ref); perr == nil {
+		r, err := s.q.GetRole(ctx, id)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	} else if name, folderPath, ok := strings.Cut(ref, "."); ok {
+		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		r, err := s.q.GetRoleByFolderAndName(ctx, gen.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	} else {
+		r, err := s.q.GetRoleByNameGlobal(ctx, ref)
+		if err != nil {
+			return nil, roleNotFoundOrInternal(err)
+		}
+		role = r
+	}
+	m, err := s.roleMsgWithPath(ctx, role)
+	if err != nil {
+		return nil, err
+	}
+	path := m.Name
+	if m.FolderPath != "" {
+		path = m.Name + "." + m.FolderPath
+	}
+	return connect.NewResponse(&accessv1.ResolveRoleResponse{RoleId: role.ID.String(), Path: path}), nil
 }
 
 // ListRoles lists roles (admin only).
@@ -147,8 +214,22 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRolesResponse{}
+	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
-		out.Roles = append(out.Roles, toAccessRoleMsg(rows[i]))
+		m := toAccessRoleMsg(rows[i])
+		if rows[i].FolderID.Valid {
+			fid := uuidFromPg(rows[i].FolderID)
+			p, ok := pathByFolder[fid]
+			if !ok {
+				p, err = s.q.FolderPath(ctx, fid)
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				pathByFolder[fid] = p
+			}
+			m.FolderPath = p
+		}
+		out.Roles = append(out.Roles, m)
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
 		out.NextPageToken = rows[len(rows)-1].ID.String()
@@ -169,7 +250,11 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	return connect.NewResponse(&accessv1.GetRoleResponse{Role: toAccessRoleMsg(r)}), nil
+	m, err := s.roleMsgWithPath(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&accessv1.GetRoleResponse{Role: m}), nil
 }
 
 // AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"
@@ -244,6 +329,45 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(out), nil
 }
 
+// containedInRoleSubtree enforces folder-scoped role containment: if the role is
+// folder-scoped, the binding/policy scope (an asset's folder, or a folder directly)
+// must lie within the role's folder subtree. Global roles (folder NULL) are
+// unrestricted. A folder-scoped role with no scope at all is rejected.
+func (s *AccessServer) containedInRoleSubtree(ctx context.Context, roleID uuid.UUID, scopeFolder, scopeAsset pgtype.UUID) error {
+	role, err := s.q.GetRole(ctx, roleID)
+	if err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	if !role.FolderID.Valid {
+		return nil // global role: no containment
+	}
+	var target uuid.UUID
+	switch {
+	case scopeFolder.Valid:
+		target = uuidFromPg(scopeFolder)
+	case scopeAsset.Valid:
+		a, err := s.q.GetAsset(ctx, uuidFromPg(scopeAsset))
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
+		}
+		target = a.FolderID
+	default:
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a folder-scoped role requires a scope within its folder subtree"))
+	}
+	// The role's folder must be an ancestor-or-self of the scope's folder.
+	ancestors, err := s.q.FolderAncestorsAndSelf(ctx, target)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	roleFolder := uuidFromPg(role.FolderID)
+	for _, a := range ancestors {
+		if a == roleFolder {
+			return nil
+		}
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, errors.New("role is scoped to a folder and can only be bound within its subtree"))
+}
+
 // CreateRoleBinding grants a role to a subject at a scope (admin only).
 func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Request[accessv1.CreateRoleBindingRequest]) (*connect.Response[accessv1.CreateRoleBindingResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
@@ -274,6 +398,9 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	}
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
+	}
+	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
+		return nil, err
 	}
 	rb, err := s.q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        roleID,
@@ -371,6 +498,9 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 	approverRole, _, err := optUUID(req.Msg.ApproverRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
+	}
+	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
+		return nil, err
 	}
 	policy, err := s.q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID:            roleID,

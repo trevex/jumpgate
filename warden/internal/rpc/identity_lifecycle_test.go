@@ -102,7 +102,7 @@ func TestDeleteGroupCascades(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "op", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "op", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -174,7 +174,7 @@ func TestDeleteUserCascades(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "op", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "op", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)

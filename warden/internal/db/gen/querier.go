@@ -51,6 +51,9 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
+	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
+	// to the root. Used for folder-scoped role containment checks.
+	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
 	// One folder by (parent, name). parent_id NULL matches a top-level folder
 	// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
 	FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error)
@@ -75,6 +78,8 @@ type Querier interface {
 	GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNameAndAssetParams) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
+	GetRoleByFolderAndName(ctx context.Context, arg GetRoleByFolderAndNameParams) (Role, error)
+	GetRoleByNameGlobal(ctx context.Context, name string) (Role, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)

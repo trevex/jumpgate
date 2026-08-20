@@ -64,6 +64,7 @@ func TestScenario(t *testing.T) {
 			"mkdir -p /etc/ssh/auth_principals && printf 'deploy@%s\\n' '"+assetPath+"' > /etc/ssh/auth_principals/deploy")
 
 		roleOut := e.asActor(t, "admin", "roles", "create", e.name("ssh-deploy"),
+			"--folder", e.name("demo"),
 			"--capability", "ssh:login:deploy", "-o", "json")
 		st.roleID = jsonID(roleOut)
 		if st.roleID == "" {
@@ -101,6 +102,7 @@ func TestScenario(t *testing.T) {
 		// key) pointing at the dedicated sshd workloads. Alice gets a standing
 		// binding to each (no JIT dance for these — the CA path already exercises it).
 		roleOut := e.asActor(t, "admin", "roles", "create", e.name("ssh-demo"),
+			"--folder", e.name("demo"),
 			"--capability", "ssh:login:demo", "-o", "json")
 		st.demoRoleID = jsonID(roleOut)
 		if st.demoRoleID == "" {
@@ -126,20 +128,27 @@ func TestScenario(t *testing.T) {
 			"--login", "demo", "--kind", "key", "--key-file", "../env/testworkload/demo_key")
 
 		// Standing bindings for the sre group on both assets — admin can resolve
-		// them by path once they exist in the catalog.
+		// them by path once they exist in the catalog. ssh-demo is folder-scoped, so
+		// it is addressed by its namespaced DNS name (<role>.<folder-path>); a bare
+		// name would resolve as a global role and not be found.
+		demoRoleRef := e.name("ssh-demo") + "." + e.name("demo")
 		for _, path := range []string{pwPath, keyPath} {
 			e.asActor(t, "admin", "bindings", "create",
-				"--role", e.name("ssh-demo"), "--group", e.name("sre"), "--asset", path)
+				"--role", demoRoleRef, "--group", e.name("sre"), "--asset", path)
 		}
 	})
 
 	t.Run("act1_alice_requests", func(t *testing.T) {
 		e.login(t, "alice", st.aliceEmail, alicePass)
-		// Request by role id + asset id: a requester need not be able to resolve
-		// them by name (the asset is not yet visible to her). The login@ prefix is
-		// cosmetic; the role determines the actual login.
-		reqOut := e.asActor(t, "alice", "access", "request", "deploy@"+st.assetID,
-			"--role", st.roleID, "--duration", "1h",
+		// Discovery: alice sees the requestable role BY NAME on the asset.
+		access := e.asActor(t, "alice", "assets", "get", e.name("demo-box")+"."+e.name("demo"), "-o", "json")
+		if !strings.Contains(access, e.name("ssh-deploy")) {
+			t.Fatalf("alice cannot see the requestable role by name:\n%s", access)
+		}
+		// Request by asset PATH + role NAME — no ids.
+		reqOut := e.asActor(t, "alice", "access", "request",
+			"deploy@"+e.name("demo-box")+"."+e.name("demo"),
+			"--role", e.name("ssh-deploy"), "--duration", "1h",
 			"--reason", "need to check the demo box", "-o", "json")
 		st.requestID = jsonID(reqOut)
 		if st.requestID == "" {
