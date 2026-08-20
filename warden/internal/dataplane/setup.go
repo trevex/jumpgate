@@ -115,22 +115,21 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	for _, r := range loginRows {
 		allowed = append(allowed, r.Login)
 	}
-	// Re-check the requested login against the live held-closure (defense in depth
+	// Fetch the user's held capability set on the asset ONCE (one closure query)
+	// and derive BOTH the login entitlement and the record-exemption from it. This
+	// re-checks the requested login against the live held-closure (defense in depth
 	// over the admission token). The broker independently re-enforces this too.
-	entitled, err := authz.EntitledLogins(ctx, s.authz, claims.UserID, claims.AssetID, allowed)
+	caps, err := s.authz.CapabilitiesOnAsset(ctx, claims.UserID, claims.AssetID)
 	if err != nil {
 		return SetupResult{}, err
 	}
+	entitled := caps.EntitledLogins(allowed)
 	if !containsLogin(entitled, login) {
 		return SetupResult{}, ErrNotAuthorized
 	}
 
 	// Recording is mandatory unless the user holds an explicit exemption on the asset.
-	exempt, err := s.authz.Check(ctx, claims.UserID, claims.AssetID, capRecordExempt)
-	if err != nil {
-		return SetupResult{}, err
-	}
-	recordingRequired := !exempt
+	recordingRequired := !caps.Allows(capRecordExempt)
 	recordingKey := recordingObjectKey(claims.SessionID, time.Now())
 
 	tx, err := s.pool.Begin(ctx)

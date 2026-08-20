@@ -190,45 +190,51 @@ SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
 	return r, nil
 }
 
-// Check reports whether the user holds a role on the asset whose capability set
-// grants the concrete `capability`. It fetches the candidate capability sets of
-// the roles held on the asset (via the explicit role-rewrite graph) and matches
-// each stored pattern against the requested capability with CapMatch, so glob
-// semantics ('*' / trailing '**') live in one auditable Go function rather than
-// embedded regex-in-SQL. `capability` is internal (from workers) and assumed
-// concrete — it is not proto-validated.
-func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
+// CapabilitiesOnAsset returns every capability pattern the user holds on the asset
+// via the held (standing) closure: the union of the capability sets of the roles
+// held on the asset (directly or via the explicit role-rewrite graph). It runs the
+// closure ONCE and flattens all rows' patterns, so callers testing several
+// capabilities (per-login entitlement, record-exempt) pay a single query. Glob
+// matching happens in Go (CapMatch) via Capabilities.Allows, so the '*' / trailing
+// '**' semantics stay in one auditable function rather than embedded regex-in-SQL.
+func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT r.capabilities
 FROM held h JOIN roles r ON r.id = h.role_id
 WHERE h.object_kind = 'asset' AND h.object_id = $2`, userID, assetID)
 	if err != nil {
-		return false, fmt.Errorf("check: %w", err)
+		return nil, fmt.Errorf("capabilities on asset: %w", err)
 	}
 	defer rows.Close()
 
-	matched := false
+	var caps Capabilities
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
-			return false, fmt.Errorf("check scan: %w", err)
-		}
-		if matched {
-			continue // keep draining so the pooled conn is fully consumed
+			return nil, fmt.Errorf("capabilities on asset scan: %w", err)
 		}
 		var patterns []string
 		if err := json.Unmarshal(raw, &patterns); err != nil {
-			return false, fmt.Errorf("check unmarshal capabilities: %w", err)
+			return nil, fmt.Errorf("capabilities on asset unmarshal capabilities: %w", err)
 		}
-		for _, p := range patterns {
-			if CapMatch(p, capability) {
-				matched = true
-				break
-			}
-		}
+		caps = append(caps, patterns...)
 	}
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("check rows: %w", err)
+		return nil, fmt.Errorf("capabilities on asset rows: %w", err)
 	}
-	return matched, nil
+	return caps, nil
+}
+
+// Check reports whether the user holds a role on the asset whose capability set
+// grants the concrete `capability`. It fetches the roles' capability patterns held
+// on the asset (via CapabilitiesOnAsset) and matches each stored pattern against
+// the requested capability with CapMatch, so glob semantics ('*' / trailing '**')
+// live in one auditable Go function rather than embedded regex-in-SQL. `capability`
+// is internal (from workers) and assumed concrete — it is not proto-validated.
+func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
+	caps, err := s.CapabilitiesOnAsset(ctx, userID, assetID)
+	if err != nil {
+		return false, err
+	}
+	return caps.Allows(capability), nil
 }
