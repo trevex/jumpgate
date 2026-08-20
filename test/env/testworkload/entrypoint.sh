@@ -17,13 +17,28 @@ ssh-keygen -A
 # sshd refuses to run without its privilege-separation directory.
 mkdir -p /run/sshd
 
-# Drop-in config: trust the mounted CA public key and require pubkey/cert auth.
+# Drop-in config: trust the mounted CA public key, require pubkey/cert auth, and
+# gate which certificate principals are accepted per user via a principals file.
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/jumpgate.conf <<EOF
 TrustedUserCAKeys /etc/ssh/jumpgate_ca.pub
 PubkeyAuthentication yes
 PasswordAuthentication no
+AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
 EOF
+
+# Per-user accepted-principals files live here. The file for a login lists the
+# host-scoped principals sshd will accept from a CA-signed cert for that login.
+# With no principal listed, sshd rejects every cert for that user (default-deny).
+mkdir -p /etc/ssh/auth_principals
+
+# Optimistic provisioning: when the asset path is known ahead of onboard (the
+# admin picks deterministic folder/asset names), pass ASSET_PATH and the accepted
+# principal is written at boot. Otherwise automation writes it post-onboard from
+# the path returned by `assets ssh create` (see the e2e harness).
+if [ -n "${ASSET_PATH:-}" ]; then
+  echo "deploy@${ASSET_PATH}" > /etc/ssh/auth_principals/deploy
+fi
 
 if [ ! -f "${CA_PUB}" ]; then
   echo "WARNING: ${CA_PUB} is not present. The jumpgate SSH CA public key is" >&2
