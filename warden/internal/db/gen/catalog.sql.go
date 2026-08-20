@@ -21,6 +21,15 @@ func (q *Queries) DeleteRoleBinding(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteSSHAssetLoginsForAsset = `-- name: DeleteSSHAssetLoginsForAsset :exec
+DELETE FROM ssh_asset_login WHERE asset_id = $1
+`
+
+func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSSHAssetLoginsForAsset, assetID)
+	return err
+}
+
 const getFolder = `-- name: GetFolder :one
 SELECT id, name, parent_id, created_at FROM folders WHERE id = $1
 `
@@ -74,19 +83,33 @@ func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding
 }
 
 const getSSHAssetConfig = `-- name: GetSSHAssetConfig :one
-SELECT asset_id, allowed_logins, auth_method, stored_secret_id, target_address, host_public_key FROM ssh_asset_config WHERE asset_id = $1
+SELECT asset_id, target_address, host_public_key FROM ssh_asset_config WHERE asset_id = $1
 `
 
 func (q *Queries) GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error) {
 	row := q.db.QueryRow(ctx, getSSHAssetConfig, assetID)
 	var i SshAssetConfig
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.HostPublicKey)
+	return i, err
+}
+
+const getSSHAssetLogin = `-- name: GetSSHAssetLogin :one
+SELECT asset_id, login, kind, secret_id FROM ssh_asset_login WHERE asset_id = $1 AND login = $2
+`
+
+type GetSSHAssetLoginParams struct {
+	AssetID uuid.UUID `json:"asset_id"`
+	Login   string    `json:"login"`
+}
+
+func (q *Queries) GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error) {
+	row := q.db.QueryRow(ctx, getSSHAssetLogin, arg.AssetID, arg.Login)
+	var i SshAssetLogin
 	err := row.Scan(
 		&i.AssetID,
-		&i.AllowedLogins,
-		&i.AuthMethod,
-		&i.StoredSecretID,
-		&i.TargetAddress,
-		&i.HostPublicKey,
+		&i.Login,
+		&i.Kind,
+		&i.SecretID,
 	)
 	return i, err
 }
@@ -336,44 +359,86 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 	return items, nil
 }
 
+const listSSHAssetLogins = `-- name: ListSSHAssetLogins :many
+SELECT asset_id, login, kind, secret_id FROM ssh_asset_login WHERE asset_id = $1 ORDER BY login
+`
+
+func (q *Queries) ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error) {
+	rows, err := q.db.Query(ctx, listSSHAssetLogins, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SshAssetLogin
+	for rows.Next() {
+		var i SshAssetLogin
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.Login,
+			&i.Kind,
+			&i.SecretID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertSSHAssetConfig = `-- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, allowed_logins, auth_method, stored_secret_id, host_public_key, target_address)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO ssh_asset_config (asset_id, host_public_key, target_address)
+VALUES ($1, $2, $3)
 ON CONFLICT (asset_id) DO UPDATE SET
-  allowed_logins = EXCLUDED.allowed_logins,
-  auth_method = EXCLUDED.auth_method,
-  stored_secret_id = EXCLUDED.stored_secret_id,
   host_public_key = EXCLUDED.host_public_key,
   target_address = EXCLUDED.target_address
-RETURNING asset_id, allowed_logins, auth_method, stored_secret_id, target_address, host_public_key
+RETURNING asset_id, target_address, host_public_key
 `
 
 type UpsertSSHAssetConfigParams struct {
-	AssetID        uuid.UUID   `json:"asset_id"`
-	AllowedLogins  []string    `json:"allowed_logins"`
-	AuthMethod     string      `json:"auth_method"`
-	StoredSecretID pgtype.UUID `json:"stored_secret_id"`
-	HostPublicKey  string      `json:"host_public_key"`
-	TargetAddress  string      `json:"target_address"`
+	AssetID       uuid.UUID `json:"asset_id"`
+	HostPublicKey string    `json:"host_public_key"`
+	TargetAddress string    `json:"target_address"`
 }
 
 func (q *Queries) UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error) {
-	row := q.db.QueryRow(ctx, upsertSSHAssetConfig,
-		arg.AssetID,
-		arg.AllowedLogins,
-		arg.AuthMethod,
-		arg.StoredSecretID,
-		arg.HostPublicKey,
-		arg.TargetAddress,
-	)
+	row := q.db.QueryRow(ctx, upsertSSHAssetConfig, arg.AssetID, arg.HostPublicKey, arg.TargetAddress)
 	var i SshAssetConfig
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.HostPublicKey)
+	return i, err
+}
+
+const upsertSSHAssetLogin = `-- name: UpsertSSHAssetLogin :one
+INSERT INTO ssh_asset_login (asset_id, login, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, login) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING asset_id, login, kind, secret_id
+`
+
+type UpsertSSHAssetLoginParams struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Login    string      `json:"login"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
+}
+
+func (q *Queries) UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error) {
+	row := q.db.QueryRow(ctx, upsertSSHAssetLogin,
+		arg.AssetID,
+		arg.Login,
+		arg.Kind,
+		arg.SecretID,
+	)
+	var i SshAssetLogin
 	err := row.Scan(
 		&i.AssetID,
-		&i.AllowedLogins,
-		&i.AuthMethod,
-		&i.StoredSecretID,
-		&i.TargetAddress,
-		&i.HostPublicKey,
+		&i.Login,
+		&i.Kind,
+		&i.SecretID,
 	)
 	return i, err
 }

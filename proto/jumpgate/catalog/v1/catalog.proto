@@ -35,15 +35,27 @@ message Asset {
 
 // SSHConfig is an SSH asset's connection + auth config. stored_secret_id references
 // a sealed secret in the vault (asset_secrets); the bytes never live here.
+// SSHConfig is an SSH asset's connection config plus its per-login auth. Each
+// login is authenticated by its own kind: "ca" (short-lived signed cert),
+// "password", or "key" (a plain stored secret referenced by secret_id). The
+// stored secret holds only the password bytes or private-key PEM; the username is
+// the login and the kind lives here.
 message SSHConfig {
-  repeated string allowed_logins = 1;
-  string auth_method = 2 [(buf.validate.field).string = {in: ["ca-cert", "stored-key"]}];
-  string stored_secret_id = 3;
+  repeated SSHLogin logins = 1;
   // Optional OpenSSH authorized_keys line; when set the ssh-proxy worker pins the
   // target host key, empty = accept-and-log.
-  string host_public_key = 4;
+  string host_public_key = 2;
   // Optional host:port the ssh-proxy worker dials; empty = worker default resolution.
-  string target_address = 5;
+  string target_address = 3;
+}
+
+// SSHLogin is one target login and how the worker authenticates as it.
+message SSHLogin {
+  string login = 1 [(buf.validate.field).string = {min_len: 1}];
+  string kind = 2 [(buf.validate.field).string = {in: ["ca", "password", "key"]}];
+  // Reference to a vault stored secret (asset_secrets.id); required for
+  // password|key, empty for ca. The secret must belong to the same asset.
+  string secret_id = 3;
 }
 
 message CreateFolderRequest {

@@ -141,14 +141,39 @@ func bindRole(t *testing.T, q *gen.Queries, user, asset uuid.UUID, name string, 
 	return r.ID
 }
 
-// setSSHConfig upserts the ssh_asset_config for an asset.
-func setSSHConfig(t *testing.T, q *gen.Queries, asset uuid.UUID, logins []string, authMethod string, storedSecret pgtype.UUID) {
+// setSSHConfig upserts the ssh_asset_config (host/target) for an asset.
+func setSSHConfig(t *testing.T, q *gen.Queries, asset uuid.UUID) {
 	t.Helper()
 	if _, err := q.UpsertSSHAssetConfig(context.Background(), gen.UpsertSSHAssetConfigParams{
-		AssetID: asset, AllowedLogins: logins, AuthMethod: authMethod, StoredSecretID: storedSecret,
+		AssetID: asset, HostPublicKey: "", TargetAddress: "target:22",
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// setLogin upserts one ssh_asset_login row (kind ca has no secret).
+func setLogin(t *testing.T, q *gen.Queries, asset uuid.UUID, login, kind string, secret pgtype.UUID) {
+	t.Helper()
+	if _, err := q.UpsertSSHAssetLogin(context.Background(), gen.UpsertSSHAssetLoginParams{
+		AssetID: asset, Login: login, Kind: kind, SecretID: secret,
+	}); err != nil {
+		t.Fatalf("upsert ssh asset login %q/%q: %v", login, kind, err)
+	}
+}
+
+// sealSecret seals the value under the sealer and stores it as an asset secret,
+// returning the secret id.
+func sealSecret(t *testing.T, q *gen.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
+	t.Helper()
+	sealed, err := sealer.Seal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec, err := q.SetAssetSecret(context.Background(), gen.SetAssetSecretParams{AssetID: asset, Name: name, Sealed: sealed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sec.ID
 }
 
 // grantOpts / fabricateGrant mirror the authz test helper: write an
@@ -211,10 +236,10 @@ func newBroker(pool *pgxpool.Pool, sealer *secrets.Sealer) *Broker {
 	return NewBroker(pool, sealer, authz.NewSQLAuthorizer(pool), audit.New(pool))
 }
 
-// TestIssuePrincipalsFromCaps: principals = allowed_logins ∩ entitled logins.
-// Role grants ssh:login:root only; deploy is allowed on the asset but NOT
-// entitled, so the cert's ValidPrincipals is exactly [root].
-func TestIssuePrincipalsFromCaps(t *testing.T) {
+// TestIssueCaSinglePrincipal: a ca login yields a cert whose ValidPrincipals is
+// exactly the single requested login, even though the user is entitled to
+// others. deploy is allowed but not requested; only root is signed.
+func TestIssueCaSinglePrincipal(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := gen.New(pool)
@@ -223,22 +248,21 @@ func TestIssuePrincipalsFromCaps(t *testing.T) {
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root", "deploy"}, "ca-cert", pgtype.UUID{})
-	bindRole(t, q, alice, asset, "ssh-root", "ssh:login:root")
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
+	setLogin(t, q, asset, "deploy", "ca", pgtype.UUID{})
+	bindRole(t, q, alice, asset, "ssh-all", "ssh:login:*")
 
 	b := newBroker(pool, sealer)
 	validUntil := time.Now().Add(time.Hour)
-	creds, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: validUntil, KeyID: "g1"})
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: validUntil, KeyID: "g1"})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if len(creds) != 1 {
-		t.Fatalf("got %d creds, want 1", len(creds))
-	}
-	cert := parseCert(t, creds[0])
+	cert := parseCert(t, cred)
 
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "root" {
-		t.Fatalf("ValidPrincipals = %v, want [root] (deploy allowed but not entitled)", cert.ValidPrincipals)
+		t.Fatalf("ValidPrincipals = %v, want [root] (single principal)", cert.ValidPrincipals)
 	}
 	if cert.KeyId != "g1" {
 		t.Fatalf("KeyId = %q, want g1", cert.KeyId)
@@ -258,56 +282,150 @@ func TestIssuePrincipalsFromCaps(t *testing.T) {
 	}
 }
 
-// TestIssueGlobPrincipals: a glob cap ssh:login:* entitles every allowed login.
-func TestIssueGlobPrincipals(t *testing.T) {
+// TestIssuePassword: a password login returns the sealed secret bytes.
+func TestIssuePassword(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := gen.New(pool)
 	sealer := newSealer(t)
-	initSSHCA(t, pool, sealer)
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root", "deploy"}, "ca-cert", pgtype.UUID{})
-	bindRole(t, q, alice, asset, "ssh-all", "ssh:login:*")
+	setSSHConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "demo", []byte("hunter2"))
+	setLogin(t, q, asset, "demo", "password", pgUUID(secID))
+	bindRole(t, q, alice, asset, "ssh-demo", "ssh:login:demo")
 
 	b := newBroker(pool, sealer)
-	creds, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g2"})
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "demo", ValidUntil: time.Now().Add(time.Hour), KeyID: "g2"})
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	cert := parseCert(t, creds[0])
-	got := map[string]bool{}
-	for _, p := range cert.ValidPrincipals {
-		got[p] = true
+	if cred.Kind != "ssh-password" {
+		t.Fatalf("Kind = %q, want ssh-password", cred.Kind)
 	}
-	if !got["root"] || !got["deploy"] || len(cert.ValidPrincipals) != 2 {
-		t.Fatalf("ValidPrincipals = %v, want {root, deploy}", cert.ValidPrincipals)
+	if string(cred.Secret) != "hunter2" {
+		t.Fatalf("Secret = %q, want hunter2", cred.Secret)
+	}
+	if cred.SSHCertificate != nil {
+		t.Fatalf("password must not return a cert")
 	}
 }
 
-// TestIssueNoEntitlement: a user with no ssh:login:* cap gets ErrNoLoginEntitlement,
-// no cert, and NO audit event.
+// TestIssueKey: a key login returns the sealed private-key bytes.
+func TestIssueKey(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	sealer := newSealer(t)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "ssh")
+	setSSHConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "demo", []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----\n"))
+	setLogin(t, q, asset, "demo", "key", pgUUID(secID))
+	bindRole(t, q, alice, asset, "ssh-demo", "ssh:login:demo")
+
+	b := newBroker(pool, sealer)
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "demo", ValidUntil: time.Now().Add(time.Hour), KeyID: "g3"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if cred.Kind != "ssh-key" {
+		t.Fatalf("Kind = %q, want ssh-key", cred.Kind)
+	}
+	if string(cred.Secret) != "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----\n" {
+		t.Fatalf("Secret = %q, unexpected", cred.Secret)
+	}
+	if cred.SSHCertificate != nil {
+		t.Fatalf("key must not return a cert")
+	}
+}
+
+// TestIssueNoEntitlement: a user with no ssh:login:<L> cap gets
+// ErrNoLoginEntitlement, no secret released, and NO audit event — even for the
+// password kind (the stored-secret gap is closed).
 func TestIssueNoEntitlement(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := gen.New(pool)
 	sealer := newSealer(t)
-	initSSHCA(t, pool, sealer)
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root", "deploy"}, "ca-cert", pgtype.UUID{})
+	setSSHConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "demo", []byte("hunter2"))
+	setLogin(t, q, asset, "demo", "password", pgUUID(secID))
 	// Bind an unrelated capability so the user has a role but no login entitlement.
 	bindRole(t, q, alice, asset, "ssh-none", "db:read")
 
 	b := newBroker(pool, sealer)
-	creds, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g3"})
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "demo", ValidUntil: time.Now().Add(time.Hour), KeyID: "g4"})
 	if !errors.Is(err, ErrNoLoginEntitlement) {
 		t.Fatalf("Issue err = %v, want ErrNoLoginEntitlement", err)
 	}
-	if creds != nil {
-		t.Fatalf("creds = %v, want nil", creds)
+	if cred.Secret != nil || cred.SSHCertificate != nil {
+		t.Fatalf("cred = %+v, want empty (nothing released)", cred)
+	}
+	assertNoCredentialAudit(t, pool)
+}
+
+// TestIssueAbsentLogin: a login not configured on the asset → sentinel, no audit.
+func TestIssueAbsentLogin(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	sealer := newSealer(t)
+	initSSHCA(t, pool, sealer)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "ssh")
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
+	bindRole(t, q, alice, asset, "ssh-all", "ssh:login:*")
+
+	b := newBroker(pool, sealer)
+	_, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "ghost", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g5"})
+	if !errors.Is(err, ErrNoLoginEntitlement) {
+		t.Fatalf("Issue err = %v, want ErrNoLoginEntitlement", err)
+	}
+	assertNoCredentialAudit(t, pool)
+}
+
+// TestIssueSecretIsAssetScoped: asset B's login cannot open asset A's secret.
+// The composite FK forbids binding a foreign secret at write time; here we bypass
+// the FK by inserting the login row directly with a foreign secret_id and assert
+// the asset-scoped GetAssetSecret refuses to open it (defense in depth).
+func TestIssueSecretIsAssetScoped(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+	sealer := newSealer(t)
+
+	alice := mkUser(t, q)
+	assetA := mkAsset(t, q, "ssh")
+	assetB := mkAsset(t, q, "ssh")
+	setSSHConfig(t, q, assetB)
+	// The secret belongs to asset A.
+	foreignSec := sealSecret(t, q, sealer, assetA, "demo", []byte("A-secret"))
+	// The composite FK ssh_login_secret_same_asset structurally forbids binding
+	// asset A's secret to asset B's login. Drop it just for this row so we can
+	// exercise the broker's independent asset-scoped GetAssetSecret guard (defense
+	// in depth behind the FK).
+	if _, err := pool.Exec(ctx, `ALTER TABLE ssh_asset_login DROP CONSTRAINT ssh_login_secret_same_asset`); err != nil {
+		t.Fatalf("drop composite FK: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO ssh_asset_login (asset_id, login, kind, secret_id) VALUES ($1, 'demo', 'password', $2)`,
+		assetB, foreignSec); err != nil {
+		t.Fatalf("insert foreign login: %v", err)
+	}
+	bindRole(t, q, alice, assetB, "ssh-demo", "ssh:login:demo")
+
+	b := newBroker(pool, sealer)
+	_, err := b.Issue(ctx, alice, assetB, IssueRequest{Login: "demo", ValidUntil: time.Now().Add(time.Hour), KeyID: "g6"})
+	if !errors.Is(err, ErrNoConfig) {
+		t.Fatalf("Issue err = %v, want ErrNoConfig (asset-scoped secret refused)", err)
 	}
 	assertNoCredentialAudit(t, pool)
 }
@@ -322,7 +440,8 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	initSSHCA(t, pool, sealer)
 
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root", "deploy"}, "ca-cert", pgtype.UUID{})
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	// A role carrying ssh:login:root, but NOT standing-bound to anyone.
 	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant", ResourceType: "asset", Capabilities: caps("ssh:login:root")})
 	if err != nil {
@@ -334,11 +453,11 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	// Active grant → principal [root].
 	alice := mkUser(t, q)
 	fabricateGrant(t, pool, alice, sshRoot.ID, asset, grantOpts{expiresIn: time.Hour})
-	creds, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g4"})
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g7"})
 	if err != nil {
 		t.Fatalf("Issue via active grant: %v", err)
 	}
-	cert := parseCert(t, creds[0])
+	cert := parseCert(t, cred)
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "root" {
 		t.Fatalf("ValidPrincipals = %v, want [root]", cert.ValidPrincipals)
 	}
@@ -346,48 +465,12 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	// Expired grant → no entitlement.
 	bob := mkUser(t, q)
 	fabricateGrant(t, pool, bob, sshRoot.ID, asset, grantOpts{expiresIn: -time.Minute})
-	if _, err := b.Issue(ctx, bob, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g5"}); !errors.Is(err, ErrNoLoginEntitlement) {
+	if _, err := b.Issue(ctx, bob, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g8"}); !errors.Is(err, ErrNoLoginEntitlement) {
 		t.Fatalf("Issue via expired grant err = %v, want ErrNoLoginEntitlement", err)
 	}
 }
 
-// TestIssueStoredKey: auth_method stored-key → the sealed asset secret is opened
-// and returned as a "secret" credential (no cert).
-func TestIssueStoredKey(t *testing.T) {
-	pool := newPool(t)
-	ctx := context.Background()
-	q := gen.New(pool)
-	sealer := newSealer(t)
-
-	alice := mkUser(t, q)
-	asset := mkAsset(t, q, "ssh")
-	sealed, err := sealer.Seal([]byte("s3cr3t"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sec, err := q.SetAssetSecret(ctx, gen.SetAssetSecretParams{AssetID: asset, Name: "ssh-key", Sealed: sealed})
-	if err != nil {
-		t.Fatal(err)
-	}
-	setSSHConfig(t, q, asset, []string{"root"}, "stored-key", pgUUID(sec.ID))
-
-	b := newBroker(pool, sealer)
-	creds, err := b.Issue(ctx, alice, asset, IssueRequest{ValidUntil: time.Now().Add(time.Hour), KeyID: "g6"})
-	if err != nil {
-		t.Fatalf("Issue: %v", err)
-	}
-	if len(creds) != 1 || creds[0].Kind != "secret" {
-		t.Fatalf("creds = %+v, want single secret", creds)
-	}
-	if string(creds[0].Secret) != "s3cr3t" {
-		t.Fatalf("Secret = %q, want s3cr3t", creds[0].Secret)
-	}
-	if creds[0].SSHCertificate != nil {
-		t.Fatalf("stored-key must not return a cert")
-	}
-}
-
-// TestIssueNoCA: the ca-cert path with no ca_keys row → ErrNoCA.
+// TestIssueNoCA: the ca path with no ca_keys row → ErrNoCA.
 func TestIssueNoCA(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
@@ -397,11 +480,12 @@ func TestIssueNoCA(t *testing.T) {
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root"}, "ca-cert", pgtype.UUID{})
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	bindRole(t, q, alice, asset, "ssh-root", "ssh:login:root")
 
 	b := newBroker(pool, sealer)
-	if _, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g7"}); !errors.Is(err, ErrNoCA) {
+	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g9"}); !errors.Is(err, ErrNoCA) {
 		t.Fatalf("Issue err = %v, want ErrNoCA", err)
 	}
 }
@@ -414,10 +498,11 @@ func TestIssueVaultDisabled(t *testing.T) {
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root"}, "ca-cert", pgtype.UUID{})
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 
 	b := NewBroker(pool, nil, authz.NewSQLAuthorizer(pool), audit.New(pool))
-	if _, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g8"}); !errors.Is(err, ErrVaultNotConfigured) {
+	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g10"}); !errors.Is(err, ErrVaultNotConfigured) {
 		t.Fatalf("Issue err = %v, want ErrVaultNotConfigured", err)
 	}
 }
@@ -433,7 +518,7 @@ func TestIssueUnsupportedKind(t *testing.T) {
 	asset := mkAsset(t, q, "postgres")
 
 	b := newBroker(pool, sealer)
-	if _, err := b.Issue(ctx, alice, asset, IssueRequest{ValidUntil: time.Now().Add(time.Hour), KeyID: "g9"}); !errors.Is(err, ErrUnsupportedKind) {
+	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ValidUntil: time.Now().Add(time.Hour), KeyID: "g11"}); !errors.Is(err, ErrUnsupportedKind) {
 		t.Fatalf("Issue err = %v, want ErrUnsupportedKind", err)
 	}
 }
@@ -449,11 +534,12 @@ func TestIssueAudit(t *testing.T) {
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
-	setSSHConfig(t, q, asset, []string{"root"}, "ca-cert", pgtype.UUID{})
+	setSSHConfig(t, q, asset)
+	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	bindRole(t, q, alice, asset, "ssh-root", "ssh:login:root")
 
 	b := newBroker(pool, sealer)
-	if _, err := b.Issue(ctx, alice, asset, IssueRequest{ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g10"}); err != nil {
+	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g12"}); err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
 

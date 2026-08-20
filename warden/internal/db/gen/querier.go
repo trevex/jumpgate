@@ -45,6 +45,7 @@ type Querier interface {
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
+	DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
@@ -67,6 +68,7 @@ type Querier interface {
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
+	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
@@ -98,6 +100,7 @@ type Querier interface {
 	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
 	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error)
 	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
@@ -121,6 +124,7 @@ type Querier interface {
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
+	UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error)
 	UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error
 	UpsertWorkerPresence(ctx context.Context, workerID string) error
 }

@@ -33,6 +33,11 @@ func mapWriteErr(err error) error {
 	if err == nil {
 		return nil
 	}
+	// A pre-mapped Connect error (e.g. an InvalidArgument from login validation)
+	// passes through unchanged rather than being masked as Internal.
+	if _, ok := err.(*connect.Error); ok {
+		return err
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
@@ -77,45 +82,76 @@ func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
-// toAssetMsgWithConfig builds an Asset carrying its typed SSH config.
-func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig) *catalogv1.Asset {
+// toAssetMsgWithConfig builds an Asset carrying its typed SSH config (host/target
+// from the config row plus the per-login rows).
+func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig, logins []gen.SshAssetLogin) *catalogv1.Asset {
 	msg := toAssetMsg(a)
+	out := make([]*catalogv1.SSHLogin, 0, len(logins))
+	for _, l := range logins {
+		out = append(out, &catalogv1.SSHLogin{
+			Login:    l.Login,
+			Kind:     l.Kind,
+			SecretId: pgUUIDToString(l.SecretID),
+		})
+	}
 	msg.Config = &catalogv1.Asset_Ssh{Ssh: &catalogv1.SSHConfig{
-		AllowedLogins:  cfg.AllowedLogins,
-		AuthMethod:     cfg.AuthMethod,
-		StoredSecretId: pgUUIDToString(cfg.StoredSecretID),
-		HostPublicKey:  cfg.HostPublicKey,
-		TargetAddress:  cfg.TargetAddress,
+		Logins:        out,
+		HostPublicKey: cfg.HostPublicKey,
+		TargetAddress: cfg.TargetAddress,
 	}}
 	return msg
 }
 
 // validateSSHConfig checks the parts protovalidate can't: an optional
-// host_public_key must be a parseable authorized_keys line, and stored_secret_id
-// (when set) must be a UUID. Returns the parsed optional secret id.
-func validateSSHConfig(ssh *catalogv1.SSHConfig) (pgtype.UUID, error) {
-	storedSecret, _, err := optUUID(ssh.GetStoredSecretId())
-	if err != nil {
-		return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("bad stored_secret_id"))
-	}
+// host_public_key must be a parseable authorized_keys line, and each login's
+// secret_id (when set) must be a UUID.
+func validateSSHConfig(ssh *catalogv1.SSHConfig) error {
 	if ssh.GetHostPublicKey() != "" {
 		if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(ssh.GetHostPublicKey())); err != nil {
-			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
 		}
 	}
-	return storedSecret, nil
+	for _, l := range ssh.GetLogins() {
+		if _, _, err := optUUID(l.GetSecretId()); err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad secret_id"))
+		}
+	}
+	return nil
 }
 
-// upsertSSHConfigParams builds the DB params for an asset's SSH config.
-func upsertSSHConfigParams(assetID uuid.UUID, ssh *catalogv1.SSHConfig, storedSecret pgtype.UUID) gen.UpsertSSHAssetConfigParams {
+// upsertSSHConfigParams builds the DB params for an asset's SSH connection config
+// (host/target). The per-login rows are written separately.
+func upsertSSHConfigParams(assetID uuid.UUID, ssh *catalogv1.SSHConfig) gen.UpsertSSHAssetConfigParams {
 	return gen.UpsertSSHAssetConfigParams{
-		AssetID:        assetID,
-		AllowedLogins:  ssh.GetAllowedLogins(),
-		AuthMethod:     ssh.GetAuthMethod(),
-		StoredSecretID: storedSecret,
-		HostPublicKey:  ssh.GetHostPublicKey(),
-		TargetAddress:  ssh.GetTargetAddress(),
+		AssetID:       assetID,
+		HostPublicKey: ssh.GetHostPublicKey(),
+		TargetAddress: ssh.GetTargetAddress(),
 	}
+}
+
+// replaceSSHLogins replaces the asset's login set: delete all existing rows, then
+// upsert one row per configured login. A CHECK / composite-FK violation (a
+// password/key login without a valid same-asset secret) surfaces via the caller's
+// mapWriteErr as InvalidArgument.
+func replaceSSHLogins(ctx context.Context, q *gen.Queries, assetID uuid.UUID, ssh *catalogv1.SSHConfig) error {
+	if err := q.DeleteSSHAssetLoginsForAsset(ctx, assetID); err != nil {
+		return err
+	}
+	for _, l := range ssh.GetLogins() {
+		secret, _, err := optUUID(l.GetSecretId())
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad secret_id"))
+		}
+		if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+			AssetID:  assetID,
+			Login:    l.GetLogin(),
+			Kind:     l.GetKind(),
+			SecretID: secret,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
@@ -208,8 +244,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 
 	// With inline config, create the asset and its config atomically so a bad config
 	// leaves no orphan bare asset.
-	storedSecret, err := validateSSHConfig(ssh)
-	if err != nil {
+	if err := validateSSHConfig(ssh); err != nil {
 		return nil, err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -222,14 +257,21 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, mapWriteErr(err)
 	}
-	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh, storedSecret))
+	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh))
 	if err != nil {
 		return nil, mapWriteErr(err)
+	}
+	if err := replaceSSHLogins(ctx, qtx, a.ID, ssh); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	logins, err := qtx.ListSSHAssetLogins(ctx, a.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsgWithConfig(a, cfg)}), nil
+	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
 }
 
 // GetAsset returns an asset with its typed config (admin only). NotFound if the
@@ -256,7 +298,11 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsgWithConfig(a, cfg)}), nil
+	logins, err := s.q.ListSSHAssetLogins(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
 }
 
 // UpdateAssetConfig upserts an asset's typed config (admin only). The
@@ -274,12 +320,24 @@ func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Requ
 	if ssh == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
 	}
-	storedSecret, err := validateSSHConfig(ssh)
-	if err != nil {
+	if err := validateSSHConfig(ssh); err != nil {
 		return nil, err
 	}
-	if _, err := s.q.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(assetID, ssh, storedSecret)); err != nil {
-		return nil, mapWriteErr(err) // CHECK / FK → InvalidArgument
+	// Upsert the connection config and replace the login set atomically.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+	if _, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(assetID, ssh)); err != nil {
+		return nil, mapWriteErr(err)
+	}
+	if err := replaceSSHLogins(ctx, qtx, assetID, ssh); err != nil {
+		return nil, mapWriteErr(err) // CHECK / composite-FK → InvalidArgument
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&catalogv1.UpdateAssetConfigResponse{}), nil
 }
