@@ -18,8 +18,9 @@ const (
 
 // scenarioState threads ids captured in Act 0 through the later acts.
 type scenarioState struct {
-	assetID, roleID, requestID string
-	aliceEmail, bobEmail       string
+	assetID, roleID, requestID        string
+	pwAssetID, keyAssetID, demoRoleID string
+	aliceEmail, bobEmail              string
 }
 
 // TestScenario runs the 3-actor cross-approval flow against a live test env:
@@ -42,7 +43,7 @@ func TestScenario(t *testing.T) {
 
 		e.asActor(t, "admin", "folders", "create", e.name("demo"))
 
-		assetOut := e.asActor(t, "admin", "assets", "onboard", "ssh", e.name("demo-box"),
+		assetOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("demo-box"),
 			"--folder", e.name("demo"),
 			"--target", "ssh-target.default.svc.cluster.local:22",
 			"--login", "deploy", "-o", "json")
@@ -77,6 +78,48 @@ func TestScenario(t *testing.T) {
 		for _, email := range []string{st.aliceEmail, st.bobEmail} {
 			e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "requester", "--user", email)
 			e.asActor(t, "admin", "policies", "add-subject", polID, "--kind", "approver", "--user", email)
+		}
+	})
+
+	t.Run("act0b_stored_secret_setup", func(t *testing.T) {
+		// A role carrying ssh:login:demo, and two stored-secret assets (password +
+		// key) pointing at the dedicated sshd workloads. Alice gets a standing
+		// binding to each (no JIT dance for these — the CA path already exercises it).
+		roleOut := e.asActor(t, "admin", "roles", "create", e.name("ssh-demo"),
+			"--capability", "ssh:login:demo", "-o", "json")
+		st.demoRoleID = jsonID(roleOut)
+		if st.demoRoleID == "" {
+			t.Fatalf("no demo role id:\n%s", roleOut)
+		}
+
+		// Password asset: create (no inline login), then set a password login.
+		pwOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("password-box"),
+			"--folder", e.name("demo"),
+			"--target", "ssh-target-password.default.svc.cluster.local:22", "-o", "json")
+		st.pwAssetID = jsonID(pwOut)
+		if st.pwAssetID == "" {
+			t.Fatalf("no password asset id:\n%s", pwOut)
+		}
+		e.asActorStdin(t, "admin", "demo-password-123\n",
+			"assets", "ssh", "login", "set", st.pwAssetID,
+			"--login", "demo", "--kind", "password", "--password-stdin")
+
+		// Key asset: create, then set a key login from the committed test private key.
+		keyOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("key-box"),
+			"--folder", e.name("demo"),
+			"--target", "ssh-target-key.default.svc.cluster.local:22", "-o", "json")
+		st.keyAssetID = jsonID(keyOut)
+		if st.keyAssetID == "" {
+			t.Fatalf("no key asset id:\n%s", keyOut)
+		}
+		e.asActor(t, "admin", "assets", "ssh", "login", "set", st.keyAssetID,
+			"--login", "demo", "--kind", "key", "--key-file", "../env/testworkload/demo_key")
+
+		// Standing bindings for alice on both assets (resolve assets by id — admin
+		// has no visibility to a not-yet-granted asset by name).
+		for _, id := range []string{st.pwAssetID, st.keyAssetID} {
+			e.asActor(t, "admin", "bindings", "create",
+				"--role", e.name("ssh-demo"), "--user", st.aliceEmail, "--asset", id)
 		}
 	})
 
@@ -115,6 +158,24 @@ func TestScenario(t *testing.T) {
 		out := e.connectWithStdin(t, "alice", "deploy@"+e.name("demo-box"), script)
 		if !strings.Contains(out, marker) {
 			t.Fatalf("connect output missing marker:\n%s", out)
+		}
+	})
+
+	t.Run("act3b_alice_connects_password", func(t *testing.T) {
+		// Standing binding + password login: the worker injects the stored password.
+		script := "echo " + marker + "; whoami; exit\n"
+		out := e.connectWithStdin(t, "alice", "demo@"+e.name("password-box"), script)
+		if !strings.Contains(out, marker) {
+			t.Fatalf("password connect output missing marker:\n%s", out)
+		}
+	})
+
+	t.Run("act3c_alice_connects_key", func(t *testing.T) {
+		// Standing binding + key login: the worker injects the stored private key.
+		script := "echo " + marker + "; whoami; exit\n"
+		out := e.connectWithStdin(t, "alice", "demo@"+e.name("key-box"), script)
+		if !strings.Contains(out, marker) {
+			t.Fatalf("key connect output missing marker:\n%s", out)
 		}
 	})
 
