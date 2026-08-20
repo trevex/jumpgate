@@ -10,13 +10,15 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 )
 
 type stubCatalog struct {
 	catalogv1connect.UnimplementedCatalogServiceHandler
-	gotCreate *catalogv1.CreateFolderRequest
+	gotCreate   *catalogv1.CreateFolderRequest
+	resolvedRef string
 }
 
 func (s *stubCatalog) CreateFolder(_ context.Context, req *connect.Request[catalogv1.CreateFolderRequest]) (*connect.Response[catalogv1.CreateFolderResponse], error) {
@@ -32,6 +34,11 @@ func (s *stubCatalog) ListFolders(_ context.Context, _ *connect.Request[catalogv
 	return connect.NewResponse(&catalogv1.ListFoldersResponse{Folders: []*catalogv1.Folder{
 		{Id: "f1", Name: "prod", ParentId: "root"},
 	}}), nil
+}
+
+func (s *stubCatalog) ResolveFolder(_ context.Context, req *connect.Request[catalogv1.ResolveFolderRequest]) (*connect.Response[catalogv1.ResolveFolderResponse], error) {
+	s.resolvedRef = req.Msg.GetRef()
+	return connect.NewResponse(&catalogv1.ResolveFolderResponse{FolderId: "folder-uuid-1", Path: req.Msg.GetRef()}), nil
 }
 
 // newCatalogStub starts an httptest server serving the given catalog handler
@@ -169,4 +176,28 @@ func (s *stubCatalogWithPath) ListFolders(_ context.Context, _ *connect.Request[
 	return connect.NewResponse(&catalogv1.ListFoldersResponse{Folders: []*catalogv1.Folder{
 		{Id: "f2", Name: "web", ParentId: "f1", Path: "web.prod"},
 	}}), nil
+}
+
+func TestResolveFolderID(t *testing.T) {
+	s := &stubCatalog{}
+	addr := newCatalogStub(t, s)
+	cl := wardenclient.New(addr, "")
+	ctx := context.Background()
+
+	// a uuid short-circuits: returned unchanged, no RPC
+	id, err := resolveFolderID(ctx, cl, "11111111-1111-1111-1111-111111111111")
+	if err != nil || id != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("uuid resolve = %v / %q", err, id)
+	}
+	if s.resolvedRef != "" {
+		t.Fatalf("uuid ref should not hit the RPC, got ref %q", s.resolvedRef)
+	}
+	// a path is resolved by the RPC
+	id, err = resolveFolderID(ctx, cl, "db.prod")
+	if err != nil {
+		t.Fatalf("path resolve: %v", err)
+	}
+	if id != "folder-uuid-1" || s.resolvedRef != "db.prod" {
+		t.Fatalf("path resolve = %q (ref %q), want folder-uuid-1 (ref db.prod)", id, s.resolvedRef)
+	}
 }

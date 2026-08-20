@@ -19,6 +19,7 @@ service CatalogService {
   rpc ListVisibleAssets(ListVisibleAssetsRequest) returns (ListVisibleAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
   rpc ResolveAsset(ResolveAssetRequest) returns (ResolveAssetResponse) {}
+  rpc ResolveFolder(ResolveFolderRequest) returns (ResolveFolderResponse) {}
 }
 
 message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; }
@@ -110,3 +111,9 @@ message GetAssetAccessResponse {
 // reach. An unknown ref and a ref the caller cannot see return the same NotFound.
 message ResolveAssetRequest  { string ref = 1 [(buf.validate.field).string = {min_len: 1}]; }
 message ResolveAssetResponse { string asset_id = 1; string path = 2; }
+
+// ResolveFolder maps a caller-supplied reference (a uuid or a DNS-style dotted path
+// like "db.prod", or a single segment for a top-level folder) to a folder id. Admin
+// only; an unknown ref returns NotFound.
+message ResolveFolderRequest  { string ref = 1 [(buf.validate.field).string = {min_len: 1}]; }
+message ResolveFolderResponse { string folder_id = 1; string path = 2; }

@@ -550,6 +550,47 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 	}
 }
 
+func TestResolveFolder(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	prod, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("prod: %v", err)
+	}
+	db, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+
+	got, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "db.prod"}), tok))
+	if err != nil {
+		t.Fatalf("resolve db.prod: %v", err)
+	}
+	if got.Msg.FolderId != db.Msg.Folder.Id || got.Msg.Path != "db.prod" {
+		t.Fatalf("resolve db.prod = {%s,%s}, want {%s, db.prod}", got.Msg.FolderId, got.Msg.Path, db.Msg.Folder.Id)
+	}
+	gotTop, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "prod"}), tok))
+	if err != nil || gotTop.Msg.FolderId != prod.Msg.Folder.Id || gotTop.Msg.Path != "prod" {
+		t.Fatalf("resolve prod = %v / {%s,%s}", err, gotTop.Msg.GetFolderId(), gotTop.Msg.GetPath())
+	}
+	gotID, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: db.Msg.Folder.Id}), tok))
+	if err != nil || gotID.Msg.Path != "db.prod" {
+		t.Fatalf("resolve uuid = %v / %q", err, gotID.Msg.GetPath())
+	}
+	if _, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "nope.prod"}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("bad path = %v, want NotFound", connect.CodeOf(err))
+	}
+	seedUser(t, pool, "u@x", "password123", false)
+	utok := authClient(t, url, "u@x", "password123")
+	if _, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "prod"}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
 func TestResolveAsset(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
