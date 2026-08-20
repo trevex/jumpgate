@@ -275,7 +275,7 @@ func TestSetupSessionHappyPath(t *testing.T) {
 		t.Fatalf("GrantID = %v, want NULL", rows[0].GrantID)
 	}
 
-	// The cert carries host-scoped ValidPrincipals == [deploy@prod.pg, deploy@<asset-id>].
+	// The cert carries host-scoped ValidPrincipals == [deploy@pg.prod, deploy@<asset-id>].
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(res.SSHCertificate)
 	if err != nil {
 		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
@@ -288,8 +288,8 @@ func TestSetupSessionHappyPath(t *testing.T) {
 	if len(cert.ValidPrincipals) != 2 {
 		t.Fatalf("cert ValidPrincipals = %v, want 2 host-scoped principals", cert.ValidPrincipals)
 	}
-	if cert.ValidPrincipals[0] != "deploy@prod.pg" {
-		t.Fatalf("cert ValidPrincipals[0] = %q, want deploy@prod.pg", cert.ValidPrincipals[0])
+	if cert.ValidPrincipals[0] != "deploy@pg.prod" {
+		t.Fatalf("cert ValidPrincipals[0] = %q, want deploy@pg.prod", cert.ValidPrincipals[0])
 	}
 	if !strings.HasPrefix(cert.ValidPrincipals[1], "deploy@") {
 		t.Fatalf("cert ValidPrincipals[1] = %q, want deploy@<asset-id>", cert.ValidPrincipals[1])
