@@ -261,11 +261,10 @@ func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset gen.A
 	if err != nil {
 		return Credential{}, fmt.Errorf("resolve asset path: %w", err)
 	}
-	assetPath := folderPath
-	if assetPath != "" {
-		assetPath += "."
+	assetPath := asset.Name
+	if folderPath != "" {
+		assetPath += "." + folderPath
 	}
-	assetPath += asset.Name
 
 	principals := []string{
 		req.Login + "@" + assetPath,
