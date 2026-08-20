@@ -255,6 +255,17 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return i, err
 }
 
+const getGroupByName = `-- name: GetGroupByName :one
+SELECT id, name, created_at FROM groups WHERE name = $1
+`
+
+func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByName, name)
+	var i Group
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	return i, err
+}
+
 const insertAssetName = `-- name: InsertAssetName :exec
 INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3)
 `

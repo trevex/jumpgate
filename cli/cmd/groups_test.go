@@ -32,10 +32,12 @@ func (s *stubGroups) ListGroups(_ context.Context, _ *connect.Request[identityv1
 	}}), nil
 }
 
-func (s *stubGroups) ListUsers(_ context.Context, _ *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
-	return connect.NewResponse(&identityv1.ListUsersResponse{Users: []*identityv1.User{
-		{Id: "22222222-2222-2222-2222-222222222222", Email: "alice@x", DisplayName: "Alice"},
-	}}), nil
+func (s *stubGroups) ResolveGroup(_ context.Context, _ *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
+	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: "11111111-1111-1111-1111-111111111111"}), nil
+}
+
+func (s *stubGroups) ResolveUser(_ context.Context, _ *connect.Request[identityv1.ResolveUserRequest]) (*connect.Response[identityv1.ResolveUserResponse], error) {
+	return connect.NewResponse(&identityv1.ResolveUserResponse{UserId: "22222222-2222-2222-2222-222222222222"}), nil
 }
 
 func (s *stubGroups) AddUserToGroup(_ context.Context, req *connect.Request[identityv1.AddUserToGroupRequest]) (*connect.Response[identityv1.AddUserToGroupResponse], error) {
