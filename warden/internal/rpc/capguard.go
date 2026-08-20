@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -71,4 +72,44 @@ func (g capGuard) scopeOfRole(ctx context.Context, roleID uuid.UUID) (authz.Scop
 		return authz.Scope{}, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
 	return scopeOfFolderID(r.FolderID), nil
+}
+
+// scopeOfObject derives a management scope from an object's scope columns:
+// AssetScope if asset-scoped, FolderScope if folder-scoped, else Global.
+func scopeOfObject(scopeFolder, scopeAsset pgtype.UUID) authz.Scope {
+	if scopeAsset.Valid {
+		return authz.AssetScope(uuid.UUID(scopeAsset.Bytes))
+	}
+	return scopeOfFolderID(scopeFolder)
+}
+
+// scopeOfBinding loads a role binding by id and returns its scope. NotFound on missing.
+func (g capGuard) scopeOfBinding(ctx context.Context, bindingID uuid.UUID) (authz.Scope, error) {
+	b, err := g.q.GetRoleBinding(ctx, bindingID)
+	if err != nil {
+		return authz.Scope{}, connect.NewError(connect.CodeNotFound, errors.New("role binding not found"))
+	}
+	return scopeOfObject(b.ScopeFolderID, b.ScopeAssetID), nil
+}
+
+// scopeOfPolicy loads a request policy by id and returns its scope. NotFound on missing.
+func (g capGuard) scopeOfPolicy(ctx context.Context, policyID uuid.UUID) (authz.Scope, error) {
+	p, err := g.q.GetRequestPolicy(ctx, policyID)
+	if err != nil {
+		return authz.Scope{}, connect.NewError(connect.CodeNotFound, errors.New("request policy not found"))
+	}
+	return scopeOfObject(p.ScopeFolderID, p.ScopeAssetID), nil
+}
+
+// roleCaps loads a role by id and returns its capability patterns. NotFound on missing.
+func (g capGuard) roleCaps(ctx context.Context, roleID uuid.UUID) ([]string, error) {
+	r, err := g.q.GetRole(ctx, roleID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
+	}
+	var caps []string
+	if err := json.Unmarshal(r.Capabilities, &caps); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return caps, nil
 }

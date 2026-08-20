@@ -124,6 +124,46 @@ func (q *Queries) GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNa
 	return i, err
 }
 
+const getPolicySubject = `-- name: GetPolicySubject :one
+SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects WHERE id = $1
+`
+
+func (q *Queries) GetPolicySubject(ctx context.Context, id uuid.UUID) (RequestPolicySubject, error) {
+	row := q.db.QueryRow(ctx, getPolicySubject, id)
+	var i RequestPolicySubject
+	err := row.Scan(
+		&i.ID,
+		&i.PolicyID,
+		&i.SubjectUserID,
+		&i.SubjectGroupID,
+		&i.CreatedAt,
+		&i.Kind,
+	)
+	return i, err
+}
+
+const getRequestPolicy = `-- name: GetRequestPolicy :one
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies WHERE id = $1
+`
+
+func (q *Queries) GetRequestPolicy(ctx context.Context, id uuid.UUID) (RequestPolicy, error) {
+	row := q.db.QueryRow(ctx, getRequestPolicy, id)
+	var i RequestPolicy
+	err := row.Scan(
+		&i.ID,
+		&i.RoleID,
+		&i.ScopeFolderID,
+		&i.ScopeAssetID,
+		&i.RequiredApprovals,
+		&i.ApproverRoleID,
+		&i.CreatedAt,
+		&i.RequesterRoleID,
+		&i.MaxDuration,
+		&i.Name,
+	)
+	return i, err
+}
+
 const getRoleDefaultPolicy = `-- name: GetRoleDefaultPolicy :one
 SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
 `

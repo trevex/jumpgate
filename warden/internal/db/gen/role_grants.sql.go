@@ -43,6 +43,23 @@ func (q *Queries) DeleteRoleGrant(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const getRoleGrant = `-- name: GetRoleGrant :one
+SELECT id, role_id, source_role_id, via, created_at FROM role_grants WHERE id = $1
+`
+
+func (q *Queries) GetRoleGrant(ctx context.Context, id uuid.UUID) (RoleGrant, error) {
+	row := q.db.QueryRow(ctx, getRoleGrant, id)
+	var i RoleGrant
+	err := row.Scan(
+		&i.ID,
+		&i.RoleID,
+		&i.SourceRoleID,
+		&i.Via,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listRoleGrants = `-- name: ListRoleGrants :many
 SELECT id, role_id, source_role_id, via, created_at FROM role_grants WHERE role_id = $1 ORDER BY id
 `

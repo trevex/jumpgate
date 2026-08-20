@@ -12,6 +12,9 @@ RETURNING *;
 -- name: DeleteRequestPolicy :exec
 DELETE FROM request_policies WHERE id = $1;
 
+-- name: GetRequestPolicy :one
+SELECT * FROM request_policies WHERE id = $1;
+
 -- name: GetRoleDefaultPolicy :one
 SELECT * FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL;
 
@@ -22,6 +25,9 @@ SELECT * FROM request_policies WHERE role_id = $1 ORDER BY id;
 INSERT INTO request_policy_subjects (policy_id, kind, subject_user_id, subject_group_id)
 VALUES ($1, $2, $3, $4)
 RETURNING *;
+
+-- name: GetPolicySubject :one
+SELECT * FROM request_policy_subjects WHERE id = $1;
 
 -- name: RemovePolicySubject :exec
 DELETE FROM request_policy_subjects WHERE id = $1;
