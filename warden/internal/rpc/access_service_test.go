@@ -253,6 +253,39 @@ func TestRoleBindingCRUD(t *testing.T) {
 	}
 }
 
+// TestCreateGlobalRoleBinding creates a role binding with NEITHER scope set
+// (a global binding). The DB one_scope constraint was relaxed to permit this and
+// CreateRoleBinding now rejects only both-scopes-set, so a scopeless binding on a
+// global role succeeds.
+func TestCreateGlobalRoleBinding(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "global-op", Capabilities: []string{"db:read"}}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "everyone"}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// global binding: no scope_folder_id, no scope_asset_id
+	rb, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: role.Msg.Role.Id, SubjectGroupId: g.Msg.Group.Id,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create global binding: %v", err)
+	}
+	if rb.Msg.Id == "" {
+		t.Fatal("empty global binding id")
+	}
+}
+
 // TestListRoleBindings exercises the optional filters: by role, and by scope.
 func TestListRoleBindings(t *testing.T) {
 	pool, url := newServer(t)

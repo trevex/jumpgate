@@ -385,8 +385,8 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 	}
-	if hasFolder == hasAsset { // both set or both unset
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of scope_folder_id, scope_asset_id is required"))
+	if hasFolder && hasAsset {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("at most one of scope_folder_id, scope_asset_id may be set"))
 	}
 	subjUser, hasUser, err := optUUID(req.Msg.SubjectUserId)
 	if err != nil {
