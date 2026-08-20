@@ -49,15 +49,15 @@ func TestApprovalResolver(t *testing.T) {
 	q := gen.New(pool)
 
 	// Roles
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "owner", ResourceType: "asset", Capabilities: caps()})
+	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "owner", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	readonly, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "readonly", ResourceType: "asset", Capabilities: caps()})
+	readonly, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "readonly", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +171,11 @@ func TestApprovalResolver(t *testing.T) {
 	// Uses fresh roles/users (custodian/keeper/dave) so existing assertions are
 	// untouched.
 	t.Run("approver-role-requires-explicit-parent-rule", func(t *testing.T) {
-		custodian, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "custodian", ResourceType: "asset", Capabilities: caps()})
+		custodian, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "custodian", Capabilities: caps()})
 		if err != nil {
 			t.Fatal(err)
 		}
-		keeper, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "keeper", ResourceType: "asset", Capabilities: caps()})
+		keeper, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "keeper", Capabilities: caps()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -344,7 +344,7 @@ func TestApprovalResolver(t *testing.T) {
 	// with a 1h cap must round-trip through EffectiveRule.MaxDuration; a policy with
 	// NULL max_duration must yield an invalid interval.
 	t.Run("max-duration-round-trips", func(t *testing.T) {
-		capped, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "capped", ResourceType: "asset", Capabilities: caps()})
+		capped, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "capped", Capabilities: caps()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -388,11 +388,11 @@ func TestIsEligibleRequester(t *testing.T) {
 
 	// Roles: dba (the requestable role) and requester (the standing role that
 	// confers requester eligibility).
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", ResourceType: "asset", Capabilities: caps()})
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestDeactivatedExplicitApproverSubject(t *testing.T) {
 	q := gen.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestDeactivatedExplicitRequesterSubject(t *testing.T) {
 	q := gen.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,11 +671,11 @@ func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
 	r := approvals.New(pool)
 
 	// Roles: dba (the requestable role) + approver (confers approver eligibility).
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	approver, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "approver", ResourceType: "asset", Capabilities: caps()})
+	approver, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "approver", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -743,11 +743,11 @@ func TestGrantedRequesterRoleIsNotEligible(t *testing.T) {
 	q := gen.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", ResourceType: "asset", Capabilities: caps()})
+	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", ResourceType: "asset", Capabilities: caps()})
+	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", Capabilities: caps()})
 	if err != nil {
 		t.Fatal(err)
 	}

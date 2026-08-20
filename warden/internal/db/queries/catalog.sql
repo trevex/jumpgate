@@ -13,6 +13,12 @@ SELECT * FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
 -- name: GetRole :one
 SELECT * FROM roles WHERE id = $1;
 
+-- name: GetRoleByNameGlobal :one
+SELECT * FROM roles WHERE name = $1 AND folder_id IS NULL;
+
+-- name: GetRoleByFolderAndName :one
+SELECT * FROM roles WHERE folder_id = $1 AND name = $2;
+
 -- name: ListRolesByIDs :many
 SELECT * FROM roles WHERE id = ANY($1::uuid[]);
 
@@ -92,3 +98,13 @@ SELECT * FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2;
 
 -- name: AssetByFolderName :one
 SELECT * FROM assets WHERE folder_id = $1 AND name = $2;
+
+-- name: FolderAncestorsAndSelf :many
+-- Every ancestor-or-self folder id of $1 (the target), walking parent links up
+-- to the root. Used for folder-scoped role containment checks.
+WITH RECURSIVE up AS (
+    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
+)
+SELECT up.id FROM up;

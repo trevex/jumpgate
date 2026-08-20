@@ -104,7 +104,7 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 	caps := []byte("[]")
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, ResourceType: "asset", Capabilities: caps})
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: caps})
 		if err != nil {
 			t.Fatalf("CreateRole(%s): %v", name, err)
 		}

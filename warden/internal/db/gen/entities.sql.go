@@ -103,22 +103,22 @@ func (q *Queries) CreateGroup(ctx context.Context, name string) (Group, error) {
 }
 
 const createRole = `-- name: CreateRole :one
-INSERT INTO roles (name, resource_type, capabilities) VALUES ($1, $2, $3) RETURNING id, name, resource_type, capabilities, created_at
+INSERT INTO roles (name, folder_id, capabilities) VALUES ($1, $2, $3) RETURNING id, name, folder_id, capabilities, created_at
 `
 
 type CreateRoleParams struct {
-	Name         string `json:"name"`
-	ResourceType string `json:"resource_type"`
-	Capabilities []byte `json:"capabilities"`
+	Name         string      `json:"name"`
+	FolderID     pgtype.UUID `json:"folder_id"`
+	Capabilities []byte      `json:"capabilities"`
 }
 
 func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
-	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.ResourceType, arg.Capabilities)
+	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.FolderID, arg.Capabilities)
 	var i Role
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.ResourceType,
+		&i.FolderID,
 		&i.Capabilities,
 		&i.CreatedAt,
 	)

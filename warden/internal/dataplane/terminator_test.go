@@ -66,7 +66,7 @@ func setupTerm(t *testing.T) *termFixture {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", ResourceType: "asset", Capabilities: capsJSON("ssh:login:deploy")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:deploy")})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}

@@ -281,7 +281,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-rec-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`)})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-rec-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`)})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -385,7 +385,7 @@ func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`)})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`)})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}

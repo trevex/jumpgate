@@ -162,7 +162,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	}
 
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-deploy-e2e-" + uuid.NewString(), ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`),
+		Name: "ssh-deploy-e2e-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)

@@ -53,6 +53,37 @@ func (q *Queries) DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid
 	return err
 }
 
+const folderAncestorsAndSelf = `-- name: FolderAncestorsAndSelf :many
+WITH RECURSIVE up AS (
+    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
+)
+SELECT up.id FROM up
+`
+
+// Every ancestor-or-self folder id of $1 (the target), walking parent links up
+// to the root. Used for folder-scoped role containment checks.
+func (q *Queries) FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, folderAncestorsAndSelf, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const folderByParentName = `-- name: FolderByParentName :one
 SELECT id, name, parent_id, created_at FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
 `
@@ -147,7 +178,7 @@ func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
 }
 
 const getRole = `-- name: GetRole :one
-SELECT id, name, resource_type, capabilities, created_at FROM roles WHERE id = $1
+SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE id = $1
 `
 
 func (q *Queries) GetRole(ctx context.Context, id uuid.UUID) (Role, error) {
@@ -156,7 +187,7 @@ func (q *Queries) GetRole(ctx context.Context, id uuid.UUID) (Role, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.ResourceType,
+		&i.FolderID,
 		&i.Capabilities,
 		&i.CreatedAt,
 	)
@@ -177,6 +208,45 @@ func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding
 		&i.ScopeAssetID,
 		&i.SubjectUserID,
 		&i.SubjectGroupID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoleByFolderAndName = `-- name: GetRoleByFolderAndName :one
+SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE folder_id = $1 AND name = $2
+`
+
+type GetRoleByFolderAndNameParams struct {
+	FolderID pgtype.UUID `json:"folder_id"`
+	Name     string      `json:"name"`
+}
+
+func (q *Queries) GetRoleByFolderAndName(ctx context.Context, arg GetRoleByFolderAndNameParams) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByFolderAndName, arg.FolderID, arg.Name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.Capabilities,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoleByNameGlobal = `-- name: GetRoleByNameGlobal :one
+SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE name = $1 AND folder_id IS NULL
+`
+
+func (q *Queries) GetRoleByNameGlobal(ctx context.Context, name string) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByNameGlobal, name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.Capabilities,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -395,7 +465,7 @@ func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgty
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, resource_type, capabilities, created_at FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
+SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
 `
 
 type ListRolesParams struct {
@@ -415,7 +485,7 @@ func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, e
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.ResourceType,
+			&i.FolderID,
 			&i.Capabilities,
 			&i.CreatedAt,
 		); err != nil {
@@ -430,7 +500,7 @@ func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, e
 }
 
 const listRolesByIDs = `-- name: ListRolesByIDs :many
-SELECT id, name, resource_type, capabilities, created_at FROM roles WHERE id = ANY($1::uuid[])
+SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error) {
@@ -445,7 +515,7 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.ResourceType,
+			&i.FolderID,
 			&i.Capabilities,
 			&i.CreatedAt,
 		); err != nil {

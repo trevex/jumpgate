@@ -61,7 +61,7 @@ func TestAuthzChangedTriggerFires(t *testing.T) {
 	q := gen.New(pool)
 
 	// FK graph: a role, a folder+asset scope, and a user to bind.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "db_admin", ResourceType: "asset", Capabilities: capsJSON()})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "db_admin", Capabilities: capsJSON()})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}

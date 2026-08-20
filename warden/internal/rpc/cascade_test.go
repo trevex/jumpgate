@@ -94,7 +94,7 @@ func setupCascade(t *testing.T) *cascadeFixture {
 func (f *cascadeFixture) createRole(t *testing.T, name string) string {
 	t.Helper()
 	r, err := f.acc.CreateRole(f.ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: name, ResourceType: "asset", Capabilities: []string{"ssh:login:deploy"},
+		Name: name, Capabilities: []string{"ssh:login:deploy"},
 	}), f.admin))
 	if err != nil {
 		t.Fatalf("CreateRole(%s): %v", name, err)

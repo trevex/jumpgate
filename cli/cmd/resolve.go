@@ -73,34 +73,19 @@ func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (str
 	return match, nil
 }
 
-// resolveRoleID returns s unchanged if it is already a UUID; otherwise it looks
-// up a role by name via ListRoles and returns the matching id. A missing or
-// ambiguous match is a clear error.
+// resolveRoleID maps a uuid | name | <role>.<folder-path> to a role id via warden's
+// ResolveRole (admin only). A uuid short-circuits locally (no round-trip).
 func resolveRoleID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
 	if _, err := uuid.Parse(s); err == nil {
 		return s, nil
 	}
-
-	req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 100})
+	req := connect.NewRequest(&accessv1.ResolveRoleRequest{Ref: s})
 	cl.Authorize(req)
-	resp, err := cl.Access().ListRoles(ctx, req)
+	resp, err := cl.Access().ResolveRole(ctx, req)
 	if err != nil {
 		return "", err
 	}
-
-	var match string
-	for _, r := range resp.Msg.GetRoles() {
-		if r.GetName() == s {
-			if match != "" {
-				return "", fmt.Errorf("multiple roles match name %q; use the role id", s)
-			}
-			match = r.GetId()
-		}
-	}
-	if match == "" {
-		return "", fmt.Errorf("no role found with name %q", s)
-	}
-	return match, nil
+	return resp.Msg.GetRoleId(), nil
 }
 
 // resolveFolderID maps a uuid or DNS-style folder path to a folder id via warden's

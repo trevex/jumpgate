@@ -52,9 +52,7 @@ jumpgate login --context admin \
   --email admin@demo.test --password admin-password-1234
 ```
 
-Create a folder and onboard three sshd test workloads as SSH assets (cert, password, key).
-Capture the ca box id — non-admin users cannot resolve an asset they haven't been granted access
-to, so alice will pass the id explicitly when requesting:
+Create a folder and onboard three sshd test workloads as SSH assets (cert, password, key):
 
 ```bash
 jumpgate --context admin folders create demo
@@ -62,7 +60,7 @@ jumpgate --context admin folders create demo
 jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
-  --login deploy -o json      # note "id" -> ASSET_ID (for alice's request); "path" = demo-box.demo
+  --login deploy -o json      # "path" = demo-box.demo
 ```
 
 A CA target only accepts a certificate whose principal it has been told to trust. Provision the
@@ -95,13 +93,17 @@ jumpgate --context admin assets ssh login set key-box.demo \
   --login demo --kind key --key-file test/env/testworkload/demo_key
 ```
 
-Create the role the users will request. Its capability grants the `deploy` SSH login:
+Create the role the users will request. Its capability grants the `deploy` SSH login. Both
+roles are scoped to the `demo` folder with `--folder demo`, so they can only be bound or made
+requestable within that subtree and are addressable as `ssh-deploy.demo` / `ssh-demo.demo`:
 
 ```bash
 jumpgate --context admin roles create ssh-deploy \
-  --capability ssh:login:deploy -o json   # note the "id" -> ROLE_ID
+  --folder demo \
+  --capability ssh:login:deploy -o json
 
 jumpgate --context admin roles create ssh-demo \
+  --folder demo \
   --capability ssh:login:demo -o json
 ```
 
@@ -123,12 +125,13 @@ jumpgate --context admin groups add-member sre bob@demo.test
 ```
 
 Grant the **sre** group **standing** access to the password and key boxes (no request needed — a
-contrast with the ca box's just-in-time flow). Bind `ssh-demo` to the group on each box — the role
-and group resolve by name, and once created the assets are addressable by their DNS path:
+contrast with the ca box's just-in-time flow). Bind `ssh-demo` to the group on each box. Because the
+role is folder-scoped, it is addressed by its namespaced DNS name `ssh-demo.demo` (a bare `ssh-demo`
+would resolve as a *global* role); the group resolves by name and the assets by their DNS path:
 
 ```bash
-jumpgate --context admin bindings create --role ssh-demo --group sre --asset password-box.demo
-jumpgate --context admin bindings create --role ssh-demo --group sre --asset key-box.demo
+jumpgate --context admin bindings create --role ssh-demo.demo --group sre --asset password-box.demo
+jumpgate --context admin bindings create --role ssh-demo.demo --group sre --asset key-box.demo
 ```
 
 Create a request policy that makes `ssh-deploy` requestable at the asset scope, requiring
@@ -152,10 +155,11 @@ jumpgate login --context alice \
   --ca ./jumpgate-mesh-ca.pem \
   --email alice@demo.test --password alice-password-1234
 
-# The role determines the real login; the "deploy@" prefix is cosmetic. A requester
-# cannot yet resolve the asset/role by name, so pass the ids from Act 0.
-jumpgate --context alice access request deploy@<ASSET_ID> \
-  --role <ROLE_ID> --duration 1h --reason "need to check the demo box"   # note the "id" -> REQUEST_ID
+# alice can see what she may request (by name), then request by path + name — no ids.
+# The role determines the real login; the "deploy@" prefix is cosmetic.
+jumpgate --context alice assets get demo-box.demo        # shows ssh-deploy under REQUESTABLE ROLES
+jumpgate --context alice access request deploy@demo-box.demo \
+  --role ssh-deploy --duration 1h --reason "need to check the demo box"   # note the "id" -> REQUEST_ID
 ```
 
 ## Act 2 — bob approves

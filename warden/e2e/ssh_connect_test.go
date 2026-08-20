@@ -498,7 +498,7 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 	}
 
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-deploy", ResourceType: "asset", Capabilities: capsJSON("ssh:login:" + login),
+		Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:" + login),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)

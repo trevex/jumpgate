@@ -44,7 +44,7 @@ func TestDeactivatedUserStandingBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-role", ResourceType: "asset", Capabilities: caps("ssh:login:deploy")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-role", Capabilities: caps("ssh:login:deploy")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestDeactivatedUserGroupBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-grp-role", ResourceType: "asset", Capabilities: caps("db:read")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-grp-role", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestDeactivatedUserExplicitRequesterSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-req-role", ResourceType: "asset", Capabilities: caps("db:read")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-req-role", Capabilities: caps("db:read")})
 	if err != nil {
 		t.Fatal(err)
 	}
