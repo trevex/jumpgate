@@ -142,6 +142,31 @@ func TestAccessRequest(t *testing.T) {
 	}
 }
 
+func TestAccessRequestRejectsNonUUIDAsset(t *testing.T) {
+	s := &stubAccessRequest{}
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAccessStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAccessFlags)
+
+	const roleID = "11111111-1111-1111-1111-111111111111"
+
+	rootCmd.SetOut(&bytes.Buffer{})
+	rootCmd.SetArgs([]string{
+		"access", "request", "root@deploy.pg.db.prod",
+		"--role", roleID,
+	})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-UUID asset ref, got nil")
+	}
+	if !strings.Contains(err.Error(), "takes the asset id") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.gotRequest != nil {
+		t.Fatal("RequestAccess should not have been called for a non-UUID asset ref")
+	}
+}
+
 func TestAccessApprove(t *testing.T) {
 	s := &stubAccessRequest{}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newAccessStub(t, s))
