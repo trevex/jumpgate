@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -80,6 +81,27 @@ func toFolderMsg(f gen.Folder) *catalogv1.Folder {
 
 func toAssetMsg(a gen.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
+}
+
+// joinPath appends a leaf name to a dotted folder path. folderPath is the containing
+// folder's own dotted path (never empty for a real folder); the asset lives one level
+// below it.
+func joinPath(folderPath, name string) string {
+	if folderPath == "" {
+		return name
+	}
+	return folderPath + "." + name
+}
+
+// assetMsgWithPath sets msg.Path = "<folder path>.<asset name>" via a post-commit
+// FolderPath lookup. Best-effort: on a lookup error the path is left empty rather than
+// failing the create, since the asset is already committed.
+func (s *CatalogServer) assetMsgWithPath(ctx context.Context, msg *catalogv1.Asset, folderID uuid.UUID, name string) *catalogv1.Asset {
+	fp, err := s.q.FolderPath(ctx, folderID)
+	if err == nil {
+		msg.Path = joinPath(fp, name)
+	}
+	return msg
 }
 
 // toAssetMsgWithConfig builds an Asset carrying its typed SSH config (host/target
@@ -166,7 +188,8 @@ func optUUID(s string) (pgtype.UUID, bool, error) {
 	return pgUUID(id), true, nil
 }
 
-// CreateFolder creates a folder (admin only).
+// CreateFolder creates a folder (admin only). The folder row and its catalog_names
+// entry are written in one transaction so sibling uniqueness is enforced atomically.
 func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[catalogv1.CreateFolderRequest]) (*connect.Response[catalogv1.CreateFolderResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
 		return nil, err
@@ -179,11 +202,31 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 		}
 		parent = pgUUID(pid)
 	}
-	f, err := s.q.CreateFolder(ctx, gen.CreateFolderParams{Name: req.Msg.Name, ParentID: parent})
+	name := strings.ToLower(req.Msg.Name)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+
+	f, err := qtx.CreateFolder(ctx, gen.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad parent_id is InvalidArgument, not Internal
 	}
-	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: toFolderMsg(f)}), nil
+	if err := qtx.InsertFolderName(ctx, gen.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
+		return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	msg := toFolderMsg(f)
+	if path, err := s.q.FolderPath(ctx, f.ID); err == nil {
+		msg.Path = path
+	}
+	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: msg}), nil
 }
 
 // ListFolders lists folders (admin only).
@@ -207,9 +250,19 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	allPaths, err := s.q.FolderPaths(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	pathByID := make(map[string]string, len(allPaths))
+	for _, p := range allPaths {
+		pathByID[p.ID.String()] = p.Path
+	}
 	out := &catalogv1.ListFoldersResponse{}
 	for i := range rows {
-		out.Folders = append(out.Folders, toFolderMsg(rows[i]))
+		m := toFolderMsg(rows[i])
+		m.Path = pathByID[rows[i].ID.String()]
+		out.Folders = append(out.Folders, m)
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
 		out.NextPageToken = rows[len(rows)-1].ID.String()
@@ -217,7 +270,8 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	return connect.NewResponse(out), nil
 }
 
-// CreateAsset creates an asset in a folder (admin only).
+// CreateAsset creates an asset in a folder (admin only). The asset row, its
+// catalog_names entry, and any inline SSH config are written in one transaction.
 func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
 	if err := auth.RequireAdmin(ctx); err != nil {
 		return nil, err
@@ -230,33 +284,39 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if kind == "" {
 		kind = "ssh"
 	}
-	params := gen.CreateAssetParams{FolderID: fid, Name: req.Msg.Name, Labels: []byte("{}"), Kind: kind}
+	name := strings.ToLower(req.Msg.Name)
+	params := gen.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: kind}
 
-	// Without inline config, a single insert suffices.
 	ssh := req.Msg.GetSsh()
-	if ssh == nil {
-		a, err := s.q.CreateAsset(ctx, params)
-		if err != nil {
-			return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
+	if ssh != nil {
+		if err := validateSSHConfig(ssh); err != nil {
+			return nil, err
 		}
-		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsg(a)}), nil
 	}
 
-	// With inline config, create the asset and its config atomically so a bad config
-	// leaves no orphan bare asset.
-	if err := validateSSHConfig(ssh); err != nil {
-		return nil, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
+
 	a, err := qtx.CreateAsset(ctx, params)
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}
+	if err := qtx.InsertAssetName(ctx, gen.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
+		return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+	}
+
+	// Without inline config we still commit the tx (asset + registry row).
+	if ssh == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
+	}
+
 	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh))
 	if err != nil {
 		return nil, mapWriteErr(err)
@@ -271,7 +331,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	if err := tx.Commit(ctx); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
+	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
 // GetAsset returns an asset with its typed config (admin only). NotFound if the
@@ -294,7 +354,7 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsg(a)}), nil
+			return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -302,7 +362,7 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: toAssetMsgWithConfig(a, cfg, logins)}), nil
+	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
 // UpdateAssetConfig upserts an asset's typed config (admin only). The
@@ -357,9 +417,15 @@ func (s *CatalogServer) ListAssetsByFolder(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	folderPath, err := s.q.FolderPath(ctx, fid)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 	out := &catalogv1.ListAssetsByFolderResponse{}
 	for i := range rows {
-		out.Assets = append(out.Assets, toAssetMsg(rows[i]))
+		m := toAssetMsg(rows[i])
+		m.Path = joinPath(folderPath, rows[i].Name)
+		out.Assets = append(out.Assets, m)
 	}
 	return connect.NewResponse(out), nil
 }

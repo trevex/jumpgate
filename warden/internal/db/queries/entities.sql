@@ -46,6 +46,12 @@ INSERT INTO folders (name, parent_id) VALUES ($1, $2) RETURNING *;
 -- name: CreateAsset :one
 INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING *;
 
+-- name: InsertFolderName :exec
+INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, $2, $3);
+
+-- name: InsertAssetName :exec
+INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3);
+
 -- name: CreateRole :one
 INSERT INTO roles (name, resource_type, capabilities) VALUES ($1, $2, $3) RETURNING *;
 

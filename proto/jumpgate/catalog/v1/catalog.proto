@@ -20,7 +20,7 @@ service CatalogService {
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
 }
 
-message Folder { string id = 1; string name = 2; string parent_id = 3; }
+message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; }
 
 // Asset is a target in the catalog. The typed per-kind connection config (config)
 // is populated only by single-asset reads (GetAsset); list responses leave it empty
@@ -31,6 +31,7 @@ message Asset {
   string name = 3;
   string kind = 4;
   oneof config { SSHConfig ssh = 5; }
+  string path = 6;
 }
 
 // SSHConfig is an SSH asset's connection + auth config. stored_secret_id references
@@ -59,7 +60,7 @@ message SSHLogin {
 }
 
 message CreateFolderRequest {
-  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
   string parent_id = 2;
 }
 message CreateFolderResponse { Folder folder = 1; }
@@ -69,7 +70,7 @@ message ListFoldersResponse { repeated Folder folders = 1; string next_page_toke
 
 message CreateAssetRequest {
   string folder_id = 1 [(buf.validate.field).string.uuid = true];
-  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
   string kind = 3 [(buf.validate.field).string = {in: ["ssh", "postgres", "k8s", ""]}];
   // Optional inline connection config so onboarding is a single call.
   oneof config { SSHConfig ssh = 4; }
