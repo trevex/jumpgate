@@ -28,6 +28,7 @@ var rolesCmd = &cobra.Command{
 
 var (
 	rolesCreateCapabilities []string
+	rolesCreateFolder       string
 )
 
 var rolesCreateCmd = &cobra.Command{
@@ -46,6 +47,7 @@ var rolesListCmd = &cobra.Command{
 
 func init() {
 	rolesCreateCmd.Flags().StringSliceVar(&rolesCreateCapabilities, "capability", nil, "capability, e.g. ssh:login:deploy (repeatable or comma-separated)")
+	rolesCreateCmd.Flags().StringVar(&rolesCreateFolder, "folder", "", "folder to scope the role to (uuid or DNS path); empty = global")
 
 	rolesCmd.AddCommand(rolesCreateCmd)
 	rolesCmd.AddCommand(rolesListCmd)
@@ -58,8 +60,17 @@ func runRolesCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var folderID string
+	if rolesCreateFolder != "" {
+		folderID, err = resolveFolderID(cmd.Context(), cl, rolesCreateFolder)
+		if err != nil {
+			return err
+		}
+	}
+
 	req := connect.NewRequest(&accessv1.CreateRoleRequest{
 		Name:         args[0],
+		FolderId:     folderID,
 		Capabilities: rolesCreateCapabilities,
 	})
 	cl.Authorize(req)
