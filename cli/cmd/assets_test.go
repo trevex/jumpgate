@@ -36,6 +36,9 @@ type stubAssets struct {
 	// read-modify-write starts from).
 	getAssetSSH *catalogv1.SSHConfig
 
+	// getAccessOverride, when non-nil, is returned verbatim by GetAssetAccess.
+	getAccessOverride *catalogv1.GetAssetAccessResponse
+
 	visible  []*catalogv1.VisibleAsset
 	byFolder []*catalogv1.Asset
 }
@@ -78,10 +81,16 @@ func (s *stubAssets) ListAssetsByFolder(_ context.Context, _ *connect.Request[ca
 	return connect.NewResponse(&catalogv1.ListAssetsByFolderResponse{Assets: s.byFolder}), nil
 }
 
+// getAccessOverride, when non-nil, is returned verbatim by GetAssetAccess.
 func (s *stubAssets) GetAssetAccess(_ context.Context, _ *connect.Request[catalogv1.GetAssetAccessRequest]) (*connect.Response[catalogv1.GetAssetAccessResponse], error) {
+	if s.getAccessOverride != nil {
+		return connect.NewResponse(s.getAccessOverride), nil
+	}
 	return connect.NewResponse(&catalogv1.GetAssetAccessResponse{
-		ActiveRoleIds:      []string{"role-active"},
-		RequestableRoleIds: []string{"role-req"},
+		ActiveRoleIds:      []string{"role-active-id"},
+		RequestableRoleIds: []string{"role-req-id"},
+		ActiveRoles:        []*catalogv1.RoleRef{{Id: "role-active-id", Name: "shell", FolderPath: "prod"}},
+		RequestableRoles:   []*catalogv1.RoleRef{{Id: "role-req-id", Name: "admin"}},
 	}), nil
 }
 
@@ -356,7 +365,7 @@ func TestAssetsSSHLoginList(t *testing.T) {
 
 func TestAssetsList(t *testing.T) {
 	s := &stubAssets{visible: []*catalogv1.VisibleAsset{
-		{Id: "a-1", Name: "prod-box", Active: true},
+		{Id: "a-1", Name: "prod-box", Active: true, Path: "prod-box.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
@@ -370,8 +379,11 @@ func TestAssetsList(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "a-1") || !strings.Contains(got, "prod-box") {
+	if !strings.Contains(got, "a-1") || !strings.Contains(got, "prod-box.prod") {
 		t.Fatalf("out=%s", got)
+	}
+	if !strings.Contains(got, "PATH") {
+		t.Fatalf("visible asset table missing PATH column:\n%s", got)
 	}
 }
 
@@ -390,8 +402,37 @@ func TestAssetsGet(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "role-active") || !strings.Contains(got, "role-req") {
-		t.Fatalf("out=%s", got)
+	// Roles render by NAME (a folder-scoped role is suffixed with its path), not by id.
+	if !strings.Contains(got, "shell.prod") {
+		t.Fatalf("active role name missing: %s", got)
+	}
+	if !strings.Contains(got, "admin") {
+		t.Fatalf("requestable role name missing: %s", got)
+	}
+}
+
+// TestAssetsGetRoleNameFallback covers an older server that returns only id lists
+// (no RoleRef): the ids are rendered as-is.
+func TestAssetsGetRoleNameFallback(t *testing.T) {
+	const assetID = "44444444-4444-4444-4444-444444444444"
+	s := &stubAssets{getAccessOverride: &catalogv1.GetAssetAccessResponse{
+		ActiveRoleIds:      []string{"role-active-id"},
+		RequestableRoleIds: []string{"role-req-id"},
+	}}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"assets", "get", assetID, "-o", "table"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "role-active-id") || !strings.Contains(got, "role-req-id") {
+		t.Fatalf("id fallback not rendered: %s", got)
 	}
 }
 

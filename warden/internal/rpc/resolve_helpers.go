@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
@@ -41,3 +42,39 @@ func roleNotFoundOrInternal(err error) error {
 
 // uuidFromPg converts a valid pgtype.UUID to a uuid.UUID.
 func uuidFromPg(u pgtype.UUID) uuid.UUID { return u.Bytes }
+
+// roleRefs resolves role ids to {id, name, folder_path}, computing each distinct
+// scoped folder's path once. Preserves the input order.
+func roleRefs(ctx context.Context, q *gen.Queries, ids []uuid.UUID) ([]*catalogv1.RoleRef, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := q.ListRolesByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	pathByFolder := map[uuid.UUID]string{}
+	refByID := map[uuid.UUID]*catalogv1.RoleRef{}
+	for _, r := range rows {
+		ref := &catalogv1.RoleRef{Id: r.ID.String(), Name: r.Name}
+		if r.FolderID.Valid {
+			fid := uuid.UUID(r.FolderID.Bytes)
+			p, ok := pathByFolder[fid]
+			if !ok {
+				if p, err = q.FolderPath(ctx, fid); err != nil {
+					return nil, err
+				}
+				pathByFolder[fid] = p
+			}
+			ref.FolderPath = p
+		}
+		refByID[r.ID] = ref
+	}
+	out := make([]*catalogv1.RoleRef, 0, len(ids))
+	for _, id := range ids {
+		if ref, ok := refByID[id]; ok {
+			out = append(out, ref)
+		}
+	}
+	return out, nil
+}

@@ -23,10 +23,15 @@ func assetRow(a *catalogv1.Asset) []string {
 	return []string{a.GetId(), a.GetName(), a.GetKind(), a.GetFolderId(), a.GetPath()}
 }
 
-var visibleAssetHeaders = []string{"ID", "NAME", "ACTIVE"}
+var visibleAssetHeaders = []string{"ID", "PATH", "ACTIVE"}
 
 func visibleAssetRow(a *catalogv1.VisibleAsset) []string {
-	return []string{a.GetId(), a.GetName(), fmt.Sprintf("%t", a.GetActive())}
+	// Older servers may not populate path; fall back to the bare name.
+	path := a.GetPath()
+	if path == "" {
+		path = a.GetName()
+	}
+	return []string{a.GetId(), path, fmt.Sprintf("%t", a.GetActive())}
 }
 
 var assetsCmd = &cobra.Command{
@@ -425,8 +430,25 @@ func runAssetsGet(cmd *cobra.Command, args []string) error {
 	return output.RenderProto(cmd.OutOrStdout(), flagOutput, access, &output.Table{
 		Headers: []string{"ACTIVE ROLES", "REQUESTABLE ROLES"},
 		Rows: [][]string{{
-			strings.Join(access.GetActiveRoleIds(), ", "),
-			strings.Join(access.GetRequestableRoleIds(), ", "),
+			strings.Join(roleRefNames(access.GetActiveRoles(), access.GetActiveRoleIds()), ", "),
+			strings.Join(roleRefNames(access.GetRequestableRoles(), access.GetRequestableRoleIds()), ", "),
 		}},
 	})
+}
+
+// roleRefNames renders role refs by name (its folder path suffixed when scoped, e.g.
+// "shell.prod"), falling back to the raw id list when a server predates RoleRef.
+func roleRefNames(refs []*catalogv1.RoleRef, ids []string) []string {
+	if len(refs) == 0 {
+		return ids
+	}
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		name := r.GetName()
+		if fp := r.GetFolderPath(); fp != "" {
+			name = name + "." + fp
+		}
+		out = append(out, name)
+	}
+	return out
 }
