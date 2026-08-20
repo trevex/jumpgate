@@ -64,3 +64,23 @@ RETURNING *;
 
 -- name: DeleteSSHAssetLoginsForAsset :exec
 DELETE FROM ssh_asset_login WHERE asset_id = $1;
+
+-- name: FolderPath :one
+-- Dotted root->leaf path of a single folder (includes the folder itself).
+WITH RECURSIVE chain AS (
+    SELECT folders.id, folders.parent_id, folders.name, 0 AS depth FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id, f.name, c.depth + 1
+    FROM folders f JOIN chain c ON f.id = c.parent_id
+)
+SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth DESC), '')::text AS path FROM chain;
+
+-- name: FolderPaths :many
+-- Every folder's full dotted path in one query (for list responses).
+WITH RECURSIVE chain AS (
+    SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
+    UNION ALL
+    SELECT f.id, f.parent_id, (c.path || '.' || f.name)::text
+    FROM folders f JOIN chain c ON f.parent_id = c.id
+)
+SELECT chain.id, chain.path FROM chain;

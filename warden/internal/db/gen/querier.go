@@ -50,6 +50,10 @@ type Querier interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
+	// Dotted root->leaf path of a single folder (includes the folder itself).
+	FolderPath(ctx context.Context, id uuid.UUID) (string, error)
+	// Every folder's full dotted path in one query (for list responses).
+	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
 	GetActiveSessionSigningKey(ctx context.Context) (SessionSigningKey, error)
@@ -72,7 +76,9 @@ type Querier interface {
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	InsertAssetName(ctx context.Context, arg InsertAssetNameParams) error
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
+	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
