@@ -41,6 +41,10 @@ func (s *stubCatalog) ResolveFolder(_ context.Context, req *connect.Request[cata
 	return connect.NewResponse(&catalogv1.ResolveFolderResponse{FolderId: "folder-uuid-1", Path: req.Msg.GetRef()}), nil
 }
 
+func (s *stubCatalog) ResolveAsset(_ context.Context, req *connect.Request[catalogv1.ResolveAssetRequest]) (*connect.Response[catalogv1.ResolveAssetResponse], error) {
+	return connect.NewResponse(&catalogv1.ResolveAssetResponse{AssetId: "asset-uuid-1", Path: req.Msg.GetRef()}), nil
+}
+
 // newCatalogStub starts an httptest server serving the given catalog handler
 // and returns its base URL.
 func newCatalogStub(t *testing.T, h catalogv1connect.CatalogServiceHandler) string {

@@ -1,14 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/trevex/jumpgate/cli/internal/output"
+	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 )
 
@@ -45,6 +49,7 @@ var policiesCmd = &cobra.Command{
 
 var (
 	policiesCreateRequestRole   string
+	policiesCreateName          string
 	policiesCreateAsset         string
 	policiesCreateFolder        string
 	policiesCreateApproverRole  string
@@ -81,6 +86,7 @@ var policiesAddSubjectCmd = &cobra.Command{
 
 func init() {
 	policiesCreateCmd.Flags().StringVar(&policiesCreateRequestRole, "request-role", "", "role id or name the policy makes requestable (required)")
+	policiesCreateCmd.Flags().StringVar(&policiesCreateName, "name", "", "optional policy name (addressable as <name>@<asset-path>)")
 	policiesCreateCmd.Flags().StringVar(&policiesCreateAsset, "asset", "", "scope asset id or name")
 	policiesCreateCmd.Flags().StringVar(&policiesCreateFolder, "folder", "", "scope folder id or name")
 	policiesCreateCmd.Flags().StringVar(&policiesCreateApproverRole, "approver-role", "", "role id or name whose holders may approve")
@@ -120,6 +126,7 @@ func runPoliciesCreate(cmd *cobra.Command, _ []string) error {
 	req := &accessv1.CreateRequestPolicyRequest{
 		RoleId:            roleID,
 		RequiredApprovals: policiesCreateMinApprovals,
+		Name:              policiesCreateName,
 	}
 
 	if policiesCreateAsset != "" {
@@ -191,6 +198,31 @@ func runPoliciesList(cmd *cobra.Command, _ []string) error {
 	})
 }
 
+// resolvePolicyID maps a uuid or "<name>@<asset-path-or-id>" reference to a policy id.
+// A uuid short-circuits; else the asset half is resolved (admin-aware ResolveAsset) and
+// the policy looked up by (name, asset). No listing.
+func resolvePolicyID(ctx context.Context, cl *wardenclient.Client, ref string) (string, error) {
+	if _, err := uuid.Parse(ref); err == nil {
+		return ref, nil
+	}
+	at := strings.LastIndex(ref, "@")
+	if at <= 0 || at == len(ref)-1 {
+		return "", fmt.Errorf("policy reference must be a uuid or <name>@<asset-path>: %q", ref)
+	}
+	name, assetRef := ref[:at], ref[at+1:]
+	assetID, err := cl.ResolveAsset(ctx, assetRef)
+	if err != nil {
+		return "", err
+	}
+	rreq := connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: name, AssetId: assetID})
+	cl.Authorize(rreq)
+	resp, err := cl.Access().ResolvePolicy(ctx, rreq)
+	if err != nil {
+		return "", err
+	}
+	return resp.Msg.GetPolicyId(), nil
+}
+
 func runPoliciesAddSubject(cmd *cobra.Command, args []string) error {
 	cl, err := newClient()
 	if err != nil {
@@ -208,8 +240,12 @@ func runPoliciesAddSubject(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("exactly one of --user or --group is required")
 	}
 
+	policyID, err := resolvePolicyID(cmd.Context(), cl, args[0])
+	if err != nil {
+		return err
+	}
 	req := &accessv1.AddPolicySubjectRequest{
-		PolicyId: args[0],
+		PolicyId: policyID,
 		Kind:     policiesAddSubjectKind,
 	}
 
