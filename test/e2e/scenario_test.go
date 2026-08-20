@@ -13,6 +13,7 @@ const (
 	adminPass  = "admin-password-1234"
 	alicePass  = "alice-password-1234"
 	bobPass    = "bob-password-1234"
+	danaPass   = "dana-password-1234"
 	marker     = "JUMPGATE_E2E_OK"
 )
 
@@ -136,6 +137,121 @@ func TestScenario(t *testing.T) {
 			e.asActor(t, "admin", "bindings", "create",
 				"--role", demoRoleRef, "--group", e.name("sre"), "--asset", path)
 		}
+	})
+
+	t.Run("act5_delegated_admin", func(t *testing.T) {
+		// Delegated administration via capabilities. The bootstrap admin holds `**`
+		// globally. It carves out a sub-folder `team` under `demo` and hands `dana` a
+		// bounded set of management capabilities scoped to that folder — dana becomes a
+		// "folder admin" who can onboard assets and create/bind roles WITHIN team (and
+		// its subtree, via cascade) but nowhere else, and can never escalate past the
+		// caps she herself holds.
+
+		demoPath := e.name("demo")
+		teamPath := e.name("team") + "." + demoPath
+		danaEmail := "dana" + e.suffix + "@demo.test"
+
+		// --- admin sets up the delegation (admin holds ** globally) ---
+
+		// `folders create --parent` takes the parent folder's UUID (not a path), so
+		// resolve the demo folder's id from the catalog listing.
+		demoFolderID := folderIDByPath(t, e.asActor(t, "admin", "folders", "list", "-o", "json"), demoPath)
+		if demoFolderID == "" {
+			t.Fatalf("could not find demo folder id for path %q", demoPath)
+		}
+		teamOut := e.asActor(t, "admin", "folders", "create", e.name("team"), "--parent", demoFolderID, "-o", "json")
+		teamID := jsonID(teamOut)
+		if teamID == "" {
+			t.Fatalf("no team folder id:\n%s", teamOut)
+		}
+
+		// A GLOBAL folder-admin role: a bounded management capability set. It is bound
+		// at a folder, and the caps then apply to that folder's subtree by cascade.
+		e.asActor(t, "admin", "roles", "create", e.name("folder-admin"),
+			"--capability", "catalog:asset:create",
+			"--capability", "catalog:asset:read",
+			"--capability", "catalog:asset:update",
+			"--capability", "access:role:create",
+			"--capability", "access:binding:create",
+			"--capability", "access:policy:create",
+			"--capability", "ssh:login:*")
+
+		// A GLOBAL role carrying `**` — the full admin capability set. Captured by id so
+		// the later escalation attempt turns purely on the no-escalation subset rule,
+		// not on dana's ability to name-resolve the role.
+		superOut := e.asActor(t, "admin", "roles", "create", e.name("superpower"),
+			"--capability", "**", "-o", "json")
+		superRoleID := jsonID(superOut)
+		if superRoleID == "" {
+			t.Fatalf("no superpower role id:\n%s", superOut)
+		}
+
+		danaOut := e.asActor(t, "admin", "users", "create", danaEmail, "--name", "Dana", "--password", danaPass, "-o", "json")
+		danaID := jsonID(danaOut)
+		if danaID == "" {
+			t.Fatalf("no dana user id:\n%s", danaOut)
+		}
+
+		// Delegate: bind folder-admin to dana AT folder team. Admin holds ** at team, so
+		// the subset rule permits granting folder-admin's caps there.
+		e.asActor(t, "admin", "bindings", "create",
+			"--role", e.name("folder-admin"), "--user", danaEmail, "--folder", teamPath)
+
+		// --- dana exercises her delegated authority ---
+		e.login(t, "dana", danaEmail, danaPass)
+
+		// ALLOW within team: onboard an asset in the team folder. dana addresses the
+		// folder by id: her caps include catalog:asset:* (via cascade) but NOT
+		// catalog:folder:read, so a path arg would deny at folder resolution before the
+		// intended asset-create check.
+		boxOut := e.asActor(t, "dana", "assets", "ssh", "create", e.name("team-box"),
+			"--folder", teamID,
+			"--target", "ssh-target.default.svc.cluster.local:22",
+			"--login", "deploy", "-o", "json")
+		boxID := jsonID(boxOut)
+		if boxID == "" {
+			t.Fatalf("no team-box id:\n%s", boxOut)
+		}
+
+		// ALLOW within team: create a team-scoped role. dana holds ssh:login:* at team
+		// (via cascade from the folder binding) and access:role:create, so she may mint
+		// a role carrying ssh:login:deploy scoped to team. Capture its id: dana's caps
+		// don't include access:role:read, so a later reference must be by id, not path
+		// (ResolveRole would otherwise deny before the intended check runs).
+		deployerOut := e.asActor(t, "dana", "roles", "create", e.name("deployer"),
+			"--folder", teamID,
+			"--capability", "ssh:login:deploy", "-o", "json")
+		deployerID := jsonID(deployerOut)
+		if deployerID == "" {
+			t.Fatalf("no deployer role id:\n%s", deployerOut)
+		}
+
+		// ALLOW within team: bind that role on her new asset. Subset holds:
+		// ssh:login:deploy ⊆ ssh:login:*, which dana holds at this scope. Everything is
+		// addressed by id (role, subject, asset) so this turns purely on the binding
+		// capability + subset rule, not on name/path resolution caps dana lacks.
+		e.asActor(t, "dana", "bindings", "create",
+			"--role", deployerID, "--user", danaID, "--asset", boxID)
+
+		// DENY outside scope: dana has no caps at the PARENT demo folder (delegation
+		// cascades DOWN, never up), so onboarding there is refused. Address demo by id
+		// so the denial lands on the asset-create check, not folder resolution.
+		e.asActorFails(t, "dana", "assets", "ssh", "create", e.name("outside-box"),
+			"--folder", demoFolderID,
+			"--target", "ssh-target.default.svc.cluster.local:22",
+			"--login", "deploy")
+
+		// DENY escalation: dana may not bind the `**` superpower role even within her
+		// own team folder — the no-escalation subset rule blocks granting caps she does
+		// not herself hold at that scope. All ids, so this turns purely on the subset
+		// rule (she does hold access:binding:create at team).
+		e.asActorFails(t, "dana", "bindings", "create",
+			"--role", superRoleID, "--user", danaID, "--folder", teamID)
+
+		// DENY global op: dana holds no identity capabilities anywhere, so creating a
+		// user (a global operation) is refused.
+		e.asActorFails(t, "dana", "users", "create", "someone"+e.suffix+"@demo.test",
+			"--name", "Someone", "--password", "someone-password-1234")
 	})
 
 	t.Run("act1_alice_requests", func(t *testing.T) {
