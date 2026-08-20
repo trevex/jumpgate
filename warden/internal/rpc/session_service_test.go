@@ -70,7 +70,7 @@ func TestCreateSessionEntitled(t *testing.T) {
 	// A role that confers the ssh:login:deploy capability, bound to the caller on
 	// the asset via a standing role_binding.
 	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "deployer", ResourceType: "asset", Capabilities: []byte(`["ssh:login:deploy"]`),
+		Name: "deployer", Capabilities: []byte(`["ssh:login:deploy"]`),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)

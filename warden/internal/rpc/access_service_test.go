@@ -25,12 +25,12 @@ func TestAccessRoleCRUD(t *testing.T) {
 	// non-admin rejected
 	seedUser(t, pool, "user@x", "password123", false)
 	utok := authClient(t, url, "user@x", "password123")
-	_, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "nope", ResourceType: "asset", Capabilities: []string{"db:read"}}), utok))
+	_, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "nope", Capabilities: []string{"db:read"}}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin CreateRole = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 
-	r, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "readonly", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+	r, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "readonly", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 
 	// Invalid: unscoped single segment.
 	_, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "bad-unscoped", ResourceType: "asset", Capabilities: []string{"admin"},
+		Name: "bad-unscoped", Capabilities: []string{"admin"},
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("CreateRole(admin) = %v, want InvalidArgument", connect.CodeOf(err))
@@ -74,7 +74,7 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 
 	// Invalid: junk with spaces/uppercase.
 	_, err = c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "bad-junk", ResourceType: "asset", Capabilities: []string{"DROP TABLE"},
+		Name: "bad-junk", Capabilities: []string{"DROP TABLE"},
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("CreateRole(DROP TABLE) = %v, want InvalidArgument", connect.CodeOf(err))
@@ -82,7 +82,7 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 
 	// Invalid: non-final '**'.
 	_, err = c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "bad-dstar", ResourceType: "asset", Capabilities: []string{"k8s:**:x"},
+		Name: "bad-dstar", Capabilities: []string{"k8s:**:x"},
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("CreateRole(k8s:**:x) = %v, want InvalidArgument", connect.CodeOf(err))
@@ -90,7 +90,7 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 
 	// Valid: scoped concrete + globs.
 	r, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "good", ResourceType: "asset", Capabilities: []string{"ssh:connect", "k8s:*", "db:**", "k8s:impersonate:cluster-admin"},
+		Name: "good", Capabilities: []string{"ssh:connect", "k8s:*", "db:**", "k8s:impersonate:cluster-admin"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("CreateRole(valid scoped/glob) = %v, want ok", err)
@@ -108,7 +108,7 @@ func TestRoleGrantCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	mustRole := func(name string) string {
-		r, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: name, ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+		r, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: name, Capabilities: []string{"db:read"}}), tok))
 		if err != nil {
 			t.Fatalf("role %s: %v", name, err)
 		}
@@ -201,7 +201,7 @@ func TestRoleBindingCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "op", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "op", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,11 +271,11 @@ func TestListRoleBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	roleX, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "rx", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+	roleX, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "rx", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
-	roleY, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "ry", ResourceType: "asset", Capabilities: []string{"db:read"}}), tok))
+	roleY, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "ry", Capabilities: []string{"db:read"}}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestExplainRole(t *testing.T) {
 	}
 	pgID := pg.Msg.Asset.Id
 
-	owner, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "owner", ResourceType: "asset", Capabilities: []string{"db:**"}}), tok))
+	owner, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "owner", Capabilities: []string{"db:**"}}), tok))
 	if err != nil {
 		t.Fatalf("role owner: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestRequestPolicyCRUD(t *testing.T) {
 
 	// Create a role via access
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "db-admin", ResourceType: "asset", Capabilities: []string{"db:read", "db:write"},
+		Name: "db-admin", Capabilities: []string{"db:read", "db:write"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -642,7 +642,7 @@ func TestCreateRequestPolicyName(t *testing.T) {
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "deploy-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+		Name: "deploy-role", Capabilities: []string{"ssh:connect"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -680,7 +680,7 @@ func TestCreateRequestPolicyName(t *testing.T) {
 	// fire first: this must fail specifically on uq_policy_name_asset, which
 	// is the name-uniqueness constraint under test.
 	dupRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "deploy-role-dup", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+		Name: "deploy-role-dup", Capabilities: []string{"ssh:connect"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create dup role: %v", err)
@@ -697,7 +697,7 @@ func TestCreateRequestPolicyName(t *testing.T) {
 
 	// Nameless policy on a different role+asset still creates fine (name is optional).
 	role2, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "ops-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+		Name: "ops-role", Capabilities: []string{"ssh:connect"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role2: %v", err)
@@ -733,7 +733,7 @@ func TestRequestPolicySelfServiceAndMaxDuration(t *testing.T) {
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "self-service-role", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "self-service-role", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -803,7 +803,7 @@ func TestResolvePolicy(t *testing.T) {
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "deploy-role", ResourceType: "asset", Capabilities: []string{"ssh:connect"},
+		Name: "deploy-role", Capabilities: []string{"ssh:connect"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -869,13 +869,13 @@ func TestRequestPolicyRequesterSide(t *testing.T) {
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "target", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "target", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}
 	requesterRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "requester-src", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "requester-src", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create requester role: %v", err)
@@ -946,5 +946,53 @@ func TestRequestPolicyRequesterSide(t *testing.T) {
 	}
 	if upd.Msg.Policy.RequesterRoleId != requesterRole.Msg.Role.Id {
 		t.Fatalf("updated requester_role_id = %q, want %q", upd.Msg.Policy.RequesterRoleId, requesterRole.Msg.Role.Id)
+	}
+}
+
+// TestRoleFolderScopeUniqueness pins the new roles model: names are unique among
+// global roles and per-folder among scoped roles; the same name may exist in two
+// different folders and as a global + scoped pair.
+func TestRoleFolderScopeUniqueness(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	mkFolder := func(name, parent string) string {
+		r, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: name, ParentId: parent}), tok))
+		if err != nil {
+			t.Fatalf("create folder %s: %v", name, err)
+		}
+		return r.Msg.GetFolder().GetId()
+	}
+	mkRole := func(name, folderID string) error {
+		_, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+			Name: name, FolderId: folderID, Capabilities: []string{"ssh:login:deploy"},
+		}), tok))
+		return err
+	}
+
+	prod := mkFolder("prod", "")
+	dev := mkFolder("dev", "")
+
+	if err := mkRole("engineer", ""); err != nil {
+		t.Fatalf("global engineer: %v", err)
+	}
+	if err := mkRole("engineer", ""); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup global = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	if err := mkRole("engineer", prod); err != nil {
+		t.Fatalf("engineer.prod: %v", err)
+	}
+	if err := mkRole("engineer", dev); err != nil {
+		t.Fatalf("engineer.dev: %v", err)
+	}
+	if err := mkRole("engineer", prod); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup engineer.prod = %v, want AlreadyExists", connect.CodeOf(err))
+	}
+	if err := mkRole("Bad Name", ""); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("bad name = %v, want InvalidArgument", connect.CodeOf(err))
 	}
 }

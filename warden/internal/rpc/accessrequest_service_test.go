@@ -29,7 +29,7 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, ResourceType: "asset", Capabilities: []byte("[]")})
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
 		if err != nil {
 			t.Fatalf("CreateRole: %v", err)
 		}
@@ -169,7 +169,7 @@ func TestResolveApproval(t *testing.T) {
 
 	// Create a role.
 	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "db-admin", ResourceType: "asset", Capabilities: []string{"db:read", "db:write"},
+		Name: "db-admin", Capabilities: []string{"db:read", "db:write"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role: %v", err)
@@ -224,7 +224,7 @@ func TestResolveApproval(t *testing.T) {
 
 	// Create a second role with no policy → ResolveApproval requestable=false
 	role2, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
-		Name: "no-rule-role", ResourceType: "asset", Capabilities: []string{"db:read"},
+		Name: "no-rule-role", Capabilities: []string{"db:read"},
 	}), tok))
 	if err != nil {
 		t.Fatalf("create role2: %v", err)

@@ -27,7 +27,6 @@ func (s *stubRoles) CreateRole(_ context.Context, req *connect.Request[accessv1.
 	return connect.NewResponse(&accessv1.CreateRoleResponse{Role: &accessv1.Role{
 		Id:           "role-123",
 		Name:         req.Msg.GetName(),
-		ResourceType: req.Msg.GetResourceType(),
 		Capabilities: req.Msg.GetCapabilities(),
 	}}), nil
 }
@@ -75,9 +74,6 @@ func TestRolesCreate(t *testing.T) {
 	if s.gotCreateRole.GetName() != "deployer" {
 		t.Fatalf("name=%q", s.gotCreateRole.GetName())
 	}
-	if s.gotCreateRole.GetResourceType() != "asset" {
-		t.Fatalf("resource type=%q", s.gotCreateRole.GetResourceType())
-	}
 	caps := s.gotCreateRole.GetCapabilities()
 	if len(caps) != 1 || caps[0] != "ssh:login:deploy" {
 		t.Fatalf("capabilities=%v", caps)
@@ -90,7 +86,7 @@ func TestRolesCreate(t *testing.T) {
 
 func TestRolesList(t *testing.T) {
 	s := &stubRoles{roles: []*accessv1.Role{
-		{Id: "role-1", Name: "deployer", ResourceType: "asset", Capabilities: []string{"ssh:login:deploy", "ssh:record:exempt"}},
+		{Id: "role-1", Name: "deployer", Capabilities: []string{"ssh:login:deploy", "ssh:record:exempt"}},
 	}}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newRolesStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")

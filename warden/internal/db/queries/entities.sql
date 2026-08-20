@@ -53,7 +53,7 @@ INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, $2, $3);
 INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3);
 
 -- name: CreateRole :one
-INSERT INTO roles (name, resource_type, capabilities) VALUES ($1, $2, $3) RETURNING *;
+INSERT INTO roles (name, folder_id, capabilities) VALUES ($1, $2, $3) RETURNING *;
 
 -- name: CreateRoleBinding :one
 INSERT INTO role_bindings

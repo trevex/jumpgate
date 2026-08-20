@@ -130,7 +130,7 @@ func mkUser(t *testing.T, q *gen.Queries) uuid.UUID {
 func bindRole(t *testing.T, q *gen.Queries, user, asset uuid.UUID, name string, capsList ...string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8], ResourceType: "asset", Capabilities: caps(capsList...)})
+	r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8], Capabilities: caps(capsList...)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	setSSHConfig(t, q, asset)
 	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	// A role carrying ssh:login:root, but NOT standing-bound to anyone.
-	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant", ResourceType: "asset", Capabilities: caps("ssh:login:root")})
+	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant", Capabilities: caps("ssh:login:root")})
 	if err != nil {
 		t.Fatal(err)
 	}

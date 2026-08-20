@@ -159,7 +159,7 @@ func setup(t *testing.T) *fixture {
 	}
 
 	// Role carrying ssh:login:deploy, standing-bound to the user on the asset.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", ResourceType: "asset", Capabilities: capsJSON("ssh:login:deploy")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:deploy")})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	// Exempt scenario: bind a role carrying ssh:record:exempt to the same user on
 	// the same asset, then drive a fresh Setup (new token/session).
 	exemptRole, err := f.q.CreateRole(f.ctx, gen.CreateRoleParams{
-		Name: "ssh-record-exempt", ResourceType: "asset", Capabilities: capsJSON("ssh:record:exempt"),
+		Name: "ssh-record-exempt", Capabilities: capsJSON("ssh:record:exempt"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole(exempt): %v", err)
