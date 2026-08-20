@@ -13,6 +13,19 @@ type stubAuthorizer struct{ allow map[string]bool }
 func (s stubAuthorizer) Check(_ context.Context, _, _ uuid.UUID, capability string) (bool, error) {
 	return s.allow[capability], nil
 }
+
+// CapabilitiesOnAsset returns exactly the capabilities the stub was seeded to
+// allow, so Capabilities.Allows reproduces Check's answers (the seeded caps are
+// concrete, so CapMatch reduces to equality).
+func (s stubAuthorizer) CapabilitiesOnAsset(_ context.Context, _, _ uuid.UUID) (authz.Capabilities, error) {
+	var caps authz.Capabilities
+	for c, ok := range s.allow {
+		if ok {
+			caps = append(caps, c)
+		}
+	}
+	return caps, nil
+}
 func (stubAuthorizer) VisibleAssets(context.Context, uuid.UUID) ([]authz.AssetVisibility, error) {
 	return nil, nil
 }
