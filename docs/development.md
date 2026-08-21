@@ -5,9 +5,9 @@
 - [Nix](https://nixos.org/download) with flakes enabled.
 - [direnv](https://direnv.net) (recommended) to auto-enter the devshell.
 
-Everything else — Go, Rust, buf, protobuf, golangci-lint, Postgres, OpenFGA,
-helm, kind, node/pnpm — is provided by the Nix devshell. Do not install
-toolchains globally.
+Everything else — Go, Rust, buf, protobuf, golangci-lint, Postgres, helm, kind,
+cert-manager tooling, and an S3-compatible object store — is provided by the Nix
+devshell. Do not install toolchains globally.
 
 ## Entering the devshell
 
@@ -47,17 +47,18 @@ CI behavior are identical.
 ## Repository layout
 
 ```
-warden/             Go   — API, identity, authz, vault, JIT/approvals, audit, registry
+warden/             Go   — API, identity, authz, vault, JIT/approvals, audit, data-plane control
 gateway/            Rust — session router / load balancer (only exposed component)
-workers/            Rust — per-protocol proxies (ssh-proxy, pg-proxy, …)   [planned]
-cli/                Go   — `jumpgate` CLI                                    [planned]
-web/                     — React + Vite SPA (embedded in warden)             [planned]
+workers/            Rust — per-protocol proxies (ssh-proxy; pg/k8s/rdp planned)
+cli/                Go   — `jumpgate` CLI
+web/                     — web SPA embedded in warden                          [planned]
 proto/              Shared gRPC/protobuf contracts (buf)
-deploy/helm/        Helm chart + docker-compose                              [planned]
+deploy/helm/        Helm chart (kind + cert-manager)
+test/               End-to-end suite (test/e2e) and the kind test environment (test/env)
 docs/               This documentation
 flake.nix .envrc    Nix devshell + direnv
 rust-toolchain.toml Pinned Rust toolchain
-go.work             Go workspace
+go.work             Go workspace (warden, cli, test/e2e)
 Cargo.toml Cargo.lock Rust workspace
 Makefile            Task entrypoints
 ```
@@ -89,7 +90,7 @@ Makefile            Task entrypoints
 
 ## API (ConnectRPC)
 
-- Five services are currently defined: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships — admin), `CatalogService` (folders/assets admin CRUD + per-user `ListVisibleAssets`/`GetAssetAccess`), `AccessService` (all authorization config — roles, role-grants, standing role-bindings, request-policies admin CRUD + admin-or-self `ExplainRole`), `AccessRequestService` (JIT access-request runtime; currently `ResolveApproval`, with RequestAccess/Approve/Deny/Revoke + grants + reaper in M3c).
+- The API is split into focused services: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships), `CatalogService` (folders/assets + per-user `ListVisibleAssets`/`GetAssetAccess` + `Resolve*`), `AccessService` (all authorization config — roles, role-grants, standing role-bindings, request-policies + `ExplainRole`), `AccessRequestService` (the JIT runtime — request/approve/deny/cancel/revoke + grants + reaper), `VaultService` (CAs, mesh certs, session key, asset secrets), `SessionService` (`CreateSession` admission tokens), `RecordingService`, `GatewayService`, and a mesh-only `Dataplane` contract for workers. A per-RPC-service breakdown lives in [architecture.md](architecture.md#control-plane--go).
 - Services are defined in `proto/` (buf) and generated to `warden/gen/...` — connect handlers live in the `*connect/` sub-packages. Run `make gen`.
 - Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
 - Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC capability guards (`capGuard.requireCap`) enforce access — management authz is capability-only (no `is_admin` flag; the bootstrap admin holds `**` via a global role binding). Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
@@ -104,13 +105,19 @@ Makefile            Task entrypoints
 - **Rust:** `cargo nextest`; axum handlers tested via `tower::ServiceExt::oneshot`.
 - Prefer tests that verify behavior over mocks.
 
-## Adding a new protocol worker (future)
+## Adding a new protocol worker
 
 Because the gateway is protocol-agnostic, a new worker only needs to speak two
-contracts: the gateway↔worker forwarding frame and the worker↔control-plane gRPC
-service. Implement those, register the pool, and the worker can be in any language
-(Rust or Go). See [architecture.md](architecture.md#protocol-workers--rust-).
+contracts: the gateway↔worker forwarding frame and the worker↔control-plane mesh
+gRPC service. Implement those, register the pool, and the worker can be in any
+language (Rust or Go). See
+[architecture.md](architecture.md#protocol-workers--rust).
 
-## Current status
+## Status
 
-Milestones **M1 (foundation)**, **M2 (access-model core)**, and **M3 (JIT + vault + audit)** are complete — including the M3-roles explicit-rewrite engine, scoped capabilities, the access-model v2 refactor (authorization config in a dedicated `AccessService`, the JIT runtime in `AccessRequestService`, `CatalogService` shrunk to resources + visibility), M3c (the request→approve→time-boxed-grant→reaper workflow), and M3d (the envelope-encrypted CredentialBroker/vault + SSH/X.509 CAs). Delivered: devshell, workspaces, protobuf codegen, the control-plane data layer (Postgres schema, sqlc, embedded migrations), the `Authorizer` seam with a recursive-CTE backend, hash-chained audit, graceful shutdown, ConnectRPC with `AuthService` + `IdentityService` + `CatalogService` + `AccessService` + `AccessRequestService` + `VaultService`, admin bootstrap via env vars, expired-token GC, and green CI. **M4 (gateway + ssh-proxy + CLI)** is next. See [roadmap.md](roadmap.md).
+SSH access works end to end — the control plane, the Rust gateway, the ssh-proxy
+worker, and the `jumpgate` CLI, with JIT request/approval, envelope-encrypted
+secrets, capability-driven credentials, continuous revocation, and session
+recording all live and exercised by the `test/e2e` suite against a kind cluster.
+Postgres/Kubernetes/RDP workers, inline step-up, the web UI, and enterprise SSO are
+not yet built. See [roadmap.md](roadmap.md).
