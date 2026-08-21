@@ -273,3 +273,552 @@ func TestAccessRequestAdminGating(t *testing.T) {
 		t.Fatalf("admin ListGrants = %v, want ok", err)
 	}
 }
+
+// TestListMyRequestsKeysetPagination verifies (created_at DESC, id) keyset
+// pagination for ListMyRequests. Seeds 3 requests by a single requester
+// (one per asset, since only one pending per role+asset is allowed), pages
+// with page_size=2, asserts newest-first ordering and token termination.
+func TestListMyRequestsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	// Roles: one target role, one requester role.
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+	targetRole := mkRole("myr-target")
+	requesterRole := mkRole("myr-requester")
+	approverRole := mkRole("myr-approver")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "myr-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	// Create 3 assets so we can place 3 distinct requests (one per asset).
+	assets := make([]uuid.UUID, 3)
+	for i, name := range []string{"myr-asset-a", "myr-asset-b", "myr-asset-c"} {
+		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		if err != nil {
+			t.Fatalf("CreateAsset %s: %v", name, err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
+			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+		}); err != nil {
+			t.Fatalf("CreateRequestPolicy %s: %v", name, err)
+		}
+		assets[i] = a.ID
+	}
+
+	seedUser(t, pool, "myr-req@x", "password123", false)
+	seedUser(t, pool, "myr-app@x", "password123", false)
+	reqUID := userIDByEmail(t, pool, "myr-req@x")
+	appUID := userIDByEmail(t, pool, "myr-app@x")
+
+	// Bind requester and approver on all 3 assets.
+	for _, aid := range assets {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
+		}); err != nil {
+			t.Fatalf("bind requester: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
+		}); err != nil {
+			t.Fatalf("bind approver: %v", err)
+		}
+	}
+
+	reqTok := authClient(t, url, "myr-req@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Submit 3 requests (oldest first by creation order).
+	var reqIDs []string
+	for _, aid := range assets {
+		r, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+			RoleId: targetRole.String(), AssetId: aid.String(), DurationSeconds: 3600,
+		}), reqTok))
+		if err != nil {
+			t.Fatalf("RequestAccess: %v", err)
+		}
+		reqIDs = append(reqIDs, r.Msg.Request.Id)
+	}
+	// reqIDs[0] = oldest, reqIDs[2] = newest.
+
+	// Page 1: 2 items (newest first), must have a token.
+	page1, err := client.ListMyRequests(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{
+		PageSize: 2,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Requests) != 2 {
+		t.Fatalf("page1: got %d, want 2", len(page1.Msg.Requests))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	// Newest first: reqIDs[2], reqIDs[1].
+	if page1.Msg.Requests[0].Id != reqIDs[2] {
+		t.Fatalf("page1[0] = %s, want %s (newest)", page1.Msg.Requests[0].Id, reqIDs[2])
+	}
+	if page1.Msg.Requests[1].Id != reqIDs[1] {
+		t.Fatalf("page1[1] = %s, want %s", page1.Msg.Requests[1].Id, reqIDs[1])
+	}
+
+	// Page 2: 1 remaining item (oldest), no token.
+	page2, err := client.ListMyRequests(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{
+		PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Requests) != 1 {
+		t.Fatalf("page2: got %d, want 1", len(page2.Msg.Requests))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Requests[0].Id != reqIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest)", page2.Msg.Requests[0].Id, reqIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, r := range append(page1.Msg.Requests, page2.Msg.Requests...) {
+		if seen[r.Id] {
+			t.Fatalf("duplicate request %s across pages", r.Id)
+		}
+		seen[r.Id] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("total = %d, want 3", len(seen))
+	}
+}
+
+// TestListPendingApprovalsKeysetPagination verifies (created_at DESC, id) keyset
+// pagination for ListPendingApprovals. Seeds 3 pending requests the caller can
+// approve, pages with page_size=2, asserts newest-first ordering and termination.
+func TestListPendingApprovalsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+	targetRole := mkRole("lpa-target")
+	requesterRole := mkRole("lpa-requester")
+	approverRole := mkRole("lpa-approver")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lpa-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	// 3 assets → 3 distinct pending requests.
+	assets := make([]uuid.UUID, 3)
+	for i, name := range []string{"lpa-a", "lpa-b", "lpa-c"} {
+		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		if err != nil {
+			t.Fatalf("CreateAsset %s: %v", name, err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
+			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+		}); err != nil {
+			t.Fatalf("CreateRequestPolicy %s: %v", name, err)
+		}
+		assets[i] = a.ID
+	}
+
+	seedUser(t, pool, "lpa-req@x", "password123", false)
+	seedUser(t, pool, "lpa-app@x", "password123", false)
+	reqUID := userIDByEmail(t, pool, "lpa-req@x")
+	appUID := userIDByEmail(t, pool, "lpa-app@x")
+
+	for _, aid := range assets {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
+		}); err != nil {
+			t.Fatalf("bind requester: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
+		}); err != nil {
+			t.Fatalf("bind approver: %v", err)
+		}
+	}
+
+	reqTok := authClient(t, url, "lpa-req@x", "password123")
+	appTok := authClient(t, url, "lpa-app@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Submit 3 pending requests (oldest first).
+	var reqIDs []string
+	for _, aid := range assets {
+		r, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+			RoleId: targetRole.String(), AssetId: aid.String(), DurationSeconds: 3600,
+		}), reqTok))
+		if err != nil {
+			t.Fatalf("RequestAccess: %v", err)
+		}
+		reqIDs = append(reqIDs, r.Msg.Request.Id)
+	}
+
+	// Page 1: 2 items (newest first), must have a token.
+	page1, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{
+		PageSize: 2,
+	}), appTok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Requests) != 2 {
+		t.Fatalf("page1: got %d, want 2", len(page1.Msg.Requests))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	// Newest first: reqIDs[2], reqIDs[1].
+	if page1.Msg.Requests[0].Id != reqIDs[2] {
+		t.Fatalf("page1[0] = %s, want %s (newest)", page1.Msg.Requests[0].Id, reqIDs[2])
+	}
+	if page1.Msg.Requests[1].Id != reqIDs[1] {
+		t.Fatalf("page1[1] = %s, want %s", page1.Msg.Requests[1].Id, reqIDs[1])
+	}
+
+	// Page 2: 1 remaining item (oldest), no token.
+	page2, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{
+		PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), appTok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Requests) != 1 {
+		t.Fatalf("page2: got %d, want 1", len(page2.Msg.Requests))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Requests[0].Id != reqIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest)", page2.Msg.Requests[0].Id, reqIDs[0])
+	}
+
+	// Verify caller scoping: the requester themselves sees no pending approvals.
+	mine, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{}), reqTok))
+	if err != nil {
+		t.Fatalf("requester ListPendingApprovals: %v", err)
+	}
+	if len(mine.Msg.Requests) != 0 {
+		t.Fatalf("requester should see 0 pending approvals, got %d", len(mine.Msg.Requests))
+	}
+}
+
+// TestListMyGrantsKeysetPagination verifies (granted_at DESC, id) keyset
+// pagination for ListMyGrants. Seeds 3 grants by approving 3 requests (one
+// per asset), pages with page_size=2, asserts newest-first ordering and
+// token termination. Uses granted_at NOT created_at (access_grants has no created_at).
+func TestListMyGrantsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+	targetRole := mkRole("lmg-target")
+	requesterRole := mkRole("lmg-requester")
+	approverRole := mkRole("lmg-approver")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lmg-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	assets := make([]uuid.UUID, 3)
+	for i, name := range []string{"lmg-a", "lmg-b", "lmg-c"} {
+		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		if err != nil {
+			t.Fatalf("CreateAsset %s: %v", name, err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
+			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+		}); err != nil {
+			t.Fatalf("CreateRequestPolicy %s: %v", name, err)
+		}
+		assets[i] = a.ID
+	}
+
+	seedUser(t, pool, "lmg-req@x", "password123", false)
+	seedUser(t, pool, "lmg-app@x", "password123", false)
+	reqUID := userIDByEmail(t, pool, "lmg-req@x")
+	appUID := userIDByEmail(t, pool, "lmg-app@x")
+
+	for _, aid := range assets {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
+		}); err != nil {
+			t.Fatalf("bind requester: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
+		}); err != nil {
+			t.Fatalf("bind approver: %v", err)
+		}
+	}
+
+	reqTok := authClient(t, url, "lmg-req@x", "password123")
+	appTok := authClient(t, url, "lmg-app@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Submit 3 requests then approve each to mint 3 grants.
+	var grantIDs []string
+	for _, aid := range assets {
+		r, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+			RoleId: targetRole.String(), AssetId: aid.String(), DurationSeconds: 3600,
+		}), reqTok))
+		if err != nil {
+			t.Fatalf("RequestAccess: %v", err)
+		}
+		appr, err := client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{
+			RequestId: r.Msg.Request.Id,
+		}), appTok))
+		if err != nil {
+			t.Fatalf("ApproveRequest: %v", err)
+		}
+		grantIDs = append(grantIDs, appr.Msg.Request.GrantId)
+	}
+	// grantIDs[0] = oldest granted_at, grantIDs[2] = newest.
+
+	// Page 1: 2 items (newest first), must have a token.
+	page1, err := client.ListMyGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyGrantsRequest{
+		PageSize: 2,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Grants) != 2 {
+		t.Fatalf("page1: got %d, want 2", len(page1.Msg.Grants))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	// Newest first: grantIDs[2], grantIDs[1].
+	if page1.Msg.Grants[0].Id != grantIDs[2] {
+		t.Fatalf("page1[0] = %s, want %s (newest granted_at)", page1.Msg.Grants[0].Id, grantIDs[2])
+	}
+	if page1.Msg.Grants[1].Id != grantIDs[1] {
+		t.Fatalf("page1[1] = %s, want %s", page1.Msg.Grants[1].Id, grantIDs[1])
+	}
+
+	// Page 2: 1 remaining item (oldest), no token.
+	page2, err := client.ListMyGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyGrantsRequest{
+		PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Grants) != 1 {
+		t.Fatalf("page2: got %d, want 1", len(page2.Msg.Grants))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Grants[0].Id != grantIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest)", page2.Msg.Grants[0].Id, grantIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, g := range append(page1.Msg.Grants, page2.Msg.Grants...) {
+		if seen[g.Id] {
+			t.Fatalf("duplicate grant %s across pages", g.Id)
+		}
+		seen[g.Id] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("total grants = %d, want 3", len(seen))
+	}
+}
+
+// TestListGrantsKeysetPagination verifies (granted_at DESC, id) keyset pagination
+// for the admin ListGrants RPC. Seeds ≥3 grants as an admin, pages with
+// page_size=2, asserts newest-first ordering and termination. Also verifies
+// the active_only and subject_user_id filters are still respected.
+func TestListGrantsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+	targetRole := mkRole("lg-target")
+	requesterRole := mkRole("lg-requester")
+	approverRole := mkRole("lg-approver")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lg-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	assets := make([]uuid.UUID, 3)
+	for i, name := range []string{"lg-a", "lg-b", "lg-c"} {
+		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		if err != nil {
+			t.Fatalf("CreateAsset %s: %v", name, err)
+		}
+		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
+			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+		}); err != nil {
+			t.Fatalf("CreateRequestPolicy %s: %v", name, err)
+		}
+		assets[i] = a.ID
+	}
+
+	seedUser(t, pool, "lg-req@x", "password123", false)
+	seedUser(t, pool, "lg-app@x", "password123", false)
+	reqUID := userIDByEmail(t, pool, "lg-req@x")
+	appUID := userIDByEmail(t, pool, "lg-app@x")
+
+	for _, aid := range assets {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
+		}); err != nil {
+			t.Fatalf("bind requester: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
+		}); err != nil {
+			t.Fatalf("bind approver: %v", err)
+		}
+	}
+
+	reqTok := authClient(t, url, "lg-req@x", "password123")
+	appTok := authClient(t, url, "lg-app@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Mint 3 grants.
+	var grantIDs []string
+	for _, aid := range assets {
+		r, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+			RoleId: targetRole.String(), AssetId: aid.String(), DurationSeconds: 3600,
+		}), reqTok))
+		if err != nil {
+			t.Fatalf("RequestAccess: %v", err)
+		}
+		appr, err := client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{
+			RequestId: r.Msg.Request.Id,
+		}), appTok))
+		if err != nil {
+			t.Fatalf("ApproveRequest: %v", err)
+		}
+		grantIDs = append(grantIDs, appr.Msg.Request.GrantId)
+	}
+	// grantIDs[0] = oldest, grantIDs[2] = newest.
+
+	// Page 1 (admin, no filter): 2 items newest-first, must have a token.
+	page1, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{
+		PageSize: 2,
+	}), atok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Grants) != 2 {
+		t.Fatalf("page1: got %d, want 2", len(page1.Msg.Grants))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	// Newest first: grantIDs[2], grantIDs[1].
+	if page1.Msg.Grants[0].Id != grantIDs[2] {
+		t.Fatalf("page1[0] = %s, want %s (newest granted_at)", page1.Msg.Grants[0].Id, grantIDs[2])
+	}
+	if page1.Msg.Grants[1].Id != grantIDs[1] {
+		t.Fatalf("page1[1] = %s, want %s", page1.Msg.Grants[1].Id, grantIDs[1])
+	}
+
+	// Page 2: 1 remaining item (oldest), no token.
+	page2, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{
+		PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), atok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Grants) != 1 {
+		t.Fatalf("page2: got %d, want 1", len(page2.Msg.Grants))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Grants[0].Id != grantIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest)", page2.Msg.Grants[0].Id, grantIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, g := range append(page1.Msg.Grants, page2.Msg.Grants...) {
+		if seen[g.Id] {
+			t.Fatalf("duplicate grant %s across pages", g.Id)
+		}
+		seen[g.Id] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("total = %d, want 3", len(seen))
+	}
+
+	// subject_user_id filter: only the requester's grants.
+	subjectFiltered, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{
+		SubjectUserId: reqUID.String(),
+	}), atok))
+	if err != nil {
+		t.Fatalf("subject filtered: %v", err)
+	}
+	if len(subjectFiltered.Msg.Grants) != 3 {
+		t.Fatalf("subject filtered: got %d, want 3", len(subjectFiltered.Msg.Grants))
+	}
+	for _, g := range subjectFiltered.Msg.Grants {
+		if g.SubjectUserId != reqUID.String() {
+			t.Fatalf("unexpected subject %s in filtered result", g.SubjectUserId)
+		}
+	}
+
+	// active_only filter: all 3 are still active (not yet expired/revoked).
+	activeOnly, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{
+		ActiveOnly: true,
+	}), atok))
+	if err != nil {
+		t.Fatalf("active_only: %v", err)
+	}
+	if len(activeOnly.Msg.Grants) != 3 {
+		t.Fatalf("active_only: got %d, want 3", len(activeOnly.Msg.Grants))
+	}
+	for _, g := range activeOnly.Msg.Grants {
+		if !g.Active {
+			t.Fatalf("grant %s not active in active_only result", g.Id)
+		}
+	}
+}
