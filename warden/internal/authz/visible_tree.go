@@ -320,3 +320,274 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 	}
 	return out, nil
 }
+
+// ── Role / group visibility ────────────────────────────────────────────────
+//
+// VisibleRolesUnder and VisibleGroupsUnder generalize the union-visibility model
+// (see the file header) to the two node kinds that are homed in the folder tree
+// via a NULLABLE folder_id (NULL = global/root). Both unify:
+//
+//   - the MANAGEMENT axis: a user holding the read capability
+//     ("access:role:read" / "identity:group:read") at the node's home-folder
+//     scope sees the node as an administrator. A GLOBAL hold short-circuits to
+//     "manageable everywhere" (one query). A folder-less (global) node has no
+//     folder scope, so it is manageable ONLY via that global cap.
+//
+//   - the ACCESS axis: a role is access-visible when the user HOLDS it (standing
+//     closure) or it is REQUESTABLE to them; a group is access-visible when the
+//     user is a (transitive) MEMBER.
+//
+// Deactivated users are excluded by the underlying closures (heldCTE /
+// visibleRequestable / the user_groups membership CTE all filter deactivated
+// users), so no extra guard is needed here.
+
+// nodeFolder is one folder-homed node: Folder is nil for a global (folder-less)
+// node (folder_id IS NULL).
+type nodeFolder struct {
+	ID     uuid.UUID
+	Folder *uuid.UUID
+}
+
+// nodesHomedUnder returns the (id, home-folder) rows of `table` homed under
+// `parent`. `table` is a TRUSTED literal — callers pass only "roles" or "groups";
+// it is interpolated into the query and must never be attacker-controlled.
+//
+// Four cases mirror the folder-candidate logic:
+//   - (uuid.Nil, !cascade): folder-less nodes only (folder_id IS NULL).
+//   - (uuid.Nil, cascade):  every node.
+//   - (parent,   !cascade): nodes homed directly in `parent`.
+//   - (parent,   cascade):  nodes homed anywhere in the subtree rooted at `parent`.
+func (s *sqlAuthorizer) nodesHomedUnder(ctx context.Context, table string, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+	var (
+		query string
+		args  []any
+	)
+	switch {
+	case parent == uuid.Nil && !cascade:
+		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id IS NULL"
+	case parent == uuid.Nil && cascade:
+		query = "SELECT id, folder_id FROM " + table
+	case !cascade:
+		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id = $1"
+		args = []any{parent}
+	default: // parent set, cascade
+		subtree, err := s.folderSubtreeIDs(ctx, []uuid.UUID{parent})
+		if err != nil {
+			return nil, err
+		}
+		if len(subtree) == 0 {
+			return nil, nil
+		}
+		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id = ANY($1::uuid[])"
+		args = []any{subtree}
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("nodes homed under (%s): %w", table, err)
+	}
+	defer rows.Close()
+	var out []nodeFolder
+	for rows.Next() {
+		var (
+			id     uuid.UUID
+			folder *uuid.UUID
+		)
+		if err := rows.Scan(&id, &folder); err != nil {
+			return nil, fmt.Errorf("scan node folder (%s): %w", table, err)
+		}
+		out = append(out, nodeFolder{ID: id, Folder: folder})
+	}
+	return out, rows.Err()
+}
+
+// heldRoleIDs returns the set of role ids the user holds (standing bindings +
+// active grants, closed over the role_grants rewrite graph) — one arm of the
+// role ACCESS axis. Object dimension is dropped: a role is "held" if held on ANY
+// object.
+func (s *sqlAuthorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	rows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT role_id FROM held`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("held role ids: %w", err)
+	}
+	defer rows.Close()
+	return scanUUIDSet(rows)
+}
+
+// requestableRoleIDs returns the set of role ids requestable to the user across
+// all assets — the other arm of the role ACCESS axis.
+func (s *sqlAuthorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	reqs, err := s.visibleRequestable(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[uuid.UUID]struct{}, len(reqs))
+	for _, r := range reqs {
+		set[r.RoleID] = struct{}{}
+	}
+	return set, nil
+}
+
+// memberGroupIDs returns the set of group ids the user is a (transitive) member
+// of — the group ACCESS axis. The user_groups CTE is copied VERBATIM from heldCTE
+// / globalHeldCTE (direct membership base + recursive nested-group arm).
+func (s *sqlAuthorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	rows, err := s.pool.Query(ctx, `
+WITH RECURSIVE
+user_groups(group_id) AS (
+    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
+)
+SELECT group_id FROM user_groups`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("member group ids: %w", err)
+	}
+	defer rows.Close()
+	return scanUUIDSet(rows)
+}
+
+// scanUUIDSet collects a single-column uuid result into a set.
+func scanUUIDSet(rows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+}) (map[uuid.UUID]struct{}, error) {
+	out := map[uuid.UUID]struct{}{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan uuid: %w", err)
+		}
+		out[id] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
+// manageFn tests whether the user may manage a node given its home folder.
+// folderPtr is nil for a folder-less (global) node — manageable ONLY via the
+// global cap, since a nil home has no folder scope to fold an ancestor chain from.
+type manageFn func(folderPtr *uuid.UUID) (bool, error)
+
+// folderManageableFunc builds a memoized predicate "may the user manage a node
+// homed at this folder?" with the global short-circuit: if the user holds `cap`
+// GLOBALLY the predicate is always true (one query, no per-folder work);
+// otherwise it evaluates CapabilitiesOnScope(FolderScope(folder)) once per folder
+// (which already folds global ∪ the folder ancestor chain). A folder-less node
+// (nil folder) is manageable iff the global cap holds — never via a folder scope.
+func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UUID, cap string) (manageFn, error) {
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	globalManage := global.Allows(cap)
+	memo := map[uuid.UUID]bool{}
+	return func(folderPtr *uuid.UUID) (bool, error) {
+		if globalManage {
+			return true, nil
+		}
+		if folderPtr == nil {
+			// Folder-less (global) node: no folder scope, so only the global cap
+			// (already checked above and false here) could ever make it manageable.
+			return false, nil
+		}
+		if v, ok := memo[*folderPtr]; ok {
+			return v, nil
+		}
+		caps, err := s.CapabilitiesOnScope(ctx, userID, FolderScope(*folderPtr))
+		if err != nil {
+			return false, err
+		}
+		v := caps.Allows(cap)
+		memo[*folderPtr] = v
+		return v, nil
+	}, nil
+}
+
+// VisibleRolesUnder returns the role ids under `parent` the user may see. See the
+// Authorizer interface for the visibility predicate.
+func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.nodesHomedUnder(ctx, "roles", parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
+	// Access axis: held ∪ requestable, computed once.
+	held, err := s.heldRoleIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	requestable, err := s.requestableRoleIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	manageable, err := s.folderManageableFunc(ctx, userID, "access:role:read")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []uuid.UUID
+	for _, n := range nodes {
+		if _, ok := held[n.ID]; ok {
+			out = append(out, n.ID)
+			continue
+		}
+		if _, ok := requestable[n.ID]; ok {
+			out = append(out, n.ID)
+			continue
+		}
+		// Management axis (folder-less nodes handled inside manageable: nil folder
+		// ⇒ manageable only via the global cap, never a synthesized folder scope).
+		ok, err := manageable(n.Folder)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, n.ID)
+		}
+	}
+	return out, nil
+}
+
+// VisibleGroupsUnder returns the group ids under `parent` the user may see. See
+// the Authorizer interface for the visibility predicate.
+func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.nodesHomedUnder(ctx, "groups", parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
+	// Access axis: transitive membership, computed once.
+	member, err := s.memberGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	manageable, err := s.folderManageableFunc(ctx, userID, "identity:group:read")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []uuid.UUID
+	for _, n := range nodes {
+		if _, ok := member[n.ID]; ok {
+			out = append(out, n.ID)
+			continue
+		}
+		ok, err := manageable(n.Folder)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, n.ID)
+		}
+	}
+	return out, nil
+}
