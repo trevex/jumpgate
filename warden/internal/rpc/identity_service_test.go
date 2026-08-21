@@ -294,6 +294,90 @@ func TestGroupGovernanceGating(t *testing.T) {
 	}
 }
 
+// TestResolveGroupAddressing pins ResolveGroup's uuid | bare-name (global) |
+// <group>@<folder-path> resolution, its folder-scoped read gate, and the
+// existence-hiding of a read-cap denial as NotFound.
+func TestResolveGroupAddressing(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	prod, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), atok))
+	if err != nil {
+		t.Fatalf("create prod: %v", err)
+	}
+	prodID := prod.Msg.Folder.Id
+
+	// A global group `sre` (no folder) and a folder-homed group `sre@prod`.
+	global, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "sre"}), atok))
+	if err != nil {
+		t.Fatalf("create global sre: %v", err)
+	}
+	scoped, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "sre", FolderId: prodID}), atok))
+	if err != nil {
+		t.Fatalf("create sre@prod: %v", err)
+	}
+	globalID := global.Msg.Group.Id
+	scopedID := scoped.Msg.Group.Id
+
+	resolve := func(tok, ref string) (*identityv1.ResolveGroupResponse, error) {
+		r, err := id.ResolveGroup(ctx, withToken(connect.NewRequest(&identityv1.ResolveGroupRequest{Name: ref}), tok))
+		if err != nil {
+			return nil, err
+		}
+		return r.Msg, nil
+	}
+
+	// By the scoped group's uuid → its id.
+	if m, err := resolve(atok, scopedID); err != nil {
+		t.Fatalf("resolve by uuid: %v", err)
+	} else if m.GroupId != scopedID {
+		t.Fatalf("resolve by uuid = %q, want %q", m.GroupId, scopedID)
+	}
+
+	// Bare `sre` → the GLOBAL group.
+	if m, err := resolve(atok, "sre"); err != nil {
+		t.Fatalf("resolve bare: %v", err)
+	} else if m.GroupId != globalID {
+		t.Fatalf("resolve bare = %q, want global %q", m.GroupId, globalID)
+	}
+
+	// `sre@prod` → the PROD group; path echo `sre@prod`.
+	if m, err := resolve(atok, "sre@prod"); err != nil {
+		t.Fatalf("resolve sre@prod: %v", err)
+	} else if m.GroupId != scopedID {
+		t.Fatalf("resolve sre@prod = %q, want scoped %q", m.GroupId, scopedID)
+	} else if m.Path != "sre@prod" {
+		t.Fatalf("resolve sre@prod path = %q, want %q", m.Path, "sre@prod")
+	}
+
+	// `sre@nope` (unknown folder) → NotFound.
+	if _, err := resolve(atok, "sre@nope"); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("resolve sre@nope = %v, want NotFound", connect.CodeOf(err))
+	}
+
+	// dana: non-admin bound at prod with identity:group:read → resolve sre@prod succeeds.
+	danaID := seedCapUser(t, pool, "dana@x", "danapass", `[]`)
+	bindScopedCap(t, pool, danaID, `["identity:group:read"]`, uuidFromStr(t, prodID), uuid.Nil)
+	danatok := authClient(t, url, "dana@x", "danapass")
+	if m, err := resolve(danatok, "sre@prod"); err != nil {
+		t.Fatalf("dana resolve sre@prod: %v", err)
+	} else if m.GroupId != scopedID {
+		t.Fatalf("dana resolve sre@prod = %q, want scoped %q", m.GroupId, scopedID)
+	}
+
+	// eve: non-admin with NO group caps → resolve sre@prod → NotFound (existence-hidden,
+	// NOT PermissionDenied).
+	seedCapUser(t, pool, "eve@x", "evepass1234", `[]`)
+	evetok := authClient(t, url, "eve@x", "evepass1234")
+	if _, err := resolve(evetok, "sre@prod"); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("eve resolve sre@prod = %v, want NotFound", connect.CodeOf(err))
+	}
+}
+
 func uuidFromStr(t *testing.T, s string) uuid.UUID {
 	t.Helper()
 	u, err := uuid.Parse(s)

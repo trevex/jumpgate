@@ -299,22 +299,6 @@ func (q *Queries) GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFol
 	return i, err
 }
 
-const getGroupByName = `-- name: GetGroupByName :one
-SELECT id, name, folder_id, created_at FROM groups WHERE name = $1
-`
-
-func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
-	row := q.db.QueryRow(ctx, getGroupByName, name)
-	var i Group
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.FolderID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getGroupByNameGlobal = `-- name: GetGroupByNameGlobal :one
 SELECT id, name, folder_id, created_at FROM groups WHERE name = $1 AND folder_id IS NULL
 `
