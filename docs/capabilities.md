@@ -1,18 +1,24 @@
 # Capabilities
 
 The **capability vocabulary** — the primitive verbs a role grants. A capability
-names *what you may do* on an asset (open an SSH session, run a DDL statement,
-impersonate a k8s identity). Roles bundle capabilities; the authorizer answers
-"does this user hold a role on this asset whose capabilities cover the requested
-action?"
+names *what you may do*: either a **data-plane** action on an asset (open an SSH
+session, run a DDL statement, impersonate a k8s identity) or a **management-plane**
+action on the API (onboard an asset, create a role, bind it, manage users). Roles
+bundle capabilities; the authorizer answers "does this user hold a role — at the
+relevant scope — whose capabilities cover the requested action?" The same grammar
+and glob matcher serve both halves; they differ only in *where* they're enforced
+(worker vs. warden) and *what scope* they're checked at (see the two sections
+below).
 
-> **Status:** the capability **grammar**, its **format validation** at role
-> creation, and the **glob matcher** (`CapMatch`) that `Check` uses are
-> **implemented** (this branch). What a capability *lets you do* — the mapping
-> from a live protocol operation to a capability, and the actual enforcement —
-> lives in the **data-plane workers, which are planned (M4/M5)**. So today warden
-> validates capability strings and *decides* on them; **nothing enforces them at
-> a live session yet**, because there are no workers.
+> **Status:** capabilities are now enforced in two places. **(1) Management plane
+> — enforced by warden.** Every management RPC (catalog / access / identity /
+> vault / recording admin) is gated by a capability check in the handler
+> (`requireCap`); this *replaced* the old boolean `is_admin` gate — see
+> [Management-plane capabilities](#management-plane-capabilities) below. **(2) Data
+> plane — enforced by the workers.** The **ssh-proxy (M4) enforces `ssh:*`** at a
+> live session; `db:*` / `k8s:*` land with their proxies (M5 / later). The
+> **grammar**, format validation, and glob matcher (`CapMatch`) are shared by
+> both.
 
 ## Grammar
 
@@ -47,6 +53,13 @@ The format is validated at **`CreateRole`** by protovalidate (regex in
 
 Stored capability strings are **jsonb** on the `roles` row
 (`roles.capabilities`, a JSON array of strings).
+
+**The one bare-wildcard exception — `**`.** A standalone `**` is a valid stored
+pattern (the grammar allows it alongside the `scope:action…` forms) and, via
+`CapMatch`, matches **every** capability at any depth. It is the **`admin`
+role's** capability: the bootstrap admin is an ordinary user holding a role whose
+capabilities are `["**"]`, bound globally. (`**` is still rejected as a *middle*
+segment — `k8s:**:x` — and a bare `*` / `admin` are still rejected.)
 
 ## Glob patterns
 
@@ -89,7 +102,103 @@ pattern `CapMatch`es the requested capability.
   reaching it via a non-proto path (direct SQL, a future writer) can never match
   more than its literal segments intend.
 
-## Where enforcement lives — warden decides, workers enforce
+## Management-plane capabilities
+
+The **management API** (creating folders/assets/roles/bindings/policies, managing
+users/groups, vault CAs/secrets, reading recordings) is governed by capabilities
+too — but here **warden both decides *and* enforces** them directly in the RPC
+handler (there is no worker in the loop). This replaced the old boolean
+`is_admin`: there is no admin flag anymore, only capabilities.
+
+### Scope — global / folder / asset
+
+A management capability is checked at a **scope**, not just "on an asset":
+
+- **global** — system-wide operations (create a user, a top-level folder, a global
+  role; CA init). A capability is held globally via a **scopeless role binding**
+  (a `role_binding` with neither `scope_folder_id` nor `scope_asset_id`).
+- **folder** — operations within a folder subtree (onboard an asset *in* `prod`,
+  manage roles/bindings/policies there). A folder-scoped binding confers the cap.
+- **asset** — operations on one asset (update its config, write its stored secret).
+
+`CapabilitiesOnScope(user, scope)` returns the caps the user holds there:
+globally-held caps **plus** — for a folder/asset scope — caps held on the object
+**and every ancestor folder**. So management authority **cascades *down* the
+folder tree**: a cap granted at `prod` applies to `prod`, its sub-folders, and all
+their assets, with no extra wiring. (This folder cascade is management-specific;
+it does not use the data-plane held-closure's opt-in `parent` role-grants.)
+`requireCap(cap, scope)` in each handler = `CapabilitiesOnScope(...).Allows(cap)`
+→ else `PermissionDenied`. The admin's global `**` satisfies every check.
+
+### No-escalation subset rule
+
+Binding a role, making it requestable, or wiring the role-grant graph is a
+**grant** of that role's capabilities — so it is guarded: you may bind/grant role
+`R` at scope `S` only if **every capability in `R` is subsumed by what you
+yourself hold at `S`** (`requireGrantable` → `Covers` pattern-subsumption). You
+can never grant authority you don't have. The admin (`**`) can grant anything; a
+`prod`-admin holding `catalog:**`+`access:**`+`ssh:login:*` on `prod` can grant ≤
+that within `prod`, but cannot grant `identity:*` or bind a global `admin` role.
+(Applies at `CreateRoleBinding`, `CreateRequestPolicy`, `AddRoleGrant` — the last
+checks the **recipient** `role_id`, the role that gets conferred.)
+
+### The vocabulary
+
+`<service>:<resource>:<verb>`, same grammar and globs as everything else.
+**Scope** is where the cap must be held for the gated RPCs; identity/CA/grant-
+oversight ops are **global** this cut (folder- and group-scoped delegation of
+those is a follow-up).
+
+| Capability | Grants (management RPC) | Scope |
+|---|---|---|
+| `catalog:folder:create` | create a folder | parent folder (global if top-level) |
+| `catalog:folder:read` | resolve/list folders | folder / global (list) |
+| `catalog:asset:create` | onboard an asset | the target folder |
+| `catalog:asset:read` | get/list assets, resolve an asset | the asset / folder |
+| `catalog:asset:update` | change an asset's config | the asset |
+| `access:role:create` | create a role | the role's folder (global if global role) |
+| `access:role:read` | get/resolve/list roles, list grants, explain | the role's folder / global |
+| `access:role:update` | add/remove role-rewrite grants (`role_grants`) | the role's folder |
+| `access:binding:create` | bind a role to a subject (+ subset rule) | the binding scope |
+| `access:binding:read` | list role bindings | global |
+| `access:binding:delete` | remove a binding | the binding's scope |
+| `access:policy:create` | create a request policy (+ subset rule) | the policy scope |
+| `access:policy:read` | get/list policies, list subjects, resolve approval | the policy's scope / asset |
+| `access:policy:update` | update a request policy | the policy's scope |
+| `access:policy:delete` | delete a request policy | the policy's scope |
+| `access:policy:manage-subjects` | add/remove requester/approver subjects | the policy's scope |
+| `access:grant:read` | list all JIT access grants (oversight) | global |
+| `access:grant:revoke` | revoke another user's grant (oversight) | global |
+| `identity:user:create` | create a user | global |
+| `identity:user:read` | get/resolve/list users | global |
+| `identity:user:deactivate` | deactivate / reactivate a user | global |
+| `identity:user:delete` | delete a user | global |
+| `identity:group:create` | create a group | global |
+| `identity:group:read` | resolve/list groups + members | global |
+| `identity:group:add-member` | add a user/group to a group | global |
+| `identity:group:remove-member` | remove a member | global |
+| `identity:group:delete` | delete a group | global |
+| `vault:ca:init` | initialize the SSH / mesh CA | global |
+| `vault:ca:issue` | issue a mesh certificate | global |
+| `vault:ca:read` | read a CA public key | global |
+| `vault:key:init` | initialize the session key | global |
+| `vault:secret:write` | set/delete an asset's stored secret | the asset |
+| `vault:secret:read` | list an asset's secrets | the asset |
+| `recording:read` | list / fetch / download session recordings | the recording's asset / global (list) |
+| `**` | everything (the `admin` role) | any |
+
+> A delegated folder-admin holds only the caps they were granted, so client-side
+> **name/path resolution** (which is itself `*:read`-gated) may be unavailable for
+> objects they can't read — they address such objects by **id**. Widening a
+> delegate's read caps (`catalog:folder:read`, `access:role:read`, …) restores
+> name-based use.
+
+**Deferred:** group-scoped management (a group hierarchy + `scope_group_id` + an
+`identity:group:view` visibility cap) so group administration can be delegated per
+group subtree; scoped/filtered list-all endpoints. See the design doc for the full
+per-RPC mapping.
+
+## Where enforcement lives (data plane) — warden decides, workers enforce
 
 This is the **Approach A** boundary (see
 [architecture.md](architecture.md#data-plane-interaction-model-approach-a)).
@@ -131,24 +240,23 @@ cluster-admin**") is **worker-side semantics**: warden only sees two distinct
 opaque tokens and answers yes/no on each; the k8s-proxy is what turns a
 "yes" into an actual impersonation header.
 
-> **Status:** the workers are **planned (M4 gateway + ssh-proxy, M5 pg-proxy;
-> k8s a later sub-project)**. Today warden validates capability strings and
-> decides `Check`; **live enforcement lands with the proxies.**
+> **Status:** the **SSH data plane is live** — the **ssh-proxy (M4) enforces
+> `ssh:login:*`** at a real session (the broker mints the cert principals from the
+> user's held login caps and the proxy gates the connection). The **`db:*` /
+> `k8s:*`** verbs are still **planned** (pg-proxy M5; k8s a later sub-project) —
+> defined-for-the-model, not yet enforced.
 
-## Initial vocabulary
+## Data-plane vocabulary
 
-Illustrative and **grows as workers land**. Everything below is
-**defined-for-the-model**; column *Enforced today* is **No** for the
-worker-enforced protocol verbs because there are no workers yet — with **one
-exception**: `ssh:login:<account>` is already **consumed in the control plane** by
-the M3d [CredentialBroker](architecture.md#vault--credentialbroker-m3d), which
-turns a user's held `ssh:login:*` capabilities into the exact `ValidPrincipals` of
-the SSH certificate it mints (the *session* is still gated by the ssh-proxy in M4).
+The protocol verbs a **worker** enforces at a live session (the management-plane
+vocabulary is [above](#the-vocabulary)). Illustrative and **grows as workers
+land**. `ssh:*` is enforced today (ssh-proxy, M4); `db:*` / `k8s:*` are
+**defined-for-the-model** and land with their proxies.
 
 | Capability | Meaning (worker-side) | Introduced with | Enforced today |
 |---|---|---|---|
-| `ssh:connect` | Open an SSH session to the target | ssh-proxy (M4) | No |
-| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any allowed login). **Drives the SSH cert principals** the M3d [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints: `ValidPrincipals = allowed_logins ∩ the user's held ssh:login:*` | vault/CredentialBroker (M3d); ssh-proxy (M4) | **Consumed by the broker (M3d)** for cert minting; live session enforcement is ssh-proxy (M4) |
+| `ssh:connect` | Open an SSH session to the target (the effective gate is `ssh:login:*`) | ssh-proxy (M4) | via `ssh:login:*` |
+| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any allowed login). **Drives the SSH cert principals** the [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints: `ValidPrincipals = allowed_logins ∩ the user's held ssh:login:*` | vault/CredentialBroker (M3d); ssh-proxy (M4) | **Yes** — broker cert minting + ssh-proxy session gate |
 | `db:connect` | Open a Postgres session | pg-proxy (M5) | No |
 | `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (M5) | No |
 | `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (M5) | No |
