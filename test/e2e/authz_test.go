@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -60,14 +61,18 @@ func TestAuthzVisibility(t *testing.T) {
 	})
 
 	t.Run("nomad_sees_empty_catalog", func(t *testing.T) {
-		out := e.asActor(t, "az-nomad", "assets", "list", "-o", "json")
+		// --cascade so the full tree is walked; a capless caller gets an empty list,
+		// not PermissionDenied — catalog browse is visibility-filtered, not cap-gated.
+		out := e.asActor(t, "az-nomad", "assets", "list", "--cascade", "-o", "json")
 		if strings.Contains(out, boxA) || strings.Contains(out, boxB) {
 			t.Fatalf("nomad (no roles) must see an empty catalog, got:\n%s", out)
 		}
 	})
 
 	t.Run("alice_sees_only_team_a", func(t *testing.T) {
-		out := e.asActor(t, "az-alice", "assets", "list", "-o", "json")
+		// --cascade so assets nested inside az-a / az-b are included. Without it the
+		// root-only browse returns nothing (all assets live inside named folders).
+		out := e.asActor(t, "az-alice", "assets", "list", "--cascade", "-o", "json")
 		if !strings.Contains(out, boxA) {
 			t.Errorf("alice should see her own asset %s:\n%s", boxA, out)
 		}
@@ -77,7 +82,8 @@ func TestAuthzVisibility(t *testing.T) {
 	})
 
 	t.Run("bob_sees_only_team_b", func(t *testing.T) {
-		out := e.asActor(t, "az-bob", "assets", "list", "-o", "json")
+		// --cascade for the same reason as alice_sees_only_team_a above.
+		out := e.asActor(t, "az-bob", "assets", "list", "--cascade", "-o", "json")
 		if !strings.Contains(out, boxB) {
 			t.Errorf("bob should see his own asset %s:\n%s", boxB, out)
 		}
@@ -110,5 +116,59 @@ func TestAuthzVisibility(t *testing.T) {
 		e.asActorFails(t, "az-alice", "roles", "create", "sneaky", "--folder", folderA, "--capability", "ssh:login:root")
 		e.asActorFails(t, "az-alice", "users", "create", e.name("az-mallory")+"@demo.test", "--name", "M", "--password", danaPass)
 		e.asActorFails(t, "az-alice", "bindings", "list")
+	})
+
+	t.Run("catalog_browse_visibility_subset", func(t *testing.T) {
+		// Catalog browse is visibility-filtered (not cap-gated): the admin sees all
+		// assets it manages; a data-plane user sees only the assets it can reach. The
+		// per-user view must be a strict subset of the admin view, and must never be
+		// empty when the user has standing access.
+		//
+		// Collect asset ids from each actor's cascade list.
+		assetIDs := func(listJSON string) map[string]bool {
+			var items []struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(listJSON), &items); err != nil {
+				return map[string]bool{}
+			}
+			m := make(map[string]bool, len(items))
+			for _, it := range items {
+				if it.ID != "" {
+					m[it.ID] = true
+				}
+			}
+			return m
+		}
+
+		adminOut := e.asActor(t, "admin", "assets", "list", "--cascade", "-o", "json")
+		aliceOut := e.asActor(t, "az-alice", "assets", "list", "--cascade", "-o", "json")
+		bobOut := e.asActor(t, "az-bob", "assets", "list", "--cascade", "-o", "json")
+
+		adminIDs := assetIDs(adminOut)
+		aliceIDs := assetIDs(aliceOut)
+		bobIDs := assetIDs(bobOut)
+
+		// alice's view must be non-empty (she has standing access).
+		if len(aliceIDs) == 0 {
+			t.Error("alice's cascade asset list is empty but she has standing access")
+		}
+		// Every asset alice or bob sees must also appear in admin's view.
+		for id := range aliceIDs {
+			if !adminIDs[id] {
+				t.Errorf("alice sees asset %s that admin does not — catalog isolation broken", id)
+			}
+		}
+		for id := range bobIDs {
+			if !adminIDs[id] {
+				t.Errorf("bob sees asset %s that admin does not — catalog isolation broken", id)
+			}
+		}
+		// alice and bob's views must be disjoint (different teams, no shared assets).
+		for id := range aliceIDs {
+			if bobIDs[id] {
+				t.Errorf("asset %s appears in both alice's and bob's view — tenant isolation broken", id)
+			}
+		}
 	})
 }
