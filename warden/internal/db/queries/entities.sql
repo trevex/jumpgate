@@ -25,17 +25,19 @@ DELETE FROM group_memberships WHERE group_id = $1 AND member_user_id = $2;
 -- name: RemoveGroupFromGroup :exec
 DELETE FROM group_memberships WHERE group_id = $1 AND member_group_id = $2;
 
--- name: ListGroupMemberUsers :many
-SELECT u.* FROM users u
-JOIN group_memberships gm ON gm.member_user_id = u.id
-WHERE gm.group_id = $1
-ORDER BY u.id;
-
--- name: ListGroupMemberGroups :many
-SELECT g.* FROM groups g
-JOIN group_memberships gm ON gm.member_group_id = g.id
-WHERE gm.group_id = $1
-ORDER BY g.id;
+-- name: ListGroupMembersPaged :many
+-- Single keyset scan over group_memberships ordered by (created_at DESC, id).
+-- Each row is either a user-member (member_user_id non-null) or group-member
+-- (member_group_id non-null); the handler splits them.
+SELECT gm.* FROM group_memberships gm
+WHERE gm.group_id = sqlc.arg('group_id')
+  AND (
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR gm.created_at < sqlc.narg('after_ts')
+    OR (gm.created_at = sqlc.narg('after_ts') AND gm.id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY gm.created_at DESC, gm.id
+LIMIT sqlc.arg('lim');
 
 -- name: DeactivateUser :exec
 UPDATE users SET deactivated_at = now() WHERE id = $1 AND deactivated_at IS NULL;
@@ -87,6 +89,9 @@ INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING *;
 
 -- name: ListGroupsPaged :many
 SELECT * FROM groups
-WHERE ($1::uuid IS NULL OR id > $1)
-ORDER BY id
-LIMIT $2;
+WHERE (
+  sqlc.narg('after_name')::text IS NULL
+  OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+)
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
