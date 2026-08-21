@@ -137,9 +137,11 @@ func TestDeleteGroupCascades(t *testing.T) {
 		}
 	}
 
-	// Deleting a non-existent group is a no-op.
-	if _, err := id.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: g.Msg.Group.Id}), tok)); err != nil {
-		t.Fatalf("delete missing group not a no-op: %v", err)
+	// Deleting a now-missing group returns NotFound: folder-scoped gating derives
+	// the governing scope from the group, so a group that no longer exists cannot
+	// be located (and its scope cannot be authorized).
+	if _, err := id.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: g.Msg.Group.Id}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("delete missing group = %v, want NotFound", connect.CodeOf(err))
 	}
 }
 

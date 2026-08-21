@@ -214,6 +214,95 @@ func TestIdentityCapabilityGating(t *testing.T) {
 	}
 }
 
+// TestGroupGovernanceGating proves group membership/read/delete are gated at the
+// group's folder scope (not global): a folder-scoped group-admin bound at folder
+// `team` can manage a group homed in `team`, but not a group homed in `other`.
+func TestGroupGovernanceGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Folders: demo, team (child of demo), other (all admin setup).
+	demo, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "demo"}), atok))
+	if err != nil {
+		t.Fatalf("create demo: %v", err)
+	}
+	team, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "team", ParentId: demo.Msg.Folder.Id}), atok))
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	other, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "other"}), atok))
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+
+	// Groups: sre homed in team, x homed in other.
+	sre, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "sre", FolderId: team.Msg.Folder.Id}), atok))
+	if err != nil {
+		t.Fatalf("create sre: %v", err)
+	}
+	x, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "x", FolderId: other.Msg.Folder.Id}), atok))
+	if err != nil {
+		t.Fatalf("create x: %v", err)
+	}
+
+	// A user to add.
+	u, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "u@x", DisplayName: "U", Password: "password123",
+	}), atok))
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// dana: non-admin bound at folder `team` to a role carrying the group-mgmt caps.
+	danaID := seedCapUser(t, pool, "dana@x", "danapass", `[]`) // creates the user
+	bindScopedCap(t, pool, danaID, `["identity:group:add-member","identity:group:read","identity:group:delete"]`, uuidFromStr(t, team.Msg.Folder.Id), uuid.Nil)
+	danatok := authClient(t, url, "dana@x", "danapass")
+
+	// dana CAN add to sre (homed in team, where she holds the caps).
+	if _, err := id.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: sre.Msg.Group.Id, UserId: u.Msg.User.Id,
+	}), danatok)); err != nil {
+		t.Fatalf("dana AddUserToGroup(sre): %v", err)
+	}
+	// dana CAN list sre members.
+	if _, err := id.ListGroupMembers(ctx, withToken(connect.NewRequest(&identityv1.ListGroupMembersRequest{GroupId: sre.Msg.Group.Id}), danatok)); err != nil {
+		t.Fatalf("dana ListGroupMembers(sre): %v", err)
+	}
+
+	// dana is DENIED on x (homed in other, where she holds no caps).
+	if _, err := id.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: x.Msg.Group.Id, UserId: u.Msg.User.Id,
+	}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana AddUserToGroup(x) = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	if _, err := id.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: x.Msg.Group.Id}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana DeleteGroup(x) = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// admin (**) CAN do all, including on x.
+	if _, err := id.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: x.Msg.Group.Id, UserId: u.Msg.User.Id,
+	}), atok)); err != nil {
+		t.Fatalf("admin AddUserToGroup(x): %v", err)
+	}
+	if _, err := id.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: x.Msg.Group.Id}), atok)); err != nil {
+		t.Fatalf("admin DeleteGroup(x): %v", err)
+	}
+}
+
+func uuidFromStr(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	u, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatalf("parse uuid %q: %v", s, err)
+	}
+	return u
+}
+
 func TestGetUserMalformedUUID(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
