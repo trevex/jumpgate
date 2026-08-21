@@ -11,6 +11,15 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
+// toSet converts a uuid slice into a map[uuid.UUID]struct{} for set operations.
+func toSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
+	s := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		s[id] = struct{}{}
+	}
+	return s
+}
+
 // idSet compares two id slices as sets (order-independent), reporting a readable
 // diff on mismatch.
 func idSet(t *testing.T, label string, got, want []uuid.UUID) {
@@ -220,4 +229,247 @@ func TestVisibleAssetsUnder(t *testing.T) {
 		t.Fatal(err)
 	}
 	idSet(t, "folders stranger root no-cascade", gotF, nil)
+}
+
+// TestVisibleScopedNonGlobalAdmin pins that a user whose catalog read caps are
+// bound at folder f1 ONLY (not globally) sees assets/folders in f1 and its
+// descendant f2 (caps cascade structurally down via CapabilitiesOnScope ancestor
+// walk) but does NOT see a sibling folder f3 or its asset a3.  This verifies
+// that the global short-circuit in VisibleAssetsUnder/VisibleFoldersUnder does
+// not over-include and that scoped caps do not leak sideways.
+func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	// Tree: root ⊃ f1 ⊃ f2  (from seedTree) + root ⊃ f3
+	_, _, _, root, f1, f2, a1, a2 := seedTree(t, pool)
+
+	f3F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "vt-f3", ParentID: pgUUID(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f3 := f3F.ID
+	a3A, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: f3, Name: "vt-a3", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a3 := a3A.ID
+
+	// scopedAdmin holds catalog:asset:read + catalog:folder:read bound at f1 ONLY.
+	scopedAdminU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "scoped-admin@vt", DisplayName: "ScopedAdmin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopedRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "vt-scoped-admin", Capabilities: caps("catalog:asset:read", "catalog:folder:read"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: scopedRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdminU.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	u := scopedAdminU.ID
+
+	// Assets under f1 cascade: should see a1 (in f1) and a2 (in f2, descendant of f1).
+	got, err := s.VisibleAssetsUnder(ctx, u, f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: assets under f1 cascade", got, []uuid.UUID{a1, a2})
+
+	// Non-cascade under f1: only a1 (directly in f1).
+	got, err = s.VisibleAssetsUnder(ctx, u, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: assets under f1 no-cascade", got, []uuid.UUID{a1})
+
+	// Folders directly under f1 (non-cascade): only f2.
+	gotF, err := s.VisibleFoldersUnder(ctx, u, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: folders under f1 no-cascade", gotF, []uuid.UUID{f2})
+
+	// Caps must NOT leak to the sibling branch f3/a3: assets under f3 (cascade).
+	got, err = s.VisibleAssetsUnder(ctx, u, f3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: assets under f3 cascade (should be empty)", got, nil)
+	_ = a3 // created to confirm it exists in f3 but is invisible to the scoped admin
+
+	// Folders under root: the scoped cap on f1 still covers f1 itself (ancestor
+	// walk), so f1 should be visible; f3 must NOT be (no binding there).
+	gotF, err = s.VisibleFoldersUnder(ctx, u, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// f1 is visible (scoped cap on f1 ⇒ CapabilitiesOnScope(FolderScope(f1)) hits
+	// it directly); f3 is a sibling with no matching binding.
+	if set := toSet(gotF); !contains(set, f1) {
+		t.Fatalf("scoped admin: f1 must be visible under root; got %v", gotF)
+	}
+	if set := toSet(gotF); contains(set, f3) {
+		t.Fatalf("scoped admin: f3 must NOT be visible under root (no binding); got %v", gotF)
+	}
+}
+
+// contains is a map membership helper used by the regression tests.
+func contains(s map[uuid.UUID]struct{}, id uuid.UUID) bool {
+	_, ok := s[id]
+	return ok
+}
+
+// TestVisibleManageOnlyEmptyFolder pins that an empty folder (no assets) still
+// appears in VisibleFoldersUnder for a user with global catalog:folder:read —
+// the management arm fires even when the access arm (subtree assets) is empty.
+func TestVisibleManageOnlyEmptyFolder(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	admin, _, _, root, f1, _, _, _ := seedTree(t, pool)
+
+	// Empty folder fe under root — no assets, no sub-folders.
+	feF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "vt-fe", ParentID: pgUUID(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fe := feF.ID
+
+	// admin is globally bound with catalog:folder:read (from seedTree).
+	// VisibleFoldersUnder(root, false) must include BOTH f1 and fe (pure mgmt arm).
+	gotF, err := s.VisibleFoldersUnder(ctx, admin, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "manage-only empty folder: admin sees f1 and fe under root", gotF, []uuid.UUID{f1, fe})
+}
+
+// TestVisibleNonexistentParent pins that passing a random uuid as the parent id
+// returns empty slices without error (no crash, no false positives).
+func TestVisibleNonexistentParent(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	admin, _, _, _, _, _, _, _ := seedTree(t, pool)
+
+	ghost := uuid.New()
+
+	got, err := s.VisibleAssetsUnder(ctx, admin, ghost, true)
+	if err != nil {
+		t.Fatalf("VisibleAssetsUnder nonexistent parent: %v", err)
+	}
+	idSet(t, "assets nonexistent parent cascade", got, nil)
+
+	gotF, err := s.VisibleFoldersUnder(ctx, admin, ghost, false)
+	if err != nil {
+		t.Fatalf("VisibleFoldersUnder nonexistent parent: %v", err)
+	}
+	idSet(t, "folders nonexistent parent no-cascade", gotF, nil)
+}
+
+// TestVisibleLeafFolderHasNoChildren pins that VisibleFoldersUnder on a leaf
+// folder (f2 has no child folders in the seedTree fixture) returns empty without
+// error.
+func TestVisibleLeafFolderHasNoChildren(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	admin, _, _, _, _, f2, _, _ := seedTree(t, pool)
+
+	gotF, err := s.VisibleFoldersUnder(ctx, admin, f2, false)
+	if err != nil {
+		t.Fatalf("VisibleFoldersUnder leaf f2: %v", err)
+	}
+	idSet(t, "folders leaf f2 no-cascade", gotF, nil)
+}
+
+// TestVisibleCascadeNoDuplicates pins that VisibleAssetsUnder with cascade=true
+// from the root returns each asset id exactly once, even when overlapping subtree
+// paths could theoretically produce duplicates.
+func TestVisibleCascadeNoDuplicates(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	admin, _, _, _, _, _, a1, a2 := seedTree(t, pool)
+
+	// Cascade from uuid.Nil (root sentinel) covers the whole tree.
+	got, err := s.VisibleAssetsUnder(ctx, admin, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The fixture has exactly two assets (a1, a2).  Verify len equals the distinct
+	// count (no duplicates) and that both ids are present.
+	distinct := toSet(got)
+	if len(got) != len(distinct) {
+		t.Fatalf("cascade dedup: got %d results but only %d distinct ids: %v", len(got), len(distinct), got)
+	}
+	idSet(t, "cascade root no-duplicates", got, []uuid.UUID{a1, a2})
+}
+
+// TestVisibleDeactivatedUserStandingBinding pins that a deactivated user who
+// previously held a standing connect binding on an asset loses all visibility:
+// VisibleAssetsUnder and VisibleFoldersUnder both return empty after deactivation.
+func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	_, _, _, root, f1, _, a1, _ := seedTree(t, pool)
+
+	// Create a new user with a standing connect binding on a1.
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-vis@vt", DisplayName: "DeactVis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "vt-deact-connect", Capabilities: caps("ssh:connect"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: connectRole.ID, ScopeAssetID: pgUUID(a1), SubjectUserID: pgUUID(u.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-deactivation: user can see a1 via the access arm (standing connect binding).
+	got, err := s.VisibleAssetsUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "pre-deactivation: assets under f1", got, []uuid.UUID{a1})
+
+	// f1 is also visible (browse path to a1).
+	gotF, err := s.VisibleFoldersUnder(ctx, u.ID, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "pre-deactivation: folders under root", gotF, []uuid.UUID{f1})
+
+	// Deactivate: all visibility must vanish immediately (no reaper needed).
+	deactivateUser(t, pool, u.ID)
+
+	got, err = s.VisibleAssetsUnder(ctx, u.ID, f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "deactivated: assets under f1 cascade", got, nil)
+
+	gotF, err = s.VisibleFoldersUnder(ctx, u.ID, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "deactivated: folders under root", gotF, nil)
 }

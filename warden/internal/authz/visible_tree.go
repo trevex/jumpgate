@@ -299,6 +299,10 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 			continue
 		}
 		// Access arm: does the subtree hold an accessible asset?
+		// TODO(perf): in cascade mode this issues O(F) overlapping subtree/asset
+		// queries (one folderSubtreeIDs + one assetIDsInFolders per non-manageable
+		// folder). A single level-wide asset→ancestor map hoisted before the loop
+		// would reduce that to two queries total.
 		subtree, err := s.folderSubtreeIDs(ctx, []uuid.UUID{folderID})
 		if err != nil {
 			return nil, err
