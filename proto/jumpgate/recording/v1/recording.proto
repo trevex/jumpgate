@@ -30,13 +30,15 @@ message Recording {
 }
 
 message ListRecordingsRequest {
-  string user_id = 1;
-  string asset_id = 2;
-  int32 page_size = 3;
+  string user_id    = 1;
+  string asset_id   = 2;
+  int32  page_size  = 3;
+  string page_token = 4;
 }
 
 message ListRecordingsResponse {
-  repeated Recording recordings = 1;
+  repeated Recording recordings    = 1;
+  string             next_page_token = 2;
 }
 
 message GetRecordingRequest {
