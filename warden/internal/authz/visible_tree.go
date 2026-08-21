@@ -23,7 +23,8 @@ import (
 //
 // A node is visible iff it is visible on EITHER axis (union). Deactivated users
 // are handled by the underlying closures (heldCTE / globalHeldCTE / VisibleAssets
-// all exclude a deactivated user), so no extra guard is needed here.
+// all exclude a deactivated user), so no extra guard is needed here for the
+// management axis. The asset-browse access axis is covered by VisibleAssets.
 
 // childFolderIDs returns the ids of the folders directly under parent, ordered by
 // (name, id). parent == uuid.Nil selects the tree root (parent_id IS NULL); the
@@ -337,9 +338,11 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 //     closure) or it is REQUESTABLE to them; a group is access-visible when the
 //     user is a (transitive) MEMBER.
 //
-// Deactivated users are excluded by the underlying closures (heldCTE /
-// visibleRequestable / the user_groups membership CTE all filter deactivated
-// users), so no extra guard is needed here.
+// Deactivated users are excluded by the underlying closures: heldCTE and
+// visibleRequestable both carry the `deactivated_at IS NULL` EXISTS guard, and
+// memberGroupIDs carries an explicit EXISTS guard in its final SELECT (see
+// memberGroupIDs below). No extra guard is needed at the VisibleRolesUnder /
+// VisibleGroupsUnder call site.
 
 // nodeFolder is one folder-homed node: Folder is nil for a global (folder-less)
 // node (folder_id IS NULL).
@@ -431,6 +434,10 @@ func (s *sqlAuthorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID
 // memberGroupIDs returns the set of group ids the user is a (transitive) member
 // of — the group ACCESS axis. The user_groups CTE is copied VERBATIM from heldCTE
 // / globalHeldCTE (direct membership base + recursive nested-group arm).
+//
+// The final SELECT carries the deactivation guard via an EXISTS sub-select on
+// users.deactivated_at IS NULL (matching the predicate in heldCTE and
+// globalHeldCTE). A deactivated user therefore yields an empty set.
 func (s *sqlAuthorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE
@@ -439,7 +446,8 @@ user_groups(group_id) AS (
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 )
-SELECT group_id FROM user_groups`, userID)
+SELECT group_id FROM user_groups
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("member group ids: %w", err)
 	}
