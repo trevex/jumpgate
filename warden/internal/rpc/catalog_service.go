@@ -57,6 +57,7 @@ func mapWriteErr(err error) error {
 // assets, and the caller's visible-asset catalog. Authorization config lives in
 // AccessService.
 type CatalogServer struct {
+	capGuard
 	q          *gen.Queries
 	pool       *pgxpool.Pool
 	authorizer authz.Authorizer
@@ -65,7 +66,7 @@ type CatalogServer struct {
 // NewCatalogServer constructs the CatalogService implementation. pool is used to
 // run CreateAsset + its inline config as one transaction.
 func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer) *CatalogServer {
-	return &CatalogServer{q: q, pool: pool, authorizer: authorizer}
+	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {
@@ -191,9 +192,6 @@ func optUUID(s string) (pgtype.UUID, bool, error) {
 // CreateFolder creates a folder (admin only). The folder row and its catalog_names
 // entry are written in one transaction so sibling uniqueness is enforced atomically.
 func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[catalogv1.CreateFolderRequest]) (*connect.Response[catalogv1.CreateFolderResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	var parent pgtype.UUID
 	if req.Msg.ParentId != "" {
 		pid, err := uuid.Parse(req.Msg.ParentId)
@@ -201,6 +199,9 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad parent_id"))
 		}
 		parent = pgUUID(pid)
+	}
+	if err := s.requireCap(ctx, "catalog:folder:create", scopeOfFolderID(parent)); err != nil {
+		return nil, err
 	}
 	name := strings.ToLower(req.Msg.Name)
 
@@ -231,7 +232,7 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 
 // ListFolders lists folders (admin only).
 func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[catalogv1.ListFoldersRequest]) (*connect.Response[catalogv1.ListFoldersResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "catalog:folder:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	limit := req.Msg.PageSize
@@ -273,12 +274,12 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 // CreateAsset creates an asset in a folder (admin only). The asset row, its
 // catalog_names entry, and any inline SSH config are written in one transaction.
 func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	fid, err := uuid.Parse(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:create", authz.FolderScope(fid)); err != nil {
+		return nil, err
 	}
 	kind := req.Msg.Kind
 	if kind == "" {
@@ -337,12 +338,12 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 // GetAsset returns an asset with its typed config (admin only). NotFound if the
 // asset does not exist; an asset with no ssh config returns an Asset without config.
 func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catalogv1.GetAssetRequest]) (*connect.Response[catalogv1.GetAssetResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(id)); err != nil {
+		return nil, err
 	}
 	a, err := s.q.GetAsset(ctx, id)
 	if err != nil {
@@ -369,12 +370,12 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 // stored_key_needs_secret CHECK and the stored_secret_id FK surface as
 // InvalidArgument.
 func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Request[catalogv1.UpdateAssetConfigRequest]) (*connect.Response[catalogv1.UpdateAssetConfigResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
+		return nil, err
 	}
 	ssh := req.Msg.GetSsh()
 	if ssh == nil {
@@ -406,12 +407,12 @@ func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Requ
 // ListAssetsByFolder's generated signature takes uuid.UUID (folder_id is NOT NULL),
 // so fid is passed directly without pgUUID wrapping.
 func (s *CatalogServer) ListAssetsByFolder(ctx context.Context, req *connect.Request[catalogv1.ListAssetsByFolderRequest]) (*connect.Response[catalogv1.ListAssetsByFolderResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	fid, err := uuid.Parse(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:read", authz.FolderScope(fid)); err != nil {
+		return nil, err
 	}
 	rows, err := s.q.ListAssetsByFolder(ctx, fid)
 	if err != nil {
@@ -520,10 +521,12 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
 	}
 
-	// Access + existence hiding. Admins see the whole catalog (no authz query).
-	// Non-admins are gated by a targeted single-asset RolesOnAsset lookup — same
+	// Access + existence hiding. The management read cap bypasses the data-plane
+	// visibility gate (admins hold ** so this stays a no-op for them). Callers
+	// without it are gated by a targeted single-asset RolesOnAsset lookup — same
 	// visibility as VisibleAssets (active OR requestable) without enumerating a list.
-	if !u.IsAdmin {
+	mgmtOK := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(assetID)) == nil
+	if !mgmtOK {
 		roles, err := s.authorizer.RolesOnAsset(ctx, u.ID, assetID)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
@@ -546,9 +549,6 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 // ResolveFolder maps a uuid or DNS-style dotted path to a folder id. Admin only;
 // unknown-ref returns NotFound. The response path is the canonical DNS path.
 func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[catalogv1.ResolveFolderRequest]) (*connect.Response[catalogv1.ResolveFolderResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	ref := req.Msg.Ref
 
 	var folderID uuid.UUID
@@ -565,6 +565,11 @@ func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[
 			return nil, folderNotFoundOrInternal(err)
 		}
 		folderID = id
+	}
+
+	// Gate on the resolved folder's scope (resolve-then-check).
+	if err := s.requireCap(ctx, "catalog:folder:read", authz.FolderScope(folderID)); err != nil {
+		return nil, err
 	}
 
 	fp, err := s.q.FolderPath(ctx, folderID)
@@ -608,7 +613,11 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if len(roles.Active) == 0 && len(roles.Requestable) == 0 {
+	// The management read cap bypasses the data-plane visibility gate (admins
+	// hold ** so this stays a no-op for them). Callers without it get the
+	// existence-hiding NotFound when they have no roles on the asset.
+	mgmtOK := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(id)) == nil
+	if !mgmtOK && len(roles.Active) == 0 && len(roles.Requestable) == 0 {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
 	}
 	resp := &catalogv1.GetAssetAccessResponse{}

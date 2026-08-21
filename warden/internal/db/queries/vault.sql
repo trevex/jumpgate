@@ -14,6 +14,10 @@ RETURNING *;
 -- misconfiguration) fails closed rather than leaking a secret cross-asset.
 SELECT * FROM asset_secrets WHERE id = $1 AND asset_id = $2;
 
+-- name: GetAssetSecretByID :one
+-- Loads a secret by id alone (for management scope-derivation → owning asset).
+SELECT * FROM asset_secrets WHERE id = $1;
+
 -- name: DeleteAssetSecret :exec
 DELETE FROM asset_secrets WHERE id = $1;
 

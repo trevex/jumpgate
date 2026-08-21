@@ -12,6 +12,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
 // AccessRequestServer implements accessrequestv1connect.AccessRequestServiceHandler:
@@ -21,11 +23,12 @@ import (
 type AccessRequestServer struct {
 	resolver *approvals.Resolver
 	svc      *accessrequest.Service
+	capGuard
 }
 
 // NewAccessRequestServer constructs the AccessRequestService implementation.
-func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service) *AccessRequestServer {
-	return &AccessRequestServer{resolver: resolver, svc: svc}
+func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *gen.Queries) *AccessRequestServer {
+	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{authz: a, q: q}}
 }
 
 // mapAccessRequestErr maps a domain sentinel to a Connect error.
@@ -101,9 +104,6 @@ func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
 
 // ResolveApproval returns the effective request policy for a (role, asset) pair (admin only).
 func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.Request[accessrequestv1.ResolveApprovalRequest]) (*connect.Response[accessrequestv1.ResolveApprovalResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
-		return nil, err
-	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -111,6 +111,9 @@ func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if err := s.requireCap(ctx, "access:policy:read", authz.AssetScope(assetID)); err != nil {
+		return nil, err
 	}
 	rule, err := s.resolver.EffectiveRule(ctx, roleID, assetID)
 	if err != nil {
@@ -246,7 +249,11 @@ func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad grant_id"))
 	}
-	g, err := s.svc.RevokeGrant(ctx, caller, grantID, req.Msg.Reason)
+	// Management revoke authority: holding the revoke cap globally lets a caller
+	// revoke any grant (admins hold ** so this is a no-op for them). Without it the
+	// service falls back to subject self-revoke / standing-approver authority.
+	mgmtAuthorized := s.requireCap(ctx, "access:grant:revoke", authz.GlobalScope()) == nil
+	g, err := s.svc.RevokeGrant(ctx, caller, mgmtAuthorized, grantID, req.Msg.Reason)
 	if err != nil {
 		return nil, mapAccessRequestErr(err)
 	}
@@ -273,7 +280,7 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, _ *connect.Reque
 
 // ListGrants lists grants for admin introspection (admin only).
 func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
-	if err := auth.RequireAdmin(ctx); err != nil {
+	if err := s.requireCap(ctx, "access:grant:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	filter := accessrequest.GrantFilter{ActiveOnly: req.Msg.ActiveOnly}

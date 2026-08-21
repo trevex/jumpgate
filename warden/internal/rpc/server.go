@@ -62,28 +62,28 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
+	authorizer := authz.NewSQLAuthorizer(pool)
 
 	// A standalone terminator (stateless; a second instance alongside the mesh
 	// side is fine) lets DeactivateUser synchronously evict a user's live
 	// sessions as part of the API call.
 	terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
-	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc, terminator), opts)
+	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc, terminator, authorizer), opts)
 	mux.Handle(idPath, idHandler)
 
-	authorizer := authz.NewSQLAuthorizer(pool)
 	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, pool, authorizer), opts)
 	mux.Handle(catPath, catHandler)
 
-	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, roles), opts)
+	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, roles, authorizer), opts)
 	mux.Handle(accessPath, accessHandler)
 
-	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc), opts)
+	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc, authorizer, q), opts)
 	mux.Handle(arPath, arHandler)
 
-	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer), opts)
+	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer, authorizer), opts)
 	mux.Handle(vaultPath, vaultHandler)
 
-	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL), opts)
+	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL, authorizer), opts)
 	mux.Handle(recPath, recHandler)
 
 	if sessionSvc != nil {

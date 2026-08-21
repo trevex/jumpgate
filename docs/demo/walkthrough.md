@@ -214,3 +214,98 @@ asciinema play recording.cast                             # replay alice's sessi
 
 The replay shows exactly what alice typed — closing the loop from request, through
 approval and connection, to the audit trail.
+
+## Chapter: delegated folder administration
+
+The management API is **capability-gated**. Every management action requires a specific
+capability (`catalog:asset:create`, `access:role:create`, `access:binding:create`,
+`identity:user:create`, …) held at the right **scope**. A binding's scope is either global
+(no scope), a folder, or an asset, and management authority **cascades down** the folder
+tree: a capability held at folder *F* applies to *F*, its sub-folders, and all of their
+assets. The bootstrap admin is simply the holder of `**` (all capabilities) globally.
+
+This lets the admin hand a scoped slice of administration to someone else without giving
+them the keys to the estate. Here the admin delegates a `team` sub-folder to **dana**, who
+becomes a *folder admin* for that subtree — and only that subtree.
+
+First, as admin, carve out a sub-folder under `demo` and define a bounded **folder-admin**
+role. It is a *global* role (its capabilities are not themselves pinned to a folder); the
+**binding** is what scopes it to `team`:
+
+```bash
+jumpgate --context admin folders create team --parent <DEMO_FOLDER_ID>   # from `folders list`
+
+jumpgate --context admin roles create folder-admin \
+  --capability catalog:asset:create \
+  --capability catalog:asset:read \
+  --capability catalog:asset:update \
+  --capability access:role:create \
+  --capability access:binding:create \
+  --capability access:policy:create \
+  --capability 'ssh:login:*'
+```
+
+`folders create --parent` takes the parent folder's **UUID** (not its DNS path); read it
+from `jumpgate --context admin folders list -o json` (the `demo` folder's `id`).
+
+Create dana, then **bind** folder-admin to her at the `team` folder. Because the admin
+holds `**` at `team`, the no-escalation subset rule (below) is satisfied and the grant is
+allowed:
+
+```bash
+jumpgate --context admin users create dana@demo.test --name Dana --password dana-password-1234
+
+jumpgate --context admin bindings create --role folder-admin --user dana@demo.test --folder team.demo
+```
+
+Now log in as dana and manage *within* `team`. She can onboard an asset, mint a
+team-scoped role, and bind it — her `ssh:login:*` and `access:*` capabilities reach these
+assets by cascade from the folder binding:
+
+```bash
+jumpgate login --context dana \
+  --warden-addr http://localhost:8080 \
+  --ca ./jumpgate-mesh-ca.pem \
+  --email dana@demo.test --password dana-password-1234
+
+# onboard an asset in her folder
+jumpgate --context dana assets ssh create team-box \
+  --folder team.demo \
+  --target ssh-target.default.svc.cluster.local:22 \
+  --login deploy -o json
+
+# mint a team-scoped role and bind it on her asset
+# (subset holds: ssh:login:deploy ⊆ ssh:login:*, which dana holds at team)
+jumpgate --context dana roles create deployer --folder team.demo --capability ssh:login:deploy
+jumpgate --context dana bindings create --role deployer.team.demo --user dana@demo.test --asset team-box.team.demo
+```
+
+Her authority stops at the edges of what was delegated. Each of the following is **denied**:
+
+```bash
+# DENY — outside scope: the PARENT folder was not delegated to her. Authority
+# cascades DOWN the tree, never up, so she has no capabilities at demo.
+jumpgate --context dana assets ssh create outside-box \
+  --folder demo \
+  --target ssh-target.default.svc.cluster.local:22 \
+  --login deploy
+# -> permission denied
+
+# DENY — escalation: she cannot grant a role carrying `**` even inside her own
+# team folder. The no-escalation subset rule requires that to bind a role R at
+# scope S you must yourself hold at least R's capabilities at S — and she does not
+# hold `**` anywhere. (Reference the ** role by id so resolution isn't the blocker.)
+jumpgate --context dana bindings create --role <SUPERPOWER_ROLE_ID> --user dana@demo.test --folder team.demo
+# -> permission denied
+
+# DENY — global operation: creating a user needs identity:user:create at the
+# global scope; dana holds no identity capabilities at all.
+jumpgate --context dana users create someone@demo.test --name Someone --password someone-password-1234
+# -> permission denied
+```
+
+The model in one breath: **capabilities** name what you can do; **folder-scoped bindings**
+say where; authority **cascades** down the folder subtree; the **no-escalation subset rule**
+stops a delegate from handing out more than they themselves hold; and the bootstrap admin is
+just the holder of `**` globally. Delegated administration falls straight out of these rules —
+no special "admin of folder X" concept required.

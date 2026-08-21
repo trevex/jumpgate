@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -30,12 +31,36 @@ func TestBootstrapSeedsAdminOnEmptyDB(t *testing.T) {
 		t.Fatalf("ensure: %v", err)
 	}
 	u, err := q.GetUserByEmail(ctx, "root@x")
-	if err != nil || !u.IsAdmin {
-		t.Fatalf("admin not seeded: %v %+v", err, u)
+	if err != nil {
+		t.Fatalf("admin not seeded: %v", err)
 	}
 	ok, _ := auth.VerifyPassword("hunter2hunter2", u.PasswordHash)
 	if !ok {
 		t.Fatal("seeded admin password mismatch")
+	}
+	// Management authz is capability-only: the admin must hold a global `admin`
+	// role carrying `**` (there is no is_admin boolean anymore).
+	role, err := q.GetRoleByNameGlobal(ctx, "admin")
+	if err != nil {
+		t.Fatalf("admin role not seeded: %v", err)
+	}
+	if string(role.Capabilities) != `["**"]` {
+		t.Fatalf("admin role caps = %s, want [\"**\"]", role.Capabilities)
+	}
+	bindings, err := q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{
+		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("list bindings: %v", err)
+	}
+	var bound bool
+	for _, b := range bindings {
+		if b.RoleID == role.ID {
+			bound = true
+		}
+	}
+	if !bound {
+		t.Fatal("admin role not bound to the seeded admin user")
 	}
 
 	if err := bootstrap.EnsureAdmin(ctx, q, "other@x", "whatever12345"); err != nil {

@@ -32,7 +32,7 @@ func TestFileSaveLoadRoundTrip(t *testing.T) {
 	want := File{
 		CurrentContext: "default",
 		Contexts: map[string]Context{
-			"default": {WardenAddr: "http://localhost:8080", CAFile: "/etc/ca.pem", Token: "tok-abc", IsAdmin: true},
+			"default": {WardenAddr: "http://localhost:8080", CAFile: "/etc/ca.pem", Token: "tok-abc"},
 		},
 	}
 	if err := want.Save(); err != nil {
@@ -142,7 +142,7 @@ func TestUseContextUnknown(t *testing.T) {
 func TestUpsertContextRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	if err := UpsertContext("bob", Context{WardenAddr: "http://w", Token: "t", IsAdmin: false}, true); err != nil {
+	if err := UpsertContext("bob", Context{WardenAddr: "http://w", Token: "t"}, true); err != nil {
 		t.Fatal(err)
 	}
 	f, err := LoadFile()

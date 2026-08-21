@@ -87,6 +87,24 @@ func (q *Queries) GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) 
 	return i, err
 }
 
+const getAssetSecretByID = `-- name: GetAssetSecretByID :one
+SELECT id, asset_id, name, sealed, created_at FROM asset_secrets WHERE id = $1
+`
+
+// Loads a secret by id alone (for management scope-derivation → owning asset).
+func (q *Queries) GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error) {
+	row := q.db.QueryRow(ctx, getAssetSecretByID, id)
+	var i AssetSecret
+	err := row.Scan(
+		&i.ID,
+		&i.AssetID,
+		&i.Name,
+		&i.Sealed,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listAssetSecrets = `-- name: ListAssetSecrets :many
 SELECT id, asset_id, name, created_at FROM asset_secrets WHERE asset_id = $1 ORDER BY name
 `

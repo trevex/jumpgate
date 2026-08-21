@@ -27,7 +27,6 @@ type User struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	IsAdmin       bool                   `protobuf:"varint,4,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -81,13 +80,6 @@ func (x *User) GetDisplayName() string {
 		return x.DisplayName
 	}
 	return ""
-}
-
-func (x *User) GetIsAdmin() bool {
-	if x != nil {
-		return x.IsAdmin
-	}
-	return false
 }
 
 type Group struct {
@@ -279,7 +271,6 @@ type CreateUserRequest struct {
 	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
-	IsAdmin       bool                   `protobuf:"varint,4,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -333,13 +324,6 @@ func (x *CreateUserRequest) GetPassword() string {
 		return x.Password
 	}
 	return ""
-}
-
-func (x *CreateUserRequest) GetIsAdmin() bool {
-	if x != nil {
-		return x.IsAdmin
-	}
-	return false
 }
 
 type GetUserRequest struct {
@@ -1586,12 +1570,11 @@ var File_jumpgate_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"#jumpgate/identity/v1/identity.proto\x12\x14jumpgate.identity.v1\x1a\x1bbuf/validate/validate.proto\"j\n" +
+	"#jumpgate/identity/v1/identity.proto\x12\x14jumpgate.identity.v1\x1a\x1bbuf/validate/validate.proto\"_\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x19\n" +
-	"\bis_admin\x18\x04 \x01(\bR\aisAdmin\"+\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin\"+\n" +
 	"\x05Group\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"D\n" +
@@ -1600,13 +1583,12 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x0fGetUserResponse\x12.\n" +
 	"\x04user\x18\x01 \x01(\v2\x1a.jumpgate.identity.v1.UserR\x04user\"H\n" +
 	"\x13CreateGroupResponse\x121\n" +
-	"\x05group\x18\x01 \x01(\v2\x1b.jumpgate.identity.v1.GroupR\x05group\"\xa1\x01\n" +
+	"\x05group\x18\x01 \x01(\v2\x1b.jumpgate.identity.v1.GroupR\x05group\"\x96\x01\n" +
 	"\x11CreateUserRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12-\n" +
 	"\fdisplay_name\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\vdisplayName\x12#\n" +
-	"\bpassword\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\bR\bpassword\x12\x19\n" +
-	"\bis_admin\x18\x04 \x01(\bR\aisAdmin\"*\n" +
+	"\bpassword\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\bR\bpasswordJ\x04\b\x04\x10\x05R\bis_admin\"*\n" +
 	"\x0eGetUserRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"3\n" +
 	"\x12ResolveUserRequest\x12\x1d\n" +

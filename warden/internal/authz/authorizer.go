@@ -42,6 +42,10 @@ type Authorizer interface {
 	// the closure per capability.
 	CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error)
 
+	// CapabilitiesOnScope returns caps the user holds at a management scope:
+	// globally-held always, plus (folder/asset scope) caps held on that object.
+	CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error)
+
 	// VisibleAssets returns every asset the user can see — those on which the user
 	// holds at least one Active (standing) role OR has at least one Requestable role
 	// (an effective request_policy for which the user is an eligible requester).

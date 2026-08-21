@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -11,9 +10,8 @@ import (
 
 // CurrentUser is the authenticated principal attached to a request context.
 type CurrentUser struct {
-	ID      uuid.UUID
-	Email   string
-	IsAdmin bool
+	ID    uuid.UUID
+	Email string
 }
 
 type userCtxKey struct{}
@@ -29,18 +27,6 @@ func UserFromContext(ctx context.Context) (CurrentUser, bool) {
 	return u, ok
 }
 
-// RequireAdmin returns a Connect error unless the context user is an admin.
-func RequireAdmin(ctx context.Context) error {
-	u, ok := UserFromContext(ctx)
-	if !ok {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
-	}
-	if !u.IsAdmin {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("admin required"))
-	}
-	return nil
-}
-
 // userLookup resolves a validated token to a CurrentUser.
 type userLookup interface {
 	Validate(ctx context.Context, rawToken string) (uuid.UUID, error)
@@ -49,7 +35,7 @@ type userLookup interface {
 
 // NewInterceptor authenticates requests via `Authorization: Bearer <token>`.
 // It NEVER rejects; it only attaches a user when a valid token is present.
-// Per-RPC guards (RequireAdmin / UserFromContext) enforce auth requirements,
+// Per-RPC guards (capability checks / UserFromContext) enforce auth requirements,
 // which keeps Login callable anonymously.
 func NewInterceptor(lookup userLookup) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
