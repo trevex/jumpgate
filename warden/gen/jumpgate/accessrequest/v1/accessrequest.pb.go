@@ -629,6 +629,8 @@ func (x *DenyRequestResponse) GetRequest() *AccessRequest {
 
 type ListMyRequestsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -663,9 +665,24 @@ func (*ListMyRequestsRequest) Descriptor() ([]byte, []int) {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{11}
 }
 
+func (x *ListMyRequestsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListMyRequestsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListMyRequestsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Requests      []*AccessRequest       `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -707,8 +724,17 @@ func (x *ListMyRequestsResponse) GetRequests() []*AccessRequest {
 	return nil
 }
 
+func (x *ListMyRequestsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 type ListPendingApprovalsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -743,9 +769,24 @@ func (*ListPendingApprovalsRequest) Descriptor() ([]byte, []int) {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{13}
 }
 
+func (x *ListPendingApprovalsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPendingApprovalsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListPendingApprovalsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Requests      []*AccessRequest       `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -785,6 +826,13 @@ func (x *ListPendingApprovalsResponse) GetRequests() []*AccessRequest {
 		return x.Requests
 	}
 	return nil
+}
+
+func (x *ListPendingApprovalsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 // Grant is an access_grant DTO.
@@ -994,6 +1042,8 @@ func (x *RevokeGrantResponse) GetGrant() *Grant {
 
 type ListMyGrantsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1028,9 +1078,24 @@ func (*ListMyGrantsRequest) Descriptor() ([]byte, []int) {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{18}
 }
 
+func (x *ListMyGrantsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListMyGrantsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListMyGrantsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Grants        []*Grant               `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1072,10 +1137,19 @@ func (x *ListMyGrantsResponse) GetGrants() []*Grant {
 	return nil
 }
 
+func (x *ListMyGrantsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 type ListGrantsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SubjectUserId string                 `protobuf:"bytes,1,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"` // optional; empty => any subject
 	ActiveOnly    bool                   `protobuf:"varint,2,opt,name=active_only,json=activeOnly,proto3" json:"active_only,omitempty"`           // optional; true => active grants only
+	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1124,9 +1198,24 @@ func (x *ListGrantsRequest) GetActiveOnly() bool {
 	return false
 }
 
+func (x *ListGrantsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListGrantsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListGrantsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Grants        []*Grant               `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1166,6 +1255,13 @@ func (x *ListGrantsResponse) GetGrants() []*Grant {
 		return x.Grants
 	}
 	return nil
+}
+
+func (x *ListGrantsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 var File_jumpgate_accessrequest_v1_accessrequest_proto protoreflect.FileDescriptor
@@ -1215,13 +1311,21 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\trequestId\"Y\n" +
 	"\x13DenyRequestResponse\x12B\n" +
-	"\arequest\x18\x01 \x01(\v2(.jumpgate.accessrequest.v1.AccessRequestR\arequest\"\x17\n" +
-	"\x15ListMyRequestsRequest\"^\n" +
+	"\arequest\x18\x01 \x01(\v2(.jumpgate.accessrequest.v1.AccessRequestR\arequest\"^\n" +
+	"\x15ListMyRequestsRequest\x12&\n" +
+	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\"\x86\x01\n" +
 	"\x16ListMyRequestsResponse\x12D\n" +
-	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\"\x1d\n" +
-	"\x1bListPendingApprovalsRequest\"d\n" +
+	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"d\n" +
+	"\x1bListPendingApprovalsRequest\x12&\n" +
+	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\"\x8c\x01\n" +
 	"\x1cListPendingApprovalsResponse\x12D\n" +
-	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\"\x8f\x02\n" +
+	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8f\x02\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12\x19\n" +
@@ -1239,16 +1343,24 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\bgrant_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agrantId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"M\n" +
 	"\x13RevokeGrantResponse\x126\n" +
-	"\x05grant\x18\x01 \x01(\v2 .jumpgate.accessrequest.v1.GrantR\x05grant\"\x15\n" +
-	"\x13ListMyGrantsRequest\"P\n" +
+	"\x05grant\x18\x01 \x01(\v2 .jumpgate.accessrequest.v1.GrantR\x05grant\"\\\n" +
+	"\x13ListMyGrantsRequest\x12&\n" +
+	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\"x\n" +
 	"\x14ListMyGrantsResponse\x128\n" +
-	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\"\\\n" +
+	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa3\x01\n" +
 	"\x11ListGrantsRequest\x12&\n" +
 	"\x0fsubject_user_id\x18\x01 \x01(\tR\rsubjectUserId\x12\x1f\n" +
 	"\vactive_only\x18\x02 \x01(\bR\n" +
-	"activeOnly\"N\n" +
+	"activeOnly\x12&\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"v\n" +
 	"\x12ListGrantsResponse\x128\n" +
-	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants2\xbc\t\n" +
+	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xbc\t\n" +
 	"\x14AccessRequestService\x12z\n" +
 	"\x0fResolveApproval\x121.jumpgate.accessrequest.v1.ResolveApprovalRequest\x1a2.jumpgate.accessrequest.v1.ResolveApprovalResponse\"\x00\x12t\n" +
 	"\rRequestAccess\x12/.jumpgate.accessrequest.v1.RequestAccessRequest\x1a0.jumpgate.accessrequest.v1.RequestAccessResponse\"\x00\x12t\n" +
