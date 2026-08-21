@@ -212,6 +212,8 @@ type ListRolesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	Parent        string                 `protobuf:"bytes,3,opt,name=parent,proto3" json:"parent,omitempty"`    // folder id or DNS path; empty = root (folder-less roles + all folders)
+	Cascade       bool                   `protobuf:"varint,4,opt,name=cascade,proto3" json:"cascade,omitempty"` // descend the whole subtree; default false = direct children only
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -258,6 +260,20 @@ func (x *ListRolesRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *ListRolesRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *ListRolesRequest) GetCascade() bool {
+	if x != nil {
+		return x.Cascade
+	}
+	return false
 }
 
 type ListRolesResponse struct {
@@ -2588,11 +2604,13 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\fcapabilities\x18\x03 \x03(\tBp\xbaHm\x92\x01j\"hrf2d^(\\*\\*|([a-z0-9]+(-[a-z0-9]+)*|\\*)(:([a-z0-9]+(-[a-z0-9]+)*|\\*))*:([a-z0-9]+(-[a-z0-9]+)*|\\*|\\*\\*))$R\fcapabilities\x12(\n" +
 	"\tfolder_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderIdJ\x04\b\x02\x10\x03R\rresource_type\"B\n" +
 	"\x12CreateRoleResponse\x12,\n" +
-	"\x04role\x18\x01 \x01(\v2\x18.jumpgate.access.v1.RoleR\x04role\"Y\n" +
+	"\x04role\x18\x01 \x01(\v2\x18.jumpgate.access.v1.RoleR\x04role\"\x8b\x01\n" +
 	"\x10ListRolesRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tR\tpageToken\"k\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x16\n" +
+	"\x06parent\x18\x03 \x01(\tR\x06parent\x12\x18\n" +
+	"\acascade\x18\x04 \x01(\bR\acascade\"k\n" +
 	"\x11ListRolesResponse\x12.\n" +
 	"\x05roles\x18\x01 \x03(\v2\x18.jumpgate.access.v1.RoleR\x05roles\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"*\n" +

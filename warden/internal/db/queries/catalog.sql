@@ -24,6 +24,16 @@ WHERE id = ANY(sqlc.arg('ids')::uuid[])
 ORDER BY name, id
 LIMIT sqlc.arg('lim');
 
+-- name: ListRolesByIDsPaged :many
+SELECT * FROM roles
+WHERE id = ANY($1::uuid[])
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
+
 -- name: ListRoles :many
 SELECT * FROM roles
 WHERE (
