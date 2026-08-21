@@ -99,6 +99,9 @@ type Querier interface {
 	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
+	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
+	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
+	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
 	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
@@ -106,10 +109,15 @@ type Querier interface {
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
+	// Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
+	ListGrantsBySubjectPaged(ctx context.Context, arg ListGrantsBySubjectPagedParams) ([]AccessGrant, error)
 	// Admin listing: all grants (active + past), optionally narrowed to a subject
 	// and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
 	// active_only=false => include revoked/expired.
 	ListGrantsFiltered(ctx context.Context, arg ListGrantsFilteredParams) ([]AccessGrant, error)
+	// Admin listing with keyset pagination on (granted_at DESC, id ASC). Filters
+	// are all optional (null subject => any subject; active_only=false => all).
+	ListGrantsFilteredPaged(ctx context.Context, arg ListGrantsFilteredPagedParams) ([]AccessGrant, error)
 	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
 	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
@@ -117,6 +125,8 @@ type Querier interface {
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
+	// Keyset pagination for pending requests (created_at DESC, id ASC).
+	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
