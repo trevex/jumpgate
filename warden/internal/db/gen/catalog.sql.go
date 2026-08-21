@@ -388,8 +388,12 @@ WHERE ($1::uuid IS NULL OR role_id = $1)
   AND ($4::uuid IS NULL OR subject_user_id = $4)
   AND ($5::uuid IS NULL OR subject_group_id = $5)
   AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
+    -- instant with a later id. A row-comparison ` + "`" + `(created_at,id) < (…)` + "`" + ` is WRONG
+    -- here — it would invert the id tiebreak.
     $6::timestamptz IS NULL
-    OR (created_at, id) < ($6, $7::uuid)
+    OR created_at < $6
+    OR (created_at = $6 AND id > $7::uuid)
   )
 ORDER BY created_at DESC, id
 LIMIT $8

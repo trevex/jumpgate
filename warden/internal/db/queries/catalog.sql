@@ -36,8 +36,12 @@ WHERE (sqlc.narg('role_id')::uuid IS NULL OR role_id = sqlc.narg('role_id'))
   AND (sqlc.narg('subject_user_id')::uuid IS NULL OR subject_user_id = sqlc.narg('subject_user_id'))
   AND (sqlc.narg('subject_group_id')::uuid IS NULL OR subject_group_id = sqlc.narg('subject_group_id'))
   AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
+    -- instant with a later id. A row-comparison `(created_at,id) < (…)` is WRONG
+    -- here — it would invert the id tiebreak.
     sqlc.narg('after_ts')::timestamptz IS NULL
-    OR (created_at, id) < (sqlc.narg('after_ts'), sqlc.narg('after_id')::uuid)
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
   )
 ORDER BY created_at DESC, id
 LIMIT sqlc.arg('lim');

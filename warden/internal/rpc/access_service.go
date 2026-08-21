@@ -523,7 +523,12 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	for i := range rows {
 		out.Bindings = append(out.Bindings, toRoleBindingMsg(rows[i]))
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here created_at — for tables ordered by a different column (e.g.
+	// access_grants.granted_at) use that column instead.
+	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
 		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}

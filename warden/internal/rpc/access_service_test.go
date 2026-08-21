@@ -426,18 +426,21 @@ func TestListRoleBindingsKeysetPagination(t *testing.T) {
 
 	// Create three groups, one binding each, so we have 3 additional rows in
 	// addition to the admin bootstrap binding (4 total).
+	var groupBindingIDs []string // in creation order (oldest first)
 	mkBinding := func(groupName string) {
 		g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: groupName}), tok))
 		if err != nil {
 			t.Fatalf("create group %s: %v", groupName, err)
 		}
-		if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		b, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
 			RoleId:         role.Msg.Role.Id,
 			ScopeFolderId:  folder.Msg.Folder.Id,
 			SubjectGroupId: g.Msg.Group.Id,
-		}), tok)); err != nil {
+		}), tok))
+		if err != nil {
 			t.Fatalf("create binding for %s: %v", groupName, err)
 		}
+		groupBindingIDs = append(groupBindingIDs, b.Msg.Id)
 	}
 	mkBinding("grp-a")
 	mkBinding("grp-b")
@@ -488,6 +491,31 @@ func TestListRoleBindingsKeysetPagination(t *testing.T) {
 			t.Fatalf("duplicate binding id %s across pages", b.Id)
 		}
 	}
+
+	// Ordering: created_at DESC means the three most-recently-created (the group
+	// bindings) fill page 1 in reverse creation order (grp-c, grp-b, grp-a), and
+	// the oldest row (the bootstrap admin binding) lands last, on page 2. This
+	// pins the keyset tiebreak direction — a wrong predicate would misorder or
+	// leak the bootstrap binding onto page 1.
+	wantP1 := []string{groupBindingIDs[2], groupBindingIDs[1], groupBindingIDs[0]}
+	gotP1 := []string{page1.Msg.Bindings[0].Id, page1.Msg.Bindings[1].Id, page1.Msg.Bindings[2].Id}
+	for i := range wantP1 {
+		if gotP1[i] != wantP1[i] {
+			t.Fatalf("page1 order = %v, want %v (newest-first)", gotP1, wantP1)
+		}
+	}
+	if seen[page2.Msg.Bindings[0].Id] || contains(groupBindingIDs, page2.Msg.Bindings[0].Id) {
+		t.Fatalf("page2 should hold the oldest (bootstrap) binding, got a group binding %s", page2.Msg.Bindings[0].Id)
+	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExplainRole(t *testing.T) {
