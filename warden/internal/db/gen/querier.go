@@ -102,7 +102,7 @@ type Querier interface {
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
 	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
 	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
-	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
+	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
 	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
@@ -118,8 +118,10 @@ type Querier interface {
 	// Admin listing with keyset pagination on (granted_at DESC, id ASC). Filters
 	// are all optional (null subject => any subject; active_only=false => all).
 	ListGrantsFilteredPaged(ctx context.Context, arg ListGrantsFilteredPagedParams) ([]AccessGrant, error)
-	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
-	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
+	// Single keyset scan over group_memberships ordered by (created_at DESC, id).
+	// Each row is either a user-member (member_user_id non-null) or group-member
+	// (member_group_id non-null); the handler splits them.
+	ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)

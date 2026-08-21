@@ -611,3 +611,280 @@ func TestListUsersKeysetByEmail(t *testing.T) {
 		t.Fatalf("total from paged = %d, want 4", len(page1.Msg.Users)+len(page2.Msg.Users))
 	}
 }
+
+// TestListGroupsKeysetByName verifies name-ordered (name ASC, id ASC) keyset
+// pagination for ListGroups (admin / fast-path). Seeds 3 groups with names in
+// reversed alphabetical order, confirms page 1 returns [beta, gamma] with a
+// token, and page 2 returns [zeta] with no token.
+func TestListGroupsKeysetByName(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create in deliberately reversed alphabetical order to prove name ordering.
+	for _, name := range []string{"zeta", "gamma", "beta"} {
+		if _, err := c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: name}), tok)); err != nil {
+			t.Fatalf("create group %s: %v", name, err)
+		}
+	}
+
+	// Fetch all 3 groups (large page) and verify name order.
+	all, err := c.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), tok))
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(all.Msg.Groups) != 3 {
+		t.Fatalf("total groups = %d, want 3", len(all.Msg.Groups))
+	}
+	for i := 1; i < len(all.Msg.Groups); i++ {
+		if all.Msg.Groups[i].Name < all.Msg.Groups[i-1].Name {
+			t.Fatalf("name order wrong at index %d: %q < %q", i, all.Msg.Groups[i].Name, all.Msg.Groups[i-1].Name)
+		}
+	}
+	// Alphabetically: beta < gamma < zeta
+	wantOrder := []string{"beta", "gamma", "zeta"}
+	for i, w := range wantOrder {
+		if all.Msg.Groups[i].Name != w {
+			t.Fatalf("all[%d] = %q, want %q", i, all.Msg.Groups[i].Name, w)
+		}
+	}
+
+	// Page through with page_size=2 (3 groups → page1=2+token, page2=1+no token).
+	page1, err := c.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 2}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Groups) != 2 {
+		t.Fatalf("page1: got %d groups, want 2", len(page1.Msg.Groups))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	if page1.Msg.Groups[0].Name != "beta" || page1.Msg.Groups[1].Name != "gamma" {
+		t.Fatalf("page1 names = [%s, %s], want [beta, gamma]", page1.Msg.Groups[0].Name, page1.Msg.Groups[1].Name)
+	}
+
+	page2, err := c.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		PageSize:  2,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Groups) != 1 {
+		t.Fatalf("page2: got %d groups, want 1", len(page2.Msg.Groups))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Groups[0].Name != "zeta" {
+		t.Fatalf("page2[0] = %q, want zeta", page2.Msg.Groups[0].Name)
+	}
+
+	// Total across pages == 3.
+	if len(page1.Msg.Groups)+len(page2.Msg.Groups) != 3 {
+		t.Fatalf("total paged = %d, want 3", len(page1.Msg.Groups)+len(page2.Msg.Groups))
+	}
+}
+
+// TestListGroupsFilteredPathAdvancesPastInvisible verifies that the filtered
+// slow path (non-admin with folder-scoped read cap) paginates past groups the
+// caller cannot see. The test creates a full page of invisible groups (homed in
+// folder B, caller has no cap there) followed by one visible group (homed in
+// folder A, caller has the cap). After one page of invisible rows the caller
+// should still receive the visible group on the next call.
+func TestListGroupsFilteredPathAdvancesPastInvisible(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create two folders: A (caller can read) and B (caller cannot).
+	fA, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "fa"}), atok))
+	if err != nil {
+		t.Fatalf("create folder fa: %v", err)
+	}
+	fB, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "fb"}), atok))
+	if err != nil {
+		t.Fatalf("create folder fb: %v", err)
+	}
+	folderAID := uuidFromStr(t, fA.Msg.Folder.Id)
+
+	// Grant the caller identity:group:read scoped to folder A ONLY.
+	callerID := seedCapUser(t, pool, "partial@x", "partialpass", `[]`)
+	bindScopedCap(t, pool, callerID, `["identity:group:read"]`, folderAID, uuid.Nil)
+	callerTok := authClient(t, url, "partial@x", "partialpass")
+
+	// Create 2 invisible groups homed in folder B (names aa-*, so they sort first),
+	// then 1 visible group homed in folder A (name zz-visible, sorts last).
+	for i := 0; i < 2; i++ {
+		name := "aa-hidden"
+		if i == 1 {
+			name = "ab-hidden"
+		}
+		if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+			Name:     name,
+			FolderId: fB.Msg.Folder.Id,
+		}), atok)); err != nil {
+			t.Fatalf("create hidden group %d: %v", i, err)
+		}
+	}
+	if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name:     "zz-visible",
+		FolderId: fA.Msg.Folder.Id,
+	}), atok)); err != nil {
+		t.Fatalf("create visible group: %v", err)
+	}
+
+	// With page_size=2 the first page fetches [aa-hidden, ab-hidden] (SQL full),
+	// both filtered out → returns 0 groups but a non-empty NextPageToken.
+	page1, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 2}), callerTok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Groups) != 0 {
+		t.Fatalf("page1: caller should see 0 visible groups, got %d: %v", len(page1.Msg.Groups), page1.Msg.Groups)
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken (SQL page was full)")
+	}
+
+	// Following the token should surface the visible group.
+	page2, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		PageSize:  2,
+		PageToken: page1.Msg.NextPageToken,
+	}), callerTok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Groups) != 1 {
+		t.Fatalf("page2: got %d groups, want 1", len(page2.Msg.Groups))
+	}
+	if page2.Msg.Groups[0].Name != "zz-visible" {
+		t.Fatalf("page2[0] = %q, want zz-visible", page2.Msg.Groups[0].Name)
+	}
+	// Last page has no further token.
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+}
+
+// TestListGroupMembersKeysetPagination verifies (created_at DESC, id ASC) keyset
+// pagination for ListGroupMembers. Adds a mix of user and group members to a
+// parent group, pages through with page_size=2, and asserts all members are
+// returned with no duplicates.
+func TestListGroupMembersKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a parent group and 2 member users + 1 member group.
+	parent, err := c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "parent"}), tok))
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	parentID := parent.Msg.Group.Id
+
+	child, err := c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "child"}), tok))
+	if err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+
+	u1, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "m1@x", DisplayName: "M1", Password: "password123",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create m1: %v", err)
+	}
+	u2, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "m2@x", DisplayName: "M2", Password: "password123",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create m2: %v", err)
+	}
+
+	// Add members (each creates a group_memberships row with created_at ordering).
+	if _, err := c.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: parentID, UserId: u1.Msg.User.Id,
+	}), tok)); err != nil {
+		t.Fatalf("add u1: %v", err)
+	}
+	if _, err := c.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: parentID, UserId: u2.Msg.User.Id,
+	}), tok)); err != nil {
+		t.Fatalf("add u2: %v", err)
+	}
+	if _, err := c.AddGroupToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddGroupToGroupRequest{
+		GroupId: parentID, MemberGroupId: child.Msg.Group.Id,
+	}), tok)); err != nil {
+		t.Fatalf("add child: %v", err)
+	}
+
+	// Fetch all members (large page) to get the full set.
+	all, err := c.ListGroupMembers(ctx, withToken(connect.NewRequest(&identityv1.ListGroupMembersRequest{
+		GroupId: parentID, PageSize: 100,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	totalAll := len(all.Msg.Users) + len(all.Msg.Groups)
+	if totalAll != 3 {
+		t.Fatalf("total members = %d, want 3 (users=%d groups=%d)", totalAll, len(all.Msg.Users), len(all.Msg.Groups))
+	}
+
+	// Page through with page_size=2 and collect all member ids.
+	seenUserIDs := map[string]bool{}
+	seenGroupIDs := map[string]bool{}
+
+	page1, err := c.ListGroupMembers(ctx, withToken(connect.NewRequest(&identityv1.ListGroupMembersRequest{
+		GroupId: parentID, PageSize: 2,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Users)+len(page1.Msg.Groups) != 2 {
+		t.Fatalf("page1: got %d members, want 2", len(page1.Msg.Users)+len(page1.Msg.Groups))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected NextPageToken (2 of 3 consumed)")
+	}
+	for _, u := range page1.Msg.Users {
+		seenUserIDs[u.Id] = true
+	}
+	for _, g := range page1.Msg.Groups {
+		seenGroupIDs[g.Id] = true
+	}
+
+	page2, err := c.ListGroupMembers(ctx, withToken(connect.NewRequest(&identityv1.ListGroupMembersRequest{
+		GroupId:   parentID,
+		PageSize:  2,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Users)+len(page2.Msg.Groups) != 1 {
+		t.Fatalf("page2: got %d members, want 1", len(page2.Msg.Users)+len(page2.Msg.Groups))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	for _, u := range page2.Msg.Users {
+		seenUserIDs[u.Id] = true
+	}
+	for _, g := range page2.Msg.Groups {
+		seenGroupIDs[g.Id] = true
+	}
+
+	// Assert all 3 members seen, no dupes.
+	totalSeen := len(seenUserIDs) + len(seenGroupIDs)
+	if totalSeen != 3 {
+		t.Fatalf("total members across pages = %d, want 3 (users=%v groups=%v)", totalSeen, seenUserIDs, seenGroupIDs)
+	}
+}
