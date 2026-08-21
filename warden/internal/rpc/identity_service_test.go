@@ -511,3 +511,103 @@ func TestListGroupsScoped(t *testing.T) {
 		t.Fatalf("eve should see no groups, got %d", len(er.Msg.Groups))
 	}
 }
+
+// TestListUsersKeysetByEmail verifies name-ordered (email ASC, id ASC) keyset
+// pagination for ListUsers. Seeds 3 users with emails in deliberately reversed
+// alphabetical order (creation order = z, m, f) and confirms page 1 returns
+// [f@x, m@x] (proving EMAIL order, not creation order) with a non-empty token,
+// and page 2 returns [z@x] with an empty token. The seeded admin@x sorts before
+// all of these; it is included in the count but not asserted by name to avoid
+// locale-specific '@' vs letter collation surprises.
+func TestListUsersKeysetByEmail(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create 3 users in deliberately reversed order (z first, f last) to prove
+	// the list is ordered by email, not by creation/id order.
+	for _, email := range []string{"z@example.com", "m@example.com", "f@example.com"} {
+		if _, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+			Email: email, DisplayName: email, Password: "password123",
+		}), tok)); err != nil {
+			t.Fatalf("create %s: %v", email, err)
+		}
+	}
+
+	// Fetch all 4 users with a large page to verify global email order (no token).
+	all, err := c.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{
+		PageSize: 100,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(all.Msg.Users) != 4 {
+		t.Fatalf("total users = %d, want 4", len(all.Msg.Users))
+	}
+	// Confirm email ORDER is ascending: each email must be >= the previous.
+	for i := 1; i < len(all.Msg.Users); i++ {
+		if all.Msg.Users[i].Email < all.Msg.Users[i-1].Email {
+			t.Fatalf("email order wrong at index %d: %q < %q",
+				i, all.Msg.Users[i].Email, all.Msg.Users[i-1].Email)
+		}
+	}
+	// The three unambiguous example.com users must appear in f < m < z order.
+	var exUsers []string
+	for _, u := range all.Msg.Users {
+		if u.Email == "f@example.com" || u.Email == "m@example.com" || u.Email == "z@example.com" {
+			exUsers = append(exUsers, u.Email)
+		}
+	}
+	wantEx := []string{"f@example.com", "m@example.com", "z@example.com"}
+	for i, w := range wantEx {
+		if i >= len(exUsers) || exUsers[i] != w {
+			t.Fatalf("example.com users out of order: got %v, want %v", exUsers, wantEx)
+		}
+	}
+
+	// Verify keyset pagination with page_size=3 (4 users → page1=3+token, page2=1+no token).
+	// Using 3 avoids the exact-multiple case where even the last real page emits a token.
+	page1, err := c.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{
+		PageSize: 3,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Users) != 3 {
+		t.Fatalf("page1: got %d users, want 3", len(page1.Msg.Users))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	// Page 1 must be the first 3 emails from the full ordered list.
+	for i, u := range page1.Msg.Users {
+		if u.Email != all.Msg.Users[i].Email {
+			t.Fatalf("page1[%d] = %q, want %q", i, u.Email, all.Msg.Users[i].Email)
+		}
+	}
+
+	page2, err := c.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{
+		PageSize:  3,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Users) != 1 {
+		t.Fatalf("page2: got %d users, want 1", len(page2.Msg.Users))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	// Page 2 must be the last email from the full ordered list.
+	if page2.Msg.Users[0].Email != all.Msg.Users[3].Email {
+		t.Fatalf("page2[0] = %q, want %q", page2.Msg.Users[0].Email, all.Msg.Users[3].Email)
+	}
+
+	// Total across both pages == 4.
+	if len(page1.Msg.Users)+len(page2.Msg.Users) != 4 {
+		t.Fatalf("total from paged = %d, want 4", len(page1.Msg.Users)+len(page2.Msg.Users))
+	}
+}
