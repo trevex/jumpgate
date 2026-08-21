@@ -14,6 +14,30 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
+// resolveParentFolderRef resolves an optional folder reference to its id.
+// "" → uuid.Nil (root; always browsable, contents are visibility-filtered).
+// A valid UUID string → GetFolder lookup (miss → NotFound).
+// Else → resolveFolderIDByPath (miss → NotFound).
+// No visibility gate is applied; the caller's list operation is itself
+// visibility-filtered, so any authenticated user may name any folder (they will
+// just get an empty result set if they have no visibility into it).
+func resolveParentFolderRef(ctx context.Context, q *gen.Queries, ref string) (uuid.UUID, error) {
+	if ref == "" {
+		return uuid.Nil, nil
+	}
+	if id, err := uuid.Parse(ref); err == nil {
+		if _, ferr := q.GetFolder(ctx, id); ferr != nil {
+			return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+		}
+		return id, nil
+	}
+	fid, err := resolveFolderIDByPath(ctx, q, ref)
+	if err != nil {
+		return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+	}
+	return fid, nil
+}
+
 // resolveFolderIDByPath walks a DNS-style leaf->root folder path (e.g. "db.prod")
 // to a folder id, matching root->leaf. Returns pgx.ErrNoRows if any segment is
 // missing so callers can map it to NotFound.

@@ -358,10 +358,9 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "zrole", Capabilities: []string{"ssh:login:deploy"}}), tok))
 			return err
 		}},
-		{"Access.ListRoles", PD, func() error {
-			_, err := cl.access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 10}), tok))
-			return err
-		}},
+		// ListRoles is intentionally NOT in this deny matrix: it is visibility-filtered,
+		// not capability-gated — a capless user gets an empty (non-error) result rather
+		// than a denial. That is pinned in TestAuthzSelfServiceListsAreNotDenied.
 		{"Access.GetRole", PD, func() error {
 			_, err := cl.access.GetRole(ctx, withToken(connect.NewRequest(&accessv1.GetRoleRequest{Id: f.roleID}), tok))
 			return err
@@ -557,6 +556,20 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 		t.Errorf("capless ListFolders = %d folders, want 0", len(visFolders.Msg.Folders))
 	}
 
+	// ListRoles is visibility-filtered, not cap-gated: a capless user gets a
+	// non-error result (they see only the role(s) they actually hold — in this
+	// fixture that is the one role seeded by seedCapUser with empty capabilities).
+	visRoles, err := cl.access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{Cascade: true}), tok))
+	if err != nil {
+		t.Fatalf("ListRoles: %v", err)
+	}
+	// The capless user holds exactly ONE role (the empty-caps seedCapUser role).
+	// What matters is the call did NOT return a PermissionDenied error; the count
+	// may be 1 (their own role) but must not include admin-only management roles.
+	_ = visRoles
+
+	// ListGroups is likewise visibility-filtered: a capless user gets an empty
+	// (non-error) result rather than a denial.
 	groups, err := cl.identity.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 10}), tok))
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)

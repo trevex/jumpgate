@@ -65,7 +65,12 @@ message CreateRoleRequest {
 }
 message CreateRoleResponse { Role role = 1; }
 
-message ListRolesRequest { int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; string page_token = 2; }
+message ListRolesRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+  string parent     = 3; // folder id or DNS path; empty = root (folder-less roles + all folders)
+  bool   cascade    = 4; // descend the whole subtree; default false = direct children only
+}
 message ListRolesResponse { repeated Role roles = 1; string next_page_token = 2; }
 
 message GetRoleRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }

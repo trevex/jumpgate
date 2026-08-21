@@ -193,26 +193,42 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 	return connect.NewResponse(&accessv1.ResolveRoleResponse{RoleId: role.ID.String(), Path: path}), nil
 }
 
-// ListRoles lists roles (admin only), ordered by (name ASC, id ASC).
+// ListRoles browses roles under a parent (default root), returning only the
+// roles the caller may see — those they hold, may request, or may manage via
+// access:role:read. Not cap-gated: an unrelated caller sees an empty page, not
+// an error. Cascade descends the whole subtree; otherwise only roles homed
+// directly in the parent folder (or, for root, the global/folder-less roles).
 func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[accessv1.ListRolesRequest]) (*connect.Response[accessv1.ListRolesResponse], error) {
-	if err := s.requireCap(ctx, "access:role:read", authz.GlobalScope()); err != nil {
-		return nil, err
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	parent, err := resolveParentFolderRef(ctx, s.q, req.Msg.Parent)
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListRolesParams{Lim: limit}
-	if k != nil {
-		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
-		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
-	}
-	rows, err := s.q.ListRoles(ctx, params)
+	ids, err := s.capGuard.authz.VisibleRolesUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRolesResponse{}
+	if len(ids) == 0 {
+		return connect.NewResponse(out), nil
+	}
+	limit := clampPageSize(req.Msg.PageSize)
+	key, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListRolesByIDsPagedParams{Column1: ids, Lim: limit}
+	if key != nil {
+		params.AfterName = pgText(key.Name)
+		params.AfterID = pgUUID(key.ID)
+	}
+	rows, err := s.q.ListRolesByIDsPaged(ctx, params)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
 		m := toAccessRoleMsg(rows[i])
