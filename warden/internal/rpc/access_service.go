@@ -193,24 +193,22 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 	return connect.NewResponse(&accessv1.ResolveRoleResponse{RoleId: role.ID.String(), Path: path}), nil
 }
 
-// ListRoles lists roles (admin only).
+// ListRoles lists roles (admin only), ordered by (name ASC, id ASC).
 func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[accessv1.ListRolesRequest]) (*connect.Response[accessv1.ListRolesResponse], error) {
 	if err := s.requireCap(ctx, "access:role:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
-	limit := req.Msg.PageSize
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
 	}
-	after := uuid.Nil
-	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
-		after = id
+	params := gen.ListRolesParams{Lim: limit}
+	if k != nil {
+		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
 	}
-	rows, err := s.q.ListRoles(ctx, gen.ListRolesParams{Column1: after, Limit: limit})
+	rows, err := s.q.ListRoles(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -232,8 +230,13 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 		}
 		out.Roles = append(out.Roles, m)
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
-		out.NextPageToken = rows[len(rows)-1].ID.String()
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeNameToken takes the SORT-KEY
+	// column: here name.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -336,7 +339,8 @@ func (s *AccessServer) RemoveRoleGrant(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&accessv1.RemoveRoleGrantResponse{}), nil
 }
 
-// ListRoleGrants lists the rewrite rules conferring role_id (admin only).
+// ListRoleGrants lists the rewrite rules conferring role_id (admin only),
+// ordered by (created_at DESC, id ASC).
 func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[accessv1.ListRoleGrantsRequest]) (*connect.Response[accessv1.ListRoleGrantsResponse], error) {
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
@@ -349,13 +353,31 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	if err := s.requireCap(ctx, "access:role:read", scope); err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListRoleGrants(ctx, roleID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListRoleGrantsParams{RoleID: roleID, Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListRoleGrants(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRoleGrantsResponse{}
 	for i := range rows {
 		out.Grants = append(out.Grants, toAccessRoleGrantMsg(rows[i]))
+	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here created_at.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -644,7 +666,8 @@ func (s *AccessServer) DeleteRequestPolicy(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&accessv1.DeleteRequestPolicyResponse{}), nil
 }
 
-// ListRequestPolicies lists all request policies for a role (admin only).
+// ListRequestPolicies lists all request policies for a role (admin only),
+// ordered by (created_at DESC, id ASC).
 func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Request[accessv1.ListRequestPoliciesRequest]) (*connect.Response[accessv1.ListRequestPoliciesResponse], error) {
 	if err := s.requireCap(ctx, "access:policy:read", authz.GlobalScope()); err != nil {
 		return nil, err
@@ -653,13 +676,31 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	rows, err := s.q.ListRequestPoliciesForRole(ctx, roleID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListRequestPoliciesParams{RoleID: roleID, Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListRequestPolicies(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRequestPoliciesResponse{}
 	for i := range rows {
 		out.Policies = append(out.Policies, toRequestPolicyMsg(rows[i]))
+	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here created_at.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -747,7 +788,8 @@ func (s *AccessServer) RemovePolicySubject(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&accessv1.RemovePolicySubjectResponse{}), nil
 }
 
-// ListPolicySubjects lists the subjects attached to a policy (admin only).
+// ListPolicySubjects lists the subjects attached to a policy (admin only),
+// ordered by (created_at DESC, id ASC).
 func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Request[accessv1.ListPolicySubjectsRequest]) (*connect.Response[accessv1.ListPolicySubjectsResponse], error) {
 	policyID, err := uuid.Parse(req.Msg.PolicyId)
 	if err != nil {
@@ -760,13 +802,31 @@ func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Requ
 	if err := s.requireCap(ctx, "access:policy:read", scope); err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListPolicySubjects(ctx, policyID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListPolicySubjectsParams{PolicyID: policyID, Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListPolicySubjects(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListPolicySubjectsResponse{}
 	for i := range rows {
 		out.Subjects = append(out.Subjects, toPolicySubjectMsg(rows[i]))
+	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here created_at.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
