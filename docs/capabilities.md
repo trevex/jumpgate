@@ -154,11 +154,12 @@ checks the **recipient** `role_id`, the role that gets conferred.)
   **ancestor** folder, or **globally**. (`Global` caps satisfy every check.)
 - **No folder home → `Global`** — an object with no `folder_id` (a *global* role or
   group) is checked at `Global`.
-- **List-all → `Global`** — endpoints that scan the whole table (`ListRoles`,
-  `ListRoleBindings`, `ListRequestPolicies`, `ListUsers`) require the read cap at
+- **List-all → `Global`** — endpoints that scan the whole table
+  (`ListRoleBindings`, `ListRequestPolicies`, `ListUsers`) require the read cap at
   `Global`; the per-object `Get`/`Resolve` forms use the object's own scope.
-  (`ListGroups` is the exception — it is *visibility-filtered*, returning only the
-  groups the caller can read, rather than requiring a global read.)
+  `ListRoles` and `ListGroups` are exceptions — both are *visibility-filtered*
+  path browses (see [Role and group browse](#role-and-group-browse-listroleslistgroups)
+  below) and do **not** require a global read cap.
 - **Catalog browse is NOT cap-gated.** `ListFolders` / `ListAssets` are
   *visibility-filtered* per-node: a caller sees a node iff it manages it (holds a
   management capability there) **or** has or can request access under it
@@ -180,7 +181,7 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | `catalog:asset:read` | get / resolve an asset (`GetAsset`, `ResolveAsset`) | the asset |
 | `catalog:asset:update` | change an asset's config | the asset |
 | `access:role:create` | create a role | target folder (`Global` if a global role) |
-| `access:role:read` | get / resolve a role; list a role's grants; explain a role; list roles | the role's folder (list-all: `Global`) |
+| `access:role:read` | get / resolve a role; list a role's grants; explain a role | the role's folder |
 | `access:role:update` | add / remove role-rewrite grants (`role_grants`) | the role's folder |
 | `access:binding:create` | bind a role to a subject (+ subset rule) | the binding's scope |
 | `access:binding:read` | list role bindings | `Global` |
@@ -197,7 +198,7 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | `identity:user:deactivate` | deactivate / reactivate a user | `Global` |
 | `identity:user:delete` | delete a user | `Global` |
 | `identity:group:create` | create a group | target folder (`Global` if a global group) |
-| `identity:group:read` | resolve a group; list its members; list groups (visibility) | the group's folder (list: visibility-filtered) |
+| `identity:group:read` | resolve a group; list its members | the group's folder |
 | `identity:group:add-member` | add a user / group to a group | the group's folder |
 | `identity:group:remove-member` | remove a member | the group's folder |
 | `identity:group:delete` | delete a group | the group's folder |
@@ -236,11 +237,12 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 does not affect membership or what the group is bound to). `identity:group:*` is
 checked at the group's folder scope and cascades down the tree, so
 `identity:group:create` on `team-a` delegates creating/managing groups under
-`team-a`. `identity:group:read` doubles as the visibility cap (`ListGroups` returns
-only groups you can read). Groups are addressed as **`<group>@<folder-path>`**
+`team-a`. Groups are addressed as **`<group>@<folder-path>`**
 (e.g. `sre@team.demo`) — `@`, distinct from a role's `<role>.<folder-path>`.
 Membership (incl. group-in-group nesting) is a separate, orthogonal axis and is not
 folder-scoped. `identity:user:*` stays global (users are not folder-homed).
+`ListGroups` is a **visibility-filtered path browse** — see
+[Role and group browse](#role-and-group-browse-listroleslistgroups) below.
 
 **Deferred:** per-group "owner" delegation (a `scope_group_id` binding scope for
 single-group admin); folder-homing users; a subset guard on membership-adds. See
@@ -290,6 +292,72 @@ bare nodes** (id, name, path). Per-node capabilities come from the detail RPCs:
   the folder.
 
 Call these after navigating to a node the list revealed.
+
+### Role and group browse — `ListRoles`/`ListGroups`
+
+Like the catalog browse, role and group lists are **visibility-filtered rather than
+cap-gated**. A capless caller receives an empty list — not `PermissionDenied`.
+
+**Signatures.**
+
+```
+ListRoles (parent="", cascade=false, page_size, page_token) → [Role…]
+ListGroups(parent="", cascade=false, page_size, page_token) → [Group…]
+```
+
+- `parent` — the folder to browse: empty string = global/folder-less nodes only;
+  otherwise a DNS-style dotted path (leaf-first, e.g. `team.demo`) or a UUID.
+  Browsing a folder path the caller cannot see returns `NotFound` (existence-hiding).
+- `cascade` — when `false` (the default) only nodes **directly homed in `parent`**
+  are returned; when `true` the entire subtree is walked flat. Use `--cascade` to
+  include roles or groups nested under sub-folders.
+- `page_token` — opaque keyset cursor; reuse `parent` / `cascade` across pages.
+
+**Visibility rule.** A caller sees a role if it satisfies at least one of:
+
+1. **Manageable** — holds a management capability at the role's folder scope
+   (e.g. `access:role:read` on the folder or an ancestor).
+2. **Holds** — holds the role via a standing binding or an active JIT grant.
+3. **Requestable** — is eligible to request the role via a request policy.
+
+A caller sees a group if it satisfies at least one of:
+
+1. **Manageable** — holds `identity:group:read` (or a broader cap) at the group's
+   folder scope or an ancestor.
+2. **Member** — is a direct or transitive member of the group.
+
+**List vs. detail split.** `ListRoles`/`ListGroups` return navigation-only bare
+nodes (id, name, folder path). The detail RPCs return the caller's **capabilities**
+at the node's governing scope:
+
+- `GetRoleAccess(role_id)` — returns the caller's management capabilities on the
+  role's folder scope. Returns **`PermissionDenied`** (not `NotFound`) when the
+  caller has no relationship to the role at all, because roles are not catalog
+  topology and their existence is not hidden from all non-admins.
+- `GetGroupAccess(group_id)` — returns the caller's management capabilities on the
+  group's folder scope. A member with no management capabilities receives an **empty
+  capability list** (not an error). Returns **`NotFound`** when the caller is neither
+  a manager nor a member (existence-hiding: groups are catalog-adjacent topology).
+
+### Folder-contents aggregator — `ListFolderContents`
+
+`CatalogService.ListFolderContents(parent)` returns a **bounded per-kind slice** of
+the folder's direct children across all four kinds in a single call:
+
+```
+ListFolderContents(parent) → {
+  folders[], folders_has_more,
+  assets[],  assets_has_more,
+  roles[],   roles_has_more,
+  groups[],  groups_has_more,
+}
+```
+
+Each slice holds up to 50 items and applies the same visibility rule as the
+per-kind list. When `<kind>_has_more` is `true`, use the corresponding
+`List<Kind>(parent, cascade=false)` paginated browse to retrieve the rest. Useful
+for overview panels and breadcrumb expansions where one round trip per folder is
+preferable to four.
 
 ## Where enforcement lives (data plane) — warden decides, workers enforce
 
