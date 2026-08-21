@@ -34,6 +34,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/vault"
+	"github.com/trevex/jumpgate/warden/internal/webcors"
 )
 
 func main() {
@@ -194,7 +195,7 @@ func run() error {
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL); err != nil {
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL, cfg.CookieSecure()); err != nil {
 		return err
 	}
 
@@ -203,7 +204,7 @@ func run() error {
 	protos.SetUnencryptedHTTP2(true)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
+		Handler:           webcors.New(cfg.DevCORSOrigins)(mux),
 		Protocols:         &protos,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

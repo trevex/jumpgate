@@ -82,7 +82,23 @@ type Config struct {
 	RecordingS3Endpoint string        `env:"RECORDING_S3_ENDPOINT"`
 	RecordingS3Region   string        `env:"RECORDING_S3_REGION" envDefault:"us-east-1"`
 	RecordingURLTTL     time.Duration `env:"RECORDING_URL_TTL" envDefault:"5m"`
+
+	// CookieInsecure controls whether Set-Cookie omits the Secure flag. The
+	// logical accessor is CookieSecure() (returns !CookieInsecure, default true);
+	// set JUMPGATE_COOKIE_INSECURE=true in dev environments where warden is accessed
+	// over plain HTTP so the browser accepts the session cookie.
+	CookieInsecure bool `env:"JUMPGATE_COOKIE_INSECURE"`
+
+	// DevCORSOrigins is a comma-separated allowlist of origins (e.g.
+	// "http://localhost:5173,http://localhost:3000") whose browser requests receive
+	// CORS headers. Empty (the default) disables CORS — production serves the SPA
+	// same-origin and needs no CORS.
+	DevCORSOrigins []string `env:"JUMPGATE_DEV_CORS_ORIGINS"`
 }
+
+// CookieSecure returns true unless JUMPGATE_COOKIE_INSECURE is set, expressing
+// the intent that secure cookies are on by default and insecure is the opt-out.
+func (c Config) CookieSecure() bool { return !c.CookieInsecure }
 
 // Load reads configuration from environment variables.
 func Load() (Config, error) {
