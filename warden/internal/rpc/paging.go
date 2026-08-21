@@ -54,5 +54,10 @@ func decodePageToken(tok string) (*pageKey, error) {
 	if err := json.Unmarshal(raw, &k); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
 	}
+	// The tiebreak id is mandatory; a token without it (tampered/truncated) would
+	// otherwise page against uuid.Nil and silently return wrong results.
+	if k.ID == uuid.Nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
+	}
 	return &k, nil
 }

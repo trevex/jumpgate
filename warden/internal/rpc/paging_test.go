@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -49,5 +50,15 @@ func TestEmptyTokenIsNil(t *testing.T) {
 func TestGarbageTokenErrors(t *testing.T) {
 	if _, err := decodePageToken("not-base64!!"); err == nil {
 		t.Fatal("expected error for garbage token")
+	}
+	// valid base64 wrapping invalid JSON hits the unmarshal branch
+	badJSON := base64.RawURLEncoding.EncodeToString([]byte("{bad json"))
+	if _, err := decodePageToken(badJSON); err == nil {
+		t.Fatal("expected error for valid-b64 invalid-json token")
+	}
+	// valid base64+JSON but missing the mandatory tiebreak id
+	noID := base64.RawURLEncoding.EncodeToString([]byte(`{"n":"foo"}`))
+	if _, err := decodePageToken(noID); err == nil {
+		t.Fatal("expected error for token without id")
 	}
 }
