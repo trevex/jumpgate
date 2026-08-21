@@ -3,6 +3,7 @@ package rpc_test
 import (
 	"context"
 	"net/http"
+	"sort"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -260,6 +261,136 @@ func TestGetFolderAccess(t *testing.T) {
 	stok := authClient(t, url, "stranger@x", "password123")
 	if _, err := cat.GetFolderAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetFolderAccessRequest{FolderId: f.Msg.Folder.Id}), stok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("stranger folder access = %v, want NotFound", connect.CodeOf(err))
+	}
+}
+
+// TestListFoldersDescendantVisibleParentGate: a user holding catalog:folder:read
+// bound ONLY on a descendant folder (not on the parent, not on any asset) must
+// be able to browse the parent — resolveParentFolder's third arm (VisibleFoldersUnder)
+// must admit the parent rather than returning NotFound.
+//
+// Setup: prod→db; user has catalog:folder:read scoped to db only.
+// Assert: ListFolders(parent="prod") succeeds and returns db (not NotFound).
+func TestListFoldersDescendantVisibleParentGate(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create prod→db folder tree (no assets anywhere).
+	prod, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatalf("create prod: %v", err)
+	}
+	prodID := uuid.MustParse(prod.Msg.Folder.Id)
+	db, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
+	if err != nil {
+		t.Fatalf("create db: %v", err)
+	}
+	dbID := uuid.MustParse(db.Msg.Folder.Id)
+
+	// Seed a user with catalog:folder:read bound at db scope only (not prod, no assets).
+	// seedCapUserScoped binds the role at folder scope when scopeFolder != uuid.Nil.
+	_ = seedCapUserScoped(t, pool, "descendant@x", "password123", `["catalog:folder:read"]`, dbID, uuid.Nil)
+	dtok := authClient(t, url, "descendant@x", "password123")
+
+	// ListFolders(parent=prod) must NOT return NotFound — the user can see db (a
+	// direct child of prod), so prod itself is visible as a navigable parent.
+	kids, err := cat.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{Parent: prod.Msg.Folder.Id}), dtok))
+	if err != nil {
+		t.Fatalf("descendant ListFolders(parent=prod): got error %v, want success", err)
+	}
+	got := folderIDSet(kids.Msg.Folders)
+	if !got[dbID.String()] {
+		t.Fatalf("descendant folders under prod = %v, want db (%s)", got, dbID)
+	}
+	// prod itself must not appear as its own child.
+	if got[prodID.String()] {
+		t.Fatalf("prod must not appear as its own child")
+	}
+}
+
+// TestListAssetsPagination: keyset pagination round-trip for ListAssets. Creates
+// three assets in a folder with names out of alphabetical order (to prove
+// server-side name ordering), requests them two at a time, and verifies:
+//   - page1 has exactly 2 assets in ascending name order + a non-empty next_page_token
+//   - page2 has the remaining asset + an empty next_page_token
+//   - no duplicates, and the union equals all created assets in ascending name order
+func TestListAssetsPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	f, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "paged"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	fid := f.Msg.Folder.Id
+
+	// Create assets with names deliberately out of alphabetical order.
+	mustA := func(name string) string {
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name}), tok))
+		if err != nil {
+			t.Fatalf("create asset %s: %v", name, err)
+		}
+		return r.Msg.Asset.Id
+	}
+	zID := mustA("zebra")
+	aID := mustA("alpha")
+	mID := mustA("mango")
+
+	wantOrder := []string{aID, mID, zID} // ascending name order: alpha < mango < zebra
+
+	// Page 1: page_size=2 → first two in name order (alpha, mango).
+	p1, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: fid, PageSize: 2}), tok))
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if len(p1.Msg.Assets) != 2 {
+		t.Fatalf("page1 len = %d, want 2", len(p1.Msg.Assets))
+	}
+	if p1.Msg.NextPageToken == "" {
+		t.Fatal("page1 next_page_token must be non-empty")
+	}
+	// Verify page1 order.
+	if p1.Msg.Assets[0].Id != wantOrder[0] || p1.Msg.Assets[1].Id != wantOrder[1] {
+		t.Fatalf("page1 order = [%s, %s], want [alpha=%s, mango=%s]",
+			p1.Msg.Assets[0].Id, p1.Msg.Assets[1].Id, wantOrder[0], wantOrder[1])
+	}
+
+	// Page 2: continue from token → remaining one asset (zebra).
+	p2, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{
+		Parent: fid, PageSize: 2, PageToken: p1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if len(p2.Msg.Assets) != 1 {
+		t.Fatalf("page2 len = %d, want 1", len(p2.Msg.Assets))
+	}
+	if p2.Msg.NextPageToken != "" {
+		t.Fatalf("page2 next_page_token = %q, want empty (last page)", p2.Msg.NextPageToken)
+	}
+	if p2.Msg.Assets[0].Id != wantOrder[2] {
+		t.Fatalf("page2 asset = %s, want zebra=%s", p2.Msg.Assets[0].Id, wantOrder[2])
+	}
+
+	// No duplicates and union matches all created assets in ascending name order.
+	all := append(p1.Msg.Assets, p2.Msg.Assets...)
+	gotIDs := make([]string, len(all))
+	for i, a := range all {
+		gotIDs[i] = a.Id
+	}
+	sort.Strings(gotIDs)
+	wantSorted := []string{aID, mID, zID}
+	sort.Strings(wantSorted)
+	for i := range wantSorted {
+		if gotIDs[i] != wantSorted[i] {
+			t.Fatalf("union mismatch at %d: got %s want %s", i, gotIDs[i], wantSorted[i])
+		}
 	}
 }
 

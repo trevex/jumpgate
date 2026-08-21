@@ -268,6 +268,18 @@ func (s *CatalogServer) resolveParentFolder(ctx context.Context, userID uuid.UUI
 	if len(assets) > 0 {
 		return id, nil
 	}
+	// Third arm: the caller can see a descendant folder (e.g. holds
+	// catalog:folder:read bound below this node). VisibleFoldersUnder with
+	// cascade=false returns direct children; we use cascade=false here because
+	// if any child is visible (transitively) it will appear when the caller
+	// browses. This aligns the gate with ListFolders' own visibility predicate.
+	folders, err := s.authorizer.VisibleFoldersUnder(ctx, userID, id, false)
+	if err != nil {
+		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(folders) > 0 {
+		return id, nil
+	}
 	return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 }
 

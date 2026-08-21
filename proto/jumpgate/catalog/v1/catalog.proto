@@ -119,7 +119,10 @@ message GetAssetAccessResponse {
   repeated string requestable_role_ids = 2;
   repeated RoleRef active_roles = 3;
   repeated RoleRef requestable_roles = 4;
-  // The caller's management capabilities on this asset (e.g. "catalog:asset:read").
+  // capabilities is the caller's effective HELD capability closure ON THIS ASSET
+  // (object/folder-scoped) — the same set the worker enforces connect against. It
+  // deliberately EXCLUDES global scopeless caps (an admin's ** does not appear
+  // here) so it faithfully mirrors connect ability rather than management authority.
   repeated string capabilities = 5;
 }
 
