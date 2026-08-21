@@ -18,7 +18,10 @@ go.work.sum
 
 # Node / web
 node_modules/
+/web/node_modules/
 /web/dist/
+/.devdata/
+# web/src/gen is intentionally committed (generated TS stubs, like warden/gen)
 
 # Env / secrets
 .env
