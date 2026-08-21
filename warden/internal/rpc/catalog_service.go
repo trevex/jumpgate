@@ -230,24 +230,91 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 	return connect.NewResponse(&catalogv1.CreateFolderResponse{Folder: msg}), nil
 }
 
-// ListFolders lists folders (admin only).
+// resolveParentFolder maps "" -> uuid.Nil (root); a uuid or DNS dotted path -> a
+// folder id. Existence-hiding: an unknown ref OR a folder the caller has no
+// relationship to (cannot manage and whose subtree holds no visible asset) both
+// return NotFound, so a caller cannot probe folder existence.
+func (s *CatalogServer) resolveParentFolder(ctx context.Context, userID uuid.UUID, ref string) (uuid.UUID, error) {
+	if ref == "" {
+		return uuid.Nil, nil // root: always browsable, contents are visibility-filtered
+	}
+	var id uuid.UUID
+	if pid, perr := uuid.Parse(ref); perr == nil {
+		f, err := s.q.GetFolder(ctx, pid)
+		if err != nil {
+			return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+		}
+		id = f.ID
+	} else {
+		fid, err := resolveFolderIDByPath(ctx, s.q, ref)
+		if err != nil {
+			return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+		}
+		id = fid
+	}
+	// visibility gate: manageable OR subtree has a visible asset (covers catalog:asset:read too,
+	// since VisibleAssetsUnder's manage arm includes asset-read-covered assets).
+	caps, err := s.authorizer.CapabilitiesOnScope(ctx, userID, authz.FolderScope(id))
+	if err != nil {
+		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if caps.Allows("catalog:folder:read") {
+		return id, nil
+	}
+	assets, err := s.authorizer.VisibleAssetsUnder(ctx, userID, id, true)
+	if err != nil {
+		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(assets) > 0 {
+		return id, nil
+	}
+	// Third arm: the caller can see a descendant folder (e.g. holds
+	// catalog:folder:read bound below this node). VisibleFoldersUnder with
+	// cascade=false returns direct children; we use cascade=false here because
+	// if any child is visible (transitively) it will appear when the caller
+	// browses. This aligns the gate with ListFolders' own visibility predicate.
+	folders, err := s.authorizer.VisibleFoldersUnder(ctx, userID, id, false)
+	if err != nil {
+		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(folders) > 0 {
+		return id, nil
+	}
+	return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+}
+
+// ListFolders browses folders under a parent (default root), returning only the
+// folders the caller may see — those they can manage or whose subtree holds an
+// asset they can reach. Not cap-gated: an unrelated caller sees an empty page, not
+// an error. Cascade descends the whole subtree; otherwise only direct children.
 func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[catalogv1.ListFoldersRequest]) (*connect.Response[catalogv1.ListFoldersResponse], error) {
-	if err := s.requireCap(ctx, "catalog:folder:read", authz.GlobalScope()); err != nil {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	parent, err := s.resolveParentFolder(ctx, u.ID, req.Msg.Parent)
+	if err != nil {
 		return nil, err
 	}
-	limit := req.Msg.PageSize
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	ids, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, req.Msg.Cascade)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	after := uuid.Nil
-	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
-		after = id
+	out := &catalogv1.ListFoldersResponse{}
+	if len(ids) == 0 {
+		return connect.NewResponse(out), nil
 	}
-	rows, err := s.q.ListFolders(ctx, gen.ListFoldersParams{Column1: after, Limit: limit})
+	limit := clampPageSize(req.Msg.PageSize)
+	key, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListFoldersByIDsPagedParams{Ids: ids, Lim: limit}
+	if key != nil {
+		params.AfterName = pgText(key.Name)
+		params.AfterID = pgUUID(key.ID)
+	}
+	rows, err := s.q.ListFoldersByIDsPaged(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -259,14 +326,14 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	for _, p := range allPaths {
 		pathByID[p.ID.String()] = p.Path
 	}
-	out := &catalogv1.ListFoldersResponse{}
 	for i := range rows {
 		m := toFolderMsg(rows[i])
 		m.Path = pathByID[rows[i].ID.String()]
 		out.Folders = append(out.Folders, m)
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
-		out.NextPageToken = rows[len(rows)-1].ID.String()
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -403,79 +470,58 @@ func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Requ
 	return connect.NewResponse(&catalogv1.UpdateAssetConfigResponse{}), nil
 }
 
-// ListAssetsByFolder lists a folder's assets (admin only).
-// ListAssetsByFolder's generated signature takes uuid.UUID (folder_id is NOT NULL),
-// so fid is passed directly without pgUUID wrapping.
-func (s *CatalogServer) ListAssetsByFolder(ctx context.Context, req *connect.Request[catalogv1.ListAssetsByFolderRequest]) (*connect.Response[catalogv1.ListAssetsByFolderResponse], error) {
-	fid, err := uuid.Parse(req.Msg.FolderId)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
-	}
-	if err := s.requireCap(ctx, "catalog:asset:read", authz.FolderScope(fid)); err != nil {
-		return nil, err
-	}
-	rows, err := s.q.ListAssetsByFolder(ctx, fid)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	folderPath, err := s.q.FolderPath(ctx, fid)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	out := &catalogv1.ListAssetsByFolderResponse{}
-	for i := range rows {
-		m := toAssetMsg(rows[i])
-		m.Path = joinPath(folderPath, rows[i].Name)
-		out.Assets = append(out.Assets, m)
-	}
-	return connect.NewResponse(out), nil
-}
-
-// ListVisibleAssets returns the caller's visible assets (active or requestable).
-func (s *CatalogServer) ListVisibleAssets(ctx context.Context, _ *connect.Request[catalogv1.ListVisibleAssetsRequest]) (*connect.Response[catalogv1.ListVisibleAssetsResponse], error) {
+// ListAssets browses assets under a parent (default root), returning only the
+// assets the caller may see — those they can manage or reach (active/requestable).
+// Not cap-gated: an unrelated caller sees an empty page, not an error. With
+// parent="" and cascade=true this is the caller's full visible-asset catalog;
+// cascade descends the whole subtree, otherwise only the parent's direct assets.
+func (s *CatalogServer) ListAssets(ctx context.Context, req *connect.Request[catalogv1.ListAssetsRequest]) (*connect.Response[catalogv1.ListAssetsResponse], error) {
 	u, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	vis, err := s.authorizer.VisibleAssets(ctx, u.ID)
+	parent, err := s.resolveParentFolder(ctx, u.ID, req.Msg.Parent)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := s.authorizer.VisibleAssetsUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	out := &catalogv1.ListVisibleAssetsResponse{}
-	if len(vis) == 0 {
+	out := &catalogv1.ListAssetsResponse{}
+	if len(ids) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	ids := make([]uuid.UUID, 0, len(vis))
-	for _, v := range vis {
-		ids = append(ids, v.AssetID)
+	limit := clampPageSize(req.Msg.PageSize)
+	key, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
 	}
-	assets, err := s.q.ListAssetsByIDs(ctx, ids)
+	params := gen.ListAssetsByIDsPagedParams{Ids: ids, Lim: limit}
+	if key != nil {
+		params.AfterName = pgText(key.Name)
+		params.AfterID = pgUUID(key.ID)
+	}
+	rows, err := s.q.ListAssetsByIDsPaged(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	nameByID := make(map[uuid.UUID]string, len(assets))
 	pathByFolder := map[uuid.UUID]string{}
-	pathByAsset := make(map[uuid.UUID]string, len(assets))
-	for _, a := range assets {
-		nameByID[a.ID] = a.Name
-		fp, ok := pathByFolder[a.FolderID]
+	for i := range rows {
+		m := toAssetMsg(rows[i])
+		fp, ok := pathByFolder[rows[i].FolderID]
 		if !ok {
-			if fp, err = s.q.FolderPath(ctx, a.FolderID); err != nil {
+			if fp, err = s.q.FolderPath(ctx, rows[i].FolderID); err != nil {
 				return nil, connect.NewError(connect.CodeInternal, err)
 			}
-			pathByFolder[a.FolderID] = fp
+			pathByFolder[rows[i].FolderID] = fp
 		}
-		pathByAsset[a.ID] = joinPath(fp, a.Name)
+		m.Path = joinPath(fp, rows[i].Name)
+		out.Assets = append(out.Assets, m)
 	}
-	for _, v := range vis {
-		roleIDs := make([]string, 0, len(v.RoleIDs))
-		for _, r := range v.RoleIDs {
-			roleIDs = append(roleIDs, r.String())
-		}
-		out.Assets = append(out.Assets, &catalogv1.VisibleAsset{
-			Id: v.AssetID.String(), Name: nameByID[v.AssetID], Active: v.Active, RoleIds: roleIDs,
-			Path: pathByAsset[v.AssetID],
-		})
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -636,5 +682,38 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 	if resp.RequestableRoles, err = roleRefs(ctx, s.q, roles.Requestable); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	caps, err := s.authorizer.CapabilitiesOnAsset(ctx, u.ID, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp.Capabilities = []string(caps)
 	return connect.NewResponse(resp), nil
+}
+
+// GetFolderAccess returns the caller's management capabilities on one folder;
+// NotFound (existence hiding) if the caller has no relationship to it — neither
+// a capability on its scope nor a visible asset in its subtree.
+func (s *CatalogServer) GetFolderAccess(ctx context.Context, req *connect.Request[catalogv1.GetFolderAccessRequest]) (*connect.Response[catalogv1.GetFolderAccessResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	id, err := uuid.Parse(req.Msg.FolderId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+	}
+	caps, err := s.authorizer.CapabilitiesOnScope(ctx, u.ID, authz.FolderScope(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(caps) == 0 {
+		assets, err := s.authorizer.VisibleAssetsUnder(ctx, u.ID, id, true)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if len(assets) == 0 {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+		}
+	}
+	return connect.NewResponse(&catalogv1.GetFolderAccessResponse{Capabilities: []string(caps)}), nil
 }

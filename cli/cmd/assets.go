@@ -23,17 +23,6 @@ func assetRow(a *catalogv1.Asset) []string {
 	return []string{a.GetId(), a.GetName(), a.GetKind(), a.GetFolderId(), a.GetPath()}
 }
 
-var visibleAssetHeaders = []string{"ID", "PATH", "ACTIVE"}
-
-func visibleAssetRow(a *catalogv1.VisibleAsset) []string {
-	// Older servers may not populate path; fall back to the bare name.
-	path := a.GetPath()
-	if path == "" {
-		path = a.GetName()
-	}
-	return []string{a.GetId(), path, fmt.Sprintf("%t", a.GetActive())}
-}
-
 var assetsCmd = &cobra.Command{
 	Use:   "assets",
 	Short: "Manage assets",
@@ -90,12 +79,15 @@ var assetsSSHLoginListCmd = &cobra.Command{
 	RunE:  runAssetsSSHLoginList,
 }
 
-var assetsListFolder string
+var (
+	assetsListParent  string
+	assetsListCascade bool
+)
 
 var assetsListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [parent]",
 	Short: "List assets",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runAssetsList,
 }
 
@@ -126,7 +118,7 @@ func init() {
 	assetsSSHCmd.AddCommand(assetsSSHCreateCmd)
 	assetsSSHCmd.AddCommand(assetsSSHLoginCmd)
 
-	assetsListCmd.Flags().StringVar(&assetsListFolder, "folder", "", "folder id or name; lists assets in that folder")
+	assetsListCmd.Flags().BoolVar(&assetsListCascade, "cascade", false, "include assets in all descendant folders")
 
 	assetsCmd.AddCommand(assetsSSHCmd)
 	assetsCmd.AddCommand(assetsListCmd)
@@ -359,51 +351,43 @@ func trimTrailingNewline(b []byte) []byte {
 	return bytes.TrimSuffix(b, []byte("\r"))
 }
 
-func runAssetsList(cmd *cobra.Command, _ []string) error {
+func runAssetsList(cmd *cobra.Command, args []string) error {
 	cl, err := newClient()
 	if err != nil {
 		return err
 	}
 
-	if cmd.Flags().Changed("folder") {
-		folderID, err := resolveFolderID(cmd.Context(), cl, assetsListFolder)
-		if err != nil {
-			return err
-		}
-		req := connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: folderID})
-		cl.Authorize(req)
-		resp, err := cl.Catalog().ListAssetsByFolder(cmd.Context(), req)
-		if err != nil {
-			return err
-		}
-		assets := resp.Msg.GetAssets()
-		rows := make([][]string, 0, len(assets))
-		msgs := make([]proto.Message, 0, len(assets))
-		for _, a := range assets {
-			rows = append(rows, assetRow(a))
-			msgs = append(msgs, a)
-		}
-		return output.RenderProtoList(cmd.OutOrStdout(), flagOutput, msgs, &output.Table{
-			Headers: assetHeaders,
-			Rows:    rows,
-		})
+	parent := ""
+	if len(args) > 0 {
+		parent = args[0]
 	}
 
-	req := connect.NewRequest(&catalogv1.ListVisibleAssetsRequest{})
-	cl.Authorize(req)
-	resp, err := cl.Catalog().ListVisibleAssets(cmd.Context(), req)
+	assets, err := collectPages(func(token string) ([]*catalogv1.Asset, string, error) {
+		req := connect.NewRequest(&catalogv1.ListAssetsRequest{
+			Parent:    parent,
+			Cascade:   assetsListCascade,
+			PageSize:  100,
+			PageToken: token,
+		})
+		cl.Authorize(req)
+		resp, err := cl.Catalog().ListAssets(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetAssets(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
-	assets := resp.Msg.GetAssets()
+
 	rows := make([][]string, 0, len(assets))
 	msgs := make([]proto.Message, 0, len(assets))
 	for _, a := range assets {
-		rows = append(rows, visibleAssetRow(a))
+		rows = append(rows, assetRow(a))
 		msgs = append(msgs, a)
 	}
 	return output.RenderProtoList(cmd.OutOrStdout(), flagOutput, msgs, &output.Table{
-		Headers: visibleAssetHeaders,
+		Headers: assetHeaders,
 		Rows:    rows,
 	})
 }

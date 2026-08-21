@@ -49,6 +49,7 @@ func TestBootstrapSeedsAdminOnEmptyDB(t *testing.T) {
 	}
 	bindings, err := q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
+		Lim:           100,
 	})
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)

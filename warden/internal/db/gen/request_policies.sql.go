@@ -187,11 +187,33 @@ func (q *Queries) GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (R
 }
 
 const listPolicySubjects = `-- name: ListPolicySubjects :many
-SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects WHERE policy_id = $1 ORDER BY id
+SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects
+WHERE policy_id = $1
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    $2::timestamptz IS NULL
+    OR created_at < $2
+    OR (created_at = $2 AND id > $3::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $4
 `
 
-func (q *Queries) ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error) {
-	rows, err := q.db.Query(ctx, listPolicySubjects, policyID)
+type ListPolicySubjectsParams struct {
+	PolicyID uuid.UUID          `json:"policy_id"`
+	AfterTs  pgtype.Timestamptz `json:"after_ts"`
+	AfterID  pgtype.UUID        `json:"after_id"`
+	Lim      int32              `json:"lim"`
+}
+
+func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error) {
+	rows, err := q.db.Query(ctx, listPolicySubjects,
+		arg.PolicyID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -217,12 +239,34 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([
 	return items, nil
 }
 
-const listRequestPoliciesForRole = `-- name: ListRequestPoliciesForRole :many
-SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies WHERE role_id = $1 ORDER BY id
+const listRequestPolicies = `-- name: ListRequestPolicies :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies
+WHERE role_id = $1
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    $2::timestamptz IS NULL
+    OR created_at < $2
+    OR (created_at = $2 AND id > $3::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $4
 `
 
-func (q *Queries) ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error) {
-	rows, err := q.db.Query(ctx, listRequestPoliciesForRole, roleID)
+type ListRequestPoliciesParams struct {
+	RoleID  uuid.UUID          `json:"role_id"`
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
+}
+
+func (q *Queries) ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error) {
+	rows, err := q.db.Query(ctx, listRequestPolicies,
+		arg.RoleID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

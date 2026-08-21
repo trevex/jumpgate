@@ -398,6 +398,126 @@ func TestListRoleBindings(t *testing.T) {
 	}
 }
 
+// TestListRoleBindingsKeysetPagination verifies time-ordered (created_at DESC, id)
+// keyset pagination for ListRoleBindings. Seeds 3 bindings (plus the bootstrap admin
+// binding), requests page 1 with PageSize=2, asserts it returns 2 items and a
+// non-empty NextPageToken, then fetches page 2 and asserts it returns the remaining
+// items and an empty NextPageToken.
+func TestListRoleBindingsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a role and a folder for the bindings.
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "pg-role", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "pgfolder"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+
+	// Create three groups, one binding each, so we have 3 additional rows in
+	// addition to the admin bootstrap binding (4 total).
+	var groupBindingIDs []string // in creation order (oldest first)
+	mkBinding := func(groupName string) {
+		g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: groupName}), tok))
+		if err != nil {
+			t.Fatalf("create group %s: %v", groupName, err)
+		}
+		b, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+			RoleId:         role.Msg.Role.Id,
+			ScopeFolderId:  folder.Msg.Folder.Id,
+			SubjectGroupId: g.Msg.Group.Id,
+		}), tok))
+		if err != nil {
+			t.Fatalf("create binding for %s: %v", groupName, err)
+		}
+		groupBindingIDs = append(groupBindingIDs, b.Msg.Id)
+	}
+	mkBinding("grp-a")
+	mkBinding("grp-b")
+	mkBinding("grp-c")
+
+	// Page 1: 3 items + non-empty token (4 total records, page_size=3).
+	page1, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{
+		PageSize: 3,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Bindings) != 3 {
+		t.Fatalf("page1: got %d bindings, want 3", len(page1.Msg.Bindings))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+
+	// Page 2: 1 remaining item + empty token (no further pages).
+	page2, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{
+		PageSize:  3,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Bindings) == 0 {
+		t.Fatal("page2: got 0 bindings, want >= 1")
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+
+	// Total across both pages must equal 4 (3 created + 1 bootstrap admin binding).
+	total := len(page1.Msg.Bindings) + len(page2.Msg.Bindings)
+	if total != 4 {
+		t.Fatalf("total bindings across pages = %d, want 4", total)
+	}
+
+	// No duplicates between pages.
+	seen := map[string]bool{}
+	for _, b := range page1.Msg.Bindings {
+		seen[b.Id] = true
+	}
+	for _, b := range page2.Msg.Bindings {
+		if seen[b.Id] {
+			t.Fatalf("duplicate binding id %s across pages", b.Id)
+		}
+	}
+
+	// Ordering: created_at DESC means the three most-recently-created (the group
+	// bindings) fill page 1 in reverse creation order (grp-c, grp-b, grp-a), and
+	// the oldest row (the bootstrap admin binding) lands last, on page 2. This
+	// pins the keyset tiebreak direction — a wrong predicate would misorder or
+	// leak the bootstrap binding onto page 1.
+	wantP1 := []string{groupBindingIDs[2], groupBindingIDs[1], groupBindingIDs[0]}
+	gotP1 := []string{page1.Msg.Bindings[0].Id, page1.Msg.Bindings[1].Id, page1.Msg.Bindings[2].Id}
+	for i := range wantP1 {
+		if gotP1[i] != wantP1[i] {
+			t.Fatalf("page1 order = %v, want %v (newest-first)", gotP1, wantP1)
+		}
+	}
+	if seen[page2.Msg.Bindings[0].Id] || contains(groupBindingIDs, page2.Msg.Bindings[0].Id) {
+		t.Fatalf("page2 should hold the oldest (bootstrap) binding, got a group binding %s", page2.Msg.Bindings[0].Id)
+	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
 func TestExplainRole(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -1408,5 +1528,377 @@ func TestAddRoleGrantNoEscalation(t *testing.T) {
 		RoleId: weak.Msg.Role.Id, SourceRoleId: src.Msg.Role.Id, Via: "same_object",
 	}), malloryTok)); err != nil {
 		t.Fatalf("mallory confer weak = %v, want ok (subset allowed)", err)
+	}
+}
+
+// TestListRolesKeysetByName verifies name-ordered (name ASC, id ASC) keyset
+// pagination for ListRoles. Seeds 3 roles with names in deliberately reversed
+// alphabetical order (creation order = zzz-c, zzz-b, zzz-a) that are guaranteed
+// to sort AFTER any bootstrap roles (all starting with "zzz-"), and confirms that
+// page 1 returns them in NAME order, not creation order, and that the token
+// terminates correctly.
+func TestListRolesKeysetByName(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create 3 roles in deliberately reversed alphabetical order (c first, a last)
+	// using a "zzz-" prefix so they reliably sort AFTER any bootstrap roles.
+	// This proves the list is ordered by name, not by creation/id order.
+	for _, name := range []string{"zzz-c", "zzz-b", "zzz-a"} {
+		if _, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+			Name: name, Capabilities: []string{"db:read"},
+		}), tok)); err != nil {
+			t.Fatalf("create role %s: %v", name, err)
+		}
+	}
+
+	// Fetch all roles with a large page, then filter to our 3 seeded roles to
+	// verify they appear in name-ascending order (zzz-a < zzz-b < zzz-c).
+	all, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		PageSize: 100,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	var seededNames []string
+	for _, r := range all.Msg.Roles {
+		if r.Name == "zzz-a" || r.Name == "zzz-b" || r.Name == "zzz-c" {
+			seededNames = append(seededNames, r.Name)
+		}
+	}
+	wantNames := []string{"zzz-a", "zzz-b", "zzz-c"}
+	for i, w := range wantNames {
+		if i >= len(seededNames) || seededNames[i] != w {
+			t.Fatalf("seeded roles out of order: got %v, want %v", seededNames, wantNames)
+		}
+	}
+
+	// Verify keyset pagination on just the 3 seeded roles by requesting with
+	// page_size=2; they land at the tail of the name-ordered list.
+	// Collect all pages and verify: (1) no duplicates, (2) the three names
+	// appear in zzz-a < zzz-b < zzz-c order across pages.
+	var allPages []*accessv1.Role
+	token := ""
+	for {
+		resp, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+			PageSize: 2, PageToken: token,
+		}), tok))
+		if err != nil {
+			t.Fatalf("list page (token=%q): %v", token, err)
+		}
+		allPages = append(allPages, resp.Msg.Roles...)
+		token = resp.Msg.NextPageToken
+		if token == "" {
+			break
+		}
+	}
+
+	// No duplicates in the multi-page traversal.
+	seen := map[string]bool{}
+	for _, r := range allPages {
+		if seen[r.Id] {
+			t.Fatalf("duplicate role id %s across pages", r.Id)
+		}
+		seen[r.Id] = true
+	}
+
+	// The 3 seeded roles appear exactly once and in ascending name order.
+	var got []string
+	for _, r := range allPages {
+		if r.Name == "zzz-a" || r.Name == "zzz-b" || r.Name == "zzz-c" {
+			got = append(got, r.Name)
+		}
+	}
+	for i, w := range wantNames {
+		if i >= len(got) || got[i] != w {
+			t.Fatalf("paginated seeded roles: got %v, want %v", got, wantNames)
+		}
+	}
+}
+
+// TestListRoleGrantsKeysetPagination verifies time-ordered (created_at DESC, id ASC)
+// keyset pagination for ListRoleGrants. Seeds 3 role→role grant edges, pages
+// through with page_size=2, and asserts newest-first ordering + token termination.
+func TestListRoleGrantsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create the target role and 3 source roles.
+	target, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "target-role", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	targetID := target.Msg.Role.Id
+
+	var grantIDs []string // in creation order (oldest first)
+	for i, name := range []string{"src-a", "src-b", "src-c"} {
+		src, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+			Name: name, Capabilities: []string{"db:read"},
+		}), tok))
+		if err != nil {
+			t.Fatalf("create source role %s: %v", name, err)
+		}
+		via := "same_object"
+		if i > 0 {
+			via = "parent"
+		}
+		g, err := acc.AddRoleGrant(ctx, withToken(connect.NewRequest(&accessv1.AddRoleGrantRequest{
+			RoleId: targetID, SourceRoleId: src.Msg.Role.Id, Via: via,
+		}), tok))
+		if err != nil {
+			t.Fatalf("add grant for %s: %v", name, err)
+		}
+		grantIDs = append(grantIDs, g.Msg.Grant.Id)
+	}
+
+	// Page 1: 2 of the 3 grants (newest first), must have a token.
+	page1, err := acc.ListRoleGrants(ctx, withToken(connect.NewRequest(&accessv1.ListRoleGrantsRequest{
+		RoleId: targetID, PageSize: 2,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Grants) != 2 {
+		t.Fatalf("page1: got %d grants, want 2", len(page1.Msg.Grants))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+
+	// Ordering: created_at DESC means src-c (newest) is first, then src-b.
+	wantP1 := []string{grantIDs[2], grantIDs[1]}
+	for i, want := range wantP1 {
+		if page1.Msg.Grants[i].Id != want {
+			t.Fatalf("page1[%d] = %s, want %s (newest-first order)", i, page1.Msg.Grants[i].Id, want)
+		}
+	}
+
+	// Page 2: remaining 1 grant (src-a, the oldest), no token.
+	page2, err := acc.ListRoleGrants(ctx, withToken(connect.NewRequest(&accessv1.ListRoleGrantsRequest{
+		RoleId: targetID, PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Grants) != 1 {
+		t.Fatalf("page2: got %d grants, want 1", len(page2.Msg.Grants))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Grants[0].Id != grantIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest grant)", page2.Msg.Grants[0].Id, grantIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, g := range page1.Msg.Grants {
+		seen[g.Id] = true
+	}
+	for _, g := range page2.Msg.Grants {
+		if seen[g.Id] {
+			t.Fatalf("duplicate grant id %s across pages", g.Id)
+		}
+	}
+}
+
+// TestListRequestPoliciesKeysetPagination verifies time-ordered (created_at DESC, id ASC)
+// keyset pagination for ListRequestPolicies. Seeds 3 policies for the same role
+// (one default + two asset-scoped), pages with page_size=2, and asserts newest-first
+// ordering + token termination.
+func TestListRequestPoliciesKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "pol-role", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := role.Msg.Role.Id
+
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "pol-folder"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	folderID := folder.Msg.Folder.Id
+
+	// Create 3 assets for scoped policies; each asset = one policy.
+	var policyIDs []string // in creation order (oldest first)
+	for _, assetName := range []string{"asset-a", "asset-b", "asset-c"} {
+		a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+			Name: assetName, FolderId: folderID, Kind: "ssh",
+		}), tok))
+		if err != nil {
+			t.Fatalf("create asset %s: %v", assetName, err)
+		}
+		p, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+			RoleId:            roleID,
+			ScopeAssetId:      a.Msg.Asset.Id,
+			RequiredApprovals: 1,
+			Name:              "policy-for-" + assetName,
+		}), tok))
+		if err != nil {
+			t.Fatalf("create policy for %s: %v", assetName, err)
+		}
+		policyIDs = append(policyIDs, p.Msg.Policy.Id)
+	}
+
+	// Page 1: 2 of the 3 policies (newest first), must have a token.
+	page1, err := acc.ListRequestPolicies(ctx, withToken(connect.NewRequest(&accessv1.ListRequestPoliciesRequest{
+		RoleId: roleID, PageSize: 2,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Policies) != 2 {
+		t.Fatalf("page1: got %d policies, want 2", len(page1.Msg.Policies))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+
+	// Ordering: created_at DESC means asset-c policy (newest) is first.
+	wantP1 := []string{policyIDs[2], policyIDs[1]}
+	for i, want := range wantP1 {
+		if page1.Msg.Policies[i].Id != want {
+			t.Fatalf("page1[%d] = %s, want %s (newest-first order)", i, page1.Msg.Policies[i].Id, want)
+		}
+	}
+
+	// Page 2: remaining 1 policy (asset-a, oldest), no token.
+	page2, err := acc.ListRequestPolicies(ctx, withToken(connect.NewRequest(&accessv1.ListRequestPoliciesRequest{
+		RoleId: roleID, PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Policies) != 1 {
+		t.Fatalf("page2: got %d policies, want 1", len(page2.Msg.Policies))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Policies[0].Id != policyIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest policy)", page2.Msg.Policies[0].Id, policyIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, p := range page1.Msg.Policies {
+		seen[p.Id] = true
+	}
+	for _, p := range page2.Msg.Policies {
+		if seen[p.Id] {
+			t.Fatalf("duplicate policy id %s across pages", p.Id)
+		}
+	}
+}
+
+// TestListPolicySubjectsKeysetPagination verifies time-ordered (created_at DESC, id ASC)
+// keyset pagination for ListPolicySubjects. Seeds a policy with 3 group subjects,
+// pages with page_size=2, and asserts newest-first ordering + token termination.
+func TestListPolicySubjectsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "sub-role", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	policy, err := acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
+		RoleId:            role.Msg.Role.Id,
+		RequiredApprovals: 1,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create policy: %v", err)
+	}
+	policyID := policy.Msg.Policy.Id
+
+	// Add 3 group subjects to the policy in order (oldest = group-a).
+	var subjectIDs []string
+	for _, groupName := range []string{"sub-grp-a", "sub-grp-b", "sub-grp-c"} {
+		g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: groupName}), tok))
+		if err != nil {
+			t.Fatalf("create group %s: %v", groupName, err)
+		}
+		s, err := acc.AddPolicySubject(ctx, withToken(connect.NewRequest(&accessv1.AddPolicySubjectRequest{
+			PolicyId:       policyID,
+			Kind:           "approver",
+			SubjectGroupId: g.Msg.Group.Id,
+		}), tok))
+		if err != nil {
+			t.Fatalf("add subject for %s: %v", groupName, err)
+		}
+		subjectIDs = append(subjectIDs, s.Msg.Id)
+	}
+
+	// Page 1: 2 of the 3 subjects (newest first), must have a token.
+	page1, err := acc.ListPolicySubjects(ctx, withToken(connect.NewRequest(&accessv1.ListPolicySubjectsRequest{
+		PolicyId: policyID, PageSize: 2,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Subjects) != 2 {
+		t.Fatalf("page1: got %d subjects, want 2", len(page1.Msg.Subjects))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+
+	// Ordering: created_at DESC means sub-grp-c subject (newest) is first.
+	wantP1 := []string{subjectIDs[2], subjectIDs[1]}
+	for i, want := range wantP1 {
+		if page1.Msg.Subjects[i].Id != want {
+			t.Fatalf("page1[%d] = %s, want %s (newest-first order)", i, page1.Msg.Subjects[i].Id, want)
+		}
+	}
+
+	// Page 2: remaining 1 subject (sub-grp-a, oldest), no token.
+	page2, err := acc.ListPolicySubjects(ctx, withToken(connect.NewRequest(&accessv1.ListPolicySubjectsRequest{
+		PolicyId: policyID, PageSize: 2, PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Subjects) != 1 {
+		t.Fatalf("page2: got %d subjects, want 1", len(page2.Msg.Subjects))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Subjects[0].Id != subjectIDs[0] {
+		t.Fatalf("page2[0] = %s, want %s (oldest subject)", page2.Msg.Subjects[0].Id, subjectIDs[0])
+	}
+
+	// No duplicates across pages.
+	seen := map[string]bool{}
+	for _, s := range page1.Msg.Subjects {
+		seen[s.Id] = true
+	}
+	for _, s := range page2.Msg.Subjects {
+		if seen[s.Id] {
+			t.Fatalf("duplicate subject id %s across pages", s.Id)
+		}
 	}
 }

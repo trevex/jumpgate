@@ -29,15 +29,21 @@ var foldersCreateCmd = &cobra.Command{
 	RunE:  runFoldersCreate,
 }
 
+var (
+	foldersListCascade bool
+)
+
 var foldersListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [parent]",
 	Short: "List folders",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runFoldersList,
 }
 
 func init() {
 	foldersCreateCmd.Flags().StringVar(&foldersCreateParent, "parent", "", "parent folder ID")
+
+	foldersListCmd.Flags().BoolVar(&foldersListCascade, "cascade", false, "include folders in all descendant levels")
 
 	foldersCmd.AddCommand(foldersCreateCmd)
 	foldersCmd.AddCommand(foldersListCmd)
@@ -69,20 +75,35 @@ func runFoldersCreate(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func runFoldersList(cmd *cobra.Command, _ []string) error {
+func runFoldersList(cmd *cobra.Command, args []string) error {
 	cl, err := newClient()
 	if err != nil {
 		return err
 	}
 
-	req := connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100})
-	cl.Authorize(req)
-	resp, err := cl.Catalog().ListFolders(cmd.Context(), req)
+	parent := ""
+	if len(args) > 0 {
+		parent = args[0]
+	}
+
+	folders, err := collectPages(func(token string) ([]*catalogv1.Folder, string, error) {
+		req := connect.NewRequest(&catalogv1.ListFoldersRequest{
+			Parent:    parent,
+			Cascade:   foldersListCascade,
+			PageSize:  100,
+			PageToken: token,
+		})
+		cl.Authorize(req)
+		resp, err := cl.Catalog().ListFolders(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetFolders(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	folders := resp.Msg.GetFolders()
 	rows := make([][]string, 0, len(folders))
 	msgs := make([]proto.Message, 0, len(folders))
 	for _, f := range folders {

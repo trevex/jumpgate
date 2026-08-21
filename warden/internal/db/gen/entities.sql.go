@@ -345,61 +345,48 @@ func (q *Queries) InsertFolderName(ctx context.Context, arg InsertFolderNamePara
 	return err
 }
 
-const listGroupMemberGroups = `-- name: ListGroupMemberGroups :many
-SELECT g.id, g.name, g.folder_id, g.created_at FROM groups g
-JOIN group_memberships gm ON gm.member_group_id = g.id
+const listGroupMembersPaged = `-- name: ListGroupMembersPaged :many
+SELECT gm.id, gm.group_id, gm.member_user_id, gm.member_group_id, gm.created_at FROM group_memberships gm
 WHERE gm.group_id = $1
-ORDER BY g.id
+  AND (
+    $2::timestamptz IS NULL
+    OR gm.created_at < $2
+    OR (gm.created_at = $2 AND gm.id > $3::uuid)
+  )
+ORDER BY gm.created_at DESC, gm.id
+LIMIT $4
 `
 
-func (q *Queries) ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error) {
-	rows, err := q.db.Query(ctx, listGroupMemberGroups, groupID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Group
-	for rows.Next() {
-		var i Group
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type ListGroupMembersPagedParams struct {
+	GroupID uuid.UUID          `json:"group_id"`
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
 }
 
-const listGroupMemberUsers = `-- name: ListGroupMemberUsers :many
-SELECT u.id, u.email, u.display_name, u.created_at, u.password_hash, u.deactivated_at FROM users u
-JOIN group_memberships gm ON gm.member_user_id = u.id
-WHERE gm.group_id = $1
-ORDER BY u.id
-`
-
-func (q *Queries) ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error) {
-	rows, err := q.db.Query(ctx, listGroupMemberUsers, groupID)
+// Single keyset scan over group_memberships ordered by (created_at DESC, id).
+// Each row is either a user-member (member_user_id non-null) or group-member
+// (member_group_id non-null); the handler splits them.
+func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error) {
+	rows, err := q.db.Query(ctx, listGroupMembersPaged,
+		arg.GroupID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []User
+	var items []GroupMembership
 	for rows.Next() {
-		var i User
+		var i GroupMembership
 		if err := rows.Scan(
 			&i.ID,
-			&i.Email,
-			&i.DisplayName,
+			&i.GroupID,
+			&i.MemberUserID,
+			&i.MemberGroupID,
 			&i.CreatedAt,
-			&i.PasswordHash,
-			&i.DeactivatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -413,18 +400,22 @@ func (q *Queries) ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) (
 
 const listGroupsPaged = `-- name: ListGroupsPaged :many
 SELECT id, name, folder_id, created_at FROM groups
-WHERE ($1::uuid IS NULL OR id > $1)
-ORDER BY id
-LIMIT $2
+WHERE (
+  $1::text IS NULL
+  OR (name, id) > ($1, $2::uuid)
+)
+ORDER BY name, id
+LIMIT $3
 `
 
 type ListGroupsPagedParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
 }
 
 func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error) {
-	rows, err := q.db.Query(ctx, listGroupsPaged, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listGroupsPaged, arg.AfterName, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -450,18 +441,22 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users
-WHERE ($1::uuid IS NULL OR id > $1)
-ORDER BY id
-LIMIT $2
+WHERE (
+  $1::text IS NULL
+  OR (email, id) > ($1, $2::uuid)
+)
+ORDER BY email, id
+LIMIT $3
 `
 
 type ListUsersParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	AfterEmail pgtype.Text `json:"after_email"`
+	AfterID    pgtype.UUID `json:"after_id"`
+	Lim        int32       `json:"lim"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listUsers, arg.AfterEmail, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

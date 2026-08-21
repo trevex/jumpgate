@@ -130,10 +130,12 @@ A role **R is requestable on asset A** for user **U** iff:
 > **and** no `kind='requester'` subjects makes *nobody* eligible. Eligibility is a
 > positive predicate, never a default-open.
 
-The catalog (`ListVisibleAssets`) returns **Active ∪ Requestable** only. A direct
-lookup of an Invisible asset returns **`NotFound`, never `PermissionDenied`** — so
-topology never leaks. `GetAssetAccess` reports the caller's `active_roles` +
-`requestable_roles` on one asset (or `NotFound` if invisible). All of this is
+The catalog (`ListAssets`/`ListFolders`) returns **Active ∪ Requestable** nodes
+only — plus nodes the caller manages. A direct lookup of an Invisible asset
+returns **`NotFound`, never `PermissionDenied`** — so topology never leaks.
+`GetAssetAccess` reports the caller's `active_roles`, `requestable_roles`, and
+held `capabilities` on one asset (or `NotFound` if invisible); `GetFolderAccess`
+returns the caller's management `capabilities` on a folder. All of this is
 set-based over the rewrite graph; there are **no requestable bindings anywhere**.
 
 ### Worked examples

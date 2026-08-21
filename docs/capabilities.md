@@ -159,6 +159,13 @@ checks the **recipient** `role_id`, the role that gets conferred.)
   `Global`; the per-object `Get`/`Resolve` forms use the object's own scope.
   (`ListGroups` is the exception — it is *visibility-filtered*, returning only the
   groups the caller can read, rather than requiring a global read.)
+- **Catalog browse is NOT cap-gated.** `ListFolders` / `ListAssets` are
+  *visibility-filtered* per-node: a caller sees a node iff it manages it (holds a
+  management capability there) **or** has or can request access under it
+  (Active ∪ Requestable). A capless caller receives an empty list — not
+  `PermissionDenied`. Browsing a folder path the caller cannot see returns
+  `NotFound` (existence-hiding). See
+  [Catalog browse](#catalog-browse-listfolderslistassets) below.
 
 The **Scope** column below names the object whose scope the cap is checked at.
 Where a single cap gates both a per-object read and a list-all, the list case is
@@ -168,9 +175,9 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | Capability | Grants (management RPC) | Scope |
 |---|---|---|
 | `catalog:folder:create` | create a folder | parent folder (`Global` if top-level) |
-| `catalog:folder:read` | resolve a folder; list folders | the folder (list-all: `Global`) |
+| `catalog:folder:read` | resolve a folder by path/id (`ResolveFolder`) | the folder |
 | `catalog:asset:create` | onboard an asset | target folder |
-| `catalog:asset:read` | get / resolve an asset; list a folder's assets | the asset (list: that folder) |
+| `catalog:asset:read` | get / resolve an asset (`GetAsset`, `ResolveAsset`) | the asset |
 | `catalog:asset:update` | change an asset's config | the asset |
 | `access:role:create` | create a role | target folder (`Global` if a global role) |
 | `access:role:read` | get / resolve a role; list a role's grants; explain a role; list roles | the role's folder (list-all: `Global`) |
@@ -238,6 +245,51 @@ folder-scoped. `identity:user:*` stays global (users are not folder-homed).
 **Deferred:** per-group "owner" delegation (a `scope_group_id` binding scope for
 single-group admin); folder-homing users; a subset guard on membership-adds. See
 the design docs for the full per-RPC mapping.
+
+### Catalog browse — `ListFolders`/`ListAssets`
+
+Catalog lists differ from all other management RPCs: they are **visibility-filtered**
+rather than cap-gated.
+
+**Signatures.**
+
+```
+ListFolders(parent="", cascade=false, page_size, page_token) → [Folder…]
+ListAssets (parent="", cascade=false, page_size, page_token) → [Asset…]
+```
+
+- `parent` — the folder to browse: empty string = root; otherwise a DNS-style
+  dotted path (leaf-first, e.g. `db.prod`) or a UUID. Browsing a folder path the
+  caller cannot see returns `NotFound` (existence-hiding).
+- `cascade` — when `false` (the default) only **direct children** of `parent` are
+  returned; when `true` the entire subtree is walked flat. The CLI's `--cascade`
+  flag maps to this.
+- `page_token` — an opaque keyset cursor. Reuse the same `parent` / `cascade`
+  filters across pages; the CLI pages automatically and presents a merged result.
+  An empty `next_page_token` in the response signals the last page.
+
+**Visibility rule (per-node).** A caller sees a node if and only if it satisfies
+at least one of:
+
+1. **Manageable** — the caller holds a management capability at that node's scope
+   (e.g. `catalog:asset:read` on the asset or an ancestor folder).
+2. **Active or Requestable** — the caller holds a standing role that covers the
+   node, or is eligible to request one via a request policy.
+
+A caller with no entitlements to any node receives an **empty list** — not
+`PermissionDenied`. There is no capability required to *attempt* a browse; the
+result is simply empty when nothing is visible.
+
+**List vs. detail split.** `ListFolders`/`ListAssets` return **navigation-only
+bare nodes** (id, name, path). Per-node capabilities come from the detail RPCs:
+
+- `GetAssetAccess(asset_id)` — the caller's `active_roles`, `requestable_roles`,
+  and **`capabilities`** (the held-closure on the asset, object/folder-scoped,
+  excluding global `**` so it faithfully mirrors connect ability).
+- `GetFolderAccess(folder_id)` — the caller's management **`capabilities`** on
+  the folder.
+
+Call these after navigating to a node the list revealed.
 
 ## Where enforcement lives (data plane) — warden decides, workers enforce
 

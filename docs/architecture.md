@@ -54,7 +54,7 @@ bearer-token interceptor, validated by protovalidate, and existence-hiding via
 |---|---|
 | `AuthService` | password login → opaque bearer token; `WhoAmI` |
 | `IdentityService` | users, groups, nested memberships, user lifecycle |
-| `CatalogService` | folders & assets (incl. typed SSH config), plus per-user discovery (`ListVisibleAssets` / `GetAssetAccess`) and `Resolve*` |
+| `CatalogService` | folders & assets (incl. typed SSH config); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `Resolve*` |
 | `AccessService` | all authorization config: roles, role-grants, standing role-bindings, request policies + subjects, `ExplainRole` |
 | `AccessRequestService` | the JIT runtime: request / approve / deny / cancel / revoke, grants, approval resolution |
 | `VaultService` | CA init & public material, mesh CA + cert issuance, session-signing-key init, asset secrets (metadata only on read) |
@@ -159,6 +159,24 @@ global `-o table|json`. Config is a small hand-rolled file
 (`~/.config/jumpgate/config.json`) with **kubectl-style named contexts**
 (`login --context NAME`, `config use-context`) so multiple identities coexist;
 resolution is flag > env > current context.
+
+**Catalog browse.** `folders list` and `assets list` take an optional positional
+`parent` argument (a DNS-style path or UUID; omit for the root) and an optional
+`--cascade` flag:
+
+```
+jumpgate assets list                      # direct root-level assets only (usually none)
+jumpgate assets list db.prod              # direct assets inside db.prod
+jumpgate assets list --cascade            # all visible assets across the full tree
+jumpgate assets list db.prod --cascade    # all visible assets inside db.prod's subtree
+```
+
+The same pattern applies to `folders list`. Both commands are
+*visibility-filtered* (not cap-gated): a capless caller gets an empty list;
+browsing an unrelated folder path returns `NotFound`. Lists are navigation-only
+(id, name, path); call `assets get <path>` or use `GetAssetAccess`/`GetFolderAccess`
+to retrieve per-node capabilities. All list verbs page via an opaque `page_token`
+cursor returned in `next_page_token`; the CLI handles pagination automatically.
 
 Admin commands accept asset and folder **paths** everywhere (e.g. `bindings create
 --asset password-box.demo`), resolved server-side by `ResolveAsset` /

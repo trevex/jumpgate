@@ -15,7 +15,12 @@ SELECT * FROM session_recordings WHERE session_id = $1;
 
 -- name: ListSessionRecordings :many
 SELECT * FROM session_recordings
-WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $1)
-  AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR asset_id = $2)
-ORDER BY created_at DESC
-LIMIT $3;
+WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id'))
+  AND (sqlc.narg('asset_id')::uuid IS NULL OR asset_id = sqlc.narg('asset_id'))
+  AND (
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND session_id > sqlc.narg('after_session_id')::uuid)
+  )
+ORDER BY created_at DESC, session_id
+LIMIT sqlc.arg('lim');

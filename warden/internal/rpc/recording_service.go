@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	recordingv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1"
 	"github.com/trevex/jumpgate/warden/internal/audit"
@@ -73,26 +74,28 @@ func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
 }
 
 // ListRecordings lists recordings filtered by the optional user_id/asset_id
-// (empty → no filter), newest first (admin only).
+// (empty → no filter), newest first (admin only), with keyset pagination on
+// (created_at DESC, session_id ASC). session_id is the PK; it is used as the
+// tiebreak because session_recordings has no separate `id` column.
 func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Request[recordingv1.ListRecordingsRequest]) (*connect.Response[recordingv1.ListRecordingsResponse], error) {
-	userFilter := uuid.Nil
+	params := gen.ListSessionRecordingsParams{}
 	if req.Msg.UserId != "" {
 		id, err := uuid.Parse(req.Msg.UserId)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 		}
-		userFilter = id
+		params.UserID = pgtype.UUID{Bytes: id, Valid: true}
 	}
-	assetFilter := uuid.Nil
 	if req.Msg.AssetId != "" {
 		id, err := uuid.Parse(req.Msg.AssetId)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
 		}
-		assetFilter = id
+		params.AssetID = pgtype.UUID{Bytes: id, Valid: true}
 	}
 	// An asset-scoped filter narrows the required cap to that asset; an unfiltered
 	// (fleet-wide) list requires the global recording:read.
+	assetFilter := uuidFromPg(params.AssetID)
 	scope := authz.GlobalScope()
 	if assetFilter != uuid.Nil {
 		scope = authz.AssetScope(assetFilter)
@@ -107,17 +110,26 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 	if limit > maxRecordingPageSize {
 		limit = maxRecordingPageSize
 	}
-	rows, err := s.q.ListSessionRecordings(ctx, gen.ListSessionRecordingsParams{
-		Column1: userFilter,
-		Column2: assetFilter,
-		Limit:   limit,
-	})
+	params.Lim = limit
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterSessionID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListSessionRecordings(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &recordingv1.ListRecordingsResponse{}
 	for i := range rows {
 		out.Recordings = append(out.Recordings, toRecordingMsg(rows[i]))
+	}
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.SessionID)
 	}
 	return connect.NewResponse(out), nil
 }

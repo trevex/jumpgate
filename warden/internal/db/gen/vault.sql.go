@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createCAKey = `-- name: CreateCAKey :one
@@ -106,8 +107,22 @@ func (q *Queries) GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSe
 }
 
 const listAssetSecrets = `-- name: ListAssetSecrets :many
-SELECT id, asset_id, name, created_at FROM asset_secrets WHERE asset_id = $1 ORDER BY name
+SELECT id, asset_id, name, created_at FROM asset_secrets
+WHERE asset_id = $1
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
 `
+
+type ListAssetSecretsParams struct {
+	AssetID   uuid.UUID   `json:"asset_id"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
 
 type ListAssetSecretsRow struct {
 	ID        uuid.UUID `json:"id"`
@@ -116,8 +131,13 @@ type ListAssetSecretsRow struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func (q *Queries) ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error) {
-	rows, err := q.db.Query(ctx, listAssetSecrets, assetID)
+func (q *Queries) ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error) {
+	rows, err := q.db.Query(ctx, listAssetSecrets,
+		arg.AssetID,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

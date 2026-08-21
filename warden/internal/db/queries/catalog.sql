@@ -4,11 +4,36 @@ SELECT * FROM folders WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
 -- name: GetFolder :one
 SELECT * FROM folders WHERE id = $1;
 
--- name: ListAssetsByFolder :many
-SELECT * FROM assets WHERE folder_id = $1 ORDER BY id;
+-- name: ListFoldersByIDsPaged :many
+SELECT * FROM folders
+WHERE id = ANY(sqlc.arg('ids')::uuid[])
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
+
+-- name: ListAssetsByIDsPaged :many
+SELECT * FROM assets
+WHERE id = ANY(sqlc.arg('ids')::uuid[])
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
 
 -- name: ListRoles :many
-SELECT * FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
+SELECT * FROM roles
+WHERE (
+  -- keyset for ORDER BY name ASC, id ASC: row-comparison is correct for
+  -- same-direction sort (both ascending). A NULL after_name means first page.
+  sqlc.narg('after_name')::text IS NULL
+  OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+)
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
 
 -- name: GetRole :one
 SELECT * FROM roles WHERE id = $1;
@@ -35,7 +60,16 @@ WHERE (sqlc.narg('role_id')::uuid IS NULL OR role_id = sqlc.narg('role_id'))
   AND (sqlc.narg('scope_asset_id')::uuid IS NULL OR scope_asset_id = sqlc.narg('scope_asset_id'))
   AND (sqlc.narg('subject_user_id')::uuid IS NULL OR subject_user_id = sqlc.narg('subject_user_id'))
   AND (sqlc.narg('subject_group_id')::uuid IS NULL OR subject_group_id = sqlc.narg('subject_group_id'))
-ORDER BY id;
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
+    -- instant with a later id. A row-comparison `(created_at,id) < (…)` is WRONG
+    -- here — it would invert the id tiebreak.
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT sqlc.arg('lim');
 
 -- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1;

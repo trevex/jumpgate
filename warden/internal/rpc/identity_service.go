@@ -125,24 +125,22 @@ func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[i
 	return connect.NewResponse(&identityv1.ResolveUserResponse{UserId: u.ID.String()}), nil
 }
 
-// ListUsers returns a page of users (admin only), ordered by id.
+// ListUsers returns a page of users (admin only), ordered by (email ASC, id ASC).
 func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
 	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
-	limit := req.Msg.PageSize
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
 	}
-	after := uuid.Nil
-	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
-		after = id
+	params := gen.ListUsersParams{Lim: limit}
+	if k != nil {
+		params.AfterEmail = pgtype.Text{String: k.Name, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
 	}
-	rows, err := s.q.ListUsers(ctx, gen.ListUsersParams{Column1: after, Limit: limit})
+	rows, err := s.q.ListUsers(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -150,8 +148,12 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	for i := range rows {
 		out.Users = append(out.Users, toUserMsg(rows[i]))
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
-		out.NextPageToken = rows[len(rows)-1].ID.String()
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// costs one extra empty trailing page (standard strict-last-page tradeoff).
+	// encodeNameToken takes the SORT-KEY column: email here.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Email, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -228,6 +230,11 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 // visibility-scoped: a global read holder (incl. admin **) sees every group; a
 // folder-scoped holder sees only groups homed in folders they can read; a caller
 // with no group read caps gets an empty page (not an error).
+//
+// Pagination uses (name ASC, id ASC) keyset order. For the filtered slow path the
+// next-page token is keyed to the SQL page position (last SQL row scanned), not
+// the last filtered row, so the cursor advances past invisible groups and
+// pagination terminates correctly even when a full page is entirely filtered out.
 func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
 	u, ok := auth.UserFromContext(ctx)
 	if !ok {
@@ -240,26 +247,32 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	}
 	seesAll := gcaps.Allows("identity:group:read")
 
-	limit := req.Msg.PageSize
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
 	}
-	after := uuid.Nil
-	if req.Msg.PageToken != "" {
-		id, perr := uuid.Parse(req.Msg.PageToken)
-		if perr != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
-		after = id
+	params := gen.ListGroupsPagedParams{Lim: limit}
+	if k != nil {
+		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
 	}
-	rows, err := s.q.ListGroupsPaged(ctx, gen.ListGroupsPagedParams{Column1: after, Limit: limit})
+	rows, err := s.q.ListGroupsPaged(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	// The per-group cap check is bounded (small group counts, cold admin list)
-	// and the global-holder fast path plus paging keep it cheap. NextPageToken is
-	// driven by the raw page, so pagination stays correct even when some rows are
-	// filtered out — the caller keeps paging with the returned token.
+
+	// Determine the next-page cursor from SQL-page fullness BEFORE filtering.
+	// This mirrors the ListPendingApprovals pattern: for filtered paths the token
+	// must track the SQL position (last SQL row) so pagination advances past rows
+	// the caller cannot see. The fast path (seesAll) also follows this rule for
+	// consistency; for the fast path the SQL rows and filtered rows coincide.
+	var nextToken string
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		nextToken = encodeNameToken(last.Name, last.ID)
+	}
+
 	out := &identityv1.ListGroupsResponse{}
 	for i := range rows {
 		if !seesAll {
@@ -273,9 +286,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 		}
 		out.Groups = append(out.Groups, toGroupMsg(rows[i]))
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
-		out.NextPageToken = rows[len(rows)-1].ID.String()
-	}
+	out.NextPageToken = nextToken
 	return connect.NewResponse(out), nil
 }
 
@@ -371,7 +382,10 @@ func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.
 	return connect.NewResponse(&identityv1.RemoveGroupFromGroupResponse{}), nil
 }
 
-// ListGroupMembers lists a group's direct member users and member groups (admin only).
+// ListGroupMembers lists a group's direct member users and member groups with
+// keyset pagination over (created_at DESC, id ASC). A single SQL scan covers
+// both user-members and group-members; the handler splits the page by which FK
+// column is non-null. The next-page token is emitted when the SQL page was full.
 func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Request[identityv1.ListGroupMembersRequest]) (*connect.Response[identityv1.ListGroupMembersResponse], error) {
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
@@ -384,20 +398,31 @@ func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Requ
 	if err := s.requireCap(ctx, "identity:group:read", scope); err != nil {
 		return nil, err
 	}
-	users, err := s.q.ListGroupMemberUsers(ctx, gid)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, err
 	}
-	groups, err := s.q.ListGroupMemberGroups(ctx, gid)
+	params := gen.ListGroupMembersPagedParams{GroupID: gid, Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListGroupMembersPaged(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &identityv1.ListGroupMembersResponse{}
-	for i := range users {
-		out.Users = append(out.Users, toUserMsg(users[i]))
+	for i := range rows {
+		if rows[i].MemberUserID.Valid {
+			out.Users = append(out.Users, &identityv1.User{Id: uuidFromPg(rows[i].MemberUserID).String()})
+		} else if rows[i].MemberGroupID.Valid {
+			out.Groups = append(out.Groups, &identityv1.Group{Id: uuidFromPg(rows[i].MemberGroupID).String()})
+		}
 	}
-	for i := range groups {
-		out.Groups = append(out.Groups, toGroupMsg(groups[i]))
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

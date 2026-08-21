@@ -33,11 +33,13 @@ only to a protocol that is not yet built, it says so.
 
 ## Existence-hiding — topology never leaks
 
-Discoverability is itself a permission. `ListVisibleAssets` returns **only** the
-assets a caller can see (Active ∪ Requestable). A direct lookup of an **invisible**
-asset returns **`CodeNotFound`, never `CodePermissionDenied`**, so an attacker
-cannot map infrastructure by probing for `403`s. The same NotFound-hiding applies to
-`Resolve*` for folders, roles, groups, and policies. See the visibility tiers in
+Discoverability is itself a permission. `ListAssets`/`ListFolders` return
+**only** the nodes a caller can see (Active ∪ Requestable, or manageable). A
+direct lookup of an **invisible** asset returns **`CodeNotFound`, never
+`CodePermissionDenied`**, so an attacker cannot map infrastructure by probing for
+`403`s. Browsing an unrelated folder path also returns `CodeNotFound`. The same
+NotFound-hiding applies to `Resolve*` for folders, roles, groups, and policies.
+See the visibility tiers in
 [access-model.md](access-model.md#requestable-eligibility--visibility-tiers--what-can-i-see--ask-for).
 
 ## AuthN & token model

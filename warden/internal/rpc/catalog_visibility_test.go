@@ -80,22 +80,28 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	atok := authClient(t, url, "alice@x", "password123")
 	acat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 
-	vis, err := acat.ListVisibleAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListVisibleAssetsRequest{}), atok))
+	// ListAssets(parent="",cascade=true) is the caller's full visible-asset catalog.
+	// List responses are bare nodes now (no active/role fields); which assets are
+	// visible is asserted here, and the active/requestable detail below via
+	// GetAssetAccess.
+	vis, err := acat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Cascade: true}), atok))
 	if err != nil {
 		t.Fatalf("visible: %v", err)
 	}
 	seen := map[string]bool{}
 	for _, a := range vis.Msg.Assets {
-		seen[a.Id] = a.Active
+		seen[a.Id] = true
 	}
-	if active, ok := seen[pgprod]; !ok || !active {
-		t.Fatalf("pg-prod: want visible+active, got ok=%v active=%v", ok, active)
+	if !seen[pgprod] {
+		t.Fatalf("pg-prod: want visible, got %v", seen)
 	}
-	if _, ok := seen[topsecret]; ok {
+	if seen[topsecret] {
 		t.Fatal("top-secret must be invisible to alice")
 	}
 
-	// GetAssetAccess on the visible asset returns the readonly role
+	// GetAssetAccess on the visible asset returns the readonly role (and, as an
+	// active binding, confirms pg-prod is active for alice — the assertion that
+	// previously rode on the list response's Active field).
 	acc, err := acat.GetAssetAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetAccessRequest{AssetId: pgprod}), atok))
 	if err != nil {
 		t.Fatalf("access pgprod: %v", err)

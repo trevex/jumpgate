@@ -751,6 +751,8 @@ func (*RemoveRoleGrantResponse) Descriptor() ([]byte, []int) {
 type ListRoleGrantsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoleId        string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -792,9 +794,24 @@ func (x *ListRoleGrantsRequest) GetRoleId() string {
 	return ""
 }
 
+func (x *ListRoleGrantsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRoleGrantsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListRoleGrantsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Grants        []*RoleGrant           `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -834,6 +851,13 @@ func (x *ListRoleGrantsResponse) GetGrants() []*RoleGrant {
 		return x.Grants
 	}
 	return nil
+}
+
+func (x *ListRoleGrantsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type RoleBinding struct {
@@ -1128,6 +1152,8 @@ type ListRoleBindingsRequest struct {
 	ScopeAssetId   string                 `protobuf:"bytes,3,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`
 	SubjectUserId  string                 `protobuf:"bytes,4,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"`
 	SubjectGroupId string                 `protobuf:"bytes,5,opt,name=subject_group_id,json=subjectGroupId,proto3" json:"subject_group_id,omitempty"`
+	PageSize       int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken      string                 `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1197,9 +1223,24 @@ func (x *ListRoleBindingsRequest) GetSubjectGroupId() string {
 	return ""
 }
 
+func (x *ListRoleBindingsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRoleBindingsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListRoleBindingsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bindings      []*RoleBinding         `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1239,6 +1280,13 @@ func (x *ListRoleBindingsResponse) GetBindings() []*RoleBinding {
 		return x.Bindings
 	}
 	return nil
+}
+
+func (x *ListRoleBindingsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type RequestPolicy struct {
@@ -1696,6 +1744,8 @@ func (*DeleteRequestPolicyResponse) Descriptor() ([]byte, []int) {
 type ListRequestPoliciesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoleId        string                 `protobuf:"bytes,1,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1737,9 +1787,24 @@ func (x *ListRequestPoliciesRequest) GetRoleId() string {
 	return ""
 }
 
+func (x *ListRequestPoliciesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRequestPoliciesRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListRequestPoliciesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Policies      []*RequestPolicy       `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1779,6 +1844,13 @@ func (x *ListRequestPoliciesResponse) GetPolicies() []*RequestPolicy {
 		return x.Policies
 	}
 	return nil
+}
+
+func (x *ListRequestPoliciesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type PolicySubject struct {
@@ -2150,6 +2222,8 @@ func (*RemovePolicySubjectResponse) Descriptor() ([]byte, []int) {
 type ListPolicySubjectsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PolicyId      string                 `protobuf:"bytes,1,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2191,9 +2265,24 @@ func (x *ListPolicySubjectsRequest) GetPolicyId() string {
 	return ""
 }
 
+func (x *ListPolicySubjectsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPolicySubjectsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListPolicySubjectsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Subjects      []*PolicySubject       `protobuf:"bytes,1,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2233,6 +2322,13 @@ func (x *ListPolicySubjectsResponse) GetSubjects() []*PolicySubject {
 		return x.Subjects
 	}
 	return nil
+}
+
+func (x *ListPolicySubjectsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type ExplainRoleRequest struct {
@@ -2522,11 +2618,15 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x05grant\x18\x01 \x01(\v2\x1d.jumpgate.access.v1.RoleGrantR\x05grant\"2\n" +
 	"\x16RemoveRoleGrantRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x19\n" +
-	"\x17RemoveRoleGrantResponse\":\n" +
+	"\x17RemoveRoleGrantResponse\"\x81\x01\n" +
 	"\x15ListRoleGrantsRequest\x12!\n" +
-	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"O\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"w\n" +
 	"\x16ListRoleGrantsResponse\x125\n" +
-	"\x06grants\x18\x01 \x03(\v2\x1d.jumpgate.access.v1.RoleGrantR\x06grants\"\xd6\x01\n" +
+	"\x06grants\x18\x01 \x03(\v2\x1d.jumpgate.access.v1.RoleGrantR\x06grants\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd6\x01\n" +
 	"\vRoleBinding\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12&\n" +
@@ -2544,15 +2644,19 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x18DeleteRoleBindingRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1b\n" +
-	"\x19DeleteRoleBindingResponse\"\xd2\x01\n" +
+	"\x19DeleteRoleBindingResponse\"\x99\x02\n" +
 	"\x17ListRoleBindingsRequest\x12\x17\n" +
 	"\arole_id\x18\x01 \x01(\tR\x06roleId\x12&\n" +
 	"\x0fscope_folder_id\x18\x02 \x01(\tR\rscopeFolderId\x12$\n" +
 	"\x0escope_asset_id\x18\x03 \x01(\tR\fscopeAssetId\x12&\n" +
 	"\x0fsubject_user_id\x18\x04 \x01(\tR\rsubjectUserId\x12(\n" +
-	"\x10subject_group_id\x18\x05 \x01(\tR\x0esubjectGroupId\"W\n" +
+	"\x10subject_group_id\x18\x05 \x01(\tR\x0esubjectGroupId\x12&\n" +
+	"\tpage_size\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"\x7f\n" +
 	"\x18ListRoleBindingsResponse\x12;\n" +
-	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\"\xd1\x02\n" +
+	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd1\x02\n" +
 	"\rRequestPolicy\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12&\n" +
@@ -2584,11 +2688,15 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x06policy\x18\x01 \x01(\v2!.jumpgate.access.v1.RequestPolicyR\x06policy\"6\n" +
 	"\x1aDeleteRequestPolicyRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1d\n" +
-	"\x1bDeleteRequestPolicyResponse\"?\n" +
+	"\x1bDeleteRequestPolicyResponse\"\x86\x01\n" +
 	"\x1aListRequestPoliciesRequest\x12!\n" +
-	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\\\n" +
+	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x84\x01\n" +
 	"\x1bListRequestPoliciesResponse\x12=\n" +
-	"\bpolicies\x18\x01 \x03(\v2!.jumpgate.access.v1.RequestPolicyR\bpolicies\"\xa2\x01\n" +
+	"\bpolicies\x18\x01 \x03(\v2!.jumpgate.access.v1.RequestPolicyR\bpolicies\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa2\x01\n" +
 	"\rPolicySubject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tpolicy_id\x18\x02 \x01(\tR\bpolicyId\x12\x12\n" +
@@ -2609,11 +2717,15 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"6\n" +
 	"\x1aRemovePolicySubjectRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1d\n" +
-	"\x1bRemovePolicySubjectResponse\"B\n" +
+	"\x1bRemovePolicySubjectResponse\"\x89\x01\n" +
 	"\x19ListPolicySubjectsRequest\x12%\n" +
-	"\tpolicy_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bpolicyId\"[\n" +
+	"\tpolicy_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bpolicyId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x83\x01\n" +
 	"\x1aListPolicySubjectsResponse\x12=\n" +
-	"\bsubjects\x18\x01 \x03(\v2!.jumpgate.access.v1.PolicySubjectR\bsubjects\"\x7f\n" +
+	"\bsubjects\x18\x01 \x03(\v2!.jumpgate.access.v1.PolicySubjectR\bsubjects\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x7f\n" +
 	"\x12ExplainRoleRequest\x12!\n" +
 	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\x12!\n" +
 	"\arole_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x12#\n" +

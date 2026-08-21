@@ -235,7 +235,7 @@ role. It is a *global* role (its capabilities are not themselves pinned to a fol
 **binding** is what scopes it to `team`:
 
 ```bash
-jumpgate --context admin folders create team --parent <DEMO_FOLDER_ID>   # from `folders list`
+jumpgate --context admin folders create team --parent <DEMO_FOLDER_ID>   # from `folders list -o json`
 
 jumpgate --context admin roles create folder-admin \
   --capability catalog:asset:create \
@@ -251,7 +251,8 @@ jumpgate --context admin roles create folder-admin \
 ```
 
 `folders create --parent` takes the parent folder's **UUID** (not its DNS path); read it
-from `jumpgate --context admin folders list -o json` (the `demo` folder's `id`).
+from `jumpgate --context admin folders list -o json` (the `demo` folder's `id` — root
+browse returns all top-level folders; use `--cascade` to include nested folders).
 
 Create dana, then **bind** folder-admin to her at the `team` folder. Because the admin
 holds `**` at `team`, the no-escalation subset rule (below) is satisfied and the grant is

@@ -656,6 +656,141 @@ func (s *Service) ListMyGrants(ctx context.Context, subject uuid.UUID) ([]Grant,
 	return toGrants(rows), nil
 }
 
+// ListMyRequestsPaged returns the caller's own requests with keyset pagination
+// on (created_at DESC, id ASC).
+func (s *Service) ListMyRequestsPaged(ctx context.Context, requester uuid.UUID, page PageParams) ([]Request, error) {
+	q := gen.New(s.pool)
+	params := gen.ListAccessRequestsByRequesterPagedParams{
+		RequesterUserID: requester,
+		Lim:             page.Limit,
+	}
+	if page.AfterTs != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
+	}
+	rows, err := q.ListAccessRequestsByRequesterPaged(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list my requests paged: %w", err)
+	}
+	out := make([]Request, 0, len(rows))
+	for _, r := range rows {
+		count, err := q.CountApprovals(ctx, r.ID)
+		if err != nil {
+			return nil, fmt.Errorf("count approvals: %w", err)
+		}
+		grantID := s.grantIDFor(ctx, q, r)
+		out = append(out, toRequest(r, int(count), grantID))
+	}
+	return out, nil
+}
+
+// ListPendingApprovalsPaged returns pending requests the caller may approve,
+// with keyset pagination on the underlying pending-requests scan. The Go-side
+// IsApprover filter runs after the SQL limit, so pages may be shorter than
+// page_size when many pending requests belong to other policies.
+//
+// The returned *PageCursor is non-nil when the SQL page was full (len(sqlRows)
+// == limit) and carries the (created_at, id) of the LAST SQL ROW SCANNED.
+// Callers must base the next-page token on this cursor — not on the last
+// filtered row — so the cursor tracks SQL position even when all rows on a
+// page were filtered out.
+func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Request, *PageCursor, error) {
+	q := gen.New(s.pool)
+	params := gen.ListPendingRequestsPagedParams{Lim: page.Limit}
+	if page.AfterTs != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
+	}
+	rows, err := q.ListPendingRequestsPaged(ctx, params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list pending approvals paged: %w", err)
+	}
+
+	// Determine SQL-page cursor before filtering: emit a token whenever the SQL
+	// page was full so the next call resumes past everything already examined,
+	// even if every row on this page was filtered out for this caller.
+	var next *PageCursor
+	if len(rows) == int(page.Limit) {
+		last := rows[len(rows)-1]
+		next = &PageCursor{Ts: last.CreatedAt, ID: last.ID}
+	}
+
+	out := make([]Request, 0)
+	for _, r := range rows {
+		if r.RequesterUserID == caller {
+			continue
+		}
+		ok, err := s.resolver.IsApprover(ctx, caller, r.RoleID, r.AssetID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !ok {
+			continue
+		}
+		count, err := q.CountApprovals(ctx, r.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("count approvals: %w", err)
+		}
+		out = append(out, toRequest(r, int(count), uuid.Nil))
+	}
+	return out, next, nil
+}
+
+// ListMyGrantsPaged returns the caller's own grants with keyset pagination on
+// (granted_at DESC, id ASC).
+func (s *Service) ListMyGrantsPaged(ctx context.Context, subject uuid.UUID, page PageParams) ([]Grant, error) {
+	params := gen.ListGrantsBySubjectPagedParams{
+		SubjectUserID: subject,
+		Lim:           page.Limit,
+	}
+	if page.AfterTs != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
+	}
+	rows, err := gen.New(s.pool).ListGrantsBySubjectPaged(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list my grants paged: %w", err)
+	}
+	return toGrants(rows), nil
+}
+
+// ListGrantsPaged returns grants for admin introspection with keyset pagination
+// on (granted_at DESC, id ASC). Filters (subject, active_only) are preserved.
+func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page PageParams) ([]Grant, error) {
+	params := gen.ListGrantsFilteredPagedParams{
+		ActiveOnly: filter.ActiveOnly,
+		Lim:        page.Limit,
+	}
+	if filter.Subject != uuid.Nil {
+		params.SubjectUserID = pgtype.UUID{Bytes: filter.Subject, Valid: true}
+	}
+	if page.AfterTs != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
+	}
+	rows, err := gen.New(s.pool).ListGrantsFilteredPaged(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list grants paged: %w", err)
+	}
+	return toGrants(rows), nil
+}
+
+// PageParams carries decoded keyset cursor fields for time-ordered lists.
+// AfterTs and AfterID are zero/nil when on the first page.
+type PageParams struct {
+	AfterTs *time.Time
+	AfterID uuid.UUID
+	Limit   int32
+}
+
+// PageCursor is a keyset position that can be encoded into a next-page token.
+// It carries the (created_at, id) of the LAST SQL ROW SCANNED, which may
+// differ from the last row returned when Go-side filtering drops rows.
+type PageCursor struct {
+	Ts time.Time
+	ID uuid.UUID
+}
+
 // GrantFilter narrows an admin grant listing. Subject uuid.Nil = any subject.
 type GrantFilter struct {
 	Subject    uuid.UUID
