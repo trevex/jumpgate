@@ -56,7 +56,7 @@ func TestGroupsCreate(t *testing.T) {
 	s := &stubGroups{}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
-	t.Cleanup(func() { flagOutput = "table" })
+	t.Cleanup(resetGroupsFlags)
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
@@ -77,7 +77,7 @@ func TestGroupsCreateFolder(t *testing.T) {
 	s := &stubGroups{}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
-	t.Cleanup(func() { flagOutput = "table"; groupsCreateFolder = "" })
+	t.Cleanup(resetGroupsFlags)
 
 	const folderUUID = "33333333-3333-3333-3333-333333333333"
 
@@ -97,10 +97,23 @@ func TestGroupsCreateFolder(t *testing.T) {
 	}
 }
 
+func resetGroupsFlags() {
+	flagOutput = "table"
+	groupsCreateFolder = ""
+	groupsListCascade = false
+	if f := groupsCreateCmd.Flags().Lookup("folder"); f != nil {
+		_ = f.Value.Set("")
+		f.Changed = false
+	}
+	if f := groupsListCmd.Flags().Lookup("cascade"); f != nil {
+		f.Changed = false
+	}
+}
+
 func TestGroupsList(t *testing.T) {
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, &stubGroups{}))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
-	t.Cleanup(func() { flagOutput = "table" })
+	t.Cleanup(resetGroupsFlags)
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
@@ -119,11 +132,28 @@ func TestGroupsList(t *testing.T) {
 	}
 }
 
+func TestGroupsListParentCascade(t *testing.T) {
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, &stubGroups{}))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetGroupsFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"groups", "list", "team.prod", "--cascade", "-o", "table"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "eng") || !strings.Contains(got, "11111111") {
+		t.Fatalf("out=%s", got)
+	}
+}
+
 func TestGroupsAddMemberResolvesNames(t *testing.T) {
 	s := &stubGroups{}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
-	t.Cleanup(func() { flagOutput = "table" })
+	t.Cleanup(resetGroupsFlags)
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
@@ -153,7 +183,7 @@ func TestGroupsRemoveMemberResolvesNames(t *testing.T) {
 	s := &stubGroups{}
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newIdentityStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
-	t.Cleanup(func() { flagOutput = "table" })
+	t.Cleanup(resetGroupsFlags)
 
 	rootCmd.SetOut(&bytes.Buffer{})
 	rootCmd.SetArgs([]string{"groups", "remove-member", "eng", "alice@x"})
