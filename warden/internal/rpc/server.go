@@ -49,7 +49,11 @@ import (
 // recordingPresign issues short-lived presigned download URLs for session
 // recordings; a nil presigner makes RecordingService's download path fail closed
 // (FailedPrecondition). recordingURLTTL bounds the lifetime of an issued URL.
-func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service, recordingPresign Presigner, recordingURLTTL time.Duration) error {
+//
+// cookieSecure controls the Secure flag on the session cookie set by Login when
+// cookie_only mode is requested. Pass cfg.CookieSecure() from the loaded Config;
+// false for plain-HTTP dev environments.
+func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service, recordingPresign Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
 	q := gen.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
@@ -61,7 +65,7 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	resolver := approvals.New(pool)
 	authorizer := authz.NewSQLAuthorizer(pool)
 
-	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens, authorizer, true /* TODO: cfg.CookieSecure (Task 5) */), opts)
+	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens, authorizer, cookieSecure), opts)
 	mux.Handle(authPath, authHandler)
 
 	// A standalone terminator (stateless; a second instance alongside the mesh
@@ -127,8 +131,9 @@ func RegisterMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audi
 // tests use RegisterUserServices / RegisterMeshServices on separate muxes. The
 // GatewayServer here carries no session verification key (its GetSessionVerification
 // Key returns FailedPrecondition), which is acceptable for the user-only tests.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry, recordingPresign Presigner, recordingURLTTL time.Duration) error {
-	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, recordingURLTTL); err != nil {
+// cookieSecure is passed through to RegisterUserServices; tests may pass true.
+func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry, recordingPresign Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
+	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, recordingURLTTL, cookieSecure); err != nil {
 		return err
 	}
 	return RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, NewGatewayServer(registry, nil))

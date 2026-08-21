@@ -95,7 +95,7 @@ func TestMuxServesHealthzAndRegisters(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", httpapi.NewRouter(pool))
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t), audit.New(pool), nil, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute); err != nil {
+	if err := rpc.Register(mux, pool, testAccessRequestService(pool), testSealer(t), audit.New(pool), nil, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
