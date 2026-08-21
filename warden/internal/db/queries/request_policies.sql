@@ -18,8 +18,18 @@ SELECT * FROM request_policies WHERE id = $1;
 -- name: GetRoleDefaultPolicy :one
 SELECT * FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL;
 
--- name: ListRequestPoliciesForRole :many
-SELECT * FROM request_policies WHERE role_id = $1 ORDER BY id;
+-- name: ListRequestPolicies :many
+SELECT * FROM request_policies
+WHERE role_id = sqlc.arg('role_id')
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT sqlc.arg('lim');
 
 -- name: AddPolicySubject :one
 INSERT INTO request_policy_subjects (policy_id, kind, subject_user_id, subject_group_id)
@@ -33,7 +43,17 @@ SELECT * FROM request_policy_subjects WHERE id = $1;
 DELETE FROM request_policy_subjects WHERE id = $1;
 
 -- name: ListPolicySubjects :many
-SELECT * FROM request_policy_subjects WHERE policy_id = $1 ORDER BY id;
+SELECT * FROM request_policy_subjects
+WHERE policy_id = sqlc.arg('policy_id')
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT sqlc.arg('lim');
 
 -- name: GetPolicyByNameAndAsset :one
 SELECT * FROM request_policies WHERE name = $1 AND scope_asset_id = $2;
