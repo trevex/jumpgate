@@ -687,9 +687,14 @@ func (s *Service) ListMyRequestsPaged(ctx context.Context, requester uuid.UUID, 
 // ListPendingApprovalsPaged returns pending requests the caller may approve,
 // with keyset pagination on the underlying pending-requests scan. The Go-side
 // IsApprover filter runs after the SQL limit, so pages may be shorter than
-// page_size when many pending requests belong to other policies (acceptable:
-// the pending set is small by design).
-func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Request, error) {
+// page_size when many pending requests belong to other policies.
+//
+// The returned *PageCursor is non-nil when the SQL page was full (len(sqlRows)
+// == limit) and carries the (created_at, id) of the LAST SQL ROW SCANNED.
+// Callers must base the next-page token on this cursor — not on the last
+// filtered row — so the cursor tracks SQL position even when all rows on a
+// page were filtered out.
+func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Request, *PageCursor, error) {
 	q := gen.New(s.pool)
 	params := gen.ListPendingRequestsPagedParams{Lim: page.Limit}
 	if page.AfterTs != nil {
@@ -698,8 +703,18 @@ func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUI
 	}
 	rows, err := q.ListPendingRequestsPaged(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("list pending approvals paged: %w", err)
+		return nil, nil, fmt.Errorf("list pending approvals paged: %w", err)
 	}
+
+	// Determine SQL-page cursor before filtering: emit a token whenever the SQL
+	// page was full so the next call resumes past everything already examined,
+	// even if every row on this page was filtered out for this caller.
+	var next *PageCursor
+	if len(rows) == int(page.Limit) {
+		last := rows[len(rows)-1]
+		next = &PageCursor{Ts: last.CreatedAt, ID: last.ID}
+	}
+
 	out := make([]Request, 0)
 	for _, r := range rows {
 		if r.RequesterUserID == caller {
@@ -707,18 +722,18 @@ func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUI
 		}
 		ok, err := s.resolver.IsApprover(ctx, caller, r.RoleID, r.AssetID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !ok {
 			continue
 		}
 		count, err := q.CountApprovals(ctx, r.ID)
 		if err != nil {
-			return nil, fmt.Errorf("count approvals: %w", err)
+			return nil, nil, fmt.Errorf("count approvals: %w", err)
 		}
 		out = append(out, toRequest(r, int(count), uuid.Nil))
 	}
-	return out, nil
+	return out, next, nil
 }
 
 // ListMyGrantsPaged returns the caller's own grants with keyset pagination on
@@ -766,6 +781,14 @@ type PageParams struct {
 	AfterTs *time.Time
 	AfterID uuid.UUID
 	Limit   int32
+}
+
+// PageCursor is a keyset position that can be encoded into a next-page token.
+// It carries the (created_at, id) of the LAST SQL ROW SCANNED, which may
+// differ from the last row returned when Go-side filtering drops rows.
+type PageCursor struct {
+	Ts time.Time
+	ID uuid.UUID
 }
 
 // GrantFilter narrows an admin grant listing. Subject uuid.Nil = any subject.
