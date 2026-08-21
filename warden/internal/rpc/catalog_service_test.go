@@ -669,10 +669,14 @@ func TestResolveFolder(t *testing.T) {
 	if _, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "nope.prod"}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("bad path = %v, want NotFound", connect.CodeOf(err))
 	}
+	// A caller without catalog:folder:read gets NotFound for an EXISTING folder —
+	// identical to the nonexistent-ref case above — so folder existence never leaks
+	// (existence hiding, matching ResolveAsset). It must NOT be PermissionDenied,
+	// which would distinguish "exists but hidden" from "does not exist".
 	seedUser(t, pool, "u@x", "password123", false)
 	utok := authClient(t, url, "u@x", "password123")
-	if _, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "prod"}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
+	if _, err := c.ResolveFolder(ctx, withToken(connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: "prod"}), utok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("non-admin existing folder = %v, want NotFound (existence hiding)", connect.CodeOf(err))
 	}
 }
 

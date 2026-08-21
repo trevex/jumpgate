@@ -567,9 +567,12 @@ func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[
 		folderID = id
 	}
 
-	// Gate on the resolved folder's scope (resolve-then-check).
-	if err := s.requireCap(ctx, "catalog:folder:read", authz.FolderScope(folderID)); err != nil {
-		return nil, err
+	// Gate on the resolved folder's scope (resolve-then-check). A caller without
+	// the read cap must not be able to distinguish an existing-but-invisible folder
+	// from a nonexistent one, so a denial is reported as NotFound (existence hiding,
+	// matching ResolveAsset) rather than PermissionDenied.
+	if s.requireCap(ctx, "catalog:folder:read", authz.FolderScope(folderID)) != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
 
 	fp, err := s.q.FolderPath(ctx, folderID)
