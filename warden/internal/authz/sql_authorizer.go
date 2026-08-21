@@ -3,9 +3,11 @@ package authz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -198,29 +200,44 @@ SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
 // matching happens in Go (CapMatch) via Capabilities.Allows, so the '*' / trailing
 // '**' semantics stay in one auditable function rather than embedded regex-in-SQL.
 func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
+	return s.CapabilitiesOnObject(ctx, userID, assetID, "asset")
+}
+
+// CapabilitiesOnObject returns every capability pattern the user holds on the
+// given object (kind "asset" or "folder") via the held (standing + active-grant)
+// closure — the object-dimension generalization of CapabilitiesOnAsset. It runs
+// the held closure once and flattens all matching roles' patterns into a single
+// Capabilities set (glob matching stays in Go via CapMatch/Allows).
+func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT r.capabilities
 FROM held h JOIN roles r ON r.id = h.role_id
-WHERE h.object_kind = 'asset' AND h.object_id = $2`, userID, assetID)
+WHERE h.object_kind = $3 AND h.object_id = $2`, userID, objectID, kind)
 	if err != nil {
-		return nil, fmt.Errorf("capabilities on asset: %w", err)
+		return nil, fmt.Errorf("capabilities on object: %w", err)
 	}
 	defer rows.Close()
+	return scanCapabilities(rows)
+}
 
+// scanCapabilities flattens every row's jsonb capability-pattern array (a single
+// `capabilities` column) into one Capabilities set. Shared by CapabilitiesOnObject
+// and the scopeless globalHeldCapabilities query.
+func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 	var caps Capabilities
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("capabilities on asset scan: %w", err)
+			return nil, fmt.Errorf("capabilities scan: %w", err)
 		}
 		var patterns []string
 		if err := json.Unmarshal(raw, &patterns); err != nil {
-			return nil, fmt.Errorf("capabilities on asset unmarshal capabilities: %w", err)
+			return nil, fmt.Errorf("capabilities unmarshal: %w", err)
 		}
 		caps = append(caps, patterns...)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("capabilities on asset rows: %w", err)
+		return nil, fmt.Errorf("capabilities rows: %w", err)
 	}
 	return caps, nil
 }
@@ -237,4 +254,117 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 		return false, err
 	}
 	return caps.Allows(capability), nil
+}
+
+// CapabilitiesOnScope returns the capability patterns the user holds at a
+// management scope. Global caps (scopeless standing bindings, closed over
+// role_grants) ALWAYS apply. For a folder/asset scope, management authority
+// CASCADES STRUCTURALLY down the folder tree: a capability held on folder F
+// applies to F, every sub-folder of F, and every asset beneath them — with NO
+// per-role parent self-grant (unlike the OPT-IN data-plane heldCTE inheritance,
+// which requires a role_grants(R,R,parent) self-edge). We realize the cascade by
+// walking the folder ancestor chain (FolderAncestorsAndSelf) and unioning the
+// caps held on any ancestor-or-self folder. The result sets are concatenated
+// (glob matching in Go via Allows dedups semantically, so duplicates are
+// harmless).
+func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	switch scope.Kind {
+	case ScopeGlobal:
+		return global, nil
+	case ScopeFolder:
+		ancestors, err := s.folderAncestorsAndSelf(ctx, scope.ID)
+		if err != nil {
+			return nil, fmt.Errorf("folder ancestors: %w", err)
+		}
+		fcaps, err := s.capsOnFolders(ctx, userID, ancestors)
+		if err != nil {
+			return nil, err
+		}
+		return append(global, fcaps...), nil
+	case ScopeAsset:
+		obj, err := s.CapabilitiesOnObject(ctx, userID, scope.ID, "asset")
+		if err != nil {
+			return nil, err
+		}
+		out := append(global, obj...)
+		folderID, err := s.assetFolderID(ctx, scope.ID)
+		if err != nil {
+			// A nonexistent asset resolves to no folder caps (existence-hiding:
+			// the handler performs the NotFound check after the cap gate, and
+			// CapabilitiesOnObject above already returns empty for it). Any other
+			// error is a real failure.
+			if errors.Is(err, pgx.ErrNoRows) {
+				return out, nil
+			}
+			return nil, fmt.Errorf("get asset: %w", err)
+		}
+		ancestors, err := s.folderAncestorsAndSelf(ctx, folderID)
+		if err != nil {
+			return nil, fmt.Errorf("folder ancestors: %w", err)
+		}
+		fcaps, err := s.capsOnFolders(ctx, userID, ancestors)
+		if err != nil {
+			return nil, err
+		}
+		return append(out, fcaps...), nil
+	default:
+		return nil, fmt.Errorf("unknown scope kind %d", scope.Kind)
+	}
+}
+
+// capsOnFolders returns the union of the capability patterns the user holds on
+// ANY of folderIDs via the held (standing + active-grant) closure. Callers pass
+// the full folder ancestor chain (FolderAncestorsAndSelf) so a capability held on
+// an ancestor folder cascades down to the scoped object. heldCTE binds the user
+// to $1; the folder-id array is $2 (heldCTE references only $1, so $2 is free).
+func (s *sqlAuthorizer) capsOnFolders(ctx context.Context, userID uuid.UUID, folderIDs []uuid.UUID) (Capabilities, error) {
+	if len(folderIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT r.capabilities FROM held h JOIN roles r ON r.id = h.role_id
+WHERE h.object_kind = 'folder' AND h.object_id = ANY($2::uuid[])`, userID, folderIDs)
+	if err != nil {
+		return nil, fmt.Errorf("caps on folders: %w", err)
+	}
+	defer rows.Close()
+	return scanCapabilities(rows)
+}
+
+// folderAncestorsAndSelf returns every ancestor-or-self folder id of id, walking
+// parent links up to the root. Copied from the generated FolderAncestorsAndSelf
+// query (db/queries/catalog.sql) to run over s.pool, keeping this file's raw-SQL
+// style (the production authorizer holds a *pgxpool.Pool, not a *gen.Queries).
+func (s *sqlAuthorizer) folderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := s.pool.Query(ctx, `
+WITH RECURSIVE up AS (
+    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
+    UNION ALL
+    SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
+)
+SELECT up.id FROM up`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var fid uuid.UUID
+		if err := rows.Scan(&fid); err != nil {
+			return nil, err
+		}
+		items = append(items, fid)
+	}
+	return items, rows.Err()
+}
+
+// assetFolderID returns the (NOT NULL) containing folder id of the asset.
+func (s *sqlAuthorizer) assetFolderID(ctx context.Context, assetID uuid.UUID) (uuid.UUID, error) {
+	var folderID uuid.UUID
+	err := s.pool.QueryRow(ctx, `SELECT folder_id FROM assets WHERE id = $1`, assetID).Scan(&folderID)
+	return folderID, err
 }

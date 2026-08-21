@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
@@ -11,10 +9,10 @@ import (
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 )
 
-var userHeaders = []string{"ID", "EMAIL", "NAME", "ADMIN"}
+var userHeaders = []string{"ID", "EMAIL", "NAME"}
 
 func userRow(u *identityv1.User) []string {
-	return []string{u.GetId(), u.GetEmail(), u.GetDisplayName(), fmt.Sprintf("%t", u.GetIsAdmin())}
+	return []string{u.GetId(), u.GetEmail(), u.GetDisplayName()}
 }
 
 var usersCmd = &cobra.Command{
@@ -24,7 +22,6 @@ var usersCmd = &cobra.Command{
 
 var (
 	usersCreateName     string
-	usersCreateAdmin    bool
 	usersCreatePassword string
 )
 
@@ -44,7 +41,6 @@ var usersListCmd = &cobra.Command{
 
 func init() {
 	usersCreateCmd.Flags().StringVar(&usersCreateName, "name", "", "display name")
-	usersCreateCmd.Flags().BoolVar(&usersCreateAdmin, "admin", false, "grant admin privileges")
 	usersCreateCmd.Flags().StringVar(&usersCreatePassword, "password", "", "initial login password (min 8 chars)")
 
 	usersCmd.AddCommand(usersCreateCmd)
@@ -61,7 +57,6 @@ func runUsersCreate(cmd *cobra.Command, args []string) error {
 	req := connect.NewRequest(&identityv1.CreateUserRequest{
 		Email:       args[0],
 		DisplayName: usersCreateName,
-		IsAdmin:     usersCreateAdmin,
 		Password:    usersCreatePassword,
 	})
 	cl.Authorize(req)

@@ -98,6 +98,17 @@ func TestCreateRoleCapabilityValidation(t *testing.T) {
 	if len(r.Msg.Role.Capabilities) != 4 {
 		t.Fatalf("capabilities = %v, want 4", r.Msg.Role.Capabilities)
 	}
+
+	// Valid: a bare '**' (match-everything) — the admin capability.
+	rr, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "superadmin", Capabilities: []string{"**"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("CreateRole(bare **) = %v, want ok", err)
+	}
+	if len(rr.Msg.Role.Capabilities) != 1 || rr.Msg.Role.Capabilities[0] != "**" {
+		t.Fatalf("capabilities = %v, want [**]", rr.Msg.Role.Capabilities)
+	}
 }
 
 func TestRoleGrantCRUD(t *testing.T) {
@@ -253,6 +264,39 @@ func TestRoleBindingCRUD(t *testing.T) {
 	}
 }
 
+// TestCreateGlobalRoleBinding creates a role binding with NEITHER scope set
+// (a global binding). The DB one_scope constraint was relaxed to permit this and
+// CreateRoleBinding now rejects only both-scopes-set, so a scopeless binding on a
+// global role succeeds.
+func TestCreateGlobalRoleBinding(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "global-op", Capabilities: []string{"db:read"}}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "everyone"}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// global binding: no scope_folder_id, no scope_asset_id
+	rb, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: role.Msg.Role.Id, SubjectGroupId: g.Msg.Group.Id,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create global binding: %v", err)
+	}
+	if rb.Msg.Id == "" {
+		t.Fatal("empty global binding id")
+	}
+}
+
 // TestListRoleBindings exercises the optional filters: by role, and by scope.
 func TestListRoleBindings(t *testing.T) {
 	pool, url := newServer(t)
@@ -296,13 +340,14 @@ func TestListRoleBindings(t *testing.T) {
 	mkBinding(roleX.Msg.Role.Id, fB.Msg.Folder.Id)
 	mkBinding(roleY.Msg.Role.Id, fA.Msg.Folder.Id)
 
-	// no filter: all three
+	// no filter: the three created here plus the admin's scopeless `**` bootstrap
+	// binding (seedUser grants it so the capability-gated handlers admit the admin).
 	all, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{}), tok))
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}
-	if len(all.Msg.Bindings) != 3 {
-		t.Fatalf("list all = %d, want 3", len(all.Msg.Bindings))
+	if len(all.Msg.Bindings) != 4 {
+		t.Fatalf("list all = %d, want 4", len(all.Msg.Bindings))
 	}
 
 	// filter by role: roleX → 2
@@ -1177,5 +1222,191 @@ func TestListRolesFolderPath(t *testing.T) {
 	}
 	if !sawScoped || !sawGlobal {
 		t.Fatalf("missing roles in list (scoped=%v global=%v)", sawScoped, sawGlobal)
+	}
+}
+
+// TestAccessCapabilityGatingAndSubset pins the capability-gated management surface
+// and the no-escalation subset rule. dana is a non-admin holding
+// [access:role:create, access:binding:create, ssh:login:*] at folder `team` (via a
+// global role bound at that folder). She may create roles and bind subset roles
+// within team, but may NOT bind roles carrying caps she lacks there (`**`,
+// `identity:user:create`), and may NOT perform a global read (ListRoles).
+func TestAccessCapabilityGatingAndSubset(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	seedUser(t, pool, "dana@x", "password123", false)
+	danaTok := authClient(t, url, "dana@x", "password123")
+
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	idc := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// admin (**) sets up: folder `team`, dana's management role (global) bound to
+	// dana at folder `team`.
+	fr, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "team"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	team := fr.Msg.Folder.Id
+
+	mgmt, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name:         "team-mgr",
+		Capabilities: []string{"access:role:create", "access:binding:create", "ssh:login:*"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create mgmt role: %v", err)
+	}
+
+	danaRes, err := idc.ResolveUser(ctx, withToken(connect.NewRequest(&identityv1.ResolveUserRequest{Email: "dana@x"}), tok))
+	if err != nil {
+		t.Fatalf("resolve dana: %v", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: mgmt.Msg.Role.Id, ScopeFolderId: team, SubjectUserId: danaRes.Msg.UserId,
+	}), tok)); err != nil {
+		t.Fatalf("bind dana: %v", err)
+	}
+
+	// dana CAN create a role scoped to `team`.
+	deployRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "deployer", FolderId: team, Capabilities: []string{"ssh:login:deploy"},
+	}), danaTok))
+	if err != nil {
+		t.Fatalf("dana CreateRole(team) = %v, want ok", err)
+	}
+
+	// dana CAN bind that subset role (ssh:login:deploy ⊆ ssh:login:*) at team.
+	g, err := idc.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "team-grp"}), tok))
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: deployRole.Msg.Role.Id, ScopeFolderId: team, SubjectGroupId: g.Msg.Group.Id,
+	}), danaTok)); err != nil {
+		t.Fatalf("dana bind subset role = %v, want ok", err)
+	}
+
+	// dana CANNOT bind the global admin (**) role at team — she doesn't hold **.
+	adminRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "superadmin", Capabilities: []string{"**"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create admin role: %v", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: adminRole.Msg.Role.Id, ScopeFolderId: team, SubjectGroupId: g.Msg.Group.Id,
+	}), danaTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana bind ** at team = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// dana CAN create a role with identity:user:create (CreateRole is not
+	// subset-limited) but CANNOT bind it at team (she lacks identity:*).
+	idRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "user-admin", FolderId: team, Capabilities: []string{"identity:user:create"},
+	}), danaTok))
+	if err != nil {
+		t.Fatalf("dana CreateRole(identity) = %v, want ok", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: idRole.Msg.Role.Id, ScopeFolderId: team, SubjectGroupId: g.Msg.Group.Id,
+	}), danaTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana bind identity role at team = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// dana CANNOT ListRoles (a global read she lacks).
+	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), danaTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("dana ListRoles = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// admin (**) can do all of the above.
+	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), tok)); err != nil {
+		t.Fatalf("admin ListRoles = %v, want ok", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: adminRole.Msg.Role.Id, ScopeFolderId: team, SubjectGroupId: g.Msg.Group.Id,
+	}), tok)); err != nil {
+		t.Fatalf("admin bind ** at team = %v, want ok", err)
+	}
+}
+
+// TestAddRoleGrantNoEscalation locks the DIRECTION of the AddRoleGrant subset
+// guard so nobody "fixes" it backwards. AddRoleGrant(role_id=R, source_role_id=S)
+// creates the rule "holding S CONFERS R" — the capability GAINED by the operation
+// is R's (role_id's), NOT the source's. The guard therefore checks role_id's caps
+// against what the actor holds. Checking source_role_id instead would OPEN a
+// privilege-escalation hole. mallory holds a weak set (access:role:update +
+// ssh:login:*) globally; she must be DENIED conferring a ** role (superpower) but
+// ALLOWED conferring an ssh:login:deploy role (weak, ⊆ ssh:login:*).
+func TestAddRoleGrantNoEscalation(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	seedUser(t, pool, "mallory@x", "password123", false)
+	malloryTok := authClient(t, url, "mallory@x", "password123")
+
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	idc := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// admin sets up mallory's management role bound GLOBALLY: she can call
+	// AddRoleGrant (access:role:update) and confers ssh:login:* — but she does NOT
+	// hold **.
+	mgmt, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name:         "grant-mgr",
+		Capabilities: []string{"access:role:update", "ssh:login:*"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create mgmt role: %v", err)
+	}
+	malloryRes, err := idc.ResolveUser(ctx, withToken(connect.NewRequest(&identityv1.ResolveUserRequest{Email: "mallory@x"}), tok))
+	if err != nil {
+		t.Fatalf("resolve mallory: %v", err)
+	}
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: mgmt.Msg.Role.Id, SubjectUserId: malloryRes.Msg.UserId,
+	}), tok)); err != nil {
+		t.Fatalf("bind mallory globally: %v", err)
+	}
+
+	// admin creates global roles: a POWERFUL superpower (**), a WEAK weak
+	// (ssh:login:deploy), and a src role used only as the grant source.
+	superpower, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "superpower", Capabilities: []string{"**"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create superpower: %v", err)
+	}
+	weak, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "weak", Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create weak: %v", err)
+	}
+	src, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "src", Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create src: %v", err)
+	}
+
+	// DENIED: conferring superpower (role_id=superpower). mallory holds
+	// access:role:update globally (so the requireCap gate passes) but the subset
+	// guard checks the RECIPIENT superpower's ** — which she lacks — so the deny is
+	// specifically the escalation guard: PermissionDenied.
+	_, err = acc.AddRoleGrant(ctx, withToken(connect.NewRequest(&accessv1.AddRoleGrantRequest{
+		RoleId: superpower.Msg.Role.Id, SourceRoleId: src.Msg.Role.Id, Via: "same_object",
+	}), malloryTok))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("mallory confer superpower = %v, want PermissionDenied (escalation blocked)", connect.CodeOf(err))
+	}
+
+	// ALLOWED: conferring weak (role_id=weak, ssh:login:deploy ⊆ mallory's
+	// ssh:login:*) — subset guard passes and the grant is created.
+	if _, err := acc.AddRoleGrant(ctx, withToken(connect.NewRequest(&accessv1.AddRoleGrantRequest{
+		RoleId: weak.Msg.Role.Id, SourceRoleId: src.Msg.Role.Id, Via: "same_object",
+	}), malloryTok)); err != nil {
+		t.Fatalf("mallory confer weak = %v, want ok (subset allowed)", err)
 	}
 }

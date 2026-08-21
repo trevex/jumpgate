@@ -55,6 +55,27 @@ func jsonField(s, field string) string {
 	return m[1]
 }
 
+// folderIDByPath parses a `folders list -o json` array (protojson objects with
+// camelCase keys) and returns the id of the folder whose path equals want, or "".
+// Used to resolve a parent folder id for `folders create --parent`, which takes a
+// UUID rather than a DNS path.
+func folderIDByPath(t *testing.T, listJSON, want string) string {
+	t.Helper()
+	var folders []struct {
+		ID   string `json:"id"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(listJSON), &folders); err != nil {
+		t.Fatalf("parse folders list: %v\noutput:\n%s", err, listJSON)
+	}
+	for _, f := range folders {
+		if f.Path == want {
+			return f.ID
+		}
+	}
+	return ""
+}
+
 // run executes name with args, returns combined stdout+stderr, and fails the test
 // on non-zero exit (with the output attached for diagnosis).
 func run(t *testing.T, extraEnv []string, name string, args ...string) string {
@@ -73,6 +94,23 @@ func (e *env) asActor(t *testing.T, ctx string, args ...string) string {
 	t.Helper()
 	full := append([]string{"--context", ctx}, args...)
 	return run(t, []string{"XDG_CONFIG_HOME=" + e.configDir}, e.jgBin, full...)
+}
+
+// asActorFails runs `jumpgate --context <ctx> <args...>` like asActor but asserts a
+// NON-ZERO exit (an authorization/validation denial). It returns the combined
+// stdout+stderr, and fails the test if the command unexpectedly SUCCEEDS. It mirrors
+// asActor's exec path (same binary, same shared config dir) with the error check
+// inverted.
+func (e *env) asActorFails(t *testing.T, ctx string, args ...string) string {
+	t.Helper()
+	full := append([]string{"--context", ctx}, args...)
+	cmd := exec.Command(e.jgBin, full...)
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+e.configDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected %s to fail, but it succeeded\noutput:\n%s", strings.Join(full, " "), out)
+	}
+	return string(out)
 }
 
 // login stores credentials for actor ctx in the shared config dir. login has its

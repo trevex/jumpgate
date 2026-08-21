@@ -20,7 +20,7 @@ type stubAuth struct {
 
 func (stubAuth) Login(_ context.Context, req *connect.Request[authv1.LoginRequest]) (*connect.Response[authv1.LoginResponse], error) {
 	if req.Msg.Email == "good@x" && req.Msg.Password == "pw" {
-		return connect.NewResponse(&authv1.LoginResponse{Token: "tok-123", IsAdmin: true}), nil
+		return connect.NewResponse(&authv1.LoginResponse{Token: "tok-123"}), nil
 	}
 	return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 }

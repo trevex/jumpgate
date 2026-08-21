@@ -68,6 +68,8 @@ type Querier interface {
 	// Scoped to the owning asset: a config referencing another asset's secret (admin
 	// misconfiguration) fails closed rather than leaking a secret cross-asset.
 	GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error)
+	// Loads a secret by id alone (for management scope-derivation → owning asset).
+	GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
@@ -77,11 +79,14 @@ type Querier interface {
 	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
 	GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error)
 	GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNameAndAssetParams) (RequestPolicy, error)
+	GetPolicySubject(ctx context.Context, id uuid.UUID) (RequestPolicySubject, error)
+	GetRequestPolicy(ctx context.Context, id uuid.UUID) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
 	GetRoleByFolderAndName(ctx context.Context, arg GetRoleByFolderAndNameParams) (Role, error)
 	GetRoleByNameGlobal(ctx context.Context, name string) (Role, error)
 	GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (RequestPolicy, error)
+	GetRoleGrant(ctx context.Context, id uuid.UUID) (RoleGrant, error)
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)

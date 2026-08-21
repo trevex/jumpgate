@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -108,8 +110,44 @@ func TestBootstrapProvisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByEmail(admin): %v", err)
 	}
-	if !admin.IsAdmin {
-		t.Fatalf("bootstrap admin is not is_admin")
+
+	// A global `admin` role exists carrying the `**` (match-everything) capability.
+	adminRole, err := q.GetRoleByNameGlobal(ctx, "admin")
+	if err != nil {
+		t.Fatalf("GetRoleByNameGlobal(admin): %v", err)
+	}
+	var roleCaps []string
+	if err := json.Unmarshal(adminRole.Capabilities, &roleCaps); err != nil {
+		t.Fatalf("unmarshal admin role capabilities: %v", err)
+	}
+	if len(roleCaps) != 1 || roleCaps[0] != "**" {
+		t.Fatalf("admin role capabilities = %v, want [**]", roleCaps)
+	}
+	if adminRole.FolderID.Valid {
+		t.Fatalf("admin role folder_id = %v, want NULL (global)", adminRole.FolderID)
+	}
+
+	// A scopeless (global) standing binding of the admin role to the admin user exists.
+	var nBindings int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM role_bindings
+		   WHERE role_id = $1 AND subject_user_id = $2
+		     AND scope_folder_id IS NULL AND scope_asset_id IS NULL
+		     AND subject_group_id IS NULL`,
+		adminRole.ID, admin.ID).Scan(&nBindings); err != nil {
+		t.Fatalf("count admin role bindings: %v", err)
+	}
+	if nBindings != 1 {
+		t.Fatalf("scopeless admin bindings = %d, want 1", nBindings)
+	}
+
+	// The admin holds `**` at global scope: any concrete capability is allowed.
+	caps, err := authz.NewSQLAuthorizer(pool).CapabilitiesOnScope(ctx, admin.ID, authz.GlobalScope())
+	if err != nil {
+		t.Fatalf("CapabilitiesOnScope(admin, global): %v", err)
+	}
+	if !caps.Allows("anything:goes") {
+		t.Fatalf("admin should hold ** at global scope; caps = %v", caps)
 	}
 
 	// --- Idempotency: a second run must not error or duplicate anything ---

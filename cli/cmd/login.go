@@ -65,7 +65,6 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		WardenAddr: ctx.WardenAddr,
 		CAFile:     ctx.CAFile,
 		Token:      resp.Msg.GetToken(),
-		IsAdmin:    resp.Msg.GetIsAdmin(),
 	}, true); err != nil {
 		return fmt.Errorf("saving credentials: %w", err)
 	}

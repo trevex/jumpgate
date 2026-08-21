@@ -240,3 +240,36 @@ func TestResolveApproval(t *testing.T) {
 		t.Fatal("want requestable=false for role with no rule")
 	}
 }
+
+// TestAccessRequestAdminGating asserts ListGrants is gated by the global
+// access:grant:read capability: a plain authenticated user (no caps) is denied,
+// a user holding access:grant:read globally is allowed, and the bootstrap admin
+// (**) is allowed.
+func TestAccessRequestAdminGating(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "plain@x", "password123", false)
+	atok := adminToken(t, url)
+	ptok := authClient(t, url, "plain@x", "password123")
+
+	// grantReader holds access:grant:read globally.
+	seedUser(t, pool, "reader@x", "password123", false)
+	bindScopedCap(t, pool, userIDByEmail(t, pool, "reader@x"), `["access:grant:read"]`, uuid.Nil, uuid.Nil)
+	gtok := authClient(t, url, "reader@x", "password123")
+
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Plain user without the cap → PermissionDenied.
+	if _, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{}), ptok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("plain ListGrants = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	// User holding access:grant:read → allowed.
+	if _, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{}), gtok)); err != nil {
+		t.Fatalf("reader ListGrants = %v, want ok", err)
+	}
+	// Admin (**) → allowed.
+	if _, err := client.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{}), atok)); err != nil {
+		t.Fatalf("admin ListGrants = %v, want ok", err)
+	}
+}
