@@ -104,10 +104,17 @@
             pkgs.kubectl
             pkgs.kind
             pkgs.gnumake
+            pkgs.chromium
+            pkgs.process-compose
+            pkgs.air
           ];
 
           RUST_BACKTRACE = 1;
           PROTOC = "${pkgs.protobuf}/bin/protoc";
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD =
+            pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux "1";
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH =
+            pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux "${pkgs.chromium}/bin/chromium";
         };
       });
 }
