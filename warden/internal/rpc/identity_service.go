@@ -52,7 +52,20 @@ func toUserMsg(u gen.User) *identityv1.User {
 }
 
 func toGroupMsg(g gen.Group) *identityv1.Group {
-	return &identityv1.Group{Id: g.ID.String(), Name: g.Name}
+	return &identityv1.Group{Id: g.ID.String(), Name: g.Name, FolderId: pgUUIDToString(g.FolderID)}
+}
+
+// groupMsgWithPath fills folder_path (empty for global) for single-group responses.
+func (s *IdentityServer) groupMsgWithPath(ctx context.Context, g gen.Group) (*identityv1.Group, error) {
+	m := toGroupMsg(g)
+	if g.FolderID.Valid {
+		fp, err := s.q.FolderPath(ctx, uuidFromPg(g.FolderID))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		m.FolderPath = fp
+	}
+	return m, nil
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {
@@ -144,14 +157,22 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 
 // CreateGroup creates a group (admin only).
 func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:create", authz.GlobalScope()); err != nil {
+	folderID, _, err := optUUID(req.Msg.FolderId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	if err := s.requireCap(ctx, "identity:group:create", scopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
-	g, err := s.q.CreateGroup(ctx, req.Msg.Name)
+	g, err := s.q.CreateGroup(ctx, gen.CreateGroupParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("group name already exists"))
+		return nil, mapWriteErr(err)
 	}
-	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: toGroupMsg(g)}), nil
+	m, err := s.groupMsgWithPath(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: m}), nil
 }
 
 // ResolveGroup resolves a group name to an id (admin only). Unknown names return NotFound.

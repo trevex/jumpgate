@@ -12,6 +12,8 @@ import (
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
+	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -220,5 +222,47 @@ func TestGetUserMalformedUUID(t *testing.T) {
 	_, err := c.GetUser(context.Background(), withToken(connect.NewRequest(&identityv1.GetUserRequest{Id: "not-a-uuid"}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("malformed uuid code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+}
+
+// TestGroupFolderUniqueness pins per-folder group name uniqueness.
+func TestGroupFolderUniqueness(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	mkFolder := func(name string) string {
+		r, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: name}), tok))
+		if err != nil {
+			t.Fatalf("folder %s: %v", name, err)
+		}
+		return r.Msg.GetFolder().GetId()
+	}
+	mkGroup := func(name, folderID string) error {
+		_, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: name, FolderId: folderID}), tok))
+		return err
+	}
+	prod := mkFolder("prod")
+	dev := mkFolder("dev")
+	if err := mkGroup("sre", ""); err != nil {
+		t.Fatalf("global sre: %v", err)
+	}
+	if err := mkGroup("sre", ""); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup global = %v", connect.CodeOf(err))
+	}
+	if err := mkGroup("sre", prod); err != nil {
+		t.Fatalf("sre@prod: %v", err)
+	}
+	if err := mkGroup("sre", dev); err != nil {
+		t.Fatalf("sre@dev: %v", err)
+	}
+	if err := mkGroup("sre", prod); connect.CodeOf(err) != connect.CodeAlreadyExists {
+		t.Fatalf("dup sre@prod = %v", connect.CodeOf(err))
+	}
+	if err := mkGroup("Bad Name", ""); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("bad name = %v", connect.CodeOf(err))
 	}
 }

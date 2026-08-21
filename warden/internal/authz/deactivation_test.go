@@ -105,7 +105,7 @@ func TestDeactivatedUserGroupBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, "deact-grp")
+	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "deact-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
