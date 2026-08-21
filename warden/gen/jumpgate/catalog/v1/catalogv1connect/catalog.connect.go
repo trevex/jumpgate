@@ -47,15 +47,15 @@ const (
 	// CatalogServiceUpdateAssetConfigProcedure is the fully-qualified name of the CatalogService's
 	// UpdateAssetConfig RPC.
 	CatalogServiceUpdateAssetConfigProcedure = "/jumpgate.catalog.v1.CatalogService/UpdateAssetConfig"
-	// CatalogServiceListAssetsByFolderProcedure is the fully-qualified name of the CatalogService's
-	// ListAssetsByFolder RPC.
-	CatalogServiceListAssetsByFolderProcedure = "/jumpgate.catalog.v1.CatalogService/ListAssetsByFolder"
-	// CatalogServiceListVisibleAssetsProcedure is the fully-qualified name of the CatalogService's
-	// ListVisibleAssets RPC.
-	CatalogServiceListVisibleAssetsProcedure = "/jumpgate.catalog.v1.CatalogService/ListVisibleAssets"
+	// CatalogServiceListAssetsProcedure is the fully-qualified name of the CatalogService's ListAssets
+	// RPC.
+	CatalogServiceListAssetsProcedure = "/jumpgate.catalog.v1.CatalogService/ListAssets"
 	// CatalogServiceGetAssetAccessProcedure is the fully-qualified name of the CatalogService's
 	// GetAssetAccess RPC.
 	CatalogServiceGetAssetAccessProcedure = "/jumpgate.catalog.v1.CatalogService/GetAssetAccess"
+	// CatalogServiceGetFolderAccessProcedure is the fully-qualified name of the CatalogService's
+	// GetFolderAccess RPC.
+	CatalogServiceGetFolderAccessProcedure = "/jumpgate.catalog.v1.CatalogService/GetFolderAccess"
 	// CatalogServiceResolveAssetProcedure is the fully-qualified name of the CatalogService's
 	// ResolveAsset RPC.
 	CatalogServiceResolveAssetProcedure = "/jumpgate.catalog.v1.CatalogService/ResolveAsset"
@@ -71,9 +71,9 @@ type CatalogServiceClient interface {
 	CreateAsset(context.Context, *connect.Request[v1.CreateAssetRequest]) (*connect.Response[v1.CreateAssetResponse], error)
 	GetAsset(context.Context, *connect.Request[v1.GetAssetRequest]) (*connect.Response[v1.GetAssetResponse], error)
 	UpdateAssetConfig(context.Context, *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error)
-	ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error)
-	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
+	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
+	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
 	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
 }
@@ -119,22 +119,22 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("UpdateAssetConfig")),
 			connect.WithClientOptions(opts...),
 		),
-		listAssetsByFolder: connect.NewClient[v1.ListAssetsByFolderRequest, v1.ListAssetsByFolderResponse](
+		listAssets: connect.NewClient[v1.ListAssetsRequest, v1.ListAssetsResponse](
 			httpClient,
-			baseURL+CatalogServiceListAssetsByFolderProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("ListAssetsByFolder")),
-			connect.WithClientOptions(opts...),
-		),
-		listVisibleAssets: connect.NewClient[v1.ListVisibleAssetsRequest, v1.ListVisibleAssetsResponse](
-			httpClient,
-			baseURL+CatalogServiceListVisibleAssetsProcedure,
-			connect.WithSchema(catalogServiceMethods.ByName("ListVisibleAssets")),
+			baseURL+CatalogServiceListAssetsProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("ListAssets")),
 			connect.WithClientOptions(opts...),
 		),
 		getAssetAccess: connect.NewClient[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse](
 			httpClient,
 			baseURL+CatalogServiceGetAssetAccessProcedure,
 			connect.WithSchema(catalogServiceMethods.ByName("GetAssetAccess")),
+			connect.WithClientOptions(opts...),
+		),
+		getFolderAccess: connect.NewClient[v1.GetFolderAccessRequest, v1.GetFolderAccessResponse](
+			httpClient,
+			baseURL+CatalogServiceGetFolderAccessProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("GetFolderAccess")),
 			connect.WithClientOptions(opts...),
 		),
 		resolveAsset: connect.NewClient[v1.ResolveAssetRequest, v1.ResolveAssetResponse](
@@ -154,16 +154,16 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // catalogServiceClient implements CatalogServiceClient.
 type catalogServiceClient struct {
-	createFolder       *connect.Client[v1.CreateFolderRequest, v1.CreateFolderResponse]
-	listFolders        *connect.Client[v1.ListFoldersRequest, v1.ListFoldersResponse]
-	createAsset        *connect.Client[v1.CreateAssetRequest, v1.CreateAssetResponse]
-	getAsset           *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
-	updateAssetConfig  *connect.Client[v1.UpdateAssetConfigRequest, v1.UpdateAssetConfigResponse]
-	listAssetsByFolder *connect.Client[v1.ListAssetsByFolderRequest, v1.ListAssetsByFolderResponse]
-	listVisibleAssets  *connect.Client[v1.ListVisibleAssetsRequest, v1.ListVisibleAssetsResponse]
-	getAssetAccess     *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
-	resolveAsset       *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
-	resolveFolder      *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
+	createFolder      *connect.Client[v1.CreateFolderRequest, v1.CreateFolderResponse]
+	listFolders       *connect.Client[v1.ListFoldersRequest, v1.ListFoldersResponse]
+	createAsset       *connect.Client[v1.CreateAssetRequest, v1.CreateAssetResponse]
+	getAsset          *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
+	updateAssetConfig *connect.Client[v1.UpdateAssetConfigRequest, v1.UpdateAssetConfigResponse]
+	listAssets        *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
+	getAssetAccess    *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
+	getFolderAccess   *connect.Client[v1.GetFolderAccessRequest, v1.GetFolderAccessResponse]
+	resolveAsset      *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
+	resolveFolder     *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
 }
 
 // CreateFolder calls jumpgate.catalog.v1.CatalogService.CreateFolder.
@@ -191,19 +191,19 @@ func (c *catalogServiceClient) UpdateAssetConfig(ctx context.Context, req *conne
 	return c.updateAssetConfig.CallUnary(ctx, req)
 }
 
-// ListAssetsByFolder calls jumpgate.catalog.v1.CatalogService.ListAssetsByFolder.
-func (c *catalogServiceClient) ListAssetsByFolder(ctx context.Context, req *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error) {
-	return c.listAssetsByFolder.CallUnary(ctx, req)
-}
-
-// ListVisibleAssets calls jumpgate.catalog.v1.CatalogService.ListVisibleAssets.
-func (c *catalogServiceClient) ListVisibleAssets(ctx context.Context, req *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error) {
-	return c.listVisibleAssets.CallUnary(ctx, req)
+// ListAssets calls jumpgate.catalog.v1.CatalogService.ListAssets.
+func (c *catalogServiceClient) ListAssets(ctx context.Context, req *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error) {
+	return c.listAssets.CallUnary(ctx, req)
 }
 
 // GetAssetAccess calls jumpgate.catalog.v1.CatalogService.GetAssetAccess.
 func (c *catalogServiceClient) GetAssetAccess(ctx context.Context, req *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error) {
 	return c.getAssetAccess.CallUnary(ctx, req)
+}
+
+// GetFolderAccess calls jumpgate.catalog.v1.CatalogService.GetFolderAccess.
+func (c *catalogServiceClient) GetFolderAccess(ctx context.Context, req *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error) {
+	return c.getFolderAccess.CallUnary(ctx, req)
 }
 
 // ResolveAsset calls jumpgate.catalog.v1.CatalogService.ResolveAsset.
@@ -223,9 +223,9 @@ type CatalogServiceHandler interface {
 	CreateAsset(context.Context, *connect.Request[v1.CreateAssetRequest]) (*connect.Response[v1.CreateAssetResponse], error)
 	GetAsset(context.Context, *connect.Request[v1.GetAssetRequest]) (*connect.Response[v1.GetAssetResponse], error)
 	UpdateAssetConfig(context.Context, *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error)
-	ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error)
-	ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error)
+	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
+	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
 	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
 }
@@ -267,22 +267,22 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("UpdateAssetConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
-	catalogServiceListAssetsByFolderHandler := connect.NewUnaryHandler(
-		CatalogServiceListAssetsByFolderProcedure,
-		svc.ListAssetsByFolder,
-		connect.WithSchema(catalogServiceMethods.ByName("ListAssetsByFolder")),
-		connect.WithHandlerOptions(opts...),
-	)
-	catalogServiceListVisibleAssetsHandler := connect.NewUnaryHandler(
-		CatalogServiceListVisibleAssetsProcedure,
-		svc.ListVisibleAssets,
-		connect.WithSchema(catalogServiceMethods.ByName("ListVisibleAssets")),
+	catalogServiceListAssetsHandler := connect.NewUnaryHandler(
+		CatalogServiceListAssetsProcedure,
+		svc.ListAssets,
+		connect.WithSchema(catalogServiceMethods.ByName("ListAssets")),
 		connect.WithHandlerOptions(opts...),
 	)
 	catalogServiceGetAssetAccessHandler := connect.NewUnaryHandler(
 		CatalogServiceGetAssetAccessProcedure,
 		svc.GetAssetAccess,
 		connect.WithSchema(catalogServiceMethods.ByName("GetAssetAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceGetFolderAccessHandler := connect.NewUnaryHandler(
+		CatalogServiceGetFolderAccessProcedure,
+		svc.GetFolderAccess,
+		connect.WithSchema(catalogServiceMethods.ByName("GetFolderAccess")),
 		connect.WithHandlerOptions(opts...),
 	)
 	catalogServiceResolveAssetHandler := connect.NewUnaryHandler(
@@ -309,12 +309,12 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceGetAssetHandler.ServeHTTP(w, r)
 		case CatalogServiceUpdateAssetConfigProcedure:
 			catalogServiceUpdateAssetConfigHandler.ServeHTTP(w, r)
-		case CatalogServiceListAssetsByFolderProcedure:
-			catalogServiceListAssetsByFolderHandler.ServeHTTP(w, r)
-		case CatalogServiceListVisibleAssetsProcedure:
-			catalogServiceListVisibleAssetsHandler.ServeHTTP(w, r)
+		case CatalogServiceListAssetsProcedure:
+			catalogServiceListAssetsHandler.ServeHTTP(w, r)
 		case CatalogServiceGetAssetAccessProcedure:
 			catalogServiceGetAssetAccessHandler.ServeHTTP(w, r)
+		case CatalogServiceGetFolderAccessProcedure:
+			catalogServiceGetFolderAccessHandler.ServeHTTP(w, r)
 		case CatalogServiceResolveAssetProcedure:
 			catalogServiceResolveAssetHandler.ServeHTTP(w, r)
 		case CatalogServiceResolveFolderProcedure:
@@ -348,16 +348,16 @@ func (UnimplementedCatalogServiceHandler) UpdateAssetConfig(context.Context, *co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.UpdateAssetConfig is not implemented"))
 }
 
-func (UnimplementedCatalogServiceHandler) ListAssetsByFolder(context.Context, *connect.Request[v1.ListAssetsByFolderRequest]) (*connect.Response[v1.ListAssetsByFolderResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListAssetsByFolder is not implemented"))
-}
-
-func (UnimplementedCatalogServiceHandler) ListVisibleAssets(context.Context, *connect.Request[v1.ListVisibleAssetsRequest]) (*connect.Response[v1.ListVisibleAssetsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListVisibleAssets is not implemented"))
+func (UnimplementedCatalogServiceHandler) ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListAssets is not implemented"))
 }
 
 func (UnimplementedCatalogServiceHandler) GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.GetAssetAccess is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.GetFolderAccess is not implemented"))
 }
 
 func (UnimplementedCatalogServiceHandler) ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error) {

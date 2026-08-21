@@ -103,11 +103,12 @@ type Querier interface {
 	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
 	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
 	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
-	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
+	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
+	ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
 	// Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
 	ListGrantsBySubjectPaged(ctx context.Context, arg ListGrantsBySubjectPagedParams) ([]AccessGrant, error)

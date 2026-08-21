@@ -16,7 +16,7 @@ import (
 // TestGetAssetAccessRoleNames verifies that discovery reads surface role NAMES and
 // the asset's DNS path: a requester (a user with a requestable-only role via a
 // request policy) sees the requestable role by name via GetAssetAccess, and the
-// asset carries its dotted path in ListVisibleAssets.
+// asset carries its dotted path in ListAssets.
 func TestGetAssetAccessRoleNames(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
@@ -93,7 +93,7 @@ func TestGetAssetAccessRoleNames(t *testing.T) {
 	}
 
 	// The visible list carries the DNS path (box.prod).
-	vis, err := cat.ListVisibleAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListVisibleAssetsRequest{}), utok))
+	vis, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Cascade: true}), utok))
 	if err != nil {
 		t.Fatalf("visible: %v", err)
 	}
