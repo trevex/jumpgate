@@ -3,12 +3,14 @@ package rpc
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"connectrpc.com/connect"
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
@@ -16,13 +18,15 @@ const tokenTTL = 12 * time.Hour
 
 // AuthServer implements authv1connect.AuthServiceHandler.
 type AuthServer struct {
-	q      *gen.Queries
-	tokens *auth.TokenService
+	q            *gen.Queries
+	tokens       *auth.TokenService
+	authorizer   authz.Authorizer
+	cookieSecure bool
 }
 
 // NewAuthServer constructs the AuthService implementation.
-func NewAuthServer(q *gen.Queries, tokens *auth.TokenService) *AuthServer {
-	return &AuthServer{q: q, tokens: tokens}
+func NewAuthServer(q *gen.Queries, tokens *auth.TokenService, authorizer authz.Authorizer, cookieSecure bool) *AuthServer {
+	return &AuthServer{q: q, tokens: tokens, authorizer: authorizer, cookieSecure: cookieSecure}
 }
 
 // Login exchanges email + password for a bearer token.
@@ -46,7 +50,47 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&authv1.LoginResponse{Token: tok, UserId: u.ID.String()}), nil
+	resp := connect.NewResponse(&authv1.LoginResponse{UserId: u.ID.String()})
+	if req.Msg.CookieOnly {
+		c := &http.Cookie{
+			Name:     auth.SessionCookie,
+			Value:    tok,
+			Path:     "/",
+			MaxAge:   int(tokenTTL / time.Second),
+			HttpOnly: true,
+			Secure:   s.cookieSecure,
+			SameSite: http.SameSiteStrictMode,
+		}
+		resp.Header().Set("Set-Cookie", c.String())
+	} else {
+		resp.Msg.Token = tok
+	}
+	return resp, nil
+}
+
+// Logout revokes the caller's current token and clears the session cookie.
+func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[authv1.LogoutRequest]) (*connect.Response[authv1.LogoutResponse], error) {
+	if _, ok := auth.UserFromContext(ctx); !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	raw, fromCookie := auth.ExtractToken(req.Header())
+	if raw != "" {
+		_ = s.tokens.Revoke(ctx, raw) // idempotent: ignore already-revoked errors
+	}
+	resp := connect.NewResponse(&authv1.LogoutResponse{})
+	if fromCookie {
+		c := &http.Cookie{
+			Name:     auth.SessionCookie,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   s.cookieSecure,
+			SameSite: http.SameSiteStrictMode,
+		}
+		resp.Header().Set("Set-Cookie", c.String())
+	}
+	return resp, nil
 }
 
 // WhoAmI returns the caller's identity.

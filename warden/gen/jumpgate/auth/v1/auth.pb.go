@@ -26,6 +26,7 @@ type LoginRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	CookieOnly    bool                   `protobuf:"varint,3,opt,name=cookie_only,json=cookieOnly,proto3" json:"cookie_only,omitempty"` // browser: set httpOnly cookie, omit token from body
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,6 +73,13 @@ func (x *LoginRequest) GetPassword() string {
 		return x.Password
 	}
 	return ""
+}
+
+func (x *LoginRequest) GetCookieOnly() bool {
+	if x != nil {
+		return x.CookieOnly
+	}
+	return false
 }
 
 type LoginResponse struct {
@@ -126,6 +134,78 @@ func (x *LoginResponse) GetUserId() string {
 	return ""
 }
 
+type LogoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+type LogoutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutResponse) Reset() {
+	*x = LogoutResponse{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutResponse) ProtoMessage() {}
+
+func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
+func (*LogoutResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+}
+
 type WhoAmIRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -134,7 +214,7 @@ type WhoAmIRequest struct {
 
 func (x *WhoAmIRequest) Reset() {
 	*x = WhoAmIRequest{}
-	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -146,7 +226,7 @@ func (x *WhoAmIRequest) String() string {
 func (*WhoAmIRequest) ProtoMessage() {}
 
 func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -159,7 +239,7 @@ func (x *WhoAmIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIRequest.ProtoReflect.Descriptor instead.
 func (*WhoAmIRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{4}
 }
 
 type WhoAmIResponse struct {
@@ -173,7 +253,7 @@ type WhoAmIResponse struct {
 
 func (x *WhoAmIResponse) Reset() {
 	*x = WhoAmIResponse{}
-	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -185,7 +265,7 @@ func (x *WhoAmIResponse) String() string {
 func (*WhoAmIResponse) ProtoMessage() {}
 
 func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -198,7 +278,7 @@ func (x *WhoAmIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhoAmIResponse.ProtoReflect.Descriptor instead.
 func (*WhoAmIResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *WhoAmIResponse) GetUserId() string {
@@ -226,21 +306,26 @@ var File_jumpgate_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x1bjumpgate/auth/v1/auth.proto\x12\x10jumpgate.auth.v1\x1a\x1bbuf/validate/validate.proto\"R\n" +
+	"\x1bjumpgate/auth/v1/auth.proto\x12\x10jumpgate.auth.v1\x1a\x1bbuf/validate/validate.proto\"s\n" +
 	"\fLoginRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
-	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\"N\n" +
+	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\x12\x1f\n" +
+	"\vcookie_only\x18\x03 \x01(\bR\n" +
+	"cookieOnly\"N\n" +
 	"\rLoginResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userIdJ\x04\b\x03\x10\x04R\bis_admin\"\x0f\n" +
+	"\rLogoutRequest\"\x10\n" +
+	"\x0eLogoutResponse\"\x0f\n" +
 	"\rWhoAmIRequest\"r\n" +
 	"\x0eWhoAmIResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin2\xa8\x01\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin2\xf7\x01\n" +
 	"\vAuthService\x12J\n" +
 	"\x05Login\x12\x1e.jumpgate.auth.v1.LoginRequest\x1a\x1f.jumpgate.auth.v1.LoginResponse\"\x00\x12M\n" +
-	"\x06WhoAmI\x12\x1f.jumpgate.auth.v1.WhoAmIRequest\x1a .jumpgate.auth.v1.WhoAmIResponse\"\x00B?Z=github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1b\x06proto3"
+	"\x06WhoAmI\x12\x1f.jumpgate.auth.v1.WhoAmIRequest\x1a .jumpgate.auth.v1.WhoAmIResponse\"\x00\x12M\n" +
+	"\x06Logout\x12\x1f.jumpgate.auth.v1.LogoutRequest\x1a .jumpgate.auth.v1.LogoutResponse\"\x00B?Z=github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1b\x06proto3"
 
 var (
 	file_jumpgate_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -254,20 +339,24 @@ func file_jumpgate_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_jumpgate_auth_v1_auth_proto_rawDescData
 }
 
-var file_jumpgate_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_jumpgate_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_jumpgate_auth_v1_auth_proto_goTypes = []any{
 	(*LoginRequest)(nil),   // 0: jumpgate.auth.v1.LoginRequest
 	(*LoginResponse)(nil),  // 1: jumpgate.auth.v1.LoginResponse
-	(*WhoAmIRequest)(nil),  // 2: jumpgate.auth.v1.WhoAmIRequest
-	(*WhoAmIResponse)(nil), // 3: jumpgate.auth.v1.WhoAmIResponse
+	(*LogoutRequest)(nil),  // 2: jumpgate.auth.v1.LogoutRequest
+	(*LogoutResponse)(nil), // 3: jumpgate.auth.v1.LogoutResponse
+	(*WhoAmIRequest)(nil),  // 4: jumpgate.auth.v1.WhoAmIRequest
+	(*WhoAmIResponse)(nil), // 5: jumpgate.auth.v1.WhoAmIResponse
 }
 var file_jumpgate_auth_v1_auth_proto_depIdxs = []int32{
 	0, // 0: jumpgate.auth.v1.AuthService.Login:input_type -> jumpgate.auth.v1.LoginRequest
-	2, // 1: jumpgate.auth.v1.AuthService.WhoAmI:input_type -> jumpgate.auth.v1.WhoAmIRequest
-	1, // 2: jumpgate.auth.v1.AuthService.Login:output_type -> jumpgate.auth.v1.LoginResponse
-	3, // 3: jumpgate.auth.v1.AuthService.WhoAmI:output_type -> jumpgate.auth.v1.WhoAmIResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 1: jumpgate.auth.v1.AuthService.WhoAmI:input_type -> jumpgate.auth.v1.WhoAmIRequest
+	2, // 2: jumpgate.auth.v1.AuthService.Logout:input_type -> jumpgate.auth.v1.LogoutRequest
+	1, // 3: jumpgate.auth.v1.AuthService.Login:output_type -> jumpgate.auth.v1.LoginResponse
+	5, // 4: jumpgate.auth.v1.AuthService.WhoAmI:output_type -> jumpgate.auth.v1.WhoAmIResponse
+	3, // 5: jumpgate.auth.v1.AuthService.Logout:output_type -> jumpgate.auth.v1.LogoutResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -284,7 +373,7 @@ func file_jumpgate_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_auth_v1_auth_proto_rawDesc), len(file_jumpgate_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

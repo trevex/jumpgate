@@ -57,6 +57,13 @@ func (stubAuthService) Login(
 	return connect.NewResponse(&authv1.LoginResponse{}), nil
 }
 
+func (stubAuthService) Logout(
+	_ context.Context,
+	_ *connect.Request[authv1.LogoutRequest],
+) (*connect.Response[authv1.LogoutResponse], error) {
+	return connect.NewResponse(&authv1.LogoutResponse{}), nil
+}
+
 func (stubAuthService) WhoAmI(
 	ctx context.Context,
 	_ *connect.Request[authv1.WhoAmIRequest],
