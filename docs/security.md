@@ -44,13 +44,36 @@ See the visibility tiers in
 
 ## AuthN & token model
 
-Two distinct token mechanisms:
+Three distinct token mechanisms:
 
-- **API bearer tokens.** Login/API authentication uses **opaque, DB-backed, hashed
-  bearer tokens** — not JWTs. Passwords are hashed with **argon2id**; a successful
-  login mints a random token stored **hashed** (`auth_tokens.token_hash`) with an
-  expiry, presented as `Authorization: Bearer <token>`. Because the server holds the
-  token record, revocation is **instant and server-side** (delete the row).
+- **API bearer tokens (CLI).** `AuthService.Login` with `cookie_only=false`
+  (the default) exchanges email + password for an **opaque, DB-backed, hashed
+  bearer token** — not a JWT. Passwords are hashed with **argon2id**; the token is
+  stored **hashed** (`auth_tokens.token_hash`) with a 12-hour expiry, returned in
+  the response body, and presented as `Authorization: Bearer <token>`. Because the
+  server holds the token record, revocation is **instant and server-side**
+  (delete the row). The CLI stores this token in
+  `~/.config/jumpgate/config.json` per named context.
+
+- **Browser cookie sessions.** `Login` with `cookie_only=true` issues the **same
+  opaque token** but delivers it via a `Set-Cookie` response header instead of the
+  body — the response body `token` field is empty. The cookie is:
+  - name `jumpgate_session`
+  - `HttpOnly` (JS cannot read it)
+  - `SameSite=Strict`
+  - `Secure` by default (set `JUMPGATE_COOKIE_INSECURE=true` for dev over plain
+    HTTP)
+  - `MaxAge` matching the token's 12-hour TTL
+
+  **CSRF defence.** The auth interceptor accepts a cookie credential **only** when
+  the request also carries `Sec-Fetch-Site: same-origin`. Browsers set this header
+  automatically for same-origin fetches and cannot be instructed by JavaScript to
+  forge it on a cross-origin request — so a third-party page that tricks the browser
+  into sending the cookie still cannot authenticate. Requests without the header are
+  treated as unauthenticated (the cookie is ignored, not rejected with an error).
+
+  Bearer tokens are never CSRF-restricted; the CLI never sends `Sec-Fetch-Site`.
+
 - **Session admission tokens.** The short-lived token that admits a data-plane
   session is a **separate** mechanism: a **PASETO v4.public** token (Ed25519),
   minted by `CreateSession`, bound to the client's ephemeral key fingerprint
@@ -58,6 +81,38 @@ Two distinct token mechanisms:
   sealed at rest. This is what lets the externally-exposed gateway authorize a
   connection without a round-trip to warden, while the worker still re-checks the
   binding and re-authorizes at `SetupSession`.
+
+### Logout
+
+`AuthService.Logout` requires authentication and revokes the caller's current
+token server-side (idempotent). When the token was supplied via cookie it also
+clears the `jumpgate_session` cookie (by setting `MaxAge=-1` in the response).
+
+### WhoAmI
+
+`AuthService.WhoAmI` returns the caller's `user_id`, `email`, `display_name`, and
+a `capabilities` list of the globally-held capability patterns — i.e. the set of
+capability strings that `Check` would resolve for the user across the global scope.
+This is the UI nav-gating signal: the SPA calls `WhoAmI` on load and uses the
+capabilities list to decide which sections to show.
+
+### Browser dev note
+
+In a browser UI served by a Vite dev server the browser sees warden as the
+**same origin** (Vite proxies `/api` to `localhost:8080`), so `cookie_only` login
+and the `Sec-Fetch-Site: same-origin` CSRF gate work without any CORS
+configuration.
+
+For a setup where the browser must reach warden **cross-origin** (e.g. a
+separate-host dev environment), set `JUMPGATE_DEV_CORS_ORIGINS` to a
+comma-separated list of allowed origins (e.g.
+`http://localhost:5173,http://localhost:3000`). This enables CORS headers on
+matching requests — `Access-Control-Allow-Credentials: true`, `Vary: Origin`,
+and a preflight handler for `OPTIONS`. The CORS middleware is a no-op when the
+list is empty (the default), which is correct for production where the SPA is
+served same-origin. Note that cross-origin requests from a browser cannot carry
+`Sec-Fetch-Site: same-origin`, so a separate-host dev setup should use bearer
+tokens (`cookie_only=false`) rather than cookie sessions.
 
 ## Capability enforcement boundary
 
@@ -182,7 +237,8 @@ as defense-in-depth. Every issuance appends `credential.issued`. See
 | Threat | Mitigation | Status |
 |---|---|---|
 | Attacker maps infrastructure by probing | Existence-hiding: catalog returns only visible assets; invisible lookup → `CodeNotFound`, never `403` | Implemented |
-| Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation | Implemented |
+| Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation (`Logout`) | Implemented |
+| CSRF attack via browser cookie | `Sec-Fetch-Site: same-origin` required for cookie-authenticated requests; browsers set it automatically, cross-origin JS cannot forge it; missing → cookie ignored (fail-closed) | Implemented |
 | Privilege creep / broad standing access | Requestable + approval-gated + JIT time-boxed grants (clamped to `MaxGrantTTL=8h`); approval gate travels with the role | Implemented |
 | JIT grant used to self-escalate (approve/request more) | Grants confer access but **not governance**: requester/approver predicates are standing-only, excluding active grants | Implemented |
 | Over-broad management authority delegated | No-escalation subset rule: you can only bind/grant a role whose capabilities you already hold at that scope (`Covers`) | Implemented |
