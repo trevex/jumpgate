@@ -173,11 +173,11 @@ those is a follow-up).
 | `identity:user:read` | get/resolve/list users | global |
 | `identity:user:deactivate` | deactivate / reactivate a user | global |
 | `identity:user:delete` | delete a user | global |
-| `identity:group:create` | create a group | global |
-| `identity:group:read` | resolve/list groups + members | global |
-| `identity:group:add-member` | add a user/group to a group | global |
-| `identity:group:remove-member` | remove a member | global |
-| `identity:group:delete` | delete a group | global |
+| `identity:group:create` | create a group | the group's target folder (global if global group) |
+| `identity:group:read` | resolve/list groups + members (governs visibility) | the group's folder / global |
+| `identity:group:add-member` | add a user/group to a group | the group's folder |
+| `identity:group:remove-member` | remove a member | the group's folder |
+| `identity:group:delete` | delete a group | the group's folder |
 | `vault:ca:init` | initialize the SSH / mesh CA | global |
 | `vault:ca:issue` | issue a mesh certificate | global |
 | `vault:ca:read` | read a CA public key | global |
@@ -193,10 +193,20 @@ those is a follow-up).
 > delegate's read caps (`catalog:folder:read`, `access:role:read`, …) restores
 > name-based use.
 
-**Deferred:** group-scoped management (a group hierarchy + `scope_group_id` + an
-`identity:group:view` visibility cap) so group administration can be delegated per
-group subtree; scoped/filtered list-all endpoints. See the design doc for the full
-per-RPC mapping.
+**Groups are folder-governed.** Like roles, a group can be homed in a folder
+(`groups.folder_id`) — *governance-only* (it sets who may administer the group; it
+does not affect membership or what the group is bound to). `identity:group:*` is
+checked at the group's folder scope and cascades down the tree, so
+`identity:group:create` on `team-a` delegates creating/managing groups under
+`team-a`. `identity:group:read` doubles as the visibility cap (`ListGroups` returns
+only groups you can read). Groups are addressed as **`<group>@<folder-path>`**
+(e.g. `sre@team.demo`) — `@`, distinct from a role's `<role>.<folder-path>`.
+Membership (incl. group-in-group nesting) is a separate, orthogonal axis and is not
+folder-scoped. `identity:user:*` stays global (users are not folder-homed).
+
+**Deferred:** per-group "owner" delegation (a `scope_group_id` binding scope for
+single-group admin); folder-homing users; a subset guard on membership-adds. See
+the design docs for the full per-RPC mapping.
 
 ## Where enforcement lives (data plane) — warden decides, workers enforce
 
