@@ -12,11 +12,14 @@ service AuthService {
   rpc Login(LoginRequest) returns (LoginResponse) {}
   // WhoAmI returns the caller's identity. Requires a bearer token.
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {}
+  // Logout revokes the caller's current token and clears the session cookie.
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {}
 }
 
 message LoginRequest {
-  string email    = 1 [(buf.validate.field).string.email = true];
-  string password = 2 [(buf.validate.field).string.min_len = 1];
+  string email       = 1 [(buf.validate.field).string.email = true];
+  string password    = 2 [(buf.validate.field).string.min_len = 1];
+  bool   cookie_only = 3; // browser: set httpOnly cookie, omit token from body
 }
 
 message LoginResponse {
@@ -25,6 +28,10 @@ message LoginResponse {
   reserved 3;
   reserved "is_admin";
 }
+
+message LogoutRequest {}
+
+message LogoutResponse {}
 
 message WhoAmIRequest {}
 

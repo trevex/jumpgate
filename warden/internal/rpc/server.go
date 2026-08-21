@@ -57,12 +57,12 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	validator := validate.NewInterceptor()
 	opts := connect.WithInterceptors(auth.NewInterceptor(lookup), validator)
 
-	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens), opts)
-	mux.Handle(authPath, authHandler)
-
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
 	authorizer := authz.NewSQLAuthorizer(pool)
+
+	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens, authorizer, true /* TODO: cfg.CookieSecure (Task 5) */), opts)
+	mux.Handle(authPath, authHandler)
 
 	// A standalone terminator (stateless; a second instance alongside the mesh
 	// side is fine) lets DeactivateUser synchronously evict a user's live
