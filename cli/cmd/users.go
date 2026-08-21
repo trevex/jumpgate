@@ -78,14 +78,19 @@ func runUsersList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 100})
-	cl.Authorize(req)
-	resp, err := cl.Identity().ListUsers(cmd.Context(), req)
+	users, err := collectPages(func(token string) ([]*identityv1.User, string, error) {
+		req := connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 100, PageToken: token})
+		cl.Authorize(req)
+		resp, err := cl.Identity().ListUsers(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetUsers(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	users := resp.Msg.GetUsers()
 	rows := make([][]string, 0, len(users))
 	msgs := make([]proto.Message, 0, len(users))
 	for _, u := range users {

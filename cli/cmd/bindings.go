@@ -177,30 +177,41 @@ func runBindingsList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := &accessv1.ListRoleBindingsRequest{}
+	// Resolve optional filters before the page loop so we only do it once.
+	var subjectUserID, scopeAssetID string
 	if bindingsListUser != "" {
-		userID, err := resolveUserID(cmd.Context(), cl, bindingsListUser)
+		var err error
+		subjectUserID, err = resolveUserID(cmd.Context(), cl, bindingsListUser)
 		if err != nil {
 			return err
 		}
-		req.SubjectUserId = userID
 	}
 	if bindingsListAsset != "" {
-		assetID, err := cl.ResolveAsset(cmd.Context(), bindingsListAsset)
+		var err error
+		scopeAssetID, err = cl.ResolveAsset(cmd.Context(), bindingsListAsset)
 		if err != nil {
 			return err
 		}
-		req.ScopeAssetId = assetID
 	}
 
-	lreq := connect.NewRequest(req)
-	cl.Authorize(lreq)
-	resp, err := cl.Access().ListRoleBindings(cmd.Context(), lreq)
+	bindings, err := collectPages(func(token string) ([]*accessv1.RoleBinding, string, error) {
+		lreq := connect.NewRequest(&accessv1.ListRoleBindingsRequest{
+			SubjectUserId: subjectUserID,
+			ScopeAssetId:  scopeAssetID,
+			PageSize:      100,
+			PageToken:     token,
+		})
+		cl.Authorize(lreq)
+		resp, err := cl.Access().ListRoleBindings(cmd.Context(), lreq)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetBindings(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	bindings := resp.Msg.GetBindings()
 	rows := make([][]string, 0, len(bindings))
 	msgs := make([]proto.Message, 0, len(bindings))
 	for _, b := range bindings {

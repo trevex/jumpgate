@@ -178,14 +178,19 @@ func runPoliciesList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&accessv1.ListRequestPoliciesRequest{})
-	cl.Authorize(req)
-	resp, err := cl.Access().ListRequestPolicies(cmd.Context(), req)
+	policies, err := collectPages(func(token string) ([]*accessv1.RequestPolicy, string, error) {
+		req := connect.NewRequest(&accessv1.ListRequestPoliciesRequest{PageSize: 100, PageToken: token})
+		cl.Authorize(req)
+		resp, err := cl.Access().ListRequestPolicies(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetPolicies(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	policies := resp.Msg.GetPolicies()
 	rows := make([][]string, 0, len(policies))
 	msgs := make([]proto.Message, 0, len(policies))
 	for _, p := range policies {

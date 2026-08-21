@@ -39,8 +39,8 @@ type stubAssets struct {
 	// getAccessOverride, when non-nil, is returned verbatim by GetAssetAccess.
 	getAccessOverride *catalogv1.GetAssetAccessResponse
 
-	visible  []*catalogv1.VisibleAsset
-	byFolder []*catalogv1.Asset
+	// listed is returned by ListAssets (single page, empty NextPageToken).
+	listed []*catalogv1.Asset
 }
 
 func (s *stubAssets) CreateAsset(_ context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
@@ -73,12 +73,8 @@ func (s *stubAssets) UpdateAssetConfig(_ context.Context, req *connect.Request[c
 	return connect.NewResponse(&catalogv1.UpdateAssetConfigResponse{}), nil
 }
 
-func (s *stubAssets) ListVisibleAssets(_ context.Context, _ *connect.Request[catalogv1.ListVisibleAssetsRequest]) (*connect.Response[catalogv1.ListVisibleAssetsResponse], error) {
-	return connect.NewResponse(&catalogv1.ListVisibleAssetsResponse{Assets: s.visible}), nil
-}
-
-func (s *stubAssets) ListAssetsByFolder(_ context.Context, _ *connect.Request[catalogv1.ListAssetsByFolderRequest]) (*connect.Response[catalogv1.ListAssetsByFolderResponse], error) {
-	return connect.NewResponse(&catalogv1.ListAssetsByFolderResponse{Assets: s.byFolder}), nil
+func (s *stubAssets) ListAssets(_ context.Context, _ *connect.Request[catalogv1.ListAssetsRequest]) (*connect.Response[catalogv1.ListAssetsResponse], error) {
+	return connect.NewResponse(&catalogv1.ListAssetsResponse{Assets: s.listed}), nil
 }
 
 // getAccessOverride, when non-nil, is returned verbatim by GetAssetAccess.
@@ -126,9 +122,10 @@ func resetAssetsFlags() {
 			f.Changed = false
 		}
 	}
-	if f := assetsListCmd.Flags().Lookup("folder"); f != nil {
+	if f := assetsListCmd.Flags().Lookup("cascade"); f != nil {
 		f.Changed = false
 	}
+	assetsListCascade = false
 }
 
 // newAssetsStub serves the catalog handler (and optionally the vault handler)
@@ -364,8 +361,8 @@ func TestAssetsSSHLoginList(t *testing.T) {
 }
 
 func TestAssetsList(t *testing.T) {
-	s := &stubAssets{visible: []*catalogv1.VisibleAsset{
-		{Id: "a-1", Name: "prod-box", Active: true, Path: "prod-box.prod"},
+	s := &stubAssets{listed: []*catalogv1.Asset{
+		{Id: "a-1", Name: "prod-box", Kind: "ssh", Path: "prod-box.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
@@ -383,7 +380,7 @@ func TestAssetsList(t *testing.T) {
 		t.Fatalf("out=%s", got)
 	}
 	if !strings.Contains(got, "PATH") {
-		t.Fatalf("visible asset table missing PATH column:\n%s", got)
+		t.Fatalf("assets list table missing PATH column:\n%s", got)
 	}
 }
 
@@ -436,9 +433,9 @@ func TestAssetsGetRoleNameFallback(t *testing.T) {
 	}
 }
 
-func TestAssetsListByFolderPathColumn(t *testing.T) {
+func TestAssetsListWithParentPathColumn(t *testing.T) {
 	const folderID = "55555555-5555-5555-5555-555555555555"
-	s := &stubAssets{byFolder: []*catalogv1.Asset{
+	s := &stubAssets{listed: []*catalogv1.Asset{
 		{Id: "a-99", Name: "pg-primary", Kind: "ssh", FolderId: folderID, Path: "pg-primary.db.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -448,7 +445,8 @@ func TestAssetsListByFolderPathColumn(t *testing.T) {
 
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
-	rootCmd.SetArgs([]string{"assets", "list", "--folder", folderID, "-o", "table"})
+	// Pass a parent path positional argument and --cascade to exercise both new UX paths.
+	rootCmd.SetArgs([]string{"assets", "list", "db.prod", "--cascade", "-o", "table"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
