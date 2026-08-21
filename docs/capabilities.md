@@ -183,7 +183,7 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | `access:policy:delete` | delete a request policy | the policy's scope |
 | `access:policy:manage-subjects` | add / remove requester & approver subjects | the policy's scope |
 | `access:grant:read` † | list **all** JIT access grants (oversight) | `Global` |
-| `access:grant:revoke` † | revoke **another user's** grant (oversight) | `Global` |
+| `access:grant:revoke` † | revoke a grant **outside** your approver scope (oversight) | `Global` |
 | `identity:user:create` | create a user | `Global` |
 | `identity:user:read` | get / resolve / list users | `Global` |
 | `identity:user:deactivate` | deactivate / reactivate a user | `Global` |
@@ -207,11 +207,15 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 > required**: `ListMyRequests` / `ListMyGrants` return the caller's own
 > requests/grants, `ListPendingApprovals` returns the requests the caller is an
 > eligible **approver** for (per the request policy's approver set), and a user may
-> always **revoke their own** grant. **Requesting** access is governed by the
-> **request policy** (who may request which role at which scope) — not by a
-> management capability. `access:grant:read` (list *everyone's* grants) and
-> `access:grant:revoke` (revoke *someone else's* grant) gate only the org-wide
-> oversight view; the normal request → approve → see-your-own loop needs neither.
+> always **revoke their own** grant. A **standing approver** for a grant's
+> `(role, scope)` may also **revoke that grant** — the same eligibility that lets
+> them approve the request lets them revoke the resulting access, no capability
+> required. **Requesting** access is governed by the **request policy** (who may
+> request which role at which scope) — not by a management capability.
+> `access:grant:read` (list *everyone's* grants) and `access:grant:revoke` (revoke
+> a grant you are **not** the subject of or an eligible approver for) gate only the
+> org-wide oversight view; the normal request → approve → revoke-within-your-scope
+> loop needs neither.
 
 > A delegated folder-admin holds only the caps they were granted, so client-side
 > **name/path resolution** (which is itself `*:read`-gated) may be unavailable for
