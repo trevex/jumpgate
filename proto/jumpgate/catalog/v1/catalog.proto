@@ -3,6 +3,8 @@ syntax = "proto3";
 package jumpgate.catalog.v1;
 
 import "buf/validate/validate.proto";
+import "jumpgate/access/v1/access.proto";
+import "jumpgate/identity/v1/identity.proto";
 
 option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1;catalogv1";
 
@@ -20,6 +22,11 @@ service CatalogService {
   rpc GetFolderAccess(GetFolderAccessRequest) returns (GetFolderAccessResponse) {}
   rpc ResolveAsset(ResolveAssetRequest) returns (ResolveAssetResponse) {}
   rpc ResolveFolder(ResolveFolderRequest) returns (ResolveFolderResponse) {}
+  // ListFolderContents returns the first bounded slice of each child kind
+  // (folders, assets, roles, groups) visible to the caller under one folder.
+  // parent="" or omitted = root. has_more=true means additional items exist
+  // beyond the 50-item first slice.
+  rpc ListFolderContents(ListFolderContentsRequest) returns (ListFolderContentsResponse) {}
 }
 
 message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; }
@@ -143,3 +150,22 @@ message ResolveAssetResponse { string asset_id = 1; string path = 2; }
 // only; an unknown ref returns NotFound.
 message ResolveFolderRequest  { string ref = 1 [(buf.validate.field).string = {min_len: 1}]; }
 message ResolveFolderResponse { string folder_id = 1; string path = 2; }
+
+// ListFolderContents returns the first bounded slice (up to 50 items per kind) of
+// each child kind visible to the caller under a given folder. parent="" = root.
+// has_more indicates additional items exist beyond the returned slice; callers
+// wanting more should use the dedicated per-kind List RPCs with full pagination.
+message ListFolderContentsRequest {
+  // Parent folder: "" = root, or a uuid / DNS-style dotted path.
+  string parent = 1;
+}
+message ListFolderContentsResponse {
+  repeated Folder                     folders       = 1;
+  bool                                folders_has_more = 2;
+  repeated Asset                      assets        = 3;
+  bool                                assets_has_more  = 4;
+  repeated jumpgate.access.v1.Role    roles         = 5;
+  bool                                roles_has_more   = 6;
+  repeated jumpgate.identity.v1.Group groups        = 7;
+  bool                                groups_has_more  = 8;
+}

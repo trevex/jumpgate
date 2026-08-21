@@ -123,6 +123,7 @@ type Querier interface {
 	// Each row is either a user-member (member_user_id non-null) or group-member
 	// (member_group_id non-null); the handler splits them.
 	ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error)
+	ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
@@ -137,6 +138,7 @@ type Querier interface {
 	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
+	ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error)
 	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
 	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error)

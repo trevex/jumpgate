@@ -43,6 +43,9 @@ const (
 	// AccessServiceResolveRoleProcedure is the fully-qualified name of the AccessService's ResolveRole
 	// RPC.
 	AccessServiceResolveRoleProcedure = "/jumpgate.access.v1.AccessService/ResolveRole"
+	// AccessServiceGetRoleAccessProcedure is the fully-qualified name of the AccessService's
+	// GetRoleAccess RPC.
+	AccessServiceGetRoleAccessProcedure = "/jumpgate.access.v1.AccessService/GetRoleAccess"
 	// AccessServiceAddRoleGrantProcedure is the fully-qualified name of the AccessService's
 	// AddRoleGrant RPC.
 	AccessServiceAddRoleGrantProcedure = "/jumpgate.access.v1.AccessService/AddRoleGrant"
@@ -97,6 +100,7 @@ type AccessServiceClient interface {
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
+	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
 	// Role grants (userset rewrites).
 	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
 	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
@@ -151,6 +155,12 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+AccessServiceResolveRoleProcedure,
 			connect.WithSchema(accessServiceMethods.ByName("ResolveRole")),
+			connect.WithClientOptions(opts...),
+		),
+		getRoleAccess: connect.NewClient[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse](
+			httpClient,
+			baseURL+AccessServiceGetRoleAccessProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("GetRoleAccess")),
 			connect.WithClientOptions(opts...),
 		),
 		addRoleGrant: connect.NewClient[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse](
@@ -252,6 +262,7 @@ type accessServiceClient struct {
 	listRoles           *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
 	getRole             *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
 	resolveRole         *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
+	getRoleAccess       *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
 	addRoleGrant        *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
 	removeRoleGrant     *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
 	listRoleGrants      *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
@@ -287,6 +298,11 @@ func (c *accessServiceClient) GetRole(ctx context.Context, req *connect.Request[
 // ResolveRole calls jumpgate.access.v1.AccessService.ResolveRole.
 func (c *accessServiceClient) ResolveRole(ctx context.Context, req *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error) {
 	return c.resolveRole.CallUnary(ctx, req)
+}
+
+// GetRoleAccess calls jumpgate.access.v1.AccessService.GetRoleAccess.
+func (c *accessServiceClient) GetRoleAccess(ctx context.Context, req *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error) {
+	return c.getRoleAccess.CallUnary(ctx, req)
 }
 
 // AddRoleGrant calls jumpgate.access.v1.AccessService.AddRoleGrant.
@@ -371,6 +387,7 @@ type AccessServiceHandler interface {
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
+	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
 	// Role grants (userset rewrites).
 	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
 	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
@@ -421,6 +438,12 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		AccessServiceResolveRoleProcedure,
 		svc.ResolveRole,
 		connect.WithSchema(accessServiceMethods.ByName("ResolveRole")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessServiceGetRoleAccessHandler := connect.NewUnaryHandler(
+		AccessServiceGetRoleAccessProcedure,
+		svc.GetRoleAccess,
+		connect.WithSchema(accessServiceMethods.ByName("GetRoleAccess")),
 		connect.WithHandlerOptions(opts...),
 	)
 	accessServiceAddRoleGrantHandler := connect.NewUnaryHandler(
@@ -523,6 +546,8 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceGetRoleHandler.ServeHTTP(w, r)
 		case AccessServiceResolveRoleProcedure:
 			accessServiceResolveRoleHandler.ServeHTTP(w, r)
+		case AccessServiceGetRoleAccessProcedure:
+			accessServiceGetRoleAccessHandler.ServeHTTP(w, r)
 		case AccessServiceAddRoleGrantProcedure:
 			accessServiceAddRoleGrantHandler.ServeHTTP(w, r)
 		case AccessServiceRemoveRoleGrantProcedure:
@@ -576,6 +601,10 @@ func (UnimplementedAccessServiceHandler) GetRole(context.Context, *connect.Reque
 
 func (UnimplementedAccessServiceHandler) ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ResolveRole is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.GetRoleAccess is not implemented"))
 }
 
 func (UnimplementedAccessServiceHandler) AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error) {

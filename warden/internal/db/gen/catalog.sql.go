@@ -620,6 +620,55 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 	return items, nil
 }
 
+const listRolesByIDsPaged = `-- name: ListRolesByIDsPaged :many
+SELECT id, name, folder_id, capabilities, created_at FROM roles
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
+`
+
+type ListRolesByIDsPagedParams struct {
+	Column1   []uuid.UUID `json:"column_1"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error) {
+	rows, err := q.db.Query(ctx, listRolesByIDsPaged,
+		arg.Column1,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.Capabilities,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSSHAssetLogins = `-- name: ListSSHAssetLogins :many
 SELECT asset_id, login, kind, secret_id FROM ssh_asset_login WHERE asset_id = $1 ORDER BY login
 `

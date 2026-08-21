@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"testing"
@@ -391,6 +392,110 @@ func TestListAssetsPagination(t *testing.T) {
 		if gotIDs[i] != wantSorted[i] {
 			t.Fatalf("union mismatch at %d: got %s want %s", i, gotIDs[i], wantSorted[i])
 		}
+	}
+}
+
+// TestListFolderContents exercises the aggregator RPC:
+//  1. Seed one subfolder, one asset, one folder-scoped role, and one folder-scoped
+//     group under a parent folder F; as admin, assert the response contains exactly
+//     one of each kind with all four *_has_more flags false.
+//  2. Seed 51 assets under F (on top of the initial 1); assert assets_has_more is
+//     true and exactly 50 assets are returned (all other *_has_more remain false).
+func TestListFolderContents(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	idSvc := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create parent folder F.
+	fResp, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "contents"}), tok))
+	if err != nil {
+		t.Fatalf("create parent folder: %v", err)
+	}
+	fID := fResp.Msg.Folder.Id
+
+	// Seed one child of each kind under F.
+	_, err = cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "child", ParentId: fID}), tok))
+	if err != nil {
+		t.Fatalf("create subfolder: %v", err)
+	}
+	_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: "box"}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	_, err = acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "contents-role", FolderId: fID, Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	_, err = idSvc.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "contents-group", FolderId: fID,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+
+	// ── basic: exactly one of each kind, no has_more ──────────────────────────
+	basic, err := cat.ListFolderContents(ctx, withToken(connect.NewRequest(&catalogv1.ListFolderContentsRequest{Parent: fID}), tok))
+	if err != nil {
+		t.Fatalf("ListFolderContents (basic): %v", err)
+	}
+	if len(basic.Msg.Folders) != 1 {
+		t.Errorf("basic: want 1 folder, got %d", len(basic.Msg.Folders))
+	}
+	if basic.Msg.FoldersHasMore {
+		t.Error("basic: FoldersHasMore must be false")
+	}
+	if len(basic.Msg.Assets) != 1 {
+		t.Errorf("basic: want 1 asset, got %d", len(basic.Msg.Assets))
+	}
+	if basic.Msg.AssetsHasMore {
+		t.Error("basic: AssetsHasMore must be false")
+	}
+	if len(basic.Msg.Roles) != 1 {
+		t.Errorf("basic: want 1 role, got %d", len(basic.Msg.Roles))
+	}
+	if basic.Msg.RolesHasMore {
+		t.Error("basic: RolesHasMore must be false")
+	}
+	if len(basic.Msg.Groups) != 1 {
+		t.Errorf("basic: want 1 group, got %d", len(basic.Msg.Groups))
+	}
+	if basic.Msg.GroupsHasMore {
+		t.Error("basic: GroupsHasMore must be false")
+	}
+
+	// ── overflow: seed 51 more assets (1 already exists → total 52) ──────────
+	for i := 0; i < 51; i++ {
+		name := fmt.Sprintf("overflow-%03d", i)
+		_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: name}), tok))
+		if err != nil {
+			t.Fatalf("seed overflow asset %d: %v", i, err)
+		}
+	}
+	over, err := cat.ListFolderContents(ctx, withToken(connect.NewRequest(&catalogv1.ListFolderContentsRequest{Parent: fID}), tok))
+	if err != nil {
+		t.Fatalf("ListFolderContents (overflow): %v", err)
+	}
+	if len(over.Msg.Assets) != 50 {
+		t.Errorf("overflow: want 50 assets, got %d", len(over.Msg.Assets))
+	}
+	if !over.Msg.AssetsHasMore {
+		t.Error("overflow: AssetsHasMore must be true")
+	}
+	// Other kinds are unaffected by the asset overflow.
+	if over.Msg.FoldersHasMore {
+		t.Error("overflow: FoldersHasMore must still be false")
+	}
+	if over.Msg.RolesHasMore {
+		t.Error("overflow: RolesHasMore must still be false")
+	}
+	if over.Msg.GroupsHasMore {
+		t.Error("overflow: GroupsHasMore must still be false")
 	}
 }
 
