@@ -9,7 +9,18 @@ CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 .PHONY: help gen build test lint fmt ci e2e-ssh \
-        kind-images kind-up kind-down kind-demo kind-e2e
+        kind-images kind-up kind-down kind-demo kind-e2e \
+        ui-dev ui-dev-reset ui-build
+
+ui-dev: ## Start the UI dev stack (process-compose: postgres + silo + warden + vite)
+	process-compose up --port 8088
+
+ui-dev-reset: ## Wipe all local dev data (.devdata); full re-provision on next ui-dev
+	rm -rf .devdata
+
+ui-build: ## Install web deps and build the SPA (production bundle)
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web build
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
