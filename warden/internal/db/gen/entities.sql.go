@@ -398,6 +398,54 @@ func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMember
 	return items, nil
 }
 
+const listGroupsByIDsPaged = `-- name: ListGroupsByIDsPaged :many
+SELECT id, name, folder_id, created_at FROM groups
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
+`
+
+type ListGroupsByIDsPagedParams struct {
+	Column1   []uuid.UUID `json:"column_1"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error) {
+	rows, err := q.db.Query(ctx, listGroupsByIDsPaged,
+		arg.Column1,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupsPaged = `-- name: ListGroupsPaged :many
 SELECT id, name, folder_id, created_at FROM groups
 WHERE (
