@@ -1,0 +1,17 @@
+# air configuration for hot-reloading warden in the UI dev stack.
+# No -tags embedui: Vite serves the SPA, so the embedded-UI build gate is off.
+root = "."
+
+[build]
+  # Files to watch — only warden Go sources.
+  include_ext = ["go"]
+  include_dir = ["warden"]
+  exclude_dir  = ["warden/e2e", "warden/internal/db/migrate"]
+
+  # Build warden from the module root.
+  cmd     = "cd warden && go build -o /tmp/warden-dev ."
+  bin     = "/tmp/warden-dev"
+  delay   = 1000   # ms debounce
+
+[log]
+  time = true
