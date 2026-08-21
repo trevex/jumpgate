@@ -47,12 +47,16 @@ func resetRolesFlags() {
 	flagOutput = "table"
 	rolesCreateCapabilities = nil
 	rolesCreateFolder = ""
+	rolesListCascade = false
 	if f := rolesCreateCmd.Flags().Lookup("capability"); f != nil {
 		_ = f.Value.(interface{ Replace([]string) error }).Replace(nil)
 		f.Changed = false
 	}
 	if f := rolesCreateCmd.Flags().Lookup("folder"); f != nil {
 		_ = f.Value.Set("")
+		f.Changed = false
+	}
+	if f := rolesListCmd.Flags().Lookup("cascade"); f != nil {
 		f.Changed = false
 	}
 }
@@ -140,6 +144,26 @@ func TestRolesCreateFolderUUID(t *testing.T) {
 
 	if s.gotCreateRole.GetFolderId() != folderID {
 		t.Fatalf("folder_id=%q, want %q", s.gotCreateRole.GetFolderId(), folderID)
+	}
+}
+
+func TestRolesListParentCascade(t *testing.T) {
+	s := &stubRoles{roles: []*accessv1.Role{
+		{Id: "role-2", Name: "shell", FolderPath: "prod"},
+	}}
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newRolesStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetRolesFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{"roles", "list", "prod", "--cascade", "-o", "table"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "role-2") || !strings.Contains(got, "shell") {
+		t.Fatalf("out=%s", got)
 	}
 }
 
