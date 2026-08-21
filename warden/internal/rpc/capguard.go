@@ -110,16 +110,6 @@ func (g capGuard) scopeOfPolicy(ctx context.Context, policyID uuid.UUID) (authz.
 	return scopeOfObject(p.ScopeFolderID, p.ScopeAssetID), nil
 }
 
-// scopeOfRecording loads a session recording by session id and returns its
-// owning asset's scope. NotFound on a missing recording (existence-hiding).
-func (g capGuard) scopeOfRecording(ctx context.Context, sessionID uuid.UUID) (authz.Scope, error) {
-	r, err := g.q.GetSessionRecording(ctx, sessionID)
-	if err != nil {
-		return authz.Scope{}, connect.NewError(connect.CodeNotFound, errors.New("recording not found"))
-	}
-	return authz.AssetScope(r.AssetID), nil
-}
-
 // roleCaps loads a role by id and returns its capability patterns. NotFound on missing.
 func (g capGuard) roleCaps(ctx context.Context, roleID uuid.UUID) ([]string, error) {
 	r, err := g.q.GetRole(ctx, roleID)
