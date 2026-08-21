@@ -92,14 +92,19 @@ func runRolesList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 100})
-	cl.Authorize(req)
-	resp, err := cl.Access().ListRoles(cmd.Context(), req)
+	roles, err := collectPages(func(token string) ([]*accessv1.Role, string, error) {
+		req := connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 100, PageToken: token})
+		cl.Authorize(req)
+		resp, err := cl.Access().ListRoles(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetRoles(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	roles := resp.Msg.GetRoles()
 	rows := make([][]string, 0, len(roles))
 	msgs := make([]proto.Message, 0, len(roles))
 	for _, r := range roles {

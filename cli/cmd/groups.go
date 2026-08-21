@@ -100,14 +100,19 @@ func runGroupsList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100})
-	cl.Authorize(req)
-	resp, err := cl.Identity().ListGroups(cmd.Context(), req)
+	groups, err := collectPages(func(token string) ([]*identityv1.Group, string, error) {
+		req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, PageToken: token})
+		cl.Authorize(req)
+		resp, err := cl.Identity().ListGroups(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetGroups(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	groups := resp.Msg.GetGroups()
 	rows := make([][]string, 0, len(groups))
 	msgs := make([]proto.Message, 0, len(groups))
 	for _, g := range groups {
