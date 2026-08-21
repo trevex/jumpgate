@@ -11,10 +11,14 @@ import (
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 )
 
-var groupHeaders = []string{"ID", "NAME"}
+var groupHeaders = []string{"ID", "NAME", "FOLDER"}
 
 func groupRow(g *identityv1.Group) []string {
-	return []string{g.GetId(), g.GetName()}
+	folder := g.GetFolderPath()
+	if folder == "" {
+		folder = "global"
+	}
+	return []string{g.GetId(), g.GetName(), folder}
 }
 
 var groupsCmd = &cobra.Command{
@@ -50,7 +54,11 @@ var groupsRemoveMemberCmd = &cobra.Command{
 	RunE:  runGroupsRemoveMember,
 }
 
+var groupsCreateFolder string
+
 func init() {
+	groupsCreateCmd.Flags().StringVar(&groupsCreateFolder, "folder", "", "folder to home the group in for governance (uuid or DNS path); empty = global")
+
 	groupsCmd.AddCommand(groupsCreateCmd)
 	groupsCmd.AddCommand(groupsListCmd)
 	groupsCmd.AddCommand(groupsAddMemberCmd)
@@ -64,7 +72,15 @@ func runGroupsCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&identityv1.CreateGroupRequest{Name: args[0]})
+	var folderID string
+	if groupsCreateFolder != "" {
+		folderID, err = resolveFolderID(cmd.Context(), cl, groupsCreateFolder)
+		if err != nil {
+			return err
+		}
+	}
+
+	req := connect.NewRequest(&identityv1.CreateGroupRequest{Name: args[0], FolderId: folderID})
 	cl.Authorize(req)
 	resp, err := cl.Identity().CreateGroup(cmd.Context(), req)
 	if err != nil {

@@ -27,8 +27,9 @@ func resolveUserID(ctx context.Context, cl *wardenclient.Client, s string) (stri
 	return resp.Msg.GetUserId(), nil
 }
 
-// resolveGroupID returns s unchanged if it is already a UUID; otherwise it resolves
-// a group by name via warden's ResolveGroup (admin only).
+// resolveGroupID maps a uuid | name | <group>@<folder-path> to a group id via warden's
+// ResolveGroup (admin only). A uuid short-circuits locally (no round-trip); the server
+// parses the @<folder-path> form, so the raw ref is passed through unchanged.
 func resolveGroupID(ctx context.Context, cl *wardenclient.Client, s string) (string, error) {
 	if _, err := uuid.Parse(s); err == nil {
 		return s, nil

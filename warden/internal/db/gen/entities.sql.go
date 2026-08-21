@@ -92,13 +92,23 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Fol
 }
 
 const createGroup = `-- name: CreateGroup :one
-INSERT INTO groups (name) VALUES ($1) RETURNING id, name, created_at
+INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING id, name, folder_id, created_at
 `
 
-func (q *Queries) CreateGroup(ctx context.Context, name string) (Group, error) {
-	row := q.db.QueryRow(ctx, createGroup, name)
+type CreateGroupParams struct {
+	Name     string      `json:"name"`
+	FolderID pgtype.UUID `json:"folder_id"`
+}
+
+func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error) {
+	row := q.db.QueryRow(ctx, createGroup, arg.Name, arg.FolderID)
 	var i Group
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -252,14 +262,56 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return i, err
 }
 
-const getGroupByName = `-- name: GetGroupByName :one
-SELECT id, name, created_at FROM groups WHERE name = $1
+const getGroup = `-- name: GetGroup :one
+SELECT id, name, folder_id, created_at FROM groups WHERE id = $1
 `
 
-func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
-	row := q.db.QueryRow(ctx, getGroupByName, name)
+func (q *Queries) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroup, id)
 	var i Group
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getGroupByFolderAndName = `-- name: GetGroupByFolderAndName :one
+SELECT id, name, folder_id, created_at FROM groups WHERE folder_id = $1 AND name = $2
+`
+
+type GetGroupByFolderAndNameParams struct {
+	FolderID pgtype.UUID `json:"folder_id"`
+	Name     string      `json:"name"`
+}
+
+func (q *Queries) GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFolderAndNameParams) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByFolderAndName, arg.FolderID, arg.Name)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getGroupByNameGlobal = `-- name: GetGroupByNameGlobal :one
+SELECT id, name, folder_id, created_at FROM groups WHERE name = $1 AND folder_id IS NULL
+`
+
+func (q *Queries) GetGroupByNameGlobal(ctx context.Context, name string) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByNameGlobal, name)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -294,7 +346,7 @@ func (q *Queries) InsertFolderName(ctx context.Context, arg InsertFolderNamePara
 }
 
 const listGroupMemberGroups = `-- name: ListGroupMemberGroups :many
-SELECT g.id, g.name, g.created_at FROM groups g
+SELECT g.id, g.name, g.folder_id, g.created_at FROM groups g
 JOIN group_memberships gm ON gm.member_group_id = g.id
 WHERE gm.group_id = $1
 ORDER BY g.id
@@ -309,7 +361,12 @@ func (q *Queries) ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) 
 	var items []Group
 	for rows.Next() {
 		var i Group
-		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -355,7 +412,7 @@ func (q *Queries) ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) (
 }
 
 const listGroupsPaged = `-- name: ListGroupsPaged :many
-SELECT id, name, created_at FROM groups
+SELECT id, name, folder_id, created_at FROM groups
 WHERE ($1::uuid IS NULL OR id > $1)
 ORDER BY id
 LIMIT $2
@@ -375,7 +432,12 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 	var items []Group
 	for rows.Next() {
 		var i Group
-		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

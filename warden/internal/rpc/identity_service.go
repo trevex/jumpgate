@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -52,7 +53,20 @@ func toUserMsg(u gen.User) *identityv1.User {
 }
 
 func toGroupMsg(g gen.Group) *identityv1.Group {
-	return &identityv1.Group{Id: g.ID.String(), Name: g.Name}
+	return &identityv1.Group{Id: g.ID.String(), Name: g.Name, FolderId: pgUUIDToString(g.FolderID)}
+}
+
+// groupMsgWithPath fills folder_path (empty for global) for single-group responses.
+func (s *IdentityServer) groupMsgWithPath(ctx context.Context, g gen.Group) (*identityv1.Group, error) {
+	m := toGroupMsg(g)
+	if g.FolderID.Valid {
+		fp, err := s.q.FolderPath(ctx, uuidFromPg(g.FolderID))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		m.FolderPath = fp
+	}
+	return m, nil
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {
@@ -144,44 +158,96 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 
 // CreateGroup creates a group (admin only).
 func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:create", authz.GlobalScope()); err != nil {
+	folderID, _, err := optUUID(req.Msg.FolderId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
+	}
+	if err := s.requireCap(ctx, "identity:group:create", scopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
-	g, err := s.q.CreateGroup(ctx, req.Msg.Name)
+	g, err := s.q.CreateGroup(ctx, gen.CreateGroupParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("group name already exists"))
+		return nil, mapWriteErr(err)
 	}
-	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: toGroupMsg(g)}), nil
+	m, err := s.groupMsgWithPath(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: m}), nil
 }
 
-// ResolveGroup resolves a group name to an id (admin only). Unknown names return NotFound.
+// ResolveGroup resolves a group reference to an id. The reference is one of a
+// uuid, a bare name (global group), or `<group>@<folder-path>` (folder-homed).
+// The read gate is applied at the resolved group's folder scope, and a read-cap
+// denial is existence-hidden as NotFound so a delegated caller cannot learn a
+// group exists outside their read scope. The canonical `path` is echoed.
 func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
+	ref := req.Msg.Name
+	var grp gen.Group
+	if id, perr := uuid.Parse(ref); perr == nil {
+		g, err := s.q.GetGroup(ctx, id)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	} else if at := strings.LastIndex(ref, "@"); at >= 0 {
+		name, folderPath := ref[:at], ref[at+1:]
+		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		g, err := s.q.GetGroupByFolderAndName(ctx, gen.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	} else {
+		g, err := s.q.GetGroupByNameGlobal(ctx, ref)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	}
+	// Existence-hide a read-cap denial as NotFound (must not reveal a group
+	// outside the caller's read scope).
+	if err := s.requireCap(ctx, "identity:group:read", scopeOfFolderID(grp.FolderID)); err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+	}
+	m, err := s.groupMsgWithPath(ctx, grp)
+	if err != nil {
 		return nil, err
 	}
-	g, err := s.q.GetGroupByName(ctx, req.Msg.Name)
+	path := m.Name
+	if m.FolderPath != "" {
+		path = m.Name + "@" + m.FolderPath
+	}
+	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: grp.ID.String(), Path: path}), nil
+}
+
+// ListGroups returns a page of groups the caller may identity:group:read. It is
+// visibility-scoped: a global read holder (incl. admin **) sees every group; a
+// folder-scoped holder sees only groups homed in folders they can read; a caller
+// with no group read caps gets an empty page (not an error).
+func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	// Fast path: a global identity:group:read holder (incl. admin **) sees all.
+	gcaps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, authz.GlobalScope())
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
-		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: g.ID.String()}), nil
-}
+	seesAll := gcaps.Allows("identity:group:read")
 
-// ListGroups returns a page of groups (admin only), ordered by id.
-func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	limit := req.Msg.PageSize
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 	after := uuid.Nil
 	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
+		id, perr := uuid.Parse(req.Msg.PageToken)
+		if perr != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
 		}
 		after = id
@@ -190,8 +256,21 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	// The per-group cap check is bounded (small group counts, cold admin list)
+	// and the global-holder fast path plus paging keep it cheap. NextPageToken is
+	// driven by the raw page, so pagination stays correct even when some rows are
+	// filtered out — the caller keeps paging with the returned token.
 	out := &identityv1.ListGroupsResponse{}
 	for i := range rows {
+		if !seesAll {
+			caps, cerr := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(rows[i].FolderID))
+			if cerr != nil {
+				return nil, connect.NewError(connect.CodeInternal, cerr)
+			}
+			if !caps.Allows("identity:group:read") {
+				continue
+			}
+		}
 		out.Groups = append(out.Groups, toGroupMsg(rows[i]))
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
@@ -202,12 +281,16 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 
 // AddUserToGroup adds a user as a member of a group (admin only).
 func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Request[identityv1.AddUserToGroupRequest]) (*connect.Response[identityv1.AddUserToGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:add-member", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:add-member", scope); err != nil {
+		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
 	if err != nil {
@@ -221,12 +304,16 @@ func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Reques
 
 // AddGroupToGroup nests one group inside another (admin only).
 func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Request[identityv1.AddGroupToGroupRequest]) (*connect.Response[identityv1.AddGroupToGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:add-member", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:add-member", scope); err != nil {
+		return nil, err
 	}
 	mid, err := uuid.Parse(req.Msg.MemberGroupId)
 	if err != nil {
@@ -240,12 +327,16 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 
 // RemoveUserFromGroup removes a user from a group (admin only). No-op if absent.
 func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveUserFromGroupRequest]) (*connect.Response[identityv1.RemoveUserFromGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:remove-member", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:remove-member", scope); err != nil {
+		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
 	if err != nil {
@@ -259,12 +350,16 @@ func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.R
 
 // RemoveGroupFromGroup removes a nested group membership (admin only). No-op if absent.
 func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.Request[identityv1.RemoveGroupFromGroupRequest]) (*connect.Response[identityv1.RemoveGroupFromGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:remove-member", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:remove-member", scope); err != nil {
+		return nil, err
 	}
 	mid, err := uuid.Parse(req.Msg.MemberGroupId)
 	if err != nil {
@@ -278,12 +373,16 @@ func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.
 
 // ListGroupMembers lists a group's direct member users and member groups (admin only).
 func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Request[identityv1.ListGroupMembersRequest]) (*connect.Response[identityv1.ListGroupMembersResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:read", scope); err != nil {
+		return nil, err
 	}
 	users, err := s.q.ListGroupMemberUsers(ctx, gid)
 	if err != nil {
@@ -367,15 +466,20 @@ func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[id
 	return connect.NewResponse(&identityv1.DeleteUserResponse{}), nil
 }
 
-// DeleteGroup deletes a group; memberships, bindings, and policy subjects cascade
-// (admin only). Deleting a non-existent id is a no-op.
+// DeleteGroup deletes a group; memberships, bindings, and policy subjects cascade.
+// Gated by identity:group:delete at the group's folder scope. A non-existent id
+// returns NotFound (its governing scope cannot be derived).
 func (s *IdentityServer) DeleteGroup(ctx context.Context, req *connect.Request[identityv1.DeleteGroupRequest]) (*connect.Response[identityv1.DeleteGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:delete", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	scope, err := s.scopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "identity:group:delete", scope); err != nil {
+		return nil, err
 	}
 	if err := s.q.DeleteGroup(ctx, gid); err != nil {
 		return nil, mapWriteErr(err)

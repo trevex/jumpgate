@@ -117,9 +117,10 @@ type Folder struct {
 }
 
 type Group struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        uuid.UUID   `json:"id"`
+	Name      string      `json:"name"`
+	FolderID  pgtype.UUID `json:"folder_id"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type GroupMembership struct {

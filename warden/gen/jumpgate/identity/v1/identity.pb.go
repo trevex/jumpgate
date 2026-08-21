@@ -86,6 +86,8 @@ type Group struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	FolderId      string                 `protobuf:"bytes,3,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`       // empty = global
+	FolderPath    string                 `protobuf:"bytes,4,opt,name=folder_path,json=folderPath,proto3" json:"folder_path,omitempty"` // DNS path; empty = global (single-group reads)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,6 +132,20 @@ func (x *Group) GetId() string {
 func (x *Group) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *Group) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
+func (x *Group) GetFolderPath() string {
+	if x != nil {
+		return x.FolderPath
 	}
 	return ""
 }
@@ -505,6 +521,7 @@ func (x *ResolveGroupRequest) GetName() string {
 type ResolveGroupResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -542,6 +559,13 @@ func (*ResolveGroupResponse) Descriptor() ([]byte, []int) {
 func (x *ResolveGroupResponse) GetGroupId() string {
 	if x != nil {
 		return x.GroupId
+	}
+	return ""
+}
+
+func (x *ResolveGroupResponse) GetPath() string {
+	if x != nil {
+		return x.Path
 	}
 	return ""
 }
@@ -653,6 +677,7 @@ func (x *ListUsersResponse) GetNextPageToken() string {
 type CreateGroupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	FolderId      string                 `protobuf:"bytes,2,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"` // empty = global
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -690,6 +715,13 @@ func (*CreateGroupRequest) Descriptor() ([]byte, []int) {
 func (x *CreateGroupRequest) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateGroupRequest) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
 	}
 	return ""
 }
@@ -1574,10 +1606,13 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin\"+\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin\"i\n" +
 	"\x05Group\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"D\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
+	"\tfolder_id\x18\x03 \x01(\tR\bfolderId\x12\x1f\n" +
+	"\vfolder_path\x18\x04 \x01(\tR\n" +
+	"folderPath\"D\n" +
 	"\x12CreateUserResponse\x12.\n" +
 	"\x04user\x18\x01 \x01(\v2\x1a.jumpgate.identity.v1.UserR\x04user\"A\n" +
 	"\x0fGetUserResponse\x12.\n" +
@@ -1596,19 +1631,20 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x13ResolveUserResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"2\n" +
 	"\x13ResolveGroupRequest\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"1\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"E\n" +
 	"\x14ResolveGroupResponse\x12\x19\n" +
-	"\bgroup_id\x18\x01 \x01(\tR\agroupId\"Y\n" +
+	"\bgroup_id\x18\x01 \x01(\tR\agroupId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"Y\n" +
 	"\x10ListUsersRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"m\n" +
 	"\x11ListUsersResponse\x120\n" +
 	"\x05users\x18\x01 \x03(\v2\x1a.jumpgate.identity.v1.UserR\x05users\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"4\n" +
-	"\x12CreateGroupRequest\x12\x1e\n" +
-	"\x04name\x18\x01 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x04name\"Z\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"m\n" +
+	"\x12CreateGroupRequest\x12-\n" +
+	"\x04name\x18\x01 \x01(\tB\x19\xbaH\x16r\x14\x10\x01\x18\xc8\x012\r^[a-z0-9_-]+$R\x04name\x12(\n" +
+	"\tfolder_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderId\"Z\n" +
 	"\x11ListGroupsRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +

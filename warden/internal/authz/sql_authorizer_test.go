@@ -66,11 +66,11 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sre, err := q.CreateGroup(ctx, "sre")
+	sre, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "sre"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	platform, err := q.CreateGroup(ctx, "platform")
+	platform, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "platform"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,11 +449,11 @@ func TestRequestableViaExplicitSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	// carol ∈ subteam ∈ contractors (nested group, group-aware subject matching).
-	contractors, err := q.CreateGroup(ctx, "contractors")
+	contractors, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "contractors"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	subteam, err := q.CreateGroup(ctx, "subteam")
+	subteam, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "subteam"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, "eng")
+	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "eng"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,7 +730,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, "cascade-grp")
+	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "cascade-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -832,7 +832,7 @@ func TestCheckSameObjectComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, "compose-grp")
+	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "compose-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,11 +1022,11 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	// dave ∈ inner ∈ outer (doubly nested).
-	outer, err := q.CreateGroup(ctx, "outer")
+	outer, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "outer"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := q.CreateGroup(ctx, "inner")
+	inner, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "inner"})
 	if err != nil {
 		t.Fatal(err)
 	}
