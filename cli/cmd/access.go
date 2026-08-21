@@ -179,22 +179,30 @@ func runAccessList(cmd *cobra.Command, _ []string) error {
 	}
 
 	var requests []*accessrequestv1.AccessRequest
+	var ferr error
 	if accessListPending {
-		req := connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{})
-		cl.Authorize(req)
-		resp, err := cl.AccessRequest().ListPendingApprovals(cmd.Context(), req)
-		if err != nil {
-			return err
-		}
-		requests = resp.Msg.GetRequests()
+		requests, ferr = collectPages(func(token string) ([]*accessrequestv1.AccessRequest, string, error) {
+			req := connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{PageSize: 100, PageToken: token})
+			cl.Authorize(req)
+			resp, err := cl.AccessRequest().ListPendingApprovals(cmd.Context(), req)
+			if err != nil {
+				return nil, "", err
+			}
+			return resp.Msg.GetRequests(), resp.Msg.GetNextPageToken(), nil
+		})
 	} else {
-		req := connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{})
-		cl.Authorize(req)
-		resp, err := cl.AccessRequest().ListMyRequests(cmd.Context(), req)
-		if err != nil {
-			return err
-		}
-		requests = resp.Msg.GetRequests()
+		requests, ferr = collectPages(func(token string) ([]*accessrequestv1.AccessRequest, string, error) {
+			req := connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{PageSize: 100, PageToken: token})
+			cl.Authorize(req)
+			resp, err := cl.AccessRequest().ListMyRequests(cmd.Context(), req)
+			if err != nil {
+				return nil, "", err
+			}
+			return resp.Msg.GetRequests(), resp.Msg.GetNextPageToken(), nil
+		})
+	}
+	if ferr != nil {
+		return ferr
 	}
 
 	rows := make([][]string, 0, len(requests))
@@ -247,14 +255,19 @@ func runAccessGrants(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req := connect.NewRequest(&accessrequestv1.ListMyGrantsRequest{})
-	cl.Authorize(req)
-	resp, err := cl.AccessRequest().ListMyGrants(cmd.Context(), req)
+	grants, err := collectPages(func(token string) ([]*accessrequestv1.Grant, string, error) {
+		req := connect.NewRequest(&accessrequestv1.ListMyGrantsRequest{PageSize: 100, PageToken: token})
+		cl.Authorize(req)
+		resp, err := cl.AccessRequest().ListMyGrants(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetGrants(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	grants := resp.Msg.GetGrants()
 	rows := make([][]string, 0, len(grants))
 	msgs := make([]proto.Message, 0, len(grants))
 	for _, g := range grants {

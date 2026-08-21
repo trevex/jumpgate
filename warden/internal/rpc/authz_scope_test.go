@@ -102,8 +102,10 @@ func TestAuthzFolderScopeIsolation(t *testing.T) {
 	if _, err := cat.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: tf.assetA}), tok)); err != nil {
 		t.Fatalf("GetAsset(A) should succeed: %v", err)
 	}
-	if _, err := cat.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: tf.folderA}), tok)); err != nil {
-		t.Fatalf("ListAssetsByFolder(A) should succeed: %v", err)
+	if la, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: tf.folderA}), tok)); err != nil {
+		t.Fatalf("ListAssets(A) should succeed: %v", err)
+	} else if len(la.Msg.Assets) == 0 {
+		t.Fatalf("ListAssets(A) should list team-a's manageable asset, got none")
 	}
 	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderA, Name: "box-a2", Kind: "ssh"}), tok)); err != nil {
 		t.Fatalf("CreateAsset(A) should succeed: %v", err)
@@ -113,8 +115,11 @@ func TestAuthzFolderScopeIsolation(t *testing.T) {
 	if _, err := cat.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: tf.assetB}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("GetAsset(B) = %v, want PermissionDenied", connect.CodeOf(err))
 	}
-	if _, err := cat.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: tf.folderB}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("ListAssetsByFolder(B) = %v, want PermissionDenied", connect.CodeOf(err))
+	// ListAssets is not cap-gated; it is visibility-filtered and existence-hiding.
+	// The A-admin has no relationship to sibling B, so browsing B returns NotFound
+	// (never PermissionDenied — B's existence stays hidden), same as ResolveAsset.
+	if _, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: tf.folderB}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("ListAssets(B) = %v, want NotFound (existence hiding)", connect.CodeOf(err))
 	}
 	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderB, Name: "box-b2", Kind: "ssh"}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("CreateAsset(B) = %v, want PermissionDenied", connect.CodeOf(err))

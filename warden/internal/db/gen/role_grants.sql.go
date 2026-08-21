@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createRoleGrant = `-- name: CreateRoleGrant :one
@@ -61,11 +62,33 @@ func (q *Queries) GetRoleGrant(ctx context.Context, id uuid.UUID) (RoleGrant, er
 }
 
 const listRoleGrants = `-- name: ListRoleGrants :many
-SELECT id, role_id, source_role_id, via, created_at FROM role_grants WHERE role_id = $1 ORDER BY id
+SELECT id, role_id, source_role_id, via, created_at FROM role_grants
+WHERE role_id = $1
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    $2::timestamptz IS NULL
+    OR created_at < $2
+    OR (created_at = $2 AND id > $3::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $4
 `
 
-func (q *Queries) ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error) {
-	rows, err := q.db.Query(ctx, listRoleGrants, roleID)
+type ListRoleGrantsParams struct {
+	RoleID  uuid.UUID          `json:"role_id"`
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
+}
+
+func (q *Queries) ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error) {
+	rows, err := q.db.Query(ctx, listRoleGrants,
+		arg.RoleID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

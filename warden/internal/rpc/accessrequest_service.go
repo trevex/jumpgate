@@ -205,13 +205,24 @@ func (s *AccessRequestServer) DenyRequest(ctx context.Context, req *connect.Requ
 	return connect.NewResponse(&accessrequestv1.DenyRequestResponse{Request: toAccessRequestMsg(out)}), nil
 }
 
-// ListMyRequests lists the caller's own requests (authenticated).
-func (s *AccessRequestServer) ListMyRequests(ctx context.Context, _ *connect.Request[accessrequestv1.ListMyRequestsRequest]) (*connect.Response[accessrequestv1.ListMyRequestsResponse], error) {
+// ListMyRequests lists the caller's own requests (authenticated), ordered by
+// (created_at DESC, id) with keyset pagination.
+func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.Request[accessrequestv1.ListMyRequestsRequest]) (*connect.Response[accessrequestv1.ListMyRequestsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	rows, err := s.svc.ListMyRequests(ctx, caller.ID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	page := accessrequest.PageParams{Limit: limit}
+	if k != nil {
+		page.AfterTs = k.Time
+		page.AfterID = k.ID
+	}
+	rows, err := s.svc.ListMyRequestsPaged(ctx, caller.ID, page)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -219,22 +230,53 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, _ *connect.Req
 	for i := range rows {
 		out.Requests = append(out.Requests, toAccessRequestMsg(rows[i]))
 	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here created_at.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+	}
 	return connect.NewResponse(out), nil
 }
 
-// ListPendingApprovals lists pending requests the caller may approve (authenticated).
-func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, _ *connect.Request[accessrequestv1.ListPendingApprovalsRequest]) (*connect.Response[accessrequestv1.ListPendingApprovalsResponse], error) {
+// ListPendingApprovals lists pending requests the caller may approve (authenticated),
+// ordered by (created_at DESC, id) with keyset pagination.
+//
+// Go-side IsApprover filtering happens after the SQL LIMIT, so a page may be
+// shorter than page_size (or empty) when the pending set contains requests for
+// policies the caller cannot approve. The next-page token is keyed to the SQL
+// page position — not the filtered result — so pagination advances past
+// filtered rows rather than stopping early.
+func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *connect.Request[accessrequestv1.ListPendingApprovalsRequest]) (*connect.Response[accessrequestv1.ListPendingApprovalsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	rows, err := s.svc.ListPendingApprovals(ctx, caller.ID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	page := accessrequest.PageParams{Limit: limit}
+	if k != nil {
+		page.AfterTs = k.Time
+		page.AfterID = k.ID
+	}
+	rows, next, err := s.svc.ListPendingApprovalsPaged(ctx, caller.ID, page)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessrequestv1.ListPendingApprovalsResponse{}
 	for i := range rows {
 		out.Requests = append(out.Requests, toAccessRequestMsg(rows[i]))
+	}
+	// Emit a token whenever the SQL page was full (next != nil), even if the
+	// filtered result is short or empty. The cursor tracks the SQL position so
+	// the next call resumes past everything already examined.
+	if next != nil {
+		out.NextPageToken = encodeTimeToken(next.Ts, next.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -261,13 +303,24 @@ func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Requ
 	return connect.NewResponse(&accessrequestv1.RevokeGrantResponse{Grant: out}), nil
 }
 
-// ListMyGrants lists the caller's own grants (authenticated).
-func (s *AccessRequestServer) ListMyGrants(ctx context.Context, _ *connect.Request[accessrequestv1.ListMyGrantsRequest]) (*connect.Response[accessrequestv1.ListMyGrantsResponse], error) {
+// ListMyGrants lists the caller's own grants (authenticated), ordered by
+// (granted_at DESC, id) with keyset pagination.
+func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListMyGrantsRequest]) (*connect.Response[accessrequestv1.ListMyGrantsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	rows, err := s.svc.ListMyGrants(ctx, caller.ID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	page := accessrequest.PageParams{Limit: limit}
+	if k != nil {
+		page.AfterTs = k.Time
+		page.AfterID = k.ID
+	}
+	rows, err := s.svc.ListMyGrantsPaged(ctx, caller.ID, page)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -275,10 +328,20 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, _ *connect.Reque
 	for i := range rows {
 		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
 	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here granted_at (NOT created_at — access_grants has no created_at).
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.GrantedAt, last.ID)
+	}
 	return connect.NewResponse(out), nil
 }
 
-// ListGrants lists grants for admin introspection (admin only).
+// ListGrants lists grants for admin introspection (admin only), ordered by
+// (granted_at DESC, id) with keyset pagination. The subject_user_id and
+// active_only filters are preserved.
 func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
 	if err := s.requireCap(ctx, "access:grant:read", authz.GlobalScope()); err != nil {
 		return nil, err
@@ -291,13 +354,31 @@ func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Reque
 		}
 		filter.Subject = sid
 	}
-	rows, err := s.svc.ListGrants(ctx, filter)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	page := accessrequest.PageParams{Limit: limit}
+	if k != nil {
+		page.AfterTs = k.Time
+		page.AfterID = k.ID
+	}
+	rows, err := s.svc.ListGrantsPaged(ctx, filter, page)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessrequestv1.ListGrantsResponse{}
 	for i := range rows {
 		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
+	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeTimeToken takes the SORT-KEY
+	// column: here granted_at (NOT created_at — access_grants has no created_at).
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.GrantedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

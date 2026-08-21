@@ -104,16 +104,24 @@ message DenyRequestResponse {
   AccessRequest request = 1;
 }
 
-message ListMyRequestsRequest {}
-
-message ListMyRequestsResponse {
-  repeated AccessRequest requests = 1;
+message ListMyRequestsRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
 }
 
-message ListPendingApprovalsRequest {}
+message ListMyRequestsResponse {
+  repeated AccessRequest requests       = 1;
+  string                 next_page_token = 2;
+}
+
+message ListPendingApprovalsRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+}
 
 message ListPendingApprovalsResponse {
-  repeated AccessRequest requests = 1;
+  repeated AccessRequest requests        = 1;
+  string                 next_page_token = 2;
 }
 
 // Grant is an access_grant DTO.
@@ -138,17 +146,24 @@ message RevokeGrantResponse {
   Grant grant = 1;
 }
 
-message ListMyGrantsRequest {}
+message ListMyGrantsRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+}
 
 message ListMyGrantsResponse {
-  repeated Grant grants = 1;
+  repeated Grant grants          = 1;
+  string         next_page_token = 2;
 }
 
 message ListGrantsRequest {
   string subject_user_id = 1; // optional; empty => any subject
-  bool active_only = 2;       // optional; true => active grants only
+  bool   active_only     = 2; // optional; true => active grants only
+  int32  page_size       = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token      = 4;
 }
 
 message ListGrantsResponse {
-  repeated Grant grants = 1;
+  repeated Grant grants          = 1;
+  string         next_page_token = 2;
 }

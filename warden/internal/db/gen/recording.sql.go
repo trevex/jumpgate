@@ -39,20 +39,33 @@ func (q *Queries) GetSessionRecording(ctx context.Context, sessionID uuid.UUID) 
 
 const listSessionRecordings = `-- name: ListSessionRecordings :many
 SELECT session_id, user_id, asset_id, worker_id, protocol, format, object_key, size_bytes, sha256, status, started_at, ended_at, created_at FROM session_recordings
-WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $1)
-  AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR asset_id = $2)
-ORDER BY created_at DESC
-LIMIT $3
+WHERE ($1::uuid IS NULL OR user_id = $1)
+  AND ($2::uuid IS NULL OR asset_id = $2)
+  AND (
+    $3::timestamptz IS NULL
+    OR created_at < $3
+    OR (created_at = $3 AND session_id > $4::uuid)
+  )
+ORDER BY created_at DESC, session_id
+LIMIT $5
 `
 
 type ListSessionRecordingsParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Column2 uuid.UUID `json:"column_2"`
-	Limit   int32     `json:"limit"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	AssetID        pgtype.UUID        `json:"asset_id"`
+	AfterTs        pgtype.Timestamptz `json:"after_ts"`
+	AfterSessionID pgtype.UUID        `json:"after_session_id"`
+	Lim            int32              `json:"lim"`
 }
 
 func (q *Queries) ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error) {
-	rows, err := q.db.Query(ctx, listSessionRecordings, arg.Column1, arg.Column2, arg.Limit)
+	rows, err := q.db.Query(ctx, listSessionRecordings,
+		arg.UserID,
+		arg.AssetID,
+		arg.AfterTs,
+		arg.AfterSessionID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

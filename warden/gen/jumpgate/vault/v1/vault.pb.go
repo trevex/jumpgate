@@ -649,6 +649,8 @@ func (*DeleteAssetSecretResponse) Descriptor() ([]byte, []int) {
 type ListAssetSecretsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -686,6 +688,20 @@ func (*ListAssetSecretsRequest) Descriptor() ([]byte, []int) {
 func (x *ListAssetSecretsRequest) GetAssetId() string {
 	if x != nil {
 		return x.AssetId
+	}
+	return ""
+}
+
+func (x *ListAssetSecretsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListAssetSecretsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
 	}
 	return ""
 }
@@ -754,6 +770,7 @@ func (x *AssetSecretMeta) GetCreatedAt() string {
 type ListAssetSecretsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Secrets       []*AssetSecretMeta     `protobuf:"bytes,1,rep,name=secrets,proto3" json:"secrets,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -795,6 +812,13 @@ func (x *ListAssetSecretsResponse) GetSecrets() []*AssetSecretMeta {
 	return nil
 }
 
+func (x *ListAssetSecretsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_jumpgate_vault_v1_vault_proto protoreflect.FileDescriptor
 
 const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
@@ -829,16 +853,20 @@ const file_jumpgate_vault_v1_vault_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x18DeleteAssetSecretRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1b\n" +
-	"\x19DeleteAssetSecretResponse\">\n" +
+	"\x19DeleteAssetSecretResponse\"\x85\x01\n" +
 	"\x17ListAssetSecretsRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"T\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"T\n" +
 	"\x0fAssetSecretMeta\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"X\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\x80\x01\n" +
 	"\x18ListAssetSecretsResponse\x12<\n" +
-	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets2\xb5\x06\n" +
+	"\asecrets\x18\x01 \x03(\v2\".jumpgate.vault.v1.AssetSecretMetaR\asecrets\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xb5\x06\n" +
 	"\fVaultService\x12O\n" +
 	"\x06InitCA\x12 .jumpgate.vault.v1.InitCARequest\x1a!.jumpgate.vault.v1.InitCAResponse\"\x00\x12^\n" +
 	"\vGetCAPublic\x12%.jumpgate.vault.v1.GetCAPublicRequest\x1a&.jumpgate.vault.v1.GetCAPublicResponse\"\x00\x12[\n" +

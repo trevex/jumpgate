@@ -87,30 +87,39 @@ func runRecordingsList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	list := &recordingv1.ListRecordingsRequest{PageSize: 100}
+	// Resolve optional filters before the page loop so we only do it once.
+	var userID, assetID string
 	if recordingsListUser != "" {
-		userID, err := resolveUserID(cmd.Context(), cl, recordingsListUser)
+		userID, err = resolveUserID(cmd.Context(), cl, recordingsListUser)
 		if err != nil {
 			return err
 		}
-		list.UserId = userID
 	}
 	if recordingsListAsset != "" {
-		assetID, err := cl.ResolveAsset(cmd.Context(), recordingsListAsset)
+		assetID, err = cl.ResolveAsset(cmd.Context(), recordingsListAsset)
 		if err != nil {
 			return err
 		}
-		list.AssetId = assetID
 	}
 
-	req := connect.NewRequest(list)
-	cl.Authorize(req)
-	resp, err := cl.Recording().ListRecordings(cmd.Context(), req)
+	recs, err := collectPages(func(token string) ([]*recordingv1.Recording, string, error) {
+		req := connect.NewRequest(&recordingv1.ListRecordingsRequest{
+			PageSize:  100,
+			PageToken: token,
+			UserId:    userID,
+			AssetId:   assetID,
+		})
+		cl.Authorize(req)
+		resp, err := cl.Recording().ListRecordings(cmd.Context(), req)
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Msg.GetRecordings(), resp.Msg.GetNextPageToken(), nil
+	})
 	if err != nil {
 		return err
 	}
 
-	recs := resp.Msg.GetRecordings()
 	rows := make([][]string, 0, len(recs))
 	msgs := make([]proto.Message, 0, len(recs))
 	for _, r := range recs {

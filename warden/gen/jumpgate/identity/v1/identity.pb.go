@@ -1185,6 +1185,8 @@ func (*RemoveGroupFromGroupResponse) Descriptor() ([]byte, []int) {
 type ListGroupMembersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1226,10 +1228,25 @@ func (x *ListGroupMembersRequest) GetGroupId() string {
 	return ""
 }
 
+func (x *ListGroupMembersRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListGroupMembersRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListGroupMembersResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Users         []*User                `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
 	Groups        []*Group               `protobuf:"bytes,2,rep,name=groups,proto3" json:"groups,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,3,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1276,6 +1293,13 @@ func (x *ListGroupMembersResponse) GetGroups() []*Group {
 		return x.Groups
 	}
 	return nil
+}
+
+func (x *ListGroupMembersResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type DeactivateUserRequest struct {
@@ -1667,12 +1691,16 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x1bRemoveGroupFromGroupRequest\x12#\n" +
 	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x120\n" +
 	"\x0fmember_group_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\rmemberGroupId\"\x1e\n" +
-	"\x1cRemoveGroupFromGroupResponse\">\n" +
+	"\x1cRemoveGroupFromGroupResponse\"\x85\x01\n" +
 	"\x17ListGroupMembersRequest\x12#\n" +
-	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\"\x81\x01\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xa9\x01\n" +
 	"\x18ListGroupMembersResponse\x120\n" +
 	"\x05users\x18\x01 \x03(\v2\x1a.jumpgate.identity.v1.UserR\x05users\x123\n" +
-	"\x06groups\x18\x02 \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\":\n" +
+	"\x06groups\x18\x02 \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\x12&\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\":\n" +
 	"\x15DeactivateUserRequest\x12!\n" +
 	"\auser_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\"\x18\n" +
 	"\x16DeactivateUserResponse\":\n" +

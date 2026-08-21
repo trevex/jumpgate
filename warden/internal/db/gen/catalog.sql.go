@@ -284,12 +284,12 @@ func (q *Queries) GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginPara
 	return i, err
 }
 
-const listAssetsByFolder = `-- name: ListAssetsByFolder :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 ORDER BY id
+const listAssetsByIDs = `-- name: ListAssetsByIDs :many
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
 `
 
-func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error) {
-	rows, err := q.db.Query(ctx, listAssetsByFolder, folderID)
+func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssetsByIDs, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -315,12 +315,31 @@ func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([
 	return items, nil
 }
 
-const listAssetsByIDs = `-- name: ListAssetsByIDs :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
+const listAssetsByIDsPaged = `-- name: ListAssetsByIDsPaged :many
+SELECT id, folder_id, name, labels, created_at, kind FROM assets
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
 `
 
-func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
-	rows, err := q.db.Query(ctx, listAssetsByIDs, dollar_1)
+type ListAssetsByIDsPagedParams struct {
+	Ids       []uuid.UUID `json:"ids"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssetsByIDsPaged,
+		arg.Ids,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +399,54 @@ func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Fol
 	return items, nil
 }
 
+const listFoldersByIDsPaged = `-- name: ListFoldersByIDsPaged :many
+SELECT id, name, parent_id, created_at FROM folders
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
+`
+
+type ListFoldersByIDsPagedParams struct {
+	Ids       []uuid.UUID `json:"ids"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error) {
+	rows, err := q.db.Query(ctx, listFoldersByIDsPaged,
+		arg.Ids,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Folder
+	for rows.Next() {
+		var i Folder
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ParentID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoleBindings = `-- name: ListRoleBindings :many
 SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings
 WHERE ($1::uuid IS NULL OR role_id = $1)
@@ -387,15 +454,27 @@ WHERE ($1::uuid IS NULL OR role_id = $1)
   AND ($3::uuid IS NULL OR scope_asset_id = $3)
   AND ($4::uuid IS NULL OR subject_user_id = $4)
   AND ($5::uuid IS NULL OR subject_group_id = $5)
-ORDER BY id
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
+    -- instant with a later id. A row-comparison ` + "`" + `(created_at,id) < (…)` + "`" + ` is WRONG
+    -- here — it would invert the id tiebreak.
+    $6::timestamptz IS NULL
+    OR created_at < $6
+    OR (created_at = $6 AND id > $7::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $8
 `
 
 type ListRoleBindingsParams struct {
-	RoleID         pgtype.UUID `json:"role_id"`
-	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
-	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
-	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
-	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
+	RoleID         pgtype.UUID        `json:"role_id"`
+	ScopeFolderID  pgtype.UUID        `json:"scope_folder_id"`
+	ScopeAssetID   pgtype.UUID        `json:"scope_asset_id"`
+	SubjectUserID  pgtype.UUID        `json:"subject_user_id"`
+	SubjectGroupID pgtype.UUID        `json:"subject_group_id"`
+	AfterTs        pgtype.Timestamptz `json:"after_ts"`
+	AfterID        pgtype.UUID        `json:"after_id"`
+	Lim            int32              `json:"lim"`
 }
 
 func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error) {
@@ -405,6 +484,9 @@ func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsPara
 		arg.ScopeAssetID,
 		arg.SubjectUserID,
 		arg.SubjectGroupID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
 	)
 	if err != nil {
 		return nil, err
@@ -465,16 +547,25 @@ func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgty
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
+SELECT id, name, folder_id, capabilities, created_at FROM roles
+WHERE (
+  -- keyset for ORDER BY name ASC, id ASC: row-comparison is correct for
+  -- same-direction sort (both ascending). A NULL after_name means first page.
+  $1::text IS NULL
+  OR (name, id) > ($1, $2::uuid)
+)
+ORDER BY name, id
+LIMIT $3
 `
 
 type ListRolesParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
 }
 
 func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error) {
-	rows, err := q.db.Query(ctx, listRoles, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listRoles, arg.AfterName, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

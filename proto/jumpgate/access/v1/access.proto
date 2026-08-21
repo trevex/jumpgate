@@ -86,8 +86,12 @@ message AddRoleGrantResponse { RoleGrant grant = 1; }
 message RemoveRoleGrantRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
 message RemoveRoleGrantResponse {}
 
-message ListRoleGrantsRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
-message ListRoleGrantsResponse { repeated RoleGrant grants = 1; }
+message ListRoleGrantsRequest {
+  string role_id = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+message ListRoleGrantsResponse { repeated RoleGrant grants = 1; string next_page_token = 2; }
 
 message RoleBinding {
   string id = 1;
@@ -119,8 +123,13 @@ message ListRoleBindingsRequest {
   string scope_asset_id   = 3;
   string subject_user_id  = 4;
   string subject_group_id = 5;
+  int32  page_size        = 6 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token       = 7;
 }
-message ListRoleBindingsResponse { repeated RoleBinding bindings = 1; }
+message ListRoleBindingsResponse {
+  repeated RoleBinding bindings       = 1;
+  string               next_page_token = 2;
+}
 
 message RequestPolicy {
   string id = 1;
@@ -158,8 +167,12 @@ message UpdateRequestPolicyResponse { RequestPolicy policy = 1; }
 message DeleteRequestPolicyRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
 message DeleteRequestPolicyResponse {}
 
-message ListRequestPoliciesRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
-message ListRequestPoliciesResponse { repeated RequestPolicy policies = 1; }
+message ListRequestPoliciesRequest {
+  string role_id    = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+message ListRequestPoliciesResponse { repeated RequestPolicy policies = 1; string next_page_token = 2; }
 
 message PolicySubject {
   string id = 1;
@@ -188,8 +201,12 @@ message AddPolicySubjectResponse { string id = 1; }
 message RemovePolicySubjectRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
 message RemovePolicySubjectResponse {}
 
-message ListPolicySubjectsRequest { string policy_id = 1 [(buf.validate.field).string.uuid = true]; }
-message ListPolicySubjectsResponse { repeated PolicySubject subjects = 1; }
+message ListPolicySubjectsRequest {
+  string policy_id  = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+message ListPolicySubjectsResponse { repeated PolicySubject subjects = 1; string next_page_token = 2; }
 
 message ExplainRoleRequest {
   string user_id  = 1 [(buf.validate.field).string.uuid = true];

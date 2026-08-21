@@ -272,12 +272,126 @@ func (q *Queries) ListAccessRequestsByRequester(ctx context.Context, requesterUs
 	return items, nil
 }
 
+const listAccessRequestsByRequesterPaged = `-- name: ListAccessRequestsByRequesterPaged :many
+SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests
+WHERE requester_user_id = $1::uuid
+  AND (
+    $2::timestamptz IS NULL
+    OR created_at < $2
+    OR (created_at = $2 AND id > $3::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $4
+`
+
+type ListAccessRequestsByRequesterPagedParams struct {
+	RequesterUserID uuid.UUID          `json:"requester_user_id"`
+	AfterTs         pgtype.Timestamptz `json:"after_ts"`
+	AfterID         pgtype.UUID        `json:"after_id"`
+	Lim             int32              `json:"lim"`
+}
+
+// Keyset pagination for (created_at DESC, id ASC). A row-comparison
+// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
+func (q *Queries) ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error) {
+	rows, err := q.db.Query(ctx, listAccessRequestsByRequesterPaged,
+		arg.RequesterUserID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessRequest
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
+			&i.Reason,
+			&i.RequestedDuration,
+			&i.RequiredApprovals,
+			&i.GrantedDuration,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGrantsBySubject = `-- name: ListGrantsBySubject :many
 SELECT id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason FROM access_grants WHERE subject_user_id = $1 ORDER BY granted_at DESC
 `
 
 func (q *Queries) ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error) {
 	rows, err := q.db.Query(ctx, listGrantsBySubject, subjectUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessGrant
+	for rows.Next() {
+		var i AccessGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestID,
+			&i.RoleID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.GrantedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGrantsBySubjectPaged = `-- name: ListGrantsBySubjectPaged :many
+SELECT id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason FROM access_grants
+WHERE subject_user_id = $1::uuid
+  AND (
+    $2::timestamptz IS NULL
+    OR granted_at < $2
+    OR (granted_at = $2 AND id > $3::uuid)
+  )
+ORDER BY granted_at DESC, id
+LIMIT $4
+`
+
+type ListGrantsBySubjectPagedParams struct {
+	SubjectUserID uuid.UUID          `json:"subject_user_id"`
+	AfterTs       pgtype.Timestamptz `json:"after_ts"`
+	AfterID       pgtype.UUID        `json:"after_id"`
+	Lim           int32              `json:"lim"`
+}
+
+// Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
+func (q *Queries) ListGrantsBySubjectPaged(ctx context.Context, arg ListGrantsBySubjectPagedParams) ([]AccessGrant, error) {
+	rows, err := q.db.Query(ctx, listGrantsBySubjectPaged,
+		arg.SubjectUserID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -353,12 +467,123 @@ func (q *Queries) ListGrantsFiltered(ctx context.Context, arg ListGrantsFiltered
 	return items, nil
 }
 
+const listGrantsFilteredPaged = `-- name: ListGrantsFilteredPaged :many
+SELECT id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason FROM access_grants
+WHERE ($1::uuid IS NULL OR subject_user_id = $1::uuid)
+  AND (NOT $2::bool OR (revoked_at IS NULL AND expires_at > now()))
+  AND (
+    $3::timestamptz IS NULL
+    OR granted_at < $3
+    OR (granted_at = $3 AND id > $4::uuid)
+  )
+ORDER BY granted_at DESC, id
+LIMIT $5
+`
+
+type ListGrantsFilteredPagedParams struct {
+	SubjectUserID pgtype.UUID        `json:"subject_user_id"`
+	ActiveOnly    bool               `json:"active_only"`
+	AfterTs       pgtype.Timestamptz `json:"after_ts"`
+	AfterID       pgtype.UUID        `json:"after_id"`
+	Lim           int32              `json:"lim"`
+}
+
+// Admin listing with keyset pagination on (granted_at DESC, id ASC). Filters
+// are all optional (null subject => any subject; active_only=false => all).
+func (q *Queries) ListGrantsFilteredPaged(ctx context.Context, arg ListGrantsFilteredPagedParams) ([]AccessGrant, error) {
+	rows, err := q.db.Query(ctx, listGrantsFilteredPaged,
+		arg.SubjectUserID,
+		arg.ActiveOnly,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessGrant
+	for rows.Next() {
+		var i AccessGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestID,
+			&i.RoleID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.GrantedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingRequests = `-- name: ListPendingRequests :many
 SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests WHERE status = 'pending' ORDER BY created_at DESC
 `
 
 func (q *Queries) ListPendingRequests(ctx context.Context) ([]AccessRequest, error) {
 	rows, err := q.db.Query(ctx, listPendingRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessRequest
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
+			&i.Reason,
+			&i.RequestedDuration,
+			&i.RequiredApprovals,
+			&i.GrantedDuration,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingRequestsPaged = `-- name: ListPendingRequestsPaged :many
+SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests
+WHERE status = 'pending'
+  AND (
+    $1::timestamptz IS NULL
+    OR created_at < $1
+    OR (created_at = $1 AND id > $2::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $3
+`
+
+type ListPendingRequestsPagedParams struct {
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
+}
+
+// Keyset pagination for pending requests (created_at DESC, id ASC).
+func (q *Queries) ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error) {
+	rows, err := q.db.Query(ctx, listPendingRequestsPaged, arg.AfterTs, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

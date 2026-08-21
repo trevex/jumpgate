@@ -99,29 +99,42 @@ type Querier interface {
 	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
-	ListAssetSecrets(ctx context.Context, assetID uuid.UUID) ([]ListAssetSecretsRow, error)
-	ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error)
+	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
+	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
+	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
+	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
+	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
+	ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
+	// Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
+	ListGrantsBySubjectPaged(ctx context.Context, arg ListGrantsBySubjectPagedParams) ([]AccessGrant, error)
 	// Admin listing: all grants (active + past), optionally narrowed to a subject
 	// and/or to active-only. sqlc.narg(subject_user_id) NULL => any subject;
 	// active_only=false => include revoked/expired.
 	ListGrantsFiltered(ctx context.Context, arg ListGrantsFilteredParams) ([]AccessGrant, error)
-	ListGroupMemberGroups(ctx context.Context, groupID uuid.UUID) ([]Group, error)
-	ListGroupMemberUsers(ctx context.Context, groupID uuid.UUID) ([]User, error)
+	// Admin listing with keyset pagination on (granted_at DESC, id ASC). Filters
+	// are all optional (null subject => any subject; active_only=false => all).
+	ListGrantsFilteredPaged(ctx context.Context, arg ListGrantsFilteredPagedParams) ([]AccessGrant, error)
+	// Single keyset scan over group_memberships ordered by (created_at DESC, id).
+	// Each row is either a user-member (member_user_id non-null) or group-member
+	// (member_group_id non-null); the handler splits them.
+	ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
-	ListPolicySubjects(ctx context.Context, policyID uuid.UUID) ([]RequestPolicySubject, error)
-	ListRequestPoliciesForRole(ctx context.Context, roleID uuid.UUID) ([]RequestPolicy, error)
+	// Keyset pagination for pending requests (created_at DESC, id ASC).
+	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
+	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
+	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
-	ListRoleGrants(ctx context.Context, roleID uuid.UUID) ([]RoleGrant, error)
+	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
 	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
 	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
