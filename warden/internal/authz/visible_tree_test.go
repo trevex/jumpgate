@@ -609,6 +609,249 @@ func TestVisibleCascadeNoDuplicates(t *testing.T) {
 	idSet(t, "cascade root no-duplicates", got, []uuid.UUID{a1, a2})
 }
 
+// TestVisibleDeactivatedRoleHolder pins that a user who holds a folder-homed role
+// via a standing role_binding loses all role visibility after deactivation.
+// This test pins the role arm of VisibleRolesUnder (already guarded by heldCTE).
+func TestVisibleDeactivatedRoleHolder(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	_, _, _, _, _, f1, _, frole, _, _, _ := seedRolesGroups(t, pool)
+
+	// Create a new user (separate from the seed's holder) with a standing binding
+	// conferring frole on f1 so we can deactivate without disturbing the seed.
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-role-holder@vt", DisplayName: "DeactRoleHolder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: frole, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(u.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-deactivation: frole is visible via the access arm (held).
+	got, err := s.VisibleRolesUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "pre-deactivation: roles under f1", got, []uuid.UUID{frole})
+
+	// Deactivate: all role visibility must vanish.
+	deactivateUser(t, pool, u.ID)
+
+	got, err = s.VisibleRolesUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "deactivated: roles under f1", got, nil)
+}
+
+// TestVisibleDeactivatedGroupMember is the regression lock for the
+// memberGroupIDs deactivation bug: a user who is a transitive member of a
+// folder-homed group must NOT see that group via VisibleGroupsUnder after
+// deactivation. Without the EXISTS guard in memberGroupIDs this test FAILS
+// (the query returns group_ids regardless of deactivated_at); with the guard
+// it passes.
+func TestVisibleDeactivatedGroupMember(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	_, _, _, _, _, f1, _, _, _, fgroup, _ := seedRolesGroups(t, pool)
+
+	// Create a new user and add them to fgroup so we can deactivate independently.
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-group-member@vt", DisplayName: "DeactGroupMember"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: fgroup, MemberUserID: pgUUID(u.ID)}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-deactivation: fgroup is visible via the access arm (membership).
+	got, err := s.VisibleGroupsUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "pre-deactivation: groups under f1", got, []uuid.UUID{fgroup})
+
+	// Deactivate: the group membership arm must yield nothing.
+	deactivateUser(t, pool, u.ID)
+
+	got, err = s.VisibleGroupsUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "deactivated: groups under f1", got, nil)
+}
+
+// TestVisibleScopedNonGlobalAdminRolesGroups pins that a user with
+// "access:role:read" + "identity:group:read" bound ONLY at folder f1 (not
+// globally) sees f1-homed roles and groups but NOT folder-less (global) nodes
+// (those require the global cap) and NOT a sibling folder's roles/groups.
+func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	_, _, _, _, root, f1, _, frole, _, fgroup, _ := seedRolesGroups(t, pool)
+
+	// Create f-other as a sibling of f1 under rg-root, with its own role+group.
+	fOtherF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-f-other", ParentID: pgUUID(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fOther := fOtherF.ID
+	fOtherRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "rg-other-role", FolderID: pgUUID(fOther), Capabilities: caps("ssh:connect"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fOtherGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+		Name: "rg-other-group", FolderID: pgUUID(fOther),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// scopedAdmin: access:role:read + identity:group:read bound ONLY at f1.
+	// mgmtRole is itself homed in f1 (not folder-less), so it will not appear in
+	// the folder-less (global) candidate list and cannot be seen via the management
+	// arm at the global level.
+	scopedAdmin, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-scoped-admin@vt", DisplayName: "RGScopedAdmin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgmtRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "rg-scoped-mgmt", FolderID: pgUUID(f1),
+		Capabilities: caps("access:role:read", "identity:group:read"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: mgmtRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdmin.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	u := scopedAdmin.ID
+
+	// Roles under f1 (non-cascade): frole is visible via management arm
+	// (access:role:read at f1); mgmtRole is visible via the access arm (user holds
+	// it). Both are f1-homed nodes.
+	gotR, err := s.VisibleRolesUnder(ctx, u, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: roles under f1 no-cascade", gotR, []uuid.UUID{frole, mgmtRole.ID})
+
+	// Groups under f1 (non-cascade): fgroup is f1-homed → visible via management arm.
+	gotG, err := s.VisibleGroupsUnder(ctx, u, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: groups under f1 no-cascade", gotG, []uuid.UUID{fgroup})
+
+	// Roles at global level (uuid.Nil, non-cascade): folder-less nodes require the
+	// global cap which this user does NOT hold. mgmtRole is homed in f1, not
+	// folder-less, so it does not appear here. The seed's groleG is folder-less but
+	// the user neither holds it nor has the global cap → empty.
+	gotR, err = s.VisibleRolesUnder(ctx, u, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: roles at global level (no global cap)", gotR, nil)
+
+	// Groups at global level: same reasoning → empty.
+	gotG, err = s.VisibleGroupsUnder(ctx, u, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "scoped admin: groups at global level (no global cap)", gotG, nil)
+
+	// Roles under f-other (sibling): no binding there → empty (no sideways leak).
+	gotR, err = s.VisibleRolesUnder(ctx, u, fOther, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set := toSet(gotR); contains(set, fOtherRole.ID) {
+		t.Fatalf("scoped admin: f-other role must NOT be visible (sibling leak); got %v", gotR)
+	}
+
+	// Groups under f-other (sibling): same.
+	gotG, err = s.VisibleGroupsUnder(ctx, u, fOther, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set := toSet(gotG); contains(set, fOtherGroup.ID) {
+		t.Fatalf("scoped admin: f-other group must NOT be visible (sibling leak); got %v", gotG)
+	}
+}
+
+// TestVisibleNestedSubgroupMember pins that transitive group membership is
+// reflected in VisibleGroupsUnder: a user who is a direct member of childGroup,
+// where childGroup is itself a member of parentGroup (both homed in f1), sees
+// BOTH groups via the access arm (transitive membership closure).
+func TestVisibleNestedSubgroupMember(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	_, _, _, _, _, f1, _, _, _, _, _ := seedRolesGroups(t, pool)
+
+	// Create a parent+child group pair both homed in f1.
+	childGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+		Name: "rg-nested-child", FolderID: pgUUID(f1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+		Name: "rg-nested-parent", FolderID: pgUUID(f1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// childGroup is a member of parentGroup (nested group membership).
+	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{
+		GroupID: parentGroup.ID, MemberGroupID: pgUUID(childGroup.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a user who is a direct member of childGroup only.
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-nested-user@vt", DisplayName: "RGNestedUser"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		GroupID: childGroup.ID, MemberUserID: pgUUID(u.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// VisibleGroupsUnder(f1, false) must include BOTH childGroup and parentGroup
+	// via transitive membership — the access arm of VisibleGroupsUnder walks the
+	// full user_groups CTE closure.
+	got, err := s.VisibleGroupsUnder(ctx, u.ID, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set := toSet(got); !contains(set, childGroup.ID) {
+		t.Fatalf("nested member: childGroup must be visible; got %v", got)
+	}
+	if set := toSet(got); !contains(set, parentGroup.ID) {
+		t.Fatalf("nested member: parentGroup must be visible (transitive); got %v", got)
+	}
+}
+
 // TestVisibleDeactivatedUserStandingBinding pins that a deactivated user who
 // previously held a standing connect binding on an asset loses all visibility:
 // VisibleAssetsUnder and VisibleFoldersUnder both return empty after deactivation.
