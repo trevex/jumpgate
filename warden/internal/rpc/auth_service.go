@@ -103,5 +103,14 @@ func (s *AuthServer) WhoAmI(ctx context.Context, _ *connect.Request[authv1.WhoAm
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&authv1.WhoAmIResponse{UserId: full.ID.String(), Email: full.Email, DisplayName: full.DisplayName}), nil
+	caps, err := s.authorizer.CapabilitiesOnScope(ctx, u.ID, authz.GlobalScope())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&authv1.WhoAmIResponse{
+		UserId:       full.ID.String(),
+		Email:        full.Email,
+		DisplayName:  full.DisplayName,
+		Capabilities: []string(caps),
+	}), nil
 }
