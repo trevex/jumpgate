@@ -1118,7 +1118,10 @@ type GetAssetAccessResponse struct {
 	RequestableRoleIds []string               `protobuf:"bytes,2,rep,name=requestable_role_ids,json=requestableRoleIds,proto3" json:"requestable_role_ids,omitempty"`
 	ActiveRoles        []*RoleRef             `protobuf:"bytes,3,rep,name=active_roles,json=activeRoles,proto3" json:"active_roles,omitempty"`
 	RequestableRoles   []*RoleRef             `protobuf:"bytes,4,rep,name=requestable_roles,json=requestableRoles,proto3" json:"requestable_roles,omitempty"`
-	// The caller's management capabilities on this asset (e.g. "catalog:asset:read").
+	// capabilities is the caller's effective HELD capability closure ON THIS ASSET
+	// (object/folder-scoped) — the same set the worker enforces connect against. It
+	// deliberately EXCLUDES global scopeless caps (an admin's ** does not appear
+	// here) so it faithfully mirrors connect ability rather than management authority.
 	Capabilities  []string `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
