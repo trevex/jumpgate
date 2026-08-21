@@ -473,6 +473,7 @@ func (s *AccessServer) DeleteRoleBinding(ctx context.Context, req *connect.Reque
 }
 
 // ListRoleBindings lists bindings matching the (all-optional) filters (admin only).
+// Results are ordered by (created_at DESC, id) with keyset pagination.
 func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Request[accessv1.ListRoleBindingsRequest]) (*connect.Response[accessv1.ListRoleBindingsResponse], error) {
 	if err := s.requireCap(ctx, "access:binding:read", authz.GlobalScope()); err != nil {
 		return nil, err
@@ -497,19 +498,34 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
 	}
-	rows, err := s.q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListRoleBindingsParams{
 		RoleID:         roleID,
 		ScopeFolderID:  scopeFolder,
 		ScopeAssetID:   scopeAsset,
 		SubjectUserID:  subjUser,
 		SubjectGroupID: subjGroup,
-	})
+		Lim:            limit,
+	}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListRoleBindings(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	out := &accessv1.ListRoleBindingsResponse{}
 	for i := range rows {
 		out.Bindings = append(out.Bindings, toRoleBindingMsg(rows[i]))
+	}
+	if len(rows) == int(limit) && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

@@ -1128,6 +1128,8 @@ type ListRoleBindingsRequest struct {
 	ScopeAssetId   string                 `protobuf:"bytes,3,opt,name=scope_asset_id,json=scopeAssetId,proto3" json:"scope_asset_id,omitempty"`
 	SubjectUserId  string                 `protobuf:"bytes,4,opt,name=subject_user_id,json=subjectUserId,proto3" json:"subject_user_id,omitempty"`
 	SubjectGroupId string                 `protobuf:"bytes,5,opt,name=subject_group_id,json=subjectGroupId,proto3" json:"subject_group_id,omitempty"`
+	PageSize       int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken      string                 `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1197,9 +1199,24 @@ func (x *ListRoleBindingsRequest) GetSubjectGroupId() string {
 	return ""
 }
 
+func (x *ListRoleBindingsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListRoleBindingsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListRoleBindingsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bindings      []*RoleBinding         `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1239,6 +1256,13 @@ func (x *ListRoleBindingsResponse) GetBindings() []*RoleBinding {
 		return x.Bindings
 	}
 	return nil
+}
+
+func (x *ListRoleBindingsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type RequestPolicy struct {
@@ -2544,15 +2568,19 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"4\n" +
 	"\x18DeleteRoleBindingRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x1b\n" +
-	"\x19DeleteRoleBindingResponse\"\xd2\x01\n" +
+	"\x19DeleteRoleBindingResponse\"\x99\x02\n" +
 	"\x17ListRoleBindingsRequest\x12\x17\n" +
 	"\arole_id\x18\x01 \x01(\tR\x06roleId\x12&\n" +
 	"\x0fscope_folder_id\x18\x02 \x01(\tR\rscopeFolderId\x12$\n" +
 	"\x0escope_asset_id\x18\x03 \x01(\tR\fscopeAssetId\x12&\n" +
 	"\x0fsubject_user_id\x18\x04 \x01(\tR\rsubjectUserId\x12(\n" +
-	"\x10subject_group_id\x18\x05 \x01(\tR\x0esubjectGroupId\"W\n" +
+	"\x10subject_group_id\x18\x05 \x01(\tR\x0esubjectGroupId\x12&\n" +
+	"\tpage_size\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"\x7f\n" +
 	"\x18ListRoleBindingsResponse\x12;\n" +
-	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\"\xd1\x02\n" +
+	"\bbindings\x18\x01 \x03(\v2\x1f.jumpgate.access.v1.RoleBindingR\bbindings\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd1\x02\n" +
 	"\rRequestPolicy\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12&\n" +

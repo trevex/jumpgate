@@ -387,15 +387,23 @@ WHERE ($1::uuid IS NULL OR role_id = $1)
   AND ($3::uuid IS NULL OR scope_asset_id = $3)
   AND ($4::uuid IS NULL OR subject_user_id = $4)
   AND ($5::uuid IS NULL OR subject_group_id = $5)
-ORDER BY id
+  AND (
+    $6::timestamptz IS NULL
+    OR (created_at, id) < ($6, $7::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $8
 `
 
 type ListRoleBindingsParams struct {
-	RoleID         pgtype.UUID `json:"role_id"`
-	ScopeFolderID  pgtype.UUID `json:"scope_folder_id"`
-	ScopeAssetID   pgtype.UUID `json:"scope_asset_id"`
-	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
-	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
+	RoleID         pgtype.UUID        `json:"role_id"`
+	ScopeFolderID  pgtype.UUID        `json:"scope_folder_id"`
+	ScopeAssetID   pgtype.UUID        `json:"scope_asset_id"`
+	SubjectUserID  pgtype.UUID        `json:"subject_user_id"`
+	SubjectGroupID pgtype.UUID        `json:"subject_group_id"`
+	AfterTs        pgtype.Timestamptz `json:"after_ts"`
+	AfterID        pgtype.UUID        `json:"after_id"`
+	Lim            int32              `json:"lim"`
 }
 
 func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error) {
@@ -405,6 +413,9 @@ func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsPara
 		arg.ScopeAssetID,
 		arg.SubjectUserID,
 		arg.SubjectGroupID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
 	)
 	if err != nil {
 		return nil, err
