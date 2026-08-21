@@ -43,8 +43,10 @@ credential only for the duration of one live, authorized session.
 ## Control plane — Go
 
 The single source of truth. It serves a ConnectRPC API (Connect + gRPC + gRPC-Web
-on one handler, no proxy) alongside `/healthz`, authenticated by an opaque
-bearer-token interceptor, validated by protovalidate, and existence-hiding via
+on one handler, no proxy) alongside `/healthz`, authenticated by an interceptor
+that accepts either an `Authorization: Bearer <token>` header (CLI) or an
+`httpOnly` `jumpgate_session` cookie with `Sec-Fetch-Site: same-origin` (browser —
+fail-closed CSRF gate), validated by protovalidate, and existence-hiding via
 `CodeNotFound`. A second, mutually-authenticated listener serves the internal mesh
 (the data-plane and gateway contracts).
 
@@ -52,7 +54,7 @@ bearer-token interceptor, validated by protovalidate, and existence-hiding via
 
 | Service | Responsibility |
 |---|---|
-| `AuthService` | password login → opaque bearer token; `WhoAmI` |
+| `AuthService` | password login → opaque bearer token (`cookie_only=false`, CLI) or `httpOnly` session cookie (`cookie_only=true`, browser); `WhoAmI` (identity + global capabilities for nav gating); `Logout` (revoke token + clear cookie) |
 | `IdentityService` | users, groups, nested memberships, user lifecycle; path-scoped `ListGroups` (visibility-filtered, keyset-paginated) + `GetGroupAccess` (capabilities on selection) |
 | `CatalogService` | folders & assets (incl. typed SSH config); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `ListFolderContents` (bounded per-kind aggregator) + `Resolve*` |
 | `AccessService` | all authorization config: roles, role-grants, standing role-bindings, request policies + subjects, `ExplainRole`; path-scoped `ListRoles` (visibility-filtered, keyset-paginated) + `GetRoleAccess` (capabilities on selection) |

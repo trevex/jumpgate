@@ -17,9 +17,9 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 
-	"github.com/trevex/jumpgate/warden/internal/auth"
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
+	"github.com/trevex/jumpgate/warden/internal/auth"
 )
 
 // ── fake lookup ───────────────────────────────────────────────────────────────
