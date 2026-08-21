@@ -15,6 +15,7 @@ service AccessService {
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {}
   rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {}
   rpc ResolveRole(ResolveRoleRequest) returns (ResolveRoleResponse) {}
+  rpc GetRoleAccess(GetRoleAccessRequest) returns (GetRoleAccessResponse) {}
 
   // Role grants (userset rewrites).
   rpc AddRoleGrant(AddRoleGrantRequest) returns (AddRoleGrantResponse) {}
@@ -221,3 +222,9 @@ message ExplainRoleRequest {
 message RoleGrantPathStep { string role_id = 1; string object_kind = 2; string object_id = 3; string via = 4; }
 message ExplainRolePath { repeated RoleGrantPathStep steps = 1; string binding_id = 2; string subject = 3; }
 message ExplainRoleResponse { bool holds = 1; repeated ExplainRolePath paths = 2; }
+
+// GetRoleAccess returns the caller's management capabilities on one role.
+// PermissionDenied (not NotFound) when the caller has no relationship to the role,
+// because roles are not catalog topology.
+message GetRoleAccessRequest  { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetRoleAccessResponse { repeated string capabilities = 1; }

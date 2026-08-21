@@ -17,6 +17,7 @@ service IdentityService {
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
   rpc ResolveGroup(ResolveGroupRequest) returns (ResolveGroupResponse) {}
   rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
+  rpc GetGroupAccess(GetGroupAccessRequest) returns (GetGroupAccessResponse) {}
   rpc AddUserToGroup(AddUserToGroupRequest) returns (AddUserToGroupResponse) {}
   rpc AddGroupToGroup(AddGroupToGroupRequest) returns (AddGroupToGroupResponse) {}
   rpc RemoveUserFromGroup(RemoveUserFromGroupRequest) returns (RemoveUserFromGroupResponse) {}
@@ -164,3 +165,9 @@ message DeleteGroupRequest {
   string group_id = 1 [(buf.validate.field).string.uuid = true];
 }
 message DeleteGroupResponse {}
+
+// GetGroupAccess returns the caller's management capabilities on one group.
+// NotFound (existence hiding) when the caller has no relationship to the group —
+// neither a capability on its scope nor transitive membership.
+message GetGroupAccessRequest  { string group_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetGroupAccessResponse { repeated string capabilities = 1; }

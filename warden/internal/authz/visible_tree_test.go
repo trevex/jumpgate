@@ -909,3 +909,88 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	}
 	idSet(t, "deactivated: folders under root", gotF, nil)
 }
+
+// TestIsMember verifies IsMember: direct member returns true; transitive
+// (nested) member returns true; non-member returns false; deactivated member
+// returns false.
+func TestIsMember(t *testing.T) {
+	pool := newPool(t)
+	s := NewSQLAuthorizer(pool)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@member", DisplayName: "Alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@member", DisplayName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// deactivated user
+	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@member", DisplayName: "Carol"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inner, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "inner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "outer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// alice is a direct member of inner.
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	// inner is nested inside outer (alice is a transitive member of outer).
+	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	// carol is a direct member of inner but will be deactivated.
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.DeactivateUser(ctx, carol.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// alice: direct member of inner → true.
+	ok, err := s.IsMember(ctx, alice.ID, inner.ID)
+	if err != nil {
+		t.Fatalf("IsMember(alice, inner): %v", err)
+	}
+	if !ok {
+		t.Fatal("alice should be a direct member of inner")
+	}
+
+	// alice: transitive member of outer → true.
+	ok, err = s.IsMember(ctx, alice.ID, outer.ID)
+	if err != nil {
+		t.Fatalf("IsMember(alice, outer): %v", err)
+	}
+	if !ok {
+		t.Fatal("alice should be a transitive member of outer (via inner)")
+	}
+
+	// bob: not a member of either group → false.
+	ok, err = s.IsMember(ctx, bob.ID, inner.ID)
+	if err != nil {
+		t.Fatalf("IsMember(bob, inner): %v", err)
+	}
+	if ok {
+		t.Fatal("bob should NOT be a member of inner")
+	}
+
+	// carol: deactivated member → false.
+	ok, err = s.IsMember(ctx, carol.ID, inner.ID)
+	if err != nil {
+		t.Fatalf("IsMember(carol, inner): %v", err)
+	}
+	if ok {
+		t.Fatal("deactivated carol should NOT appear as a member")
+	}
+}

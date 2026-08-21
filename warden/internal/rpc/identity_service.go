@@ -491,6 +491,39 @@ func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[id
 	return connect.NewResponse(&identityv1.DeleteUserResponse{}), nil
 }
 
+// GetGroupAccess returns the caller's management capabilities on one group.
+// NotFound (existence hiding) when the caller has no relationship to the group —
+// neither a capability on its scope nor transitive membership. A member with no
+// management capabilities sees an empty capability list (not NotFound).
+func (s *IdentityServer) GetGroupAccess(ctx context.Context, req *connect.Request[identityv1.GetGroupAccessRequest]) (*connect.Response[identityv1.GetGroupAccessResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	id, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+	}
+	grp, err := s.q.GetGroup(ctx, id)
+	if err != nil {
+		return nil, groupNotFoundOrInternal(err)
+	}
+	caps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(grp.FolderID))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(caps) == 0 {
+		member, err := s.authz.IsMember(ctx, u.ID, id)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if !member {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+		}
+	}
+	return connect.NewResponse(&identityv1.GetGroupAccessResponse{Capabilities: []string(caps)}), nil
+}
+
 // DeleteGroup deletes a group; memberships, bindings, and policy subjects cascade.
 // Gated by identity:group:delete at the group's folder scope. A non-existent id
 // returns NotFound (its governing scope cannot be derived).

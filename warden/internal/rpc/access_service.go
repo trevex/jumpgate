@@ -847,6 +847,32 @@ func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Requ
 	return connect.NewResponse(out), nil
 }
 
+// GetRoleAccess returns the caller's management capabilities on one role.
+// PermissionDenied (not NotFound) when the caller has no relationship to the
+// role, because roles are not catalog topology.
+func (s *AccessServer) GetRoleAccess(ctx context.Context, req *connect.Request[accessv1.GetRoleAccessRequest]) (*connect.Response[accessv1.GetRoleAccessResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	id, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
+	}
+	role, err := s.q.GetRole(ctx, id)
+	if err != nil {
+		return nil, roleNotFoundOrInternal(err)
+	}
+	caps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(role.FolderID))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(caps) == 0 {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("no access to role"))
+	}
+	return connect.NewResponse(&accessv1.GetRoleAccessResponse{Capabilities: []string(caps)}), nil
+}
+
 // ExplainRole enumerates every derivation by which a user holds a role on an
 // asset. Admins may explain anyone; a non-admin may only explain themselves.
 //

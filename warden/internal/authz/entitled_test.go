@@ -54,6 +54,9 @@ func (stubAuthorizer) VisibleRolesUnder(context.Context, uuid.UUID, uuid.UUID, b
 func (stubAuthorizer) VisibleGroupsUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {
 	return nil, nil
 }
+func (stubAuthorizer) IsMember(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return false, nil
+}
 
 func TestEntitledLoginsIntersects(t *testing.T) {
 	a := stubAuthorizer{allow: map[string]bool{"ssh:login:root": false, "ssh:login:deploy": true}}
