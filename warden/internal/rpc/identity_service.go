@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -175,19 +176,52 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 	return connect.NewResponse(&identityv1.CreateGroupResponse{Group: m}), nil
 }
 
-// ResolveGroup resolves a group name to an id (admin only). Unknown names return NotFound.
+// ResolveGroup resolves a group reference to an id. The reference is one of a
+// uuid, a bare name (global group), or `<group>@<folder-path>` (folder-homed).
+// The read gate is applied at the resolved group's folder scope, and a read-cap
+// denial is existence-hidden as NotFound so a delegated caller cannot learn a
+// group exists outside their read scope. The canonical `path` is echoed.
 func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
+	ref := req.Msg.Name
+	var grp gen.Group
+	if id, perr := uuid.Parse(ref); perr == nil {
+		g, err := s.q.GetGroup(ctx, id)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	} else if at := strings.LastIndex(ref, "@"); at >= 0 {
+		name, folderPath := ref[:at], ref[at+1:]
+		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		g, err := s.q.GetGroupByFolderAndName(ctx, gen.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	} else {
+		g, err := s.q.GetGroupByNameGlobal(ctx, ref)
+		if err != nil {
+			return nil, groupNotFoundOrInternal(err)
+		}
+		grp = g
+	}
+	// Existence-hide a read-cap denial as NotFound (must not reveal a group
+	// outside the caller's read scope).
+	if err := s.requireCap(ctx, "identity:group:read", scopeOfFolderID(grp.FolderID)); err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+	}
+	m, err := s.groupMsgWithPath(ctx, grp)
+	if err != nil {
 		return nil, err
 	}
-	g, err := s.q.GetGroupByName(ctx, req.Msg.Name)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
-		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+	path := m.Name
+	if m.FolderPath != "" {
+		path = m.Name + "@" + m.FolderPath
 	}
-	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: g.ID.String()}), nil
+	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: grp.ID.String(), Path: path}), nil
 }
 
 // ListGroups returns a page of groups (admin only), ordered by id.

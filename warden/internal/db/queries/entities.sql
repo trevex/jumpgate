@@ -4,9 +4,6 @@ INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING *;
 -- name: CreateGroup :one
 INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING *;
 
--- name: GetGroupByName :one
-SELECT * FROM groups WHERE name = $1;
-
 -- name: GetGroup :one
 SELECT * FROM groups WHERE id = $1;
 

@@ -40,6 +40,14 @@ func roleNotFoundOrInternal(err error) error {
 	return connect.NewError(connect.CodeInternal, err)
 }
 
+// groupNotFoundOrInternal maps pgx.ErrNoRows to NotFound and anything else to Internal.
+func groupNotFoundOrInternal(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+	}
+	return connect.NewError(connect.CodeInternal, err)
+}
+
 // uuidFromPg converts a valid pgtype.UUID to a uuid.UUID.
 func uuidFromPg(u pgtype.UUID) uuid.UUID { return u.Bytes }
 
