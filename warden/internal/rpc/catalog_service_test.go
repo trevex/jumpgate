@@ -55,7 +55,7 @@ func TestCatalogAdminCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
-	assets, err := c.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: f.Msg.Folder.Id}), tok))
+	assets, err := c.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: f.Msg.Folder.Id}), tok))
 	if err != nil {
 		t.Fatalf("list assets: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestCatalogCreateAssetConfigRollsBack(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("create with bad config = %v, want InvalidArgument", connect.CodeOf(err))
 	}
-	list, err := c.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: f.Msg.Folder.Id}), tok))
+	list, err := c.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: f.Msg.Folder.Id}), tok))
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -427,15 +427,16 @@ func TestCatalogReadsPopulatePath(t *testing.T) {
 		t.Fatalf("GetAsset path = %q, want pg-primary.db.prod", got.Msg.Asset.Path)
 	}
 
-	list, err := c.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: db.Msg.Folder.Id}), tok))
+	list, err := c.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: db.Msg.Folder.Id}), tok))
 	if err != nil {
 		t.Fatalf("list assets: %v", err)
 	}
 	if len(list.Msg.Assets) != 1 || list.Msg.Assets[0].Path != "pg-primary.db.prod" {
-		t.Fatalf("ListAssetsByFolder path = %v, want pg-primary.db.prod", list.Msg.Assets)
+		t.Fatalf("ListAssets path = %v, want pg-primary.db.prod", list.Msg.Assets)
 	}
 
-	folders, err := c.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100}), tok))
+	// db is nested under prod, so cascade from root to reach it and verify its path.
+	folders, err := c.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 100, Cascade: true}), tok))
 	if err != nil {
 		t.Fatalf("list folders: %v", err)
 	}

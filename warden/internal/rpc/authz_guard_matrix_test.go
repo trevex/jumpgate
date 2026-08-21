@@ -324,20 +324,16 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.catalog.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "zf"}), tok))
 			return err
 		}},
-		{"Catalog.ListFolders", PD, func() error {
-			_, err := cl.catalog.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{PageSize: 10}), tok))
-			return err
-		}},
+		// ListFolders/ListAssets are intentionally NOT in this deny matrix: they are
+		// not capability-gated but visibility-filtered — a capless user gets an empty
+		// (non-error) result, not a denial. That is pinned in
+		// TestAuthzSelfServiceListsAreNotDenied.
 		{"Catalog.CreateAsset", PD, func() error {
 			_, err := cl.catalog.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.folderID, Name: "za", Kind: "ssh"}), tok))
 			return err
 		}},
 		{"Catalog.GetAsset", PD, func() error {
 			_, err := cl.catalog.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: f.assetID}), tok))
-			return err
-		}},
-		{"Catalog.ListAssetsByFolder", PD, func() error {
-			_, err := cl.catalog.ListAssetsByFolder(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsByFolderRequest{FolderId: f.folderID}), tok))
 			return err
 		}},
 		{"Catalog.ResolveAsset", NF, func() error {
@@ -350,6 +346,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		}},
 		{"Catalog.GetAssetAccess", NF, func() error {
 			_, err := cl.catalog.GetAssetAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetAccessRequest{AssetId: f.assetID}), tok))
+			return err
+		}},
+		{"Catalog.GetFolderAccess", NF, func() error {
+			_, err := cl.catalog.GetFolderAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetFolderAccessRequest{FolderId: f.folderID}), tok))
 			return err
 		}},
 
@@ -537,12 +537,24 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 	ctx := context.Background()
 	cl := newGuardClients(url)
 
-	visible, err := cl.catalog.ListVisibleAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListVisibleAssetsRequest{}), tok))
+	// ListAssets is visibility-filtered, not cap-gated: a capless user browsing the
+	// root catalog gets an empty (non-error) result rather than a denial.
+	visible, err := cl.catalog.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Cascade: true}), tok))
 	if err != nil {
-		t.Fatalf("ListVisibleAssets: %v", err)
+		t.Fatalf("ListAssets: %v", err)
 	}
 	if len(visible.Msg.Assets) != 0 {
-		t.Errorf("capless ListVisibleAssets = %d assets, want 0", len(visible.Msg.Assets))
+		t.Errorf("capless ListAssets = %d assets, want 0", len(visible.Msg.Assets))
+	}
+
+	// ListFolders is likewise visibility-filtered: a capless user browsing root
+	// gets an empty (non-error) result, not a denial.
+	visFolders, err := cl.catalog.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{Cascade: true}), tok))
+	if err != nil {
+		t.Fatalf("ListFolders: %v", err)
+	}
+	if len(visFolders.Msg.Folders) != 0 {
+		t.Errorf("capless ListFolders = %d folders, want 0", len(visFolders.Msg.Folders))
 	}
 
 	groups, err := cl.identity.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 10}), tok))

@@ -15,9 +15,9 @@ service CatalogService {
   rpc CreateAsset(CreateAssetRequest) returns (CreateAssetResponse) {}
   rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {}
   rpc UpdateAssetConfig(UpdateAssetConfigRequest) returns (UpdateAssetConfigResponse) {}
-  rpc ListAssetsByFolder(ListAssetsByFolderRequest) returns (ListAssetsByFolderResponse) {}
-  rpc ListVisibleAssets(ListVisibleAssetsRequest) returns (ListVisibleAssetsResponse) {}
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
+  rpc GetFolderAccess(GetFolderAccessRequest) returns (GetFolderAccessResponse) {}
   rpc ResolveAsset(ResolveAssetRequest) returns (ResolveAssetResponse) {}
   rpc ResolveFolder(ResolveFolderRequest) returns (ResolveFolderResponse) {}
 }
@@ -67,7 +67,14 @@ message CreateFolderRequest {
 }
 message CreateFolderResponse { Folder folder = 1; }
 
-message ListFoldersRequest { int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; string page_token = 2; }
+message ListFoldersRequest {
+  // Parent folder to browse: "" = root, or a uuid / DNS-style dotted path.
+  string parent = 1;
+  // When true, browse the parent's entire subtree; when false, only direct children.
+  bool cascade = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 4;
+}
 message ListFoldersResponse { repeated Folder folders = 1; string next_page_token = 2; }
 
 message CreateAssetRequest {
@@ -88,17 +95,15 @@ message UpdateAssetConfigRequest {
 }
 message UpdateAssetConfigResponse {}
 
-message ListAssetsByFolderRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }
-message ListAssetsByFolderResponse { repeated Asset assets = 1; }
-
-message VisibleAsset {
-  string id = 1;
-  string name = 2;
-  bool active = 3;
-  repeated string role_ids = 4;
-  // DNS-style dotted path (e.g. "pg-primary.db.prod") a requester can inspect/request.
-  string path = 5;
+message ListAssetsRequest {
+  // Parent folder to browse: "" = root, or a uuid / DNS-style dotted path.
+  string parent = 1;
+  // When true, browse the parent's entire subtree; when false, only direct children.
+  bool cascade = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 4;
 }
+message ListAssetsResponse { repeated Asset assets = 1; string next_page_token = 2; }
 
 // RoleRef names a role for discovery: its id, name, and the leaf->root dotted path
 // of its scoped folder (empty = a global role).
@@ -107,8 +112,6 @@ message RoleRef {
   string name = 2;
   string folder_path = 3;
 }
-message ListVisibleAssetsRequest {}
-message ListVisibleAssetsResponse { repeated VisibleAsset assets = 1; }
 
 message GetAssetAccessRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
 message GetAssetAccessResponse {
@@ -116,6 +119,14 @@ message GetAssetAccessResponse {
   repeated string requestable_role_ids = 2;
   repeated RoleRef active_roles = 3;
   repeated RoleRef requestable_roles = 4;
+  // The caller's management capabilities on this asset (e.g. "catalog:asset:read").
+  repeated string capabilities = 5;
+}
+
+message GetFolderAccessRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetFolderAccessResponse {
+  // The caller's management capabilities on this folder (e.g. "catalog:folder:read").
+  repeated string capabilities = 1;
 }
 
 // ResolveAsset maps a caller-supplied reference (a uuid or a DNS-style dotted path

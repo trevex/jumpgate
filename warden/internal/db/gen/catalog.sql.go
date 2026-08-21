@@ -284,12 +284,12 @@ func (q *Queries) GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginPara
 	return i, err
 }
 
-const listAssetsByFolder = `-- name: ListAssetsByFolder :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 ORDER BY id
+const listAssetsByIDs = `-- name: ListAssetsByIDs :many
+SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
 `
 
-func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([]Asset, error) {
-	rows, err := q.db.Query(ctx, listAssetsByFolder, folderID)
+func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssetsByIDs, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -315,12 +315,31 @@ func (q *Queries) ListAssetsByFolder(ctx context.Context, folderID uuid.UUID) ([
 	return items, nil
 }
 
-const listAssetsByIDs = `-- name: ListAssetsByIDs :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
+const listAssetsByIDsPaged = `-- name: ListAssetsByIDsPaged :many
+SELECT id, folder_id, name, labels, created_at, kind FROM assets
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
 `
 
-func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
-	rows, err := q.db.Query(ctx, listAssetsByIDs, dollar_1)
+type ListAssetsByIDsPagedParams struct {
+	Ids       []uuid.UUID `json:"ids"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, listAssetsByIDsPaged,
+		arg.Ids,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +376,54 @@ type ListFoldersParams struct {
 
 func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error) {
 	rows, err := q.db.Query(ctx, listFolders, arg.Column1, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Folder
+	for rows.Next() {
+		var i Folder
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ParentID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFoldersByIDsPaged = `-- name: ListFoldersByIDsPaged :many
+SELECT id, name, parent_id, created_at FROM folders
+WHERE id = ANY($1::uuid[])
+  AND (
+    $2::text IS NULL
+    OR (name, id) > ($2, $3::uuid)
+  )
+ORDER BY name, id
+LIMIT $4
+`
+
+type ListFoldersByIDsPagedParams struct {
+	Ids       []uuid.UUID `json:"ids"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
+}
+
+func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error) {
+	rows, err := q.db.Query(ctx, listFoldersByIDsPaged,
+		arg.Ids,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

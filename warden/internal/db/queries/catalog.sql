@@ -4,8 +4,25 @@ SELECT * FROM folders WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
 -- name: GetFolder :one
 SELECT * FROM folders WHERE id = $1;
 
--- name: ListAssetsByFolder :many
-SELECT * FROM assets WHERE folder_id = $1 ORDER BY id;
+-- name: ListFoldersByIDsPaged :many
+SELECT * FROM folders
+WHERE id = ANY(sqlc.arg('ids')::uuid[])
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
+
+-- name: ListAssetsByIDsPaged :many
+SELECT * FROM assets
+WHERE id = ANY(sqlc.arg('ids')::uuid[])
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
 
 -- name: ListRoles :many
 SELECT * FROM roles
