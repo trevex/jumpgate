@@ -247,6 +247,7 @@ type WhoAmIResponse struct {
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"` // caller's globally-held capability patterns (nav gating)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -302,6 +303,13 @@ func (x *WhoAmIResponse) GetDisplayName() string {
 	return ""
 }
 
+func (x *WhoAmIResponse) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 var File_jumpgate_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
@@ -317,11 +325,12 @@ const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
 	"\auser_id\x18\x02 \x01(\tR\x06userIdJ\x04\b\x03\x10\x04R\bis_admin\"\x0f\n" +
 	"\rLogoutRequest\"\x10\n" +
 	"\x0eLogoutResponse\"\x0f\n" +
-	"\rWhoAmIRequest\"r\n" +
+	"\rWhoAmIRequest\"\x96\x01\n" +
 	"\x0eWhoAmIResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin2\xf7\x01\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\"\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilitiesJ\x04\b\x04\x10\x05R\bis_admin2\xf7\x01\n" +
 	"\vAuthService\x12J\n" +
 	"\x05Login\x12\x1e.jumpgate.auth.v1.LoginRequest\x1a\x1f.jumpgate.auth.v1.LoginResponse\"\x00\x12M\n" +
 	"\x06WhoAmI\x12\x1f.jumpgate.auth.v1.WhoAmIRequest\x1a .jumpgate.auth.v1.WhoAmIResponse\"\x00\x12M\n" +

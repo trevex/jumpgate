@@ -220,6 +220,52 @@ func TestLoginBearerDefault(t *testing.T) {
 	}
 }
 
+func TestWhoAmICapabilities(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@caps", "secret1", true)
+	seedUser(t, pool, "plain@caps", "secret2", false)
+
+	client := authv1connect.NewAuthServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Helper: login and call WhoAmI, return capabilities.
+	whoAmICaps := func(email, pw string) []string {
+		t.Helper()
+		resp, err := client.Login(ctx, connect.NewRequest(&authv1.LoginRequest{Email: email, Password: pw}))
+		if err != nil {
+			t.Fatalf("login %s: %v", email, err)
+		}
+		who := connect.NewRequest(&authv1.WhoAmIRequest{})
+		who.Header().Set("Authorization", "Bearer "+resp.Msg.Token)
+		wr, err := client.WhoAmI(ctx, who)
+		if err != nil {
+			t.Fatalf("whoami %s: %v", email, err)
+		}
+		return wr.Msg.Capabilities
+	}
+
+	// Admin holds ** globally via seedUser(admin=true).
+	adminCaps := whoAmICaps("admin@caps", "secret1")
+	found := false
+	for _, c := range adminCaps {
+		if c == "**" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("admin WhoAmI.Capabilities = %v, want it to contain \"**\"", adminCaps)
+	}
+
+	// Plain user has no global role binding — ** must not appear.
+	plainCaps := whoAmICaps("plain@caps", "secret2")
+	for _, c := range plainCaps {
+		if c == "**" {
+			t.Errorf("plain WhoAmI.Capabilities = %v, want no \"**\"", plainCaps)
+		}
+	}
+}
+
 // containsStr reports whether s contains substr (used to check cookie attributes).
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && (s[:len(substr)] == substr || containsStr(s[1:], substr)))

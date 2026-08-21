@@ -41,4 +41,5 @@ message WhoAmIResponse {
   string display_name = 3;
   reserved 4;
   reserved "is_admin";
+  repeated string capabilities = 5; // caller's globally-held capability patterns (nav gating)
 }
