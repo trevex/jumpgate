@@ -174,6 +174,9 @@ func TestScenario(t *testing.T) {
 			"--capability", "access:role:create",
 			"--capability", "access:binding:create",
 			"--capability", "access:policy:create",
+			"--capability", "identity:group:create",
+			"--capability", "identity:group:read",
+			"--capability", "identity:group:add-member",
 			"--capability", "ssh:login:*")
 
 		// A GLOBAL role carrying `**` — the full admin capability set. Captured by id so
@@ -252,6 +255,42 @@ func TestScenario(t *testing.T) {
 		// user (a global operation) is refused.
 		e.asActorFails(t, "dana", "users", "create", "someone"+e.suffix+"@demo.test",
 			"--name", "Someone", "--password", "someone-password-1234")
+
+		// --- delegated GROUP administration (governance is folder-scoped) ---
+		//
+		// Groups are folder-HOMED for governance: the folder decides WHO may administer
+		// the group; it does NOT change the group's membership. `identity:group:*` caps
+		// are checked at the group's folder scope and cascade down the folder tree. dana
+		// holds identity:group:{create,read,add-member} at team (via the folder-admin
+		// binding), so she may mint and manage groups homed in team — but not in the
+		// parent demo folder, and not globally.
+
+		// ALLOW within team: create a group homed in the team folder. dana addresses the
+		// folder by id (she lacks catalog:folder:read, so a path would deny at folder
+		// resolution before the group-create check). Capture the group id: dana lacks
+		// broad resolution caps, so the later add-member references it by id.
+		sreOut := e.asActor(t, "dana", "groups", "create", e.name("sre"),
+			"--folder", teamID, "-o", "json")
+		sreID := jsonID(sreOut)
+		if sreID == "" {
+			t.Fatalf("no sre group id:\n%s", sreOut)
+		}
+
+		// ALLOW within team: add a member. Membership is orthogonal to the folder — the
+		// folder only governs who may administer the group — so dana adds herself (by id)
+		// as a member of the team-homed group she just created. Both args are ids, so
+		// this turns purely on identity:group:add-member at the group's folder scope.
+		e.asActor(t, "dana", "groups", "add-member", sreID, danaID)
+
+		// DENY outside scope: dana has no identity caps at the PARENT demo folder
+		// (governance cascades DOWN, never up), so homing a group there is refused.
+		// Address demo by id so the denial lands on the group-create check.
+		e.asActorFails(t, "dana", "groups", "create", e.name("outsidegrp"),
+			"--folder", demoFolderID)
+
+		// DENY global: a group with no --folder is global; creating it needs
+		// identity:group:create GLOBALLY, which dana does not hold anywhere.
+		e.asActorFails(t, "dana", "groups", "create", e.name("globalgrp"))
 	})
 
 	t.Run("act1_alice_requests", func(t *testing.T) {
