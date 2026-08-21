@@ -101,6 +101,8 @@ message CreateGroupRequest {
 message ListGroupsRequest {
   int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   string page_token = 2;
+  string parent     = 3; // folder id or DNS path; empty = root (folder-less groups + all folders)
+  bool   cascade    = 4; // descend the whole subtree; default false = direct children only
 }
 
 message ListGroupsResponse {

@@ -1321,7 +1321,7 @@ func TestListRolesFolderPath(t *testing.T) {
 	if _, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "everywhere", Capabilities: []string{"ssh:login:deploy"}}), tok)); err != nil {
 		t.Fatalf("global role: %v", err)
 	}
-	resp, err := access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), tok))
+	resp, err := access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50, Cascade: true}), tok))
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -1435,9 +1435,10 @@ func TestAccessCapabilityGatingAndSubset(t *testing.T) {
 		t.Fatalf("dana bind identity role at team = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 
-	// dana CANNOT ListRoles (a global read she lacks).
-	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), danaTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("dana ListRoles = %v, want PermissionDenied", connect.CodeOf(err))
+	// dana CAN call ListRoles — it is visibility-filtered, not cap-gated.
+	// She sees only the roles visible to her (her own role(s)), not an error.
+	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), danaTok)); err != nil {
+		t.Fatalf("dana ListRoles visibility-filtered = %v, want ok", err)
 	}
 
 	// admin (**) can do all of the above.

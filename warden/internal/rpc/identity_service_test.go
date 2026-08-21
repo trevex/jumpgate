@@ -440,10 +440,11 @@ func TestGroupFolderUniqueness(t *testing.T) {
 	}
 }
 
-// TestListGroupsScoped pins ListGroups as a visibility-scoped list: a global
-// identity:group:read holder (incl. admin **) sees every group; a folder-scoped
-// read holder sees only the groups homed in folders they can read; a caller with
-// no group caps gets an empty list (not an error).
+// TestListGroupsScoped pins ListGroups as a path-scoped visibility browse: the
+// parent parameter controls which part of the tree is browsed. An admin sees
+// all groups in the requested scope; a folder-scoped read holder sees only the
+// groups homed in folders they can read within that scope; a caller with no
+// group caps or membership gets an empty list (not an error).
 func TestListGroupsScoped(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -474,36 +475,71 @@ func TestListGroupsScoped(t *testing.T) {
 		return m
 	}
 
-	// admin (**) sees both.
-	ar, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), atok))
+	// admin (**) with cascade=true sees both (global + folder-scoped).
+	ar, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, Cascade: true}), atok))
 	if err != nil {
-		t.Fatalf("admin ListGroups: %v", err)
+		t.Fatalf("admin ListGroups (cascade): %v", err)
 	}
 	an := names(ar.Msg)
 	if !an["sre"] || !an["everyone"] {
-		t.Fatalf("admin should see both, got %v", an)
+		t.Fatalf("admin (cascade) should see both, got %v", an)
 	}
 
-	// dana: folder-scoped identity:group:read at team → sees sre, not everyone.
+	// admin with parent="" (root, no cascade) sees only global groups.
+	rootList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), atok))
+	if err != nil {
+		t.Fatalf("admin root list: %v", err)
+	}
+	rn := names(rootList.Msg)
+	if !rn["everyone"] {
+		t.Fatalf("admin root should see everyone (global), got %v", rn)
+	}
+	if rn["sre"] {
+		t.Fatalf("admin root should NOT see sre (folder-scoped), got %v", rn)
+	}
+
+	// admin with parent=team sees sre only (not everyone).
+	teamList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, Parent: teamID}), atok))
+	if err != nil {
+		t.Fatalf("admin team list: %v", err)
+	}
+	tn := names(teamList.Msg)
+	if !tn["sre"] {
+		t.Fatalf("admin@team should see sre, got %v", tn)
+	}
+	if tn["everyone"] {
+		t.Fatalf("admin@team should NOT see everyone, got %v", tn)
+	}
+
+	// dana: folder-scoped identity:group:read at team → parent=team sees sre.
 	danaID := seedCapUser(t, pool, "dana@x", "danapass", `[]`)
 	bindScopedCap(t, pool, danaID, `["identity:group:read"]`, uuidFromStr(t, teamID), uuid.Nil)
 	danatok := authClient(t, url, "dana@x", "danapass")
-	dr, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), danatok))
+	dr, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, Parent: teamID}), danatok))
 	if err != nil {
-		t.Fatalf("dana ListGroups: %v", err)
+		t.Fatalf("dana ListGroups@team: %v", err)
 	}
 	dn := names(dr.Msg)
 	if !dn["sre"] {
-		t.Fatalf("dana should see sre, got %v", dn)
+		t.Fatalf("dana@team should see sre, got %v", dn)
 	}
 	if dn["everyone"] {
-		t.Fatalf("dana should NOT see global everyone, got %v", dn)
+		t.Fatalf("dana@team should NOT see global everyone, got %v", dn)
 	}
 
-	// eve: no group caps → empty list, no error.
+	// dana at root (parent="") sees no groups (has no global cap, sre is folder-scoped).
+	danaRoot, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), danatok))
+	if err != nil {
+		t.Fatalf("dana root list: %v", err)
+	}
+	if len(danaRoot.Msg.Groups) != 0 {
+		t.Fatalf("dana root should see 0 groups, got %d", len(danaRoot.Msg.Groups))
+	}
+
+	// eve: no group caps → empty list at any scope, no error.
 	seedCapUser(t, pool, "eve@x", "evepass", `[]`)
 	evetok := authClient(t, url, "eve@x", "evepass")
-	er, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), evetok))
+	er, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, Cascade: true}), evetok))
 	if err != nil {
 		t.Fatalf("eve ListGroups: %v", err)
 	}
@@ -689,13 +725,13 @@ func TestListGroupsKeysetByName(t *testing.T) {
 	}
 }
 
-// TestListGroupsFilteredPathAdvancesPastInvisible verifies that the filtered
-// slow path (non-admin with folder-scoped read cap) paginates past groups the
-// caller cannot see. The test creates a full page of invisible groups (homed in
-// folder B, caller has no cap there) followed by one visible group (homed in
-// folder A, caller has the cap). After one page of invisible rows the caller
-// should still receive the visible group on the next call.
-func TestListGroupsFilteredPathAdvancesPastInvisible(t *testing.T) {
+// TestListGroupsScopedVisibilityIsolation verifies that a caller with
+// identity:group:read scoped to folder A sees only groups homed in A (not in B)
+// when browsing with parent=fA. Groups homed in folder B are not returned. With
+// cascade=true, all groups under folder A (including nested sub-folders) appear.
+// This replaces the old "filtered slow path" test, which was specific to the
+// previous full-scan-then-filter implementation.
+func TestListGroupsScopedVisibilityIsolation(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	atok := adminToken(t, url)
@@ -703,7 +739,7 @@ func TestListGroupsFilteredPathAdvancesPastInvisible(t *testing.T) {
 	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
 
-	// Create two folders: A (caller can read) and B (caller cannot).
+	// Create two sibling folders: A (caller can read) and B (caller cannot).
 	fA, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "fa"}), atok))
 	if err != nil {
 		t.Fatalf("create folder fa: %v", err)
@@ -719,18 +755,13 @@ func TestListGroupsFilteredPathAdvancesPastInvisible(t *testing.T) {
 	bindScopedCap(t, pool, callerID, `["identity:group:read"]`, folderAID, uuid.Nil)
 	callerTok := authClient(t, url, "partial@x", "partialpass")
 
-	// Create 2 invisible groups homed in folder B (names aa-*, so they sort first),
-	// then 1 visible group homed in folder A (name zz-visible, sorts last).
-	for i := 0; i < 2; i++ {
-		name := "aa-hidden"
-		if i == 1 {
-			name = "ab-hidden"
-		}
+	// 2 groups in folder B (invisible to caller), 1 group in folder A (visible).
+	for _, name := range []string{"aa-hidden", "ab-hidden"} {
 		if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
 			Name:     name,
 			FolderId: fB.Msg.Folder.Id,
 		}), atok)); err != nil {
-			t.Fatalf("create hidden group %d: %v", i, err)
+			t.Fatalf("create hidden group %s: %v", name, err)
 		}
 	}
 	if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
@@ -740,36 +771,48 @@ func TestListGroupsFilteredPathAdvancesPastInvisible(t *testing.T) {
 		t.Fatalf("create visible group: %v", err)
 	}
 
-	// With page_size=2 the first page fetches [aa-hidden, ab-hidden] (SQL full),
-	// both filtered out → returns 0 groups but a non-empty NextPageToken.
-	page1, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 2}), callerTok))
-	if err != nil {
-		t.Fatalf("page1: %v", err)
-	}
-	if len(page1.Msg.Groups) != 0 {
-		t.Fatalf("page1: caller should see 0 visible groups, got %d: %v", len(page1.Msg.Groups), page1.Msg.Groups)
-	}
-	if page1.Msg.NextPageToken == "" {
-		t.Fatal("page1: expected non-empty NextPageToken (SQL page was full)")
-	}
-
-	// Following the token should surface the visible group.
-	page2, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
-		PageSize:  2,
-		PageToken: page1.Msg.NextPageToken,
+	// caller browsing parent=fA sees exactly zz-visible.
+	res, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		PageSize: 10, Parent: fA.Msg.Folder.Id,
 	}), callerTok))
 	if err != nil {
-		t.Fatalf("page2: %v", err)
+		t.Fatalf("list fA: %v", err)
 	}
-	if len(page2.Msg.Groups) != 1 {
-		t.Fatalf("page2: got %d groups, want 1", len(page2.Msg.Groups))
+	if len(res.Msg.Groups) != 1 || res.Msg.Groups[0].Name != "zz-visible" {
+		t.Fatalf("fA list: got %v, want [zz-visible]", res.Msg.Groups)
 	}
-	if page2.Msg.Groups[0].Name != "zz-visible" {
-		t.Fatalf("page2[0] = %q, want zz-visible", page2.Msg.Groups[0].Name)
+
+	// caller browsing parent=fB sees nothing (no cap there).
+	resB, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		PageSize: 10, Parent: fB.Msg.Folder.Id,
+	}), callerTok))
+	if err != nil {
+		t.Fatalf("list fB: %v", err)
 	}
-	// Last page has no further token.
-	if page2.Msg.NextPageToken != "" {
-		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	if len(resB.Msg.Groups) != 0 {
+		t.Fatalf("fB list: got %d groups, want 0", len(resB.Msg.Groups))
+	}
+
+	// caller browsing root with cascade=true sees only fA groups.
+	cascRes, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		PageSize: 10, Cascade: true,
+	}), callerTok))
+	if err != nil {
+		t.Fatalf("list cascade: %v", err)
+	}
+	for _, g := range cascRes.Msg.Groups {
+		if g.Name == "aa-hidden" || g.Name == "ab-hidden" {
+			t.Errorf("cascade: should not see hidden group %q", g.Name)
+		}
+	}
+	found := false
+	for _, g := range cascRes.Msg.Groups {
+		if g.Name == "zz-visible" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("cascade: should see zz-visible")
 	}
 }
 
@@ -886,5 +929,194 @@ func TestListGroupMembersKeysetPagination(t *testing.T) {
 	totalSeen := len(seenUserIDs) + len(seenGroupIDs)
 	if totalSeen != 3 {
 		t.Fatalf("total members across pages = %d, want 3 (users=%v groups=%v)", totalSeen, seenUserIDs, seenGroupIDs)
+	}
+}
+
+// containsGroupName reports whether groups contains a group with the given name.
+func containsGroupName(groups []*identityv1.Group, name string) bool {
+	for _, g := range groups {
+		if g.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// TestListGroupsParentScoped exercises the path-scoped visibility browse for
+// ListGroups. It seeds a global group and a folder-scoped group, then verifies:
+//   - parent="" returns only global groups (not the folder-scoped one)
+//   - parent=<f1 id> returns only the folder-scoped group
+//   - parent="", cascade=true returns both
+//   - a member of the folder group sees it under parent=f1 with NO cap
+//   - results are in (name ASC, id ASC) order
+//   - keyset pagination works across a page boundary
+func TestListGroupsParentScoped(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create folder f1.
+	f1, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "f1g"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	f1ID := f1.Msg.Folder.Id
+
+	// Seed a global group and a folder-scoped group.
+	globalGroup, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "global-group",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create global group: %v", err)
+	}
+	globalGroupID := globalGroup.Msg.Group.Id
+
+	folderGroup, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "folder-group", FolderId: f1ID,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create folder group: %v", err)
+	}
+	folderGroupID := folderGroup.Msg.Group.Id
+
+	// --- Admin visibility ---
+
+	// parent="" → only global groups (not folderGroup).
+	rootList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 50}), tok))
+	if err != nil {
+		t.Fatalf("list root: %v", err)
+	}
+	if !containsGroupName(rootList.Msg.Groups, "global-group") {
+		t.Errorf("root list: want global-group present")
+	}
+	if containsGroupName(rootList.Msg.Groups, "folder-group") {
+		t.Errorf("root list: want folder-group absent (not global)")
+	}
+
+	// parent=f1ID → only the folder-scoped group.
+	f1List, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		Parent: f1ID, PageSize: 50,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list f1: %v", err)
+	}
+	if !containsGroupName(f1List.Msg.Groups, "folder-group") {
+		t.Errorf("f1 list: want folder-group present")
+	}
+	if containsGroupName(f1List.Msg.Groups, "global-group") {
+		t.Errorf("f1 list: want global-group absent")
+	}
+
+	// folder_path is populated for the scoped group.
+	for _, g := range f1List.Msg.Groups {
+		if g.Id == folderGroupID && g.FolderPath == "" {
+			t.Errorf("folder-group folder_path empty, want non-empty")
+		}
+	}
+
+	// parent="", cascade=true → both groups.
+	cascadeList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		Cascade: true, PageSize: 50,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list cascade: %v", err)
+	}
+	if !containsGroupName(cascadeList.Msg.Groups, "global-group") {
+		t.Errorf("cascade list: want global-group present")
+	}
+	if !containsGroupName(cascadeList.Msg.Groups, "folder-group") {
+		t.Errorf("cascade list: want folder-group present")
+	}
+
+	// --- Non-admin member visibility (no management cap) ---
+	// Create a member who belongs to folderGroup.
+	member, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "member@x", DisplayName: "Member", Password: "password123",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if _, err := id.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{
+		GroupId: folderGroupID, UserId: member.Msg.User.Id,
+	}), tok)); err != nil {
+		t.Fatalf("add member to folder-group: %v", err)
+	}
+	memberTok := authClient(t, url, "member@x", "password123")
+
+	// Member can see folder-group under parent=f1 with NO management cap.
+	memberList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		Parent: f1ID, PageSize: 50,
+	}), memberTok))
+	if err != nil {
+		t.Fatalf("member list f1: %v", err)
+	}
+	if !containsGroupName(memberList.Msg.Groups, "folder-group") {
+		t.Errorf("member f1 list: want folder-group present (member arm)")
+	}
+
+	// Member does not see global-group at root (not a member).
+	memberRoot, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 50}), memberTok))
+	if err != nil {
+		t.Fatalf("member root list: %v", err)
+	}
+	if containsGroupName(memberRoot.Msg.Groups, "global-group") {
+		t.Errorf("member root: should not see global-group they are not a member of")
+	}
+	_ = globalGroupID
+
+	// --- Name ordering and pagination ---
+	// Create extra groups under f1: alpha + beta + folder-group + gamma = 4.
+	// page_size=3 → page1=[alpha, beta, folder-group], page2=[gamma] (no token).
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+			Name: n, FolderId: f1ID,
+		}), tok)); err != nil {
+			t.Fatalf("create extra group %s: %v", n, err)
+		}
+	}
+	page1, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		Parent: f1ID, PageSize: 3,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Groups) != 3 {
+		t.Fatalf("page1: got %d groups, want 3", len(page1.Msg.Groups))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected NextPageToken")
+	}
+	// Ordering: alpha < beta < folder-group < gamma
+	if page1.Msg.Groups[0].Name != "alpha" || page1.Msg.Groups[1].Name != "beta" || page1.Msg.Groups[2].Name != "folder-group" {
+		t.Errorf("page1 order: got [%s, %s, %s], want [alpha, beta, folder-group]",
+			page1.Msg.Groups[0].Name, page1.Msg.Groups[1].Name, page1.Msg.Groups[2].Name)
+	}
+	page2, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
+		Parent: f1ID, PageSize: 3, PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Groups) != 1 {
+		t.Fatalf("page2: got %d groups, want 1 (gamma only)", len(page2.Msg.Groups))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatal("page2: expected empty NextPageToken (last page not full)")
+	}
+	if page2.Msg.Groups[0].Name != "gamma" {
+		t.Errorf("page2[0]: got %q, want gamma", page2.Msg.Groups[0].Name)
+	}
+	// No duplicates.
+	seenGroup := map[string]bool{}
+	for _, g := range page1.Msg.Groups {
+		seenGroup[g.Id] = true
+	}
+	for _, g := range page2.Msg.Groups {
+		if seenGroup[g.Id] {
+			t.Fatalf("duplicate group id %s across pages", g.Id)
+		}
 	}
 }

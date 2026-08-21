@@ -226,67 +226,67 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: grp.ID.String(), Path: path}), nil
 }
 
-// ListGroups returns a page of groups the caller may identity:group:read. It is
-// visibility-scoped: a global read holder (incl. admin **) sees every group; a
-// folder-scoped holder sees only groups homed in folders they can read; a caller
-// with no group read caps gets an empty page (not an error).
-//
-// Pagination uses (name ASC, id ASC) keyset order. For the filtered slow path the
-// next-page token is keyed to the SQL page position (last SQL row scanned), not
-// the last filtered row, so the cursor advances past invisible groups and
-// pagination terminates correctly even when a full page is entirely filtered out.
+// ListGroups browses groups under a parent (default root), returning only the
+// groups the caller may see — those they are a (transitive) member of, or may
+// manage via identity:group:read. Not cap-gated: an unrelated caller sees an
+// empty page, not an error. Cascade descends the whole subtree; otherwise only
+// groups homed directly in the parent folder (or, for root, folder-less groups).
 func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
 	u, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	// Fast path: a global identity:group:read holder (incl. admin **) sees all.
-	gcaps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, authz.GlobalScope())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	seesAll := gcaps.Allows("identity:group:read")
-
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	parent, err := resolveParentFolderRef(ctx, s.q, req.Msg.Parent)
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListGroupsPagedParams{Lim: limit}
-	if k != nil {
-		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
-		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
-	}
-	rows, err := s.q.ListGroupsPaged(ctx, params)
+	ids, err := s.authz.VisibleGroupsUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-
-	// Determine the next-page cursor from SQL-page fullness BEFORE filtering.
-	// This mirrors the ListPendingApprovals pattern: for filtered paths the token
-	// must track the SQL position (last SQL row) so pagination advances past rows
-	// the caller cannot see. The fast path (seesAll) also follows this rule for
-	// consistency; for the fast path the SQL rows and filtered rows coincide.
-	var nextToken string
+	out := &identityv1.ListGroupsResponse{}
+	if len(ids) == 0 {
+		return connect.NewResponse(out), nil
+	}
+	limit := clampPageSize(req.Msg.PageSize)
+	key, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListGroupsByIDsPagedParams{Column1: ids, Lim: limit}
+	if key != nil {
+		params.AfterName = pgText(key.Name)
+		params.AfterID = pgUUID(key.ID)
+	}
+	rows, err := s.q.ListGroupsByIDsPaged(ctx, params)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	pathByFolder := map[uuid.UUID]string{}
+	for i := range rows {
+		m := toGroupMsg(rows[i])
+		if rows[i].FolderID.Valid {
+			fid := uuidFromPg(rows[i].FolderID)
+			p, ok := pathByFolder[fid]
+			if !ok {
+				p, err = s.q.FolderPath(ctx, fid)
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				pathByFolder[fid] = p
+			}
+			m.FolderPath = p
+		}
+		out.Groups = append(out.Groups, m)
+	}
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// therefore costs one extra round-trip returning an empty final page (the
+	// standard strict-last-page tradeoff). encodeNameToken takes the SORT-KEY
+	// column: here name.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		nextToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = encodeNameToken(last.Name, last.ID)
 	}
-
-	out := &identityv1.ListGroupsResponse{}
-	for i := range rows {
-		if !seesAll {
-			caps, cerr := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(rows[i].FolderID))
-			if cerr != nil {
-				return nil, connect.NewError(connect.CodeInternal, cerr)
-			}
-			if !caps.Allows("identity:group:read") {
-				continue
-			}
-		}
-		out.Groups = append(out.Groups, toGroupMsg(rows[i]))
-	}
-	out.NextPageToken = nextToken
 	return connect.NewResponse(out), nil
 }
 

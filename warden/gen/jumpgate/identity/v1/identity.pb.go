@@ -730,6 +730,8 @@ type ListGroupsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	Parent        string                 `protobuf:"bytes,3,opt,name=parent,proto3" json:"parent,omitempty"`    // folder id or DNS path; empty = root (folder-less groups + all folders)
+	Cascade       bool                   `protobuf:"varint,4,opt,name=cascade,proto3" json:"cascade,omitempty"` // descend the whole subtree; default false = direct children only
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -776,6 +778,20 @@ func (x *ListGroupsRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *ListGroupsRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *ListGroupsRequest) GetCascade() bool {
+	if x != nil {
+		return x.Cascade
+	}
+	return false
 }
 
 type ListGroupsResponse struct {
@@ -1668,11 +1684,13 @@ const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"m\n" +
 	"\x12CreateGroupRequest\x12-\n" +
 	"\x04name\x18\x01 \x01(\tB\x19\xbaH\x16r\x14\x10\x01\x18\xc8\x012\r^[a-z0-9_-]+$R\x04name\x12(\n" +
-	"\tfolder_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderId\"Z\n" +
+	"\tfolder_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bfolderId\"\x8c\x01\n" +
 	"\x11ListGroupsRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tR\tpageToken\"q\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x16\n" +
+	"\x06parent\x18\x03 \x01(\tR\x06parent\x12\x18\n" +
+	"\acascade\x18\x04 \x01(\bR\acascade\"q\n" +
 	"\x12ListGroupsResponse\x123\n" +
 	"\x06groups\x18\x01 \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"_\n" +
