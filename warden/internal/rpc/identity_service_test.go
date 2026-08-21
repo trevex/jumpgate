@@ -439,3 +439,75 @@ func TestGroupFolderUniqueness(t *testing.T) {
 		t.Fatalf("bad name = %v", connect.CodeOf(err))
 	}
 }
+
+// TestListGroupsScoped pins ListGroups as a visibility-scoped list: a global
+// identity:group:read holder (incl. admin **) sees every group; a folder-scoped
+// read holder sees only the groups homed in folders they can read; a caller with
+// no group caps gets an empty list (not an error).
+func TestListGroupsScoped(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	team, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "team"}), atok))
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	teamID := team.Msg.Folder.Id
+
+	// sre homed in team; everyone is a global group (no folder).
+	if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "sre", FolderId: teamID}), atok)); err != nil {
+		t.Fatalf("create sre: %v", err)
+	}
+	if _, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "everyone"}), atok)); err != nil {
+		t.Fatalf("create everyone: %v", err)
+	}
+
+	names := func(resp *identityv1.ListGroupsResponse) map[string]bool {
+		m := map[string]bool{}
+		for _, g := range resp.Groups {
+			m[g.Name] = true
+		}
+		return m
+	}
+
+	// admin (**) sees both.
+	ar, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), atok))
+	if err != nil {
+		t.Fatalf("admin ListGroups: %v", err)
+	}
+	an := names(ar.Msg)
+	if !an["sre"] || !an["everyone"] {
+		t.Fatalf("admin should see both, got %v", an)
+	}
+
+	// dana: folder-scoped identity:group:read at team → sees sre, not everyone.
+	danaID := seedCapUser(t, pool, "dana@x", "danapass", `[]`)
+	bindScopedCap(t, pool, danaID, `["identity:group:read"]`, uuidFromStr(t, teamID), uuid.Nil)
+	danatok := authClient(t, url, "dana@x", "danapass")
+	dr, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), danatok))
+	if err != nil {
+		t.Fatalf("dana ListGroups: %v", err)
+	}
+	dn := names(dr.Msg)
+	if !dn["sre"] {
+		t.Fatalf("dana should see sre, got %v", dn)
+	}
+	if dn["everyone"] {
+		t.Fatalf("dana should NOT see global everyone, got %v", dn)
+	}
+
+	// eve: no group caps → empty list, no error.
+	seedCapUser(t, pool, "eve@x", "evepass", `[]`)
+	evetok := authClient(t, url, "eve@x", "evepass")
+	er, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100}), evetok))
+	if err != nil {
+		t.Fatalf("eve ListGroups: %v", err)
+	}
+	if len(er.Msg.Groups) != 0 {
+		t.Fatalf("eve should see no groups, got %d", len(er.Msg.Groups))
+	}
+}
