@@ -431,6 +431,26 @@ func (s *sqlAuthorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID
 	return set, nil
 }
 
+// IsMember reports whether the user is a (transitive) member of groupID. Returns
+// false for deactivated users. One targeted query, never full closure.
+func (s *sqlAuthorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+WITH RECURSIVE
+user_groups(group_id) AS (
+    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
+)
+SELECT EXISTS(
+    SELECT 1 FROM user_groups WHERE group_id = $2
+) AND EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`, userID, groupID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("is member: %w", err)
+	}
+	return ok, nil
+}
+
 // memberGroupIDs returns the set of group ids the user is a (transitive) member
 // of — the group ACCESS axis. The user_groups CTE is copied VERBATIM from heldCTE
 // / globalHeldCTE (direct membership base + recursive nested-group arm).

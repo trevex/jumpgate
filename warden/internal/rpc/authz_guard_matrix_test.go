@@ -318,6 +318,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.identity.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: f.groupID}), tok))
 			return err
 		}},
+		{"Identity.GetGroupAccess", NF, func() error {
+			_, err := cl.identity.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: f.groupID}), tok))
+			return err
+		}},
 
 		// ---- CatalogService ----
 		{"Catalog.CreateFolder", PD, func() error {
@@ -427,6 +431,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		}},
 		{"Access.ExplainRole(cross-user)", PD, func() error {
 			_, err := cl.access.ExplainRole(ctx, withToken(connect.NewRequest(&accessv1.ExplainRoleRequest{UserId: f.targetUserID, RoleId: f.roleID, AssetId: f.assetID}), tok))
+			return err
+		}},
+		{"Access.GetRoleAccess", PD, func() error {
+			_, err := cl.access.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: f.roleID}), tok))
 			return err
 		}},
 

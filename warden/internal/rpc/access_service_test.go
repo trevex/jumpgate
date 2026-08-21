@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
@@ -516,6 +517,62 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// TestGetRoleAccess: an admin gets role capabilities (its ** wildcard, which
+// CapabilitiesOnScope surfaces on any scope); a scoped cap holder sees their
+// concrete capability; a stranger with no relationship gets PermissionDenied.
+func TestGetRoleAccess(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a folder and a folder-scoped role.
+	f, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	folderID := uuid.MustParse(f.Msg.Folder.Id)
+
+	r, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name:         "readonly",
+		FolderId:     f.Msg.Folder.Id,
+		Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := r.Msg.Role.Id
+
+	// admin: CapabilitiesOnScope on the role's folder scope surfaces ** wildcard.
+	resp, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), tok))
+	if err != nil {
+		t.Fatalf("admin GetRoleAccess: %v", err)
+	}
+	if len(resp.Msg.Capabilities) == 0 {
+		t.Fatalf("admin caps = %v, want non-empty (holds **)", resp.Msg.Capabilities)
+	}
+
+	// A user with access:role:read scoped to the role's folder sees that capability.
+	seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
+	rtok := authClient(t, url, "roleadmin@x", "password123")
+	racc, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), rtok))
+	if err != nil {
+		t.Fatalf("role-admin GetRoleAccess: %v", err)
+	}
+	if !contains(racc.Msg.Capabilities, "access:role:read") {
+		t.Fatalf("role-admin caps = %v, want access:role:read", racc.Msg.Capabilities)
+	}
+
+	// stranger: capless, no relationship → PermissionDenied (roles are NOT topology).
+	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123")
+	if _, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), stok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("stranger GetRoleAccess = %v, want PermissionDenied", connect.CodeOf(err))
+	}
 }
 
 func TestExplainRole(t *testing.T) {

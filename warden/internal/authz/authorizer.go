@@ -94,4 +94,9 @@ type Authorizer interface {
 	// folder-less groups) are considered; with cascade the whole subtree under
 	// `parent` (or every group, for uuid.Nil) is.
 	VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
+
+	// IsMember reports whether userID is a (transitive) member of groupID.
+	// Returns false for deactivated users. Used by GetGroupAccess to distinguish
+	// a member with no management caps (success) from a total stranger (NotFound).
+	IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error)
 }

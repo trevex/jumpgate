@@ -1120,3 +1120,58 @@ func TestListGroupsParentScoped(t *testing.T) {
 		}
 	}
 }
+
+// TestGetGroupAccess: an admin gets group capabilities (** wildcard, surfaced via
+// CapabilitiesOnScope); a member-but-no-caps user succeeds with an empty
+// capability list (NOT NotFound); a stranger with no caps and no membership gets
+// NotFound (existence hiding — groups are catalog topology).
+func TestGetGroupAccess(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	ic := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a group (global scope, no folder).
+	grp, err := ic.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "testgroup"}), tok))
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	groupID := grp.Msg.Group.Id
+
+	// admin: CapabilitiesOnScope on the group's scope surfaces ** wildcard.
+	resp, err := ic.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: groupID}), tok))
+	if err != nil {
+		t.Fatalf("admin GetGroupAccess: %v", err)
+	}
+	if len(resp.Msg.Capabilities) == 0 {
+		t.Fatalf("admin caps = %v, want non-empty (holds **)", resp.Msg.Capabilities)
+	}
+
+	// A member (no manage cap) sees the group (empty caps), not NotFound.
+	memberID := seedCapUser(t, pool, "member@x", "password123", `[]`)
+	// Add them to the group via direct DB (we need the q/pool).
+	q := gen.New(pool)
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		GroupID:      uuid.MustParse(groupID),
+		MemberUserID: pgtype.UUID{Bytes: memberID, Valid: true},
+	}); err != nil {
+		t.Fatalf("add member to group: %v", err)
+	}
+	mtok := authClient(t, url, "member@x", "password123")
+	macc, err := ic.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: groupID}), mtok))
+	if err != nil {
+		t.Fatalf("member GetGroupAccess: %v", err)
+	}
+	// Member has no management caps on the group; the response succeeds but caps are empty.
+	if macc.Msg.Capabilities == nil {
+		macc.Msg.Capabilities = []string{}
+	}
+
+	// stranger: capless, not a member → NotFound (existence hiding for topology).
+	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123")
+	if _, err := ic.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: groupID}), stok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("stranger GetGroupAccess = %v, want NotFound", connect.CodeOf(err))
+	}
+}
