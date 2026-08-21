@@ -8,7 +8,15 @@ SELECT * FROM folders WHERE id = $1;
 SELECT * FROM assets WHERE folder_id = $1 ORDER BY id;
 
 -- name: ListRoles :many
-SELECT * FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
+SELECT * FROM roles
+WHERE (
+  -- keyset for ORDER BY name ASC, id ASC: row-comparison is correct for
+  -- same-direction sort (both ascending). A NULL after_name means first page.
+  sqlc.narg('after_name')::text IS NULL
+  OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+)
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
 
 -- name: GetRole :one
 SELECT * FROM roles WHERE id = $1;

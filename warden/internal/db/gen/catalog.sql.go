@@ -480,16 +480,25 @@ func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgty
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
+SELECT id, name, folder_id, capabilities, created_at FROM roles
+WHERE (
+  -- keyset for ORDER BY name ASC, id ASC: row-comparison is correct for
+  -- same-direction sort (both ascending). A NULL after_name means first page.
+  $1::text IS NULL
+  OR (name, id) > ($1, $2::uuid)
+)
+ORDER BY name, id
+LIMIT $3
 `
 
 type ListRolesParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	AfterName pgtype.Text `json:"after_name"`
+	AfterID   pgtype.UUID `json:"after_id"`
+	Lim       int32       `json:"lim"`
 }
 
 func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error) {
-	rows, err := q.db.Query(ctx, listRoles, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listRoles, arg.AfterName, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
