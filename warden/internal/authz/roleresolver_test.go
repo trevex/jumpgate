@@ -104,7 +104,7 @@ func TestHoldsRole(t *testing.T) {
 	}
 
 	// ── group sre, alice ∈ sre ────────────────────────────────────────────────
-	sre, err := q.CreateGroup(ctx, "sre")
+	sre, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "sre"})
 	if err != nil {
 		t.Fatalf("CreateGroup sre: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestHoldsRole(t *testing.T) {
 	// ── nested-group membership ───────────────────────────────────────────────
 	// alice ∈ teamA ∈ sre. alice only holds owner@prod through the sre binding, so
 	// the extra nesting layer must still resolve.
-	teamA, err := q.CreateGroup(ctx, "teamA")
+	teamA, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "team-a"})
 	if err != nil {
 		t.Fatalf("CreateGroup teamA: %v", err)
 	}

@@ -33,7 +33,10 @@ func TestResolveUserAndGroup(t *testing.T) {
 		t.Fatalf("non-admin resolve user = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 
-	// ResolveGroup: create a group, resolve by name; miss → NotFound; non-admin → PermissionDenied.
+	// ResolveGroup: create a group, resolve by name; miss → NotFound; a non-admin
+	// without the folder-scoped read cap → NotFound (existence-hidden, not
+	// PermissionDenied — a delegated caller must not learn a group exists outside
+	// their read scope).
 	gr, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "sre"}), tok))
 	if err != nil {
 		t.Fatalf("create group: %v", err)
@@ -45,7 +48,7 @@ func TestResolveUserAndGroup(t *testing.T) {
 	if _, err := id.ResolveGroup(ctx, withToken(connect.NewRequest(&identityv1.ResolveGroupRequest{Name: "nope"}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("resolve missing group = %v, want NotFound", connect.CodeOf(err))
 	}
-	if _, err := id.ResolveGroup(ctx, withToken(connect.NewRequest(&identityv1.ResolveGroupRequest{Name: "sre"}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("non-admin resolve group = %v, want PermissionDenied", connect.CodeOf(err))
+	if _, err := id.ResolveGroup(ctx, withToken(connect.NewRequest(&identityv1.ResolveGroupRequest{Name: "sre"}), utok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("non-admin resolve group = %v, want NotFound", connect.CodeOf(err))
 	}
 }

@@ -242,6 +242,9 @@ jumpgate --context admin roles create folder-admin \
   --capability access:role:create \
   --capability access:binding:create \
   --capability access:policy:create \
+  --capability identity:group:create \
+  --capability identity:group:read \
+  --capability identity:group:add-member \
   --capability 'ssh:login:*'
 ```
 
@@ -301,6 +304,36 @@ jumpgate --context dana bindings create --role <SUPERPOWER_ROLE_ID> --user dana@
 # DENY — global operation: creating a user needs identity:user:create at the
 # global scope; dana holds no identity capabilities at all.
 jumpgate --context dana users create someone@demo.test --name Someone --password someone-password-1234
+# -> permission denied
+```
+
+### Delegated group administration
+
+The same folder-scoping governs **groups**. A group is *folder-homed*, but the folder is
+**governance-only** — it decides *who may administer the group*, not who belongs to it.
+`identity:group:*` capabilities are checked at the group's folder scope and cascade down the
+folder tree. dana holds `identity:group:{create,read,add-member}` at `team`, so she may mint
+and manage groups homed in `team` (and its subtree) — and nowhere else. Group names are
+per-folder-unique and referenced as `<group>@<folder-path>`:
+
+```bash
+# ALLOW — home a group in team and add a member. Membership is orthogonal to the
+# folder: the folder only says who may administer the group, not who is in it.
+jumpgate --context dana groups create sre --folder team.demo
+jumpgate --context dana groups add-member sre@team.demo dana@demo.test
+```
+
+Her group authority stops at the same edges:
+
+```bash
+# DENY — outside scope: homing a group in the PARENT demo folder. Governance
+# cascades DOWN the tree, never up, so she has no identity caps at demo.
+jumpgate --context dana groups create outsidegrp --folder demo
+# -> permission denied
+
+# DENY — global: a group with no --folder is global, which needs
+# identity:group:create at the global scope. dana holds it nowhere.
+jumpgate --context dana groups create globalgrp
 # -> permission denied
 ```
 

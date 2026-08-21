@@ -74,6 +74,15 @@ func (g capGuard) scopeOfRole(ctx context.Context, roleID uuid.UUID) (authz.Scop
 	return scopeOfFolderID(r.FolderID), nil
 }
 
+// scopeOfGroup returns a group's governance scope: its folder (FolderScope) or Global.
+func (g capGuard) scopeOfGroup(ctx context.Context, groupID uuid.UUID) (authz.Scope, error) {
+	grp, err := g.q.GetGroup(ctx, groupID)
+	if err != nil {
+		return authz.Scope{}, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
+	}
+	return scopeOfFolderID(grp.FolderID), nil
+}
+
 // scopeOfObject derives a management scope from an object's scope columns:
 // AssetScope if asset-scoped, FolderScope if folder-scoped, else Global.
 func scopeOfObject(scopeFolder, scopeAsset pgtype.UUID) authz.Scope {
