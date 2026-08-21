@@ -822,3 +822,163 @@ func TestListGrantsKeysetPagination(t *testing.T) {
 		}
 	}
 }
+
+// TestListPendingApprovalsPaginationAdvancesPastFilteredRows is a regression
+// test for the keyset-over-post-filter bug: when the SQL page is full but all
+// (or some) rows are filtered out by the Go-side IsApprover check, the handler
+// must still emit a NextPageToken so the client can advance past those filtered
+// rows on subsequent calls.
+//
+// Setup:
+//   - Two policies, P1 and P2, each on a distinct asset.
+//   - The caller (approver) holds the approver role for P1 only — NOT P2.
+//   - One request is created for P1 (older created_at).
+//   - One request is created for P2 (newer created_at).
+//
+// With page_size=1 the SQL page is: [P2 request] (newest first).
+// That row is filtered out (caller cannot approve P2), but the SQL page WAS
+// full, so a NextPageToken must be emitted.  Following that token yields the
+// P1 request.  Old code would have emitted no token and the P1 request would
+// have been permanently invisible to this caller.
+func TestListPendingApprovalsPaginationAdvancesPastFilteredRows(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+
+	// Two independent target roles, two independent approver roles.
+	targetRole1 := mkRole("filter-target1")
+	targetRole2 := mkRole("filter-target2")
+	requesterRole := mkRole("filter-requester")
+	approverRole1 := mkRole("filter-approver1")
+	approverRole2 := mkRole("filter-approver2")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "filter-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+
+	// asset1 → P1 (approvable by caller), asset2 → P2 (NOT approvable by caller).
+	asset1, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "filter-a1", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset asset1: %v", err)
+	}
+	asset2, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "filter-a2", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset asset2: %v", err)
+	}
+
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: targetRole1, ScopeAssetID: pgU(asset1.ID), RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole1), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy P1: %v", err)
+	}
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: targetRole2, ScopeAssetID: pgU(asset2.ID), RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole2), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy P2: %v", err)
+	}
+
+	// Seed three users: requester, the approver (can approve P1 only), and an
+	// unrelated approver2 who holds approverRole2 (included only for completeness).
+	seedUser(t, pool, "filter-req@x", "password123", false)
+	seedUser(t, pool, "filter-app@x", "password123", false)
+	reqUID := userIDByEmail(t, pool, "filter-req@x")
+	appUID := userIDByEmail(t, pool, "filter-app@x")
+
+	// Requester is eligible on both assets.
+	for _, aid := range []uuid.UUID{asset1.ID, asset2.ID} {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
+		}); err != nil {
+			t.Fatalf("bind requester on asset: %v", err)
+		}
+	}
+	// Caller holds approverRole1 on asset1 ONLY — NOT approverRole2 on asset2.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: approverRole1, ScopeAssetID: pgU(asset1.ID), SubjectUserID: pgU(appUID),
+	}); err != nil {
+		t.Fatalf("bind approver on asset1: %v", err)
+	}
+
+	reqTok := authClient(t, url, "filter-req@x", "password123")
+	appTok := authClient(t, url, "filter-app@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// Submit P1 request first (older created_at), then P2 (newer created_at).
+	// The list orders newest-first, so P2 appears on the first SQL page.
+	r1, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: targetRole1.String(), AssetId: asset1.ID.String(), DurationSeconds: 3600,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("RequestAccess P1: %v", err)
+	}
+	p1ReqID := r1.Msg.Request.Id
+
+	r2, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: targetRole2.String(), AssetId: asset2.ID.String(), DurationSeconds: 3600,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("RequestAccess P2: %v", err)
+	}
+	p2ReqID := r2.Msg.Request.Id
+
+	// Page 1 (page_size=1): SQL returns the newest row (P2). The caller cannot
+	// approve P2, so the filtered result is empty — but the SQL page was FULL,
+	// so a NextPageToken MUST be present.
+	page1, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{
+		PageSize: 1,
+	}), appTok))
+	if err != nil {
+		t.Fatalf("page1 ListPendingApprovals: %v", err)
+	}
+	// Filtered result is empty: P2 was the only SQL row and was filtered out.
+	if len(page1.Msg.Requests) != 0 {
+		t.Fatalf("page1 filtered count = %d, want 0 (P2 should be filtered out)", len(page1.Msg.Requests))
+	}
+	// Token MUST be emitted because the SQL page was full.
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: NextPageToken must be non-empty when SQL page was full, even if all rows were filtered out (regression: old code would stop here)")
+	}
+
+	// Follow tokens to exhaustion, collecting all visible requests.
+	// The keyset-over-post-filter contract: pages may be short or empty, and an
+	// exact-multiple-of-page_size page costs one extra empty round-trip.  We
+	// just drain until no token is returned.
+	var allVisible []*accessrequestv1.AccessRequest
+	allVisible = append(allVisible, page1.Msg.Requests...)
+	token := page1.Msg.NextPageToken
+	for token != "" {
+		resp, err := client.ListPendingApprovals(ctx, withToken(connect.NewRequest(&accessrequestv1.ListPendingApprovalsRequest{
+			PageSize: 1, PageToken: token,
+		}), appTok))
+		if err != nil {
+			t.Fatalf("follow token: %v", err)
+		}
+		allVisible = append(allVisible, resp.Msg.Requests...)
+		token = resp.Msg.NextPageToken
+	}
+
+	// The caller must have seen exactly the P1 request.
+	if len(allVisible) != 1 {
+		t.Fatalf("total visible requests = %d, want 1 (only P1)", len(allVisible))
+	}
+	if allVisible[0].Id != p1ReqID {
+		t.Fatalf("visible[0] = %s, want P1 request %s", allVisible[0].Id, p1ReqID)
+	}
+	// P2 must never appear.
+	for _, r := range allVisible {
+		if r.Id == p2ReqID {
+			t.Fatalf("P2 request %s should not appear in approver's pending list (caller is not approver for P2)", p2ReqID)
+		}
+	}
+}

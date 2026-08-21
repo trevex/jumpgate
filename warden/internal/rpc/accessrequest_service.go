@@ -243,9 +243,12 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.R
 
 // ListPendingApprovals lists pending requests the caller may approve (authenticated),
 // ordered by (created_at DESC, id) with keyset pagination.
-// NOTE: Go-side IsApprover filtering happens after the SQL LIMIT, so a page
-// may be shorter than page_size when the pending set contains requests for
-// unrelated policies. This is acceptable: the pending set is small by design.
+//
+// Go-side IsApprover filtering happens after the SQL LIMIT, so a page may be
+// shorter than page_size (or empty) when the pending set contains requests for
+// policies the caller cannot approve. The next-page token is keyed to the SQL
+// page position — not the filtered result — so pagination advances past
+// filtered rows rather than stopping early.
 func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *connect.Request[accessrequestv1.ListPendingApprovalsRequest]) (*connect.Response[accessrequestv1.ListPendingApprovalsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
@@ -261,7 +264,7 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 		page.AfterTs = k.Time
 		page.AfterID = k.ID
 	}
-	rows, err := s.svc.ListPendingApprovalsPaged(ctx, caller.ID, page)
+	rows, next, err := s.svc.ListPendingApprovalsPaged(ctx, caller.ID, page)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -269,11 +272,11 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 	for i := range rows {
 		out.Requests = append(out.Requests, toAccessRequestMsg(rows[i]))
 	}
-	// Emit a token only when the SQL page was filled (before Go filtering); an
-	// exact multiple costs one extra round-trip with an empty final page.
-	if len(rows) == int(limit) {
-		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+	// Emit a token whenever the SQL page was full (next != nil), even if the
+	// filtered result is short or empty. The cursor tracks the SQL position so
+	// the next call resumes past everything already examined.
+	if next != nil {
+		out.NextPageToken = encodeTimeToken(next.Ts, next.ID)
 	}
 	return connect.NewResponse(out), nil
 }
