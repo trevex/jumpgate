@@ -690,6 +690,167 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 	return connect.NewResponse(resp), nil
 }
 
+// contentsSlice is the bounded first-slice size returned by ListFolderContents.
+const contentsSlice = 50
+
+// ListFolderContents returns the first bounded slice (contentsSlice items per
+// kind) of folders, assets, roles, and groups visible to the caller directly
+// under the named parent folder (default root). has_more flags indicate whether
+// additional items exist beyond the returned slice; callers wanting full
+// pagination should use the dedicated per-kind List RPCs.
+//
+// The parent is existence-gated via resolveParentFolder (same as ListAssets /
+// ListFolders), so an unknown or invisible parent returns NotFound. Cascade is
+// intentionally false: only direct children are aggregated here.
+func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Request[catalogv1.ListFolderContentsRequest]) (*connect.Response[catalogv1.ListFolderContentsResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	parent, err := s.resolveParentFolder(ctx, u.ID, req.Msg.Parent)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &catalogv1.ListFolderContentsResponse{}
+
+	// ── folders ───────────────────────────────────────────────────────────────
+	folderIDs, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(folderIDs) > 0 {
+		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{
+			Ids: folderIDs,
+			Lim: contentsSlice + 1,
+		})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if len(rows) > contentsSlice {
+			out.FoldersHasMore = true
+			rows = rows[:contentsSlice]
+		}
+		allPaths, err := s.q.FolderPaths(ctx)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		pathByID := make(map[string]string, len(allPaths))
+		for _, p := range allPaths {
+			pathByID[p.ID.String()] = p.Path
+		}
+		for i := range rows {
+			m := toFolderMsg(rows[i])
+			m.Path = pathByID[rows[i].ID.String()]
+			out.Folders = append(out.Folders, m)
+		}
+	}
+
+	// ── assets ────────────────────────────────────────────────────────────────
+	assetIDs, err := s.authorizer.VisibleAssetsUnder(ctx, u.ID, parent, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(assetIDs) > 0 {
+		rows, err := s.q.ListAssetsByIDsPaged(ctx, gen.ListAssetsByIDsPagedParams{
+			Ids: assetIDs,
+			Lim: contentsSlice + 1,
+		})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if len(rows) > contentsSlice {
+			out.AssetsHasMore = true
+			rows = rows[:contentsSlice]
+		}
+		pathByFolder := map[uuid.UUID]string{}
+		for i := range rows {
+			m := toAssetMsg(rows[i])
+			fp, ok := pathByFolder[rows[i].FolderID]
+			if !ok {
+				if fp, err = s.q.FolderPath(ctx, rows[i].FolderID); err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				pathByFolder[rows[i].FolderID] = fp
+			}
+			m.Path = joinPath(fp, rows[i].Name)
+			out.Assets = append(out.Assets, m)
+		}
+	}
+
+	// ── roles ─────────────────────────────────────────────────────────────────
+	roleIDs, err := s.authorizer.VisibleRolesUnder(ctx, u.ID, parent, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(roleIDs) > 0 {
+		rows, err := s.q.ListRolesByIDsPaged(ctx, gen.ListRolesByIDsPagedParams{
+			Column1: roleIDs,
+			Lim:     contentsSlice + 1,
+		})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if len(rows) > contentsSlice {
+			out.RolesHasMore = true
+			rows = rows[:contentsSlice]
+		}
+		pathByFolder := map[uuid.UUID]string{}
+		for i := range rows {
+			m := toAccessRoleMsg(rows[i])
+			if rows[i].FolderID.Valid {
+				fid := uuidFromPg(rows[i].FolderID)
+				p, ok := pathByFolder[fid]
+				if !ok {
+					if p, err = s.q.FolderPath(ctx, fid); err != nil {
+						return nil, connect.NewError(connect.CodeInternal, err)
+					}
+					pathByFolder[fid] = p
+				}
+				m.FolderPath = p
+			}
+			out.Roles = append(out.Roles, m)
+		}
+	}
+
+	// ── groups ────────────────────────────────────────────────────────────────
+	groupIDs, err := s.authorizer.VisibleGroupsUnder(ctx, u.ID, parent, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(groupIDs) > 0 {
+		rows, err := s.q.ListGroupsByIDsPaged(ctx, gen.ListGroupsByIDsPagedParams{
+			Column1: groupIDs,
+			Lim:     contentsSlice + 1,
+		})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if len(rows) > contentsSlice {
+			out.GroupsHasMore = true
+			rows = rows[:contentsSlice]
+		}
+		pathByFolder := map[uuid.UUID]string{}
+		for i := range rows {
+			m := toGroupMsg(rows[i])
+			if rows[i].FolderID.Valid {
+				fid := uuidFromPg(rows[i].FolderID)
+				p, ok := pathByFolder[fid]
+				if !ok {
+					if p, err = s.q.FolderPath(ctx, fid); err != nil {
+						return nil, connect.NewError(connect.CodeInternal, err)
+					}
+					pathByFolder[fid] = p
+				}
+				m.FolderPath = p
+			}
+			out.Groups = append(out.Groups, m)
+		}
+	}
+
+	return connect.NewResponse(out), nil
+}
+
 // GetFolderAccess returns the caller's management capabilities on one folder;
 // NotFound (existence hiding) if the caller has no relationship to it — neither
 // a capability on its scope nor a visible asset in its subtree.

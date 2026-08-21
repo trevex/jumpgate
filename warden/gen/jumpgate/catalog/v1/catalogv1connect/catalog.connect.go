@@ -62,6 +62,9 @@ const (
 	// CatalogServiceResolveFolderProcedure is the fully-qualified name of the CatalogService's
 	// ResolveFolder RPC.
 	CatalogServiceResolveFolderProcedure = "/jumpgate.catalog.v1.CatalogService/ResolveFolder"
+	// CatalogServiceListFolderContentsProcedure is the fully-qualified name of the CatalogService's
+	// ListFolderContents RPC.
+	CatalogServiceListFolderContentsProcedure = "/jumpgate.catalog.v1.CatalogService/ListFolderContents"
 )
 
 // CatalogServiceClient is a client for the jumpgate.catalog.v1.CatalogService service.
@@ -76,6 +79,11 @@ type CatalogServiceClient interface {
 	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
 	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
+	// ListFolderContents returns the first bounded slice of each child kind
+	// (folders, assets, roles, groups) visible to the caller under one folder.
+	// parent="" or omitted = root. has_more=true means additional items exist
+	// beyond the 50-item first slice.
+	ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error)
 }
 
 // NewCatalogServiceClient constructs a client for the jumpgate.catalog.v1.CatalogService service.
@@ -149,21 +157,28 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("ResolveFolder")),
 			connect.WithClientOptions(opts...),
 		),
+		listFolderContents: connect.NewClient[v1.ListFolderContentsRequest, v1.ListFolderContentsResponse](
+			httpClient,
+			baseURL+CatalogServiceListFolderContentsProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("ListFolderContents")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // catalogServiceClient implements CatalogServiceClient.
 type catalogServiceClient struct {
-	createFolder      *connect.Client[v1.CreateFolderRequest, v1.CreateFolderResponse]
-	listFolders       *connect.Client[v1.ListFoldersRequest, v1.ListFoldersResponse]
-	createAsset       *connect.Client[v1.CreateAssetRequest, v1.CreateAssetResponse]
-	getAsset          *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
-	updateAssetConfig *connect.Client[v1.UpdateAssetConfigRequest, v1.UpdateAssetConfigResponse]
-	listAssets        *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
-	getAssetAccess    *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
-	getFolderAccess   *connect.Client[v1.GetFolderAccessRequest, v1.GetFolderAccessResponse]
-	resolveAsset      *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
-	resolveFolder     *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
+	createFolder       *connect.Client[v1.CreateFolderRequest, v1.CreateFolderResponse]
+	listFolders        *connect.Client[v1.ListFoldersRequest, v1.ListFoldersResponse]
+	createAsset        *connect.Client[v1.CreateAssetRequest, v1.CreateAssetResponse]
+	getAsset           *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
+	updateAssetConfig  *connect.Client[v1.UpdateAssetConfigRequest, v1.UpdateAssetConfigResponse]
+	listAssets         *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
+	getAssetAccess     *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
+	getFolderAccess    *connect.Client[v1.GetFolderAccessRequest, v1.GetFolderAccessResponse]
+	resolveAsset       *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
+	resolveFolder      *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
+	listFolderContents *connect.Client[v1.ListFolderContentsRequest, v1.ListFolderContentsResponse]
 }
 
 // CreateFolder calls jumpgate.catalog.v1.CatalogService.CreateFolder.
@@ -216,6 +231,11 @@ func (c *catalogServiceClient) ResolveFolder(ctx context.Context, req *connect.R
 	return c.resolveFolder.CallUnary(ctx, req)
 }
 
+// ListFolderContents calls jumpgate.catalog.v1.CatalogService.ListFolderContents.
+func (c *catalogServiceClient) ListFolderContents(ctx context.Context, req *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error) {
+	return c.listFolderContents.CallUnary(ctx, req)
+}
+
 // CatalogServiceHandler is an implementation of the jumpgate.catalog.v1.CatalogService service.
 type CatalogServiceHandler interface {
 	CreateFolder(context.Context, *connect.Request[v1.CreateFolderRequest]) (*connect.Response[v1.CreateFolderResponse], error)
@@ -228,6 +248,11 @@ type CatalogServiceHandler interface {
 	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
 	ResolveAsset(context.Context, *connect.Request[v1.ResolveAssetRequest]) (*connect.Response[v1.ResolveAssetResponse], error)
 	ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error)
+	// ListFolderContents returns the first bounded slice of each child kind
+	// (folders, assets, roles, groups) visible to the caller under one folder.
+	// parent="" or omitted = root. has_more=true means additional items exist
+	// beyond the 50-item first slice.
+	ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error)
 }
 
 // NewCatalogServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -297,6 +322,12 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("ResolveFolder")),
 		connect.WithHandlerOptions(opts...),
 	)
+	catalogServiceListFolderContentsHandler := connect.NewUnaryHandler(
+		CatalogServiceListFolderContentsProcedure,
+		svc.ListFolderContents,
+		connect.WithSchema(catalogServiceMethods.ByName("ListFolderContents")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.catalog.v1.CatalogService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CatalogServiceCreateFolderProcedure:
@@ -319,6 +350,8 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceResolveAssetHandler.ServeHTTP(w, r)
 		case CatalogServiceResolveFolderProcedure:
 			catalogServiceResolveFolderHandler.ServeHTTP(w, r)
+		case CatalogServiceListFolderContentsProcedure:
+			catalogServiceListFolderContentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -366,4 +399,8 @@ func (UnimplementedCatalogServiceHandler) ResolveAsset(context.Context, *connect
 
 func (UnimplementedCatalogServiceHandler) ResolveFolder(context.Context, *connect.Request[v1.ResolveFolderRequest]) (*connect.Response[v1.ResolveFolderResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ResolveFolder is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListFolderContents is not implemented"))
 }

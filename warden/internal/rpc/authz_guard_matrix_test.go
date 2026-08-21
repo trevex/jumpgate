@@ -586,6 +586,26 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 		t.Errorf("capless ListGroups = %d groups, want 0", len(groups.Msg.Groups))
 	}
 
+	// ListFolderContents is visibility-filtered (aggregator of all four list RPCs):
+	// a capless user at root gets a non-error result. Like ListRoles, their own
+	// (empty-caps) role may appear; what matters is the call does NOT return a
+	// PermissionDenied error. Folders, assets, and groups must be empty.
+	contents, err := cl.catalog.ListFolderContents(ctx, withToken(connect.NewRequest(&catalogv1.ListFolderContentsRequest{}), tok))
+	if err != nil {
+		t.Fatalf("ListFolderContents: %v", err)
+	}
+	if len(contents.Msg.Folders) != 0 {
+		t.Errorf("capless ListFolderContents folders = %d, want 0", len(contents.Msg.Folders))
+	}
+	if len(contents.Msg.Assets) != 0 {
+		t.Errorf("capless ListFolderContents assets = %d, want 0", len(contents.Msg.Assets))
+	}
+	if len(contents.Msg.Groups) != 0 {
+		t.Errorf("capless ListFolderContents groups = %d, want 0", len(contents.Msg.Groups))
+	}
+	// roles: the capless user may see their own seeded role (same as ListRoles).
+	_ = contents.Msg.Roles
+
 	reqs, err := cl.areq.ListMyRequests(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{}), tok))
 	if err != nil {
 		t.Fatalf("ListMyRequests: %v", err)
