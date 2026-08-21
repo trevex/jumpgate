@@ -145,47 +145,73 @@ checks the **recipient** `role_id`, the role that gets conferred.)
 ### The vocabulary
 
 `<service>:<resource>:<verb>`, same grammar and globs as everything else.
-**Scope** is where the cap must be held for the gated RPCs; identity/CA/grant-
-oversight ops are **global** this cut (folder- and group-scoped delegation of
-those is a follow-up).
+
+**Scope notation.** Every check runs at one scope — `Global`, a **folder**, or an
+**asset**. Three rules hold everywhere, so the table stays terse:
+
+- **Cascade** — a folder check is satisfied by the cap held on that folder, on any
+  **ancestor** folder, or **globally**. (`Global` caps satisfy every check.)
+- **No folder home → `Global`** — an object with no `folder_id` (a *global* role or
+  group) is checked at `Global`.
+- **List-all → `Global`** — endpoints that scan the whole table (`ListRoles`,
+  `ListRoleBindings`, `ListRequestPolicies`, `ListUsers`) require the read cap at
+  `Global`; the per-object `Get`/`Resolve` forms use the object's own scope.
+  (`ListGroups` is the exception — it is *visibility-filtered*, returning only the
+  groups the caller can read, rather than requiring a global read.)
+
+The **Scope** column below names the object whose scope the cap is checked at.
+Where a single cap gates both a per-object read and a list-all, the list case is
+noted in parentheses. User, CA/key, and grant-oversight caps are `Global`; catalog,
+role, binding, policy, secret, recording, and **group** caps are folder/asset-scoped.
 
 | Capability | Grants (management RPC) | Scope |
 |---|---|---|
-| `catalog:folder:create` | create a folder | parent folder (global if top-level) |
-| `catalog:folder:read` | resolve/list folders | folder / global (list) |
-| `catalog:asset:create` | onboard an asset | the target folder |
-| `catalog:asset:read` | get/list assets, resolve an asset | the asset / folder |
+| `catalog:folder:create` | create a folder | parent folder (`Global` if top-level) |
+| `catalog:folder:read` | resolve a folder; list folders | the folder (list-all: `Global`) |
+| `catalog:asset:create` | onboard an asset | target folder |
+| `catalog:asset:read` | get / resolve an asset; list a folder's assets | the asset (list: that folder) |
 | `catalog:asset:update` | change an asset's config | the asset |
-| `access:role:create` | create a role | the role's folder (global if global role) |
-| `access:role:read` | get/resolve/list roles, list grants, explain | the role's folder / global |
-| `access:role:update` | add/remove role-rewrite grants (`role_grants`) | the role's folder |
-| `access:binding:create` | bind a role to a subject (+ subset rule) | the binding scope |
-| `access:binding:read` | list role bindings | global |
+| `access:role:create` | create a role | target folder (`Global` if a global role) |
+| `access:role:read` | get / resolve a role; list a role's grants; explain a role; list roles | the role's folder (list-all: `Global`) |
+| `access:role:update` | add / remove role-rewrite grants (`role_grants`) | the role's folder |
+| `access:binding:create` | bind a role to a subject (+ subset rule) | the binding's scope |
+| `access:binding:read` | list role bindings | `Global` |
 | `access:binding:delete` | remove a binding | the binding's scope |
-| `access:policy:create` | create a request policy (+ subset rule) | the policy scope |
-| `access:policy:read` | get/list policies, list subjects, resolve approval | the policy's scope / asset |
+| `access:policy:create` | create a request policy (+ subset rule) | the policy's scope |
+| `access:policy:read` | get a policy; list subjects; check approval eligibility; list policies | the policy's scope (approval-check: the asset; list-all: `Global`) |
 | `access:policy:update` | update a request policy | the policy's scope |
 | `access:policy:delete` | delete a request policy | the policy's scope |
-| `access:policy:manage-subjects` | add/remove requester/approver subjects | the policy's scope |
-| `access:grant:read` | list all JIT access grants (oversight) | global |
-| `access:grant:revoke` | revoke another user's grant (oversight) | global |
-| `identity:user:create` | create a user | global |
-| `identity:user:read` | get/resolve/list users | global |
-| `identity:user:deactivate` | deactivate / reactivate a user | global |
-| `identity:user:delete` | delete a user | global |
-| `identity:group:create` | create a group | the group's target folder (global if global group) |
-| `identity:group:read` | resolve/list groups + members (governs visibility) | the group's folder / global |
-| `identity:group:add-member` | add a user/group to a group | the group's folder |
+| `access:policy:manage-subjects` | add / remove requester & approver subjects | the policy's scope |
+| `access:grant:read` † | list **all** JIT access grants (oversight) | `Global` |
+| `access:grant:revoke` † | revoke **another user's** grant (oversight) | `Global` |
+| `identity:user:create` | create a user | `Global` |
+| `identity:user:read` | get / resolve / list users | `Global` |
+| `identity:user:deactivate` | deactivate / reactivate a user | `Global` |
+| `identity:user:delete` | delete a user | `Global` |
+| `identity:group:create` | create a group | target folder (`Global` if a global group) |
+| `identity:group:read` | resolve a group; list its members; list groups (visibility) | the group's folder (list: visibility-filtered) |
+| `identity:group:add-member` | add a user / group to a group | the group's folder |
 | `identity:group:remove-member` | remove a member | the group's folder |
 | `identity:group:delete` | delete a group | the group's folder |
-| `vault:ca:init` | initialize the SSH / mesh CA | global |
-| `vault:ca:issue` | issue a mesh certificate | global |
-| `vault:ca:read` | read a CA public key | global |
-| `vault:key:init` | initialize the session key | global |
-| `vault:secret:write` | set/delete an asset's stored secret | the asset |
+| `vault:ca:init` | initialize the SSH / mesh CA | `Global` |
+| `vault:ca:issue` | issue a mesh certificate | `Global` |
+| `vault:ca:read` | read a CA public key | `Global` |
+| `vault:key:init` | initialize the session key | `Global` |
+| `vault:secret:write` | set / delete an asset's stored secret | the asset |
 | `vault:secret:read` | list an asset's secrets | the asset |
-| `recording:read` | list / fetch / download session recordings | the recording's asset / global (list) |
+| `recording:read` | list / fetch / download session recordings | the recording's asset (unfiltered list: `Global`) |
 | `**` | everything (the `admin` role) | any |
+
+> **† `access:grant:*` is the cross-user *oversight* surface only.** Every user
+> sees and acts on their **own** just-in-time access with **no capability
+> required**: `ListMyRequests` / `ListMyGrants` return the caller's own
+> requests/grants, `ListPendingApprovals` returns the requests the caller is an
+> eligible **approver** for (per the request policy's approver set), and a user may
+> always **revoke their own** grant. **Requesting** access is governed by the
+> **request policy** (who may request which role at which scope) — not by a
+> management capability. `access:grant:read` (list *everyone's* grants) and
+> `access:grant:revoke` (revoke *someone else's* grant) gate only the org-wide
+> oversight view; the normal request → approve → see-your-own loop needs neither.
 
 > A delegated folder-admin holds only the caps they were granted, so client-side
 > **name/path resolution** (which is itself `*:read`-gated) may be unavailable for
