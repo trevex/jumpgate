@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
@@ -251,7 +252,8 @@ func (s *VaultServer) DeleteAssetSecret(ctx context.Context, req *connect.Reques
 }
 
 // ListAssetSecrets returns the metadata (id, name, created_at) of an asset's
-// stored secrets. The sealed value is NEVER returned.
+// stored secrets ordered by (name ASC, id ASC) with keyset pagination.
+// The sealed value is NEVER returned.
 func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request[vaultv1.ListAssetSecretsRequest]) (*connect.Response[vaultv1.ListAssetSecretsResponse], error) {
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
@@ -260,7 +262,17 @@ func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request
 	if err := s.requireCap(ctx, "vault:secret:read", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListAssetSecrets(ctx, assetID)
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListAssetSecretsParams{AssetID: assetID, Lim: limit}
+	if k != nil {
+		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListAssetSecrets(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -271,6 +283,10 @@ func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request
 			Name:      rows[i].Name,
 			CreatedAt: rows[i].CreatedAt.Format(time.RFC3339),
 		})
+	}
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

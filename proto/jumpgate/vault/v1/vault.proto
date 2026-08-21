@@ -73,7 +73,9 @@ message DeleteAssetSecretRequest {
 message DeleteAssetSecretResponse {}
 
 message ListAssetSecretsRequest {
-  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id   = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
 }
 // AssetSecretMeta is metadata ONLY: the sealed value is never exposed.
 message AssetSecretMeta {
@@ -81,4 +83,7 @@ message AssetSecretMeta {
   string name = 2;
   string created_at = 3;
 }
-message ListAssetSecretsResponse { repeated AssetSecretMeta secrets = 1; }
+message ListAssetSecretsResponse {
+  repeated AssetSecretMeta secrets        = 1;
+  string                   next_page_token = 2;
+}

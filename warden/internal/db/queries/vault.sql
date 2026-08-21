@@ -22,4 +22,11 @@ SELECT * FROM asset_secrets WHERE id = $1;
 DELETE FROM asset_secrets WHERE id = $1;
 
 -- name: ListAssetSecrets :many
-SELECT id, asset_id, name, created_at FROM asset_secrets WHERE asset_id = $1 ORDER BY name;
+SELECT id, asset_id, name, created_at FROM asset_secrets
+WHERE asset_id = sqlc.arg('asset_id')
+  AND (
+    sqlc.narg('after_name')::text IS NULL
+    OR (name, id) > (sqlc.narg('after_name'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY name, id
+LIMIT sqlc.arg('lim');
