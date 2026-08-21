@@ -409,4 +409,3 @@ func assetIDSet(as []*catalogv1.Asset) map[string]bool {
 	}
 	return m
 }
-
