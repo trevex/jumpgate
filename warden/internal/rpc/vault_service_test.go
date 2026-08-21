@@ -417,3 +417,87 @@ func TestVaultCapabilityGating(t *testing.T) {
 		t.Fatalf("admin InitCA = %v, want ok", err)
 	}
 }
+
+// TestListAssetSecretsKeysetPagination verifies (name ASC, id ASC) keyset
+// pagination for ListAssetSecrets. Creates an asset with 3 secrets in reverse
+// alphabetical order, pages through with page_size=2, and asserts name ordering
+// plus correct termination.
+func TestListAssetSecretsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	asset := newAsset(t, url, tok, "ssh")
+
+	vc := vaultv1connect.NewVaultServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create 3 secrets in deliberately reversed alphabetical order (z, m, a) to
+	// prove the list is ordered by name, not by creation/id order.
+	for _, name := range []string{"z-secret", "m-secret", "a-secret"} {
+		if _, err := vc.SetAssetSecret(ctx, withToken(connect.NewRequest(&vaultv1.SetAssetSecretRequest{
+			AssetId: asset.Id, Name: name, Value: []byte("v"),
+		}), tok)); err != nil {
+			t.Fatalf("set secret %s: %v", name, err)
+		}
+	}
+
+	// Fetch all 3 secrets (large page) and verify name order.
+	all, err := vc.ListAssetSecrets(ctx, withToken(connect.NewRequest(&vaultv1.ListAssetSecretsRequest{
+		AssetId: asset.Id, PageSize: 100,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if len(all.Msg.Secrets) != 3 {
+		t.Fatalf("total secrets = %d, want 3", len(all.Msg.Secrets))
+	}
+	// Alphabetically: a-secret < m-secret < z-secret
+	wantNames := []string{"a-secret", "m-secret", "z-secret"}
+	for i, w := range wantNames {
+		if all.Msg.Secrets[i].Name != w {
+			t.Fatalf("all[%d] = %q, want %q", i, all.Msg.Secrets[i].Name, w)
+		}
+	}
+
+	// Page through with page_size=2 (3 secrets → page1=2+token, page2=1+no token).
+	page1, err := vc.ListAssetSecrets(ctx, withToken(connect.NewRequest(&vaultv1.ListAssetSecretsRequest{
+		AssetId: asset.Id, PageSize: 2,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Secrets) != 2 {
+		t.Fatalf("page1: got %d secrets, want 2", len(page1.Msg.Secrets))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+	if page1.Msg.Secrets[0].Name != "a-secret" || page1.Msg.Secrets[1].Name != "m-secret" {
+		t.Fatalf("page1 names = [%s, %s], want [a-secret, m-secret]", page1.Msg.Secrets[0].Name, page1.Msg.Secrets[1].Name)
+	}
+
+	page2, err := vc.ListAssetSecrets(ctx, withToken(connect.NewRequest(&vaultv1.ListAssetSecretsRequest{
+		AssetId:   asset.Id,
+		PageSize:  2,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Secrets) != 1 {
+		t.Fatalf("page2: got %d secrets, want 1", len(page2.Msg.Secrets))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+	if page2.Msg.Secrets[0].Name != "z-secret" {
+		t.Fatalf("page2[0] = %q, want z-secret", page2.Msg.Secrets[0].Name)
+	}
+
+	// Total across pages == 3.
+	if len(page1.Msg.Secrets)+len(page2.Msg.Secrets) != 3 {
+		t.Fatalf("total paged = %d, want 3", len(page1.Msg.Secrets)+len(page2.Msg.Secrets))
+	}
+
+	_ = pool // used by newServer; suppress lint
+}
