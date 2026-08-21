@@ -72,4 +72,26 @@ type Authorizer interface {
 	// with cascade the whole subtree is. Because assets always live in a folder,
 	// parent == uuid.Nil without cascade yields no assets (the root holds none).
 	VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
+
+	// VisibleRolesUnder returns the ids of the roles homed under `parent` (a folder;
+	// uuid.Nil is the tree root: roles with folder_id IS NULL) the user may SEE,
+	// unioning the management axis with the access axis. A role is visible when the
+	// user holds "access:role:read" on its home-folder scope (management) OR the user
+	// holds the role (via the standing/grant closure) OR the role is requestable to
+	// the user. A folder-less (global) role has no folder scope, so it is manageable
+	// ONLY via a globally-held capability. Without cascade only roles homed directly
+	// in `parent` (or, for uuid.Nil, the folder-less roles) are considered; with
+	// cascade the whole subtree under `parent` (or every role, for uuid.Nil) is.
+	VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
+
+	// VisibleGroupsUnder returns the ids of the groups homed under `parent` (a folder;
+	// uuid.Nil is the tree root: groups with folder_id IS NULL) the user may SEE,
+	// unioning the management axis with the access axis. A group is visible when the
+	// user holds "identity:group:read" on its home-folder scope (management) OR the
+	// user is a (transitive) member of the group. A folder-less (global) group has no
+	// folder scope, so it is manageable ONLY via a globally-held capability. Without
+	// cascade only groups homed directly in `parent` (or, for uuid.Nil, the
+	// folder-less groups) are considered; with cascade the whole subtree under
+	// `parent` (or every group, for uuid.Nil) is.
+	VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
 }

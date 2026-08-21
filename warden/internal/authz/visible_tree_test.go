@@ -141,6 +141,199 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 	return adminU.ID, aliceU.ID, bobU.ID, rootF.ID, f1F.ID, f2F.ID, a1A.ID, a2A.ID
 }
 
+// seedRolesGroups builds the role/group tier fixture on top of a fresh tree:
+//
+//	folders   root ⊃ f1
+//	roles     groleG (folder NULL, global) + frole (@f1)
+//	groups    ggroupG (folder NULL, global) + fgroup (@f1)
+//	admin     global role carrying access:role:read + identity:group:read (management)
+//	holder    standing binding conferring frole (access arm: held, no read cap)
+//	member    member of fgroup (access arm: membership, no read cap)
+//	stranger  nothing
+//
+// holder holds frole via a standing role_binding whose role_id IS frole (holding a
+// role on any object makes it "held"); the binding is on a1 so it is a concrete
+// object. member is added to fgroup via group_memberships.
+func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, stranger, root, f1, groleG, frole, ggroupG, fgroup, adminRoleID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	rootF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f1F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-f1", ParentID: pgUUID(rootF.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A global role (folder NULL) and a folder-homed role (@f1).
+	groleGRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rg-role-global", Capabilities: caps("ssh:connect")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	froleRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "rg-frole", FolderID: pgUUID(f1F.ID), Capabilities: caps("ssh:connect"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A global group (folder NULL) and a folder-homed group (@f1).
+	ggroupGGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "rg-group-global"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fgroupGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "rg-fgroup", FolderID: pgUUID(f1F.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adminU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-admin@tree", DisplayName: "RGAdmin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	holderU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-holder@tree", DisplayName: "RGHolder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-member@tree", DisplayName: "RGMember"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	strangerU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-stranger@tree", DisplayName: "RGStranger"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// admin: global role carrying the two read caps (management arm, everywhere).
+	adminRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "rg-admin-role", Capabilities: caps("access:role:read", "identity:group:read"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU.ID), // no scope → global
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// holder: standing binding conferring frole on a folder (access arm: held).
+	// Bound at f1 so the binding has a concrete object; holding frole on ANY object
+	// makes it appear in heldRoleIDs.
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: froleRole.ID, ScopeFolderID: pgUUID(f1F.ID), SubjectUserID: pgUUID(holderU.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// member: member of fgroup (access arm: transitive membership).
+	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+		GroupID: fgroupGroup.ID, MemberUserID: pgUUID(memberU.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	return adminU.ID, holderU.ID, memberU.ID, strangerU.ID, rootF.ID, f1F.ID,
+		groleGRole.ID, froleRole.ID, ggroupGGroup.ID, fgroupGroup.ID, adminRole.ID
+}
+
+func TestVisibleRolesUnderTiers(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	admin, holder, _, stranger, _, f1, groleG, frole, _, _, adminRoleID := seedRolesGroups(t, pool)
+
+	// admin (global access:role:read): whole tree cascade → every role. Besides the
+	// two fixture roles this includes admin's OWN global role (adminRoleID), which is
+	// visible on BOTH arms — management (global read cap) and access (admin holds it).
+	got, err := s.VisibleRolesUnder(ctx, admin, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles admin nil cascade", got, []uuid.UUID{groleG, frole, adminRoleID})
+
+	// admin non-cascade at root → the folder-less (global) roles: groleG (mgmt) and
+	// admin's own held global role.
+	got, err = s.VisibleRolesUnder(ctx, admin, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles admin nil no-cascade", got, []uuid.UUID{groleG, adminRoleID})
+
+	// admin non-cascade at f1 → only frole (homed in f1).
+	got, err = s.VisibleRolesUnder(ctx, admin, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles admin f1 no-cascade", got, []uuid.UUID{frole})
+
+	// holder (access arm: holds frole, no read cap) at f1 → frole only.
+	got, err = s.VisibleRolesUnder(ctx, holder, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles holder f1 no-cascade", got, []uuid.UUID{frole})
+
+	// holder must NOT see the global role (no access to it, no global cap).
+	got, err = s.VisibleRolesUnder(ctx, holder, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles holder nil no-cascade", got, nil)
+
+	// stranger: nothing.
+	got, err = s.VisibleRolesUnder(ctx, stranger, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "roles stranger nil cascade", got, nil)
+}
+
+func TestVisibleGroupsUnderTiers(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	admin, _, member, stranger, _, f1, _, _, ggroupG, fgroup, _ := seedRolesGroups(t, pool)
+
+	// admin (global identity:group:read): whole tree cascade → both groups.
+	got, err := s.VisibleGroupsUnder(ctx, admin, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "groups admin nil cascade", got, []uuid.UUID{ggroupG, fgroup})
+
+	// admin non-cascade at f1 → only fgroup (homed in f1).
+	got, err = s.VisibleGroupsUnder(ctx, admin, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "groups admin f1 no-cascade", got, []uuid.UUID{fgroup})
+
+	// member (access arm: member of fgroup, no read cap) at f1 → fgroup only.
+	got, err = s.VisibleGroupsUnder(ctx, member, f1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "groups member f1 no-cascade", got, []uuid.UUID{fgroup})
+
+	// member must NOT see the global group (not a member, no global cap).
+	got, err = s.VisibleGroupsUnder(ctx, member, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "groups member nil no-cascade", got, nil)
+
+	// stranger: nothing.
+	got, err = s.VisibleGroupsUnder(ctx, stranger, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "groups stranger nil cascade", got, nil)
+}
+
 func TestVisibleAssetsUnder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
