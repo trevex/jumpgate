@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -33,18 +32,29 @@ type userLookup interface {
 	Load(ctx context.Context, id uuid.UUID) (CurrentUser, error)
 }
 
-// NewInterceptor authenticates requests via `Authorization: Bearer <token>`.
-// It NEVER rejects; it only attaches a user when a valid token is present.
-// Per-RPC guards (capability checks / UserFromContext) enforce auth requirements,
-// which keeps Login callable anonymously.
+// NewInterceptor authenticates requests via two credential sources:
+//
+//   - Bearer token (`Authorization: Bearer <token>`): used by CLI clients.
+//     A valid token always attaches the user.
+//
+//   - Session cookie (`jumpgate_session=<token>`): used by browser clients.
+//     A valid token attaches the user only when the request also carries
+//     `Sec-Fetch-Site: same-origin`, which browsers set automatically and
+//     cross-origin attackers cannot forge. Without that header the cookie is
+//     ignored (fail-closed CSRF defence).
+//
+// The interceptor NEVER rejects; it only attaches a user when a valid,
+// CSRF-safe credential is present. Per-RPC guards (capability checks /
+// UserFromContext) enforce auth requirements, which keeps Login callable
+// anonymously.
 func NewInterceptor(lookup userLookup) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			if req.Spec().IsClient {
 				return next(ctx, req)
 			}
-			raw, ok := strings.CutPrefix(req.Header().Get("Authorization"), "Bearer ")
-			if ok && raw != "" {
+			raw, fromCookie := extractToken(req.Header())
+			if raw != "" && (!fromCookie || req.Header().Get("Sec-Fetch-Site") == "same-origin") {
 				if id, err := lookup.Validate(ctx, raw); err == nil {
 					if u, err := lookup.Load(ctx, id); err == nil {
 						ctx = WithUser(ctx, u)
