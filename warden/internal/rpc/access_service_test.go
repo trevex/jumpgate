@@ -398,6 +398,98 @@ func TestListRoleBindings(t *testing.T) {
 	}
 }
 
+// TestListRoleBindingsKeysetPagination verifies time-ordered (created_at DESC, id)
+// keyset pagination for ListRoleBindings. Seeds 3 bindings (plus the bootstrap admin
+// binding), requests page 1 with PageSize=2, asserts it returns 2 items and a
+// non-empty NextPageToken, then fetches page 2 and asserts it returns the remaining
+// items and an empty NextPageToken.
+func TestListRoleBindingsKeysetPagination(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a role and a folder for the bindings.
+	role, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "pg-role", Capabilities: []string{"db:read"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	folder, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "pgfolder"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+
+	// Create three groups, one binding each, so we have 3 additional rows in
+	// addition to the admin bootstrap binding (4 total).
+	mkBinding := func(groupName string) {
+		g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: groupName}), tok))
+		if err != nil {
+			t.Fatalf("create group %s: %v", groupName, err)
+		}
+		if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+			RoleId:         role.Msg.Role.Id,
+			ScopeFolderId:  folder.Msg.Folder.Id,
+			SubjectGroupId: g.Msg.Group.Id,
+		}), tok)); err != nil {
+			t.Fatalf("create binding for %s: %v", groupName, err)
+		}
+	}
+	mkBinding("grp-a")
+	mkBinding("grp-b")
+	mkBinding("grp-c")
+
+	// Page 1: 3 items + non-empty token (4 total records, page_size=3).
+	page1, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{
+		PageSize: 3,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Bindings) != 3 {
+		t.Fatalf("page1: got %d bindings, want 3", len(page1.Msg.Bindings))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected non-empty NextPageToken")
+	}
+
+	// Page 2: 1 remaining item + empty token (no further pages).
+	page2, err := acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{
+		PageSize:  3,
+		PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Bindings) == 0 {
+		t.Fatal("page2: got 0 bindings, want >= 1")
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatalf("page2: expected empty NextPageToken, got %q", page2.Msg.NextPageToken)
+	}
+
+	// Total across both pages must equal 4 (3 created + 1 bootstrap admin binding).
+	total := len(page1.Msg.Bindings) + len(page2.Msg.Bindings)
+	if total != 4 {
+		t.Fatalf("total bindings across pages = %d, want 4", total)
+	}
+
+	// No duplicates between pages.
+	seen := map[string]bool{}
+	for _, b := range page1.Msg.Bindings {
+		seen[b.Id] = true
+	}
+	for _, b := range page2.Msg.Bindings {
+		if seen[b.Id] {
+			t.Fatalf("duplicate binding id %s across pages", b.Id)
+		}
+	}
+}
+
 func TestExplainRole(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)

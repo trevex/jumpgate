@@ -35,7 +35,12 @@ WHERE (sqlc.narg('role_id')::uuid IS NULL OR role_id = sqlc.narg('role_id'))
   AND (sqlc.narg('scope_asset_id')::uuid IS NULL OR scope_asset_id = sqlc.narg('scope_asset_id'))
   AND (sqlc.narg('subject_user_id')::uuid IS NULL OR subject_user_id = sqlc.narg('subject_user_id'))
   AND (sqlc.narg('subject_group_id')::uuid IS NULL OR subject_group_id = sqlc.narg('subject_group_id'))
-ORDER BY id;
+  AND (
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR (created_at, id) < (sqlc.narg('after_ts'), sqlc.narg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT sqlc.arg('lim');
 
 -- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1;
