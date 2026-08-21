@@ -115,8 +115,10 @@ jumpgate --context admin users create bob@demo.test   --name Bob   --password bo
 ```
 
 Put both users in an **sre** group and assign permissions to the group rather than to the
-individuals — access flows through membership. (Group names are globally unique, so a group is
-always referenced by name; groups can also nest, in which case membership is walked transitively.)
+individuals — access flows through membership. (This group has no `--folder`, so it is *global* and
+referenced by its bare name; folder-homed groups are addressed as `<group>@<folder-path>`, shown in
+the delegated-administration chapter. Groups can also nest, in which case membership is walked
+transitively.)
 
 ```bash
 jumpgate --context admin groups create sre

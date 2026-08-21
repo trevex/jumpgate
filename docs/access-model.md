@@ -4,16 +4,15 @@ How groups, folders, assets, roles, bindings, and **request policies** interact 
 decide **who can do what, where, and how they get there**. This is the
 conceptual reference behind the `Authorizer` and the approval `Resolver`.
 
-> **Status:** the resolution described here — nested groups, the explicit
+> The whole model described here is live: nested groups, the explicit
 > **ReBAC-light role-rewrite** engine (`same_object` / `parent` rewrite rules,
-> resolved by `HoldsRole`), the **standing-only** RoleBinding, and the
-> **RequestPolicy**-driven Requestable visibility tier — is **implemented**
-> (M2 + M3-roles + Access-Model v2). *Activating* a requestable role — the
-> `RequestAccess → N-of-M approval → time-boxed access_grant → reaper` workflow
-> and the `access_grants` table it writes — is now **implemented** too (M3c) and
-> is described below. The one part still deferred is live-session **teardown** on
-> revocation (the `GrantTerminator` seam is wired to a no-op; the real
-> gateway/worker kill path is **M4**).
+> resolved by `HoldsRole`), the **standing-only** RoleBinding, the
+> **RequestPolicy**-driven Requestable visibility tier, and *activation* — the
+> `RequestAccess → N-of-M approval → time-boxed access_grant → reaper` workflow.
+> Revocation is enforced end to end: a revoked/expired grant (or a removed standing
+> binding, membership, or capability) not only stops conferring access but also
+> **tears down any live session** that depended on it — see
+> [continuous revocation](architecture.md#continuous-revocation--live-session-teardown).
 
 ## Entities
 
@@ -23,9 +22,9 @@ conceptual reference behind the `Authorizer` and the approval `Resolver`.
 | **Group** | A named set of subjects. A group's members are users *and/or other groups* → **nested groups**. |
 | **Folder** | A container in a hierarchy (`parent_id`). Organizes assets and is the unit of folder-scoped **inheritance**. |
 | **Asset** | A protected resource (an SSH host, a Postgres DB, a k8s cluster, …). Belongs to exactly one folder; carries free-form `labels`. |
-| **Capability** | A **scoped, namespaced verb** — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `ssh:login:root`, `db:ddl`, `k8s:impersonate:cluster-admin`). **Format-validated** at role creation and matched with **glob** semantics (`*` = one segment, trailing `**` = a whole scope). warden treats a capability as an **opaque token**; its *meaning* / enforcement lives at the **workers** (M4+) — with one already load-bearing in the control plane: `ssh:login:<account>` drives the [SSH cert principals](#ssh-access--os-logins-are-capabilities-m3d) the M3d broker mints. See [capabilities.md](capabilities.md). |
-| **Role** | An **admin-defined** named bundle of capabilities, scoped to a resource type (`asset` or `folder`). E.g. *PG-ReadOnly* = `[read]`, *cluster-admin* = `[connect,read,write,admin]`. This is the "custom role". |
-| **RoleBinding** | Attaches a **role** to a **subject** (user or group) at a **scope** (folder or asset). A binding is **standing-only** — permanent, admin-granted access. There is no `requestable` kind; requestability comes from a RequestPolicy, not a binding. |
+| **Capability** | A **scoped, namespaced verb** — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `ssh:login:root`, `db:ddl`, `k8s:impersonate:cluster-admin`). **Format-validated** at role creation and matched with **glob** semantics (`*` = one segment, trailing `**` = a whole scope). warden treats a data-plane capability as an **opaque token**; its *meaning* is enforced at the **worker** — with one already load-bearing in the control plane: `ssh:login:<account>` drives the [SSH cert principals](#ssh-access--os-logins-are-capabilities) the broker mints. Management capabilities are enforced by warden itself. See [capabilities.md](capabilities.md). |
+| **Role** | An **admin-defined** named bundle of capabilities. A role is **global** or homed in a folder (`folder_id`) — the home governs who may administer the role and makes it DNS-addressable as `<role>.<folder-path>`; it does not restrict what the role's capabilities mean. E.g. *pg-readonly* = `[db:read]`, *cluster-admin* = `[ssh:connect, ssh:login:root]`. This is the "custom role". |
+| **RoleBinding** | Attaches a **role** to a **subject** (user or group) at a **scope** — a folder, an asset, or **global** (scopeless, conferring the role everywhere). A binding is **standing-only** — permanent, admin-granted access. There is no `requestable` kind; requestability comes from a RequestPolicy, not a binding. |
 | **RequestPolicy** | One row per **(role R, scope = folder \| asset \| NULL-default)**. Its **existence makes R requestable on that scope**. Carries the requester side (who may ask), the approval threshold, and the approver side (who signs off). Replaces the old ApprovalRule and the `requestable` binding in one model. |
 
 Relationship rows (`group_memberships`, `folders.parent_id`, `role_bindings`,
@@ -35,9 +34,9 @@ Relationship rows (`group_memberships`, `folders.parent_id`, `role_bindings`,
 
 ## The two inheritance axes
 
-Everything below flows from **two** kinds of inheritance, and — since
-Access-Model v2 — **both** the standing (Active) and the requestable axes resolve
-folder inheritance through the **same explicit role-rewrite engine**:
+Everything below flows from **two** kinds of inheritance, and **both** the standing
+(Active) and the requestable axes resolve folder inheritance through the **same
+explicit role-rewrite engine**:
 
 1. **Nested-group membership** (transitive): if `alice ∈ sre` and `sre ∈ platform`,
    then `alice` is a member of `platform`. Any binding to `platform` applies to `alice`.
@@ -65,7 +64,7 @@ asset itself, or on an **ancestor folder for a role that declares a `parent`
 cascade rule** (`R ⊇ R via parent`) — a folder binding for a role with no such
 rule confers access on the folder object alone, not its descendants.
 
-Standing bindings are one source of the **Active** tier. Since **M3c** the Active
+Standing bindings are one source of the **Active** tier. The Active
 set is the held-closure over **`role_bindings` ∪ active `access_grants`**
 (non-expired, non-revoked JIT grants): a granted role flows through the rewrite
 graph exactly like a permanent binding, and stops conferring the instant it
@@ -74,7 +73,7 @@ now()`). **Governance is the exception:** a role obtained via a JIT grant confer
 **access** but **not** governance — it does not make you an eligible requester or
 an approver. Those predicates resolve through a **standing-only** closure
 (`HoldsRoleStanding`), so a granted `requester_role`/`approver_role` never lets you
-request or approve further (see [the grants≠governance nuance](#approval--who-signs-off-and-how-a-request-activates-m3c-workflow)).
+request or approve further (see [the grants≠governance nuance](#approval--who-signs-off-and-how-a-request-activates)).
 
 **Worked example**
 
@@ -82,7 +81,7 @@ request or approve further (see [the grants≠governance nuance](#approval--who-
 Groups:   alice ∈ sre ∈ platform
 Folders:  prod ⊃ prod/db
 Asset:    pg-prod  (in prod/db)
-Role:     operator = [connect, read, write]   (resource_type: asset)
+Role:     operator = [db:connect, db:read, db:write]
 Rewrite:  operator ⊇ operator  via parent      ← makes operator cascade down folders
 Binding:  platform → operator   (standing)   on folder prod
 ```
@@ -144,8 +143,8 @@ All three share:
 ```
 Folders:  prod ⊃ prod/db
 Asset:    pg-staging  (in prod/db)
-Roles:    viewer = [read]           (resource_type: asset)
-          dba    = [connect, read, write, ddl]
+Roles:    viewer = [db:read]
+          dba    = [db:connect, db:read, db:write, db:ddl]
 Rewrite:  viewer ⊇ viewer via parent   ← viewer cascades down folders
 ```
 
@@ -189,12 +188,12 @@ request is approved.
 
 `required_approvals = 0` is the **self-service** knob — a policy where an eligible
 requester is **auto-granted** on `RequestAccess` (still fully audited), no approver
-needed. Implemented in M3c: the schema CHECK is `≥ 0` (migration `0008`) and the
+needed. The schema CHECK is `≥ 0` and the
 `CreateRequestPolicy`/`UpdateRequestPolicy` validation is `gte: 0`. On a
 self-service request warden mints the `access_grant` immediately in the same
 transaction and marks the request `granted`.
 
-## Approval — who signs off, and how a request activates (M3c workflow)
+## Approval — who signs off, and how a request activates
 
 The RequestPolicy that makes a role requestable **also** carries its approval
 gate, keyed by **(role, scope)** and resolved most-specific (§ above). The policy's
@@ -242,7 +241,7 @@ deliberately a different (usually heavier) approval than narrow `admin@asset`.
 ### Worked example
 
 ```
-Role:     cluster-admin = [connect, read, write, admin]  (resource_type: asset)
+Role:     cluster-admin = [k8s:connect, k8s:impersonate:cluster-admin]
           role-level default policy: required_approvals=1, approver_role=owner
 Rewrite:  owner ⊇ owner via parent      ← owner cascades down folders
 Folder:   k8s ; Asset: cluster-x (in k8s)
@@ -250,7 +249,7 @@ Policy subject (requester): request_policy(cluster-admin, default) + subject gro
 Binding:  dana → owner   (standing)   on folder k8s     (dana is an owner)
 ```
 
-`alice ∈ eng` requests, dana approves — the full M3c flow on `cluster-x`:
+`alice ∈ eng` requests, dana approves — the full flow on `cluster-x`:
 
 1. **`RequestAccess(cluster-admin, cluster-x, 4h, "incident #42")`.** alice is
    **eligible**: the role-default policy names `group:eng` as a `kind='requester'`
@@ -275,11 +274,10 @@ Binding:  dana → owner   (standing)   on folder k8s     (dana is an owner)
    request or approve further — those resolve standing-only.
 4. **It ends.** The grant stops conferring the instant it **expires** (`expires_at`)
    or is **revoked**; the **reaper** (a 30s background sweep) marks expired grants
-   `revoked_reason='expired'`, audits `access_grant.expired`, and calls the teardown
-   seam. alice reverts to **Requestable**. Because authorization is **continuous**,
-   expiry/revocation must also **tear down any live session** the grant supported —
-   the `GrantTerminator` seam is called now (no-op); the real gateway kill path is
-   **M4** — see [continuous revocation](architecture.md#continuous-revocation--live-session-teardown-m3c-reaper--m4-gateway).
+   `revoked_reason='expired'`, audits `access_grant.expired`, and triggers teardown.
+   alice reverts to **Requestable**. Because authorization is **continuous**,
+   expiry/revocation also **tears down any live session** the grant supported — see
+   [continuous revocation](architecture.md#continuous-revocation--live-session-teardown).
 
 **Self-service variant:** had the policy set `required_approvals=0`, step 1 would
 mint the grant immediately (no approver), alice becoming Active on the spot.
@@ -307,7 +305,7 @@ A request for `cluster-admin` on `cluster-prod` now needs **2** approvals from
 **sec-leads only** — folder owners no longer qualify there. The override
 *replaces* the inherited policy for that (role, scope).
 
-## SSH access — OS logins are capabilities (M3d)
+## SSH access — OS logins are capabilities
 
 The same capability graph that decides *whether* a user reaches an SSH host also
 decides **which OS accounts they may log in as** — the Teleport-style model. An OS
@@ -316,33 +314,38 @@ login is a capability `ssh:login:<account>` (it fits the
 **grants** it like any other capability (`ssh-admin = [ssh:login:root]`,
 `ssh-deploy = [ssh:login:deploy]`, or the broad `ssh:login:*`).
 
-When the [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints an
-SSH certificate for a user on a host, the cert's `ValidPrincipals` is:
+An SSH asset configures a set of **logins** (`ssh_asset_login` rows), each with an
+auth `kind` (`ca` / `password` / `key`). When the
+[CredentialBroker](architecture.md#vault--credentialbroker) issues a credential for
+a `ca`-kind login it signs a certificate whose `ValidPrincipals` are the
+**host-scoped** forms of exactly the logins the user is entitled to:
 
 ```
-{ L ∈ ssh_asset_config.allowed_logins : the user holds ssh:login:<L> on the asset }
+{ <login>@<asset> : login ∈ the asset's ssh_asset_login rows
+                  ∧ the user holds ssh:login:<login> on the asset }
 ```
 
-i.e. the host's OS-account **allowlist** intersected with the user's **held**
+i.e. the asset's configured logins intersected with the user's **held**
 `ssh:login:*` capabilities (resolved by the same glob-aware, group-aware `Check`).
-The login capability may be held via a **standing binding** *or* an **active JIT
-grant** — grants count in `Check` exactly like standing access — so requesting a
-role like `ssh-admin` just-in-time is what lets a user `root` into a box for the
-grant's window. Concretely:
+The broker enforces the same `ssh:login:<login>` capability for the `password` and
+`key` kinds too, before returning the stored secret — so authorization is uniform
+across kinds. The login capability may be held via a **standing binding** *or* an
+**active JIT grant** — grants count in `Check` exactly like standing access — so
+requesting a role like `ssh-admin` just-in-time is what lets a user `root` into a
+box for the grant's window. Concretely, for an asset whose logins are `root` and
+`deploy`:
 
-- A user holding `ssh:login:root` on a host with `allowed_logins=[root,deploy]`
-  gets a cert valid for `root` only (not `deploy`).
-- A user holding `ssh:login:*` gets `[root, deploy]` — every allowed login.
+- A user holding `ssh:login:root` gets a credential for `root` only (not `deploy`).
+- A user holding `ssh:login:*` gets both `root` and `deploy`.
 - A user holding **no** matching login capability gets **nothing** — the broker
-  refuses (no cert), and the SSH CA independently refuses to sign a principal-less
-  ("valid for every account") certificate as defense-in-depth.
+  refuses (no cert, no audit), and the SSH CA independently refuses to sign a
+  principal-less ("valid for every account") certificate as defense-in-depth.
 
 So there is **no static host login**: the account you land as is a strict function
-of your live entitlements, bounded by the accounts the host actually offers. The
-`ssh:connect`-style "may I open a session at all" capability and the actual proxy
-enforcement live at the **ssh-proxy worker (M4)**; M3d builds + tests the
-principal-derivation and cert minting directly. Cross-reference:
-[capabilities.md](capabilities.md#initial-vocabulary),
+of your live entitlements, bounded by the logins the asset actually offers. The
+`ssh:connect` session and the login gate are enforced live at the **ssh-proxy
+worker**. Cross-reference:
+[capabilities.md](capabilities.md#data-plane-vocabulary),
 [security.md](security.md#secrets-at-rest).
 
 ## Onboarding & the empty-catalog consequence
@@ -363,8 +366,8 @@ step.
 
 ## Role inheritance
 
-Role inheritance is an **explicit ReBAC-light role-rewrite** model (M3-roles). It
-replaces the old "flat roles + implicit folder cascade": role composition and
+Role inheritance is an **explicit ReBAC-light role-rewrite** model. Role
+composition and
 folder cascade are expressed as **data** — declared rewrite rules — not implicit
 behavior. This is *ReBAC-light* because the **object types are fixed**
 (user / group / folder / asset) and only **roles and their rewrite rules** are
@@ -460,7 +463,7 @@ Each role still carries its own RequestPolicy default, so a composed role like
               ├─ requester = requester_role(HoldsRole) ∪ requester subjects
               └─ approver  = approver_role(HoldsRole) ∪ approver subjects, N-of-M
                     │
-                    ▼  (M3c workflow — built)
+                    ▼
              access_requests → access_request_approvals
                     │  (N-of-M; self-service at N=0)
                     ▼
@@ -475,7 +478,7 @@ Each role still carries its own RequestPolicy default, so a composed role like
 - **Discovery** (tiers): **Active** from the held closure; **Requestable** from
   RequestPolicy eligibility (effective policy + **standing** `requester_role`/subject
   predicate, minus already-Active); else **Invisible** (`NotFound`).
-- **Activation** (Requestable → grant, M3c — built): `RequestAccess` opens a request;
+- **Activation** (Requestable → grant): `RequestAccess` opens a request;
   `IsApprover`/`IsEligibleRequester` (standing-only) gate approve/request; the N-th
   distinct approval (or a self-service N=0) mints a time-boxed `access_grants` row
   that joins the held set until it expires or is revoked. A reaper reaps at expiry.

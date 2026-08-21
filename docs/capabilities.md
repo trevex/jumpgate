@@ -10,15 +10,16 @@ and glob matcher serve both halves; they differ only in *where* they're enforced
 (worker vs. warden) and *what scope* they're checked at (see the two sections
 below).
 
-> **Status:** capabilities are now enforced in two places. **(1) Management plane
-> — enforced by warden.** Every management RPC (catalog / access / identity /
-> vault / recording admin) is gated by a capability check in the handler
-> (`requireCap`); this *replaced* the old boolean `is_admin` gate — see
-> [Management-plane capabilities](#management-plane-capabilities) below. **(2) Data
-> plane — enforced by the workers.** The **ssh-proxy (M4) enforces `ssh:*`** at a
-> live session; `db:*` / `k8s:*` land with their proxies (M5 / later). The
-> **grammar**, format validation, and glob matcher (`CapMatch`) are shared by
-> both.
+Capabilities are enforced in two places, sharing one grammar, format validation,
+and glob matcher (`CapMatch`):
+
+- **Management plane — enforced by warden.** Every management RPC (catalog / access
+  / identity / vault / recording admin) is gated by a capability check in the
+  handler (`requireCap`); this replaced the old boolean `is_admin` gate — see
+  [Management-plane capabilities](#management-plane-capabilities) below.
+- **Data plane — enforced by the workers.** The ssh-proxy enforces `ssh:*` at a
+  live session today; `db:*` / `k8s:*` are defined for the model and land with
+  their proxies.
 
 ## Grammar
 
@@ -240,9 +241,9 @@ the design docs for the full per-RPC mapping.
 
 ## Where enforcement lives (data plane) — warden decides, workers enforce
 
-This is the **Approach A** boundary (see
-[architecture.md](architecture.md#data-plane-interaction-model-approach-a)).
-Capabilities sit exactly on it, and the split is deliberate:
+The control plane **brokers** and the data plane **enforces** (see
+[architecture.md](architecture.md#the-three-planes)). Capabilities sit exactly on
+that boundary, and the split is deliberate:
 
 ### warden (control plane) **DECIDES**
 
@@ -280,36 +281,29 @@ cluster-admin**") is **worker-side semantics**: warden only sees two distinct
 opaque tokens and answers yes/no on each; the k8s-proxy is what turns a
 "yes" into an actual impersonation header.
 
-> **Status:** the **SSH data plane is live** — the **ssh-proxy (M4) enforces
-> `ssh:login:*`** at a real session (the broker mints the cert principals from the
-> user's held login caps and the proxy gates the connection). The **`db:*` /
-> `k8s:*`** verbs are still **planned** (pg-proxy M5; k8s a later sub-project) —
-> defined-for-the-model, not yet enforced.
-
 ## Data-plane vocabulary
 
 The protocol verbs a **worker** enforces at a live session (the management-plane
-vocabulary is [above](#the-vocabulary)). Illustrative and **grows as workers
-land**. `ssh:*` is enforced today (ssh-proxy, M4); `db:*` / `k8s:*` are
-**defined-for-the-model** and land with their proxies.
+vocabulary is [above](#the-vocabulary)). `ssh:*` is enforced today by the ssh-proxy
+worker; `db:*` / `k8s:*` are **defined for the model** and land with their proxies.
+The exact per-protocol lists are settled when each worker is built — the grammar
+and matcher are stable now, the protocol coverage grows.
 
-| Capability | Meaning (worker-side) | Introduced with | Enforced today |
+| Capability | Meaning (worker-side) | Enforced by | Enforced today |
 |---|---|---|---|
-| `ssh:connect` | Open an SSH session to the target (the effective gate is `ssh:login:*`) | ssh-proxy (M4) | via `ssh:login:*` |
-| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any allowed login). **Drives the SSH cert principals** the [CredentialBroker](architecture.md#vault--credentialbroker-m3d) mints: `ValidPrincipals = allowed_logins ∩ the user's held ssh:login:*` | vault/CredentialBroker (M3d); ssh-proxy (M4) | **Yes** — broker cert minting + ssh-proxy session gate |
-| `db:connect` | Open a Postgres session | pg-proxy (M5) | No |
-| `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (M5) | No |
-| `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (M5) | No |
-| `k8s:connect` | Reach the cluster API through the proxy | k8s-proxy (later sub-project) | No |
-| `k8s:access` | Impersonate **as the requesting user** | k8s-proxy (later) | No |
-| `k8s:impersonate:<role>` | Impersonate **as `<role>`** (e.g. `k8s:impersonate:cluster-admin`) | k8s-proxy (later) | No |
-
-The exact per-protocol capability lists are settled **when each worker is
-built** — the grammar and matcher are stable now, the protocol coverage is not.
+| `ssh:connect` | Open an SSH session to the target (the effective gate is `ssh:login:*`) | ssh-proxy | via `ssh:login:*` |
+| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any configured login). **Drives the SSH cert principals** the [CredentialBroker](architecture.md#vault--credentialbroker) mints: `ValidPrincipals` are the host-scoped `<login>@<asset>` forms of the asset's configured logins ∩ the user's held `ssh:login:*` | broker + ssh-proxy | **Yes** — broker cert minting + ssh-proxy session gate |
+| `ssh:record:exempt` | Exempt the subject from mandatory session recording on the asset (recording is otherwise fail-closed) | ssh-proxy (decided by warden at setup) | **Yes** |
+| `db:connect` | Open a Postgres session | pg-proxy (planned) | No |
+| `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (planned) | No |
+| `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (planned) | No |
+| `k8s:connect` | Reach the cluster API through the proxy | k8s-proxy (planned) | No |
+| `k8s:access` | Impersonate **as the requesting user** | k8s-proxy (planned) | No |
+| `k8s:impersonate:<role>` | Impersonate **as `<role>`** (e.g. `k8s:impersonate:cluster-admin`) | k8s-proxy (planned) | No |
 
 ## Related
 
 - [access-model.md](access-model.md) — how roles bundle capabilities and how
   the ReBAC graph decides which roles a user holds.
-- [architecture.md](architecture.md#data-plane-interaction-model-approach-a) —
-  the control-plane-decides / worker-enforces split (Approach A).
+- [architecture.md](architecture.md#the-three-planes) —
+  the control-plane-brokers / worker-enforces split.
