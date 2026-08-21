@@ -53,9 +53,9 @@ bearer-token interceptor, validated by protovalidate, and existence-hiding via
 | Service | Responsibility |
 |---|---|
 | `AuthService` | password login → opaque bearer token; `WhoAmI` |
-| `IdentityService` | users, groups, nested memberships, user lifecycle |
-| `CatalogService` | folders & assets (incl. typed SSH config); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `Resolve*` |
-| `AccessService` | all authorization config: roles, role-grants, standing role-bindings, request policies + subjects, `ExplainRole` |
+| `IdentityService` | users, groups, nested memberships, user lifecycle; path-scoped `ListGroups` (visibility-filtered, keyset-paginated) + `GetGroupAccess` (capabilities on selection) |
+| `CatalogService` | folders & assets (incl. typed SSH config); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `ListFolderContents` (bounded per-kind aggregator) + `Resolve*` |
+| `AccessService` | all authorization config: roles, role-grants, standing role-bindings, request policies + subjects, `ExplainRole`; path-scoped `ListRoles` (visibility-filtered, keyset-paginated) + `GetRoleAccess` (capabilities on selection) |
 | `AccessRequestService` | the JIT runtime: request / approve / deny / cancel / revoke, grants, approval resolution |
 | `VaultService` | CA init & public material, mesh CA + cert issuance, session-signing-key init, asset secrets (metadata only on read) |
 | `RecordingService` | list / get / presigned-download of session recordings |
@@ -160,23 +160,32 @@ global `-o table|json`. Config is a small hand-rolled file
 (`login --context NAME`, `config use-context`) so multiple identities coexist;
 resolution is flag > env > current context.
 
-**Catalog browse.** `folders list` and `assets list` take an optional positional
-`parent` argument (a DNS-style path or UUID; omit for the root) and an optional
-`--cascade` flag:
+**Catalog and role/group browse.** `folders list`, `assets list`, `roles list`,
+and `groups list` all take an optional positional `parent` argument (a DNS-style
+path or UUID; omit for the root/global view) and an optional `--cascade` flag:
 
 ```
 jumpgate assets list                      # direct root-level assets only (usually none)
 jumpgate assets list db.prod              # direct assets inside db.prod
 jumpgate assets list --cascade            # all visible assets across the full tree
 jumpgate assets list db.prod --cascade    # all visible assets inside db.prod's subtree
+
+jumpgate roles list                       # global (folder-less) roles only
+jumpgate roles list team.demo             # roles homed directly in team.demo
+jumpgate roles list team.demo --cascade   # all visible roles in the team.demo subtree
+
+jumpgate groups list                      # global (folder-less) groups only
+jumpgate groups list team.demo --cascade  # all visible groups in the team.demo subtree
 ```
 
-The same pattern applies to `folders list`. Both commands are
-*visibility-filtered* (not cap-gated): a capless caller gets an empty list;
-browsing an unrelated folder path returns `NotFound`. Lists are navigation-only
-(id, name, path); call `assets get <path>` or use `GetAssetAccess`/`GetFolderAccess`
-to retrieve per-node capabilities. All list verbs page via an opaque `page_token`
-cursor returned in `next_page_token`; the CLI handles pagination automatically.
+All four commands are *visibility-filtered* (not cap-gated): a capless caller
+gets an empty list; browsing a parent path the caller cannot see returns `NotFound`.
+Without `--cascade`, only **direct children** of `parent` are returned — folder-homed
+roles and groups are not visible at the root browse unless `--cascade` is used.
+Lists are navigation-only (id, name, path); call `assets get <path>` or use the
+`Get*Access` detail RPCs to retrieve per-node capabilities. All list verbs page via
+an opaque `page_token` cursor returned in `next_page_token`; the CLI handles
+pagination automatically.
 
 Admin commands accept asset and folder **paths** everywhere (e.g. `bindings create
 --asset password-box.demo`), resolved server-side by `ResolveAsset` /

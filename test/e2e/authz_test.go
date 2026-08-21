@@ -171,4 +171,142 @@ func TestAuthzVisibility(t *testing.T) {
 			}
 		}
 	})
+
+	// role_browse_visibility asserts the Phase-2 path-scoped role browse. Like the
+	// asset browse, ListRoles is visibility-filtered (not cap-gated): a caller sees
+	// roles they manage OR hold OR can request; a capless / out-of-team caller sees
+	// nothing. Without --cascade, folder-homed roles are not returned at the root;
+	// with --cascade the whole subtree is walked.
+	t.Run("role_browse_visibility", func(t *testing.T) {
+		// Helper: collect role names from a `roles list -o json` array (protojson,
+		// camelCase keys: "name" is stable across the Role proto).
+		roleNames := func(listJSON string) map[string]bool {
+			var items []struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal([]byte(listJSON), &items); err != nil {
+				return map[string]bool{}
+			}
+			m := make(map[string]bool, len(items))
+			for _, it := range items {
+				if it.Name != "" {
+					m[it.Name] = true
+				}
+			}
+			return m
+		}
+
+		// The admin created "viewer" roles under folderA and folderB during setup.
+		// With --cascade the admin sees both; alice (standing binding under folderA)
+		// sees the folderA role but not folderB's; nomad (no roles) sees nothing.
+		adminRoles := roleNames(e.asActor(t, "admin", "roles", "list", "--cascade", "-o", "json"))
+		aliceRoles := roleNames(e.asActor(t, "az-alice", "roles", "list", "--cascade", "-o", "json"))
+		nomadRoles := roleNames(e.asActor(t, "az-nomad", "roles", "list", "--cascade", "-o", "json"))
+
+		// Admin must see the viewer roles for BOTH teams (it manages the whole tree).
+		if !adminRoles["viewer"] {
+			t.Error("admin's cascade role list must contain the 'viewer' role but does not")
+		}
+
+		// alice holds viewer.folderA — she must see it in the cascade browse.
+		if !aliceRoles["viewer"] {
+			t.Errorf("alice's cascade role list must contain 'viewer' (she holds it) but does not; got %v", aliceRoles)
+		}
+
+		// nomad has no role relationships anywhere — its browse must be empty.
+		if len(nomadRoles) != 0 {
+			t.Errorf("nomad (no role relationships) must see an empty role list; got %v", nomadRoles)
+		}
+
+		// Without --cascade, folder-homed roles are NOT returned at the root browse
+		// (parent="") because they are not root-level nodes.
+		aliceRolesNoFlag := roleNames(e.asActor(t, "az-alice", "roles", "list", "-o", "json"))
+		if aliceRolesNoFlag["viewer"] {
+			t.Error("alice's root (non-cascade) role list must NOT include folder-homed 'viewer' role")
+		}
+
+		// Parent-scoped browse: `roles list <folderA> --cascade` returns folderA's
+		// roles; a parent-scoped browse of folderB returns nothing for alice (she has
+		// no relationship there).
+		aliceFolderARoles := roleNames(e.asActor(t, "az-alice", "roles", "list", folderA, "--cascade", "-o", "json"))
+		if !aliceFolderARoles["viewer"] {
+			t.Errorf("alice's folderA cascade role list must contain 'viewer'; got %v", aliceFolderARoles)
+		}
+		aliceFolderBRoles := roleNames(e.asActor(t, "az-alice", "roles", "list", folderB, "--cascade", "-o", "json"))
+		if len(aliceFolderBRoles) != 0 {
+			t.Errorf("alice's folderB cascade role list must be empty (cross-team); got %v", aliceFolderBRoles)
+		}
+	})
+
+	// group_browse_visibility asserts the Phase-2 path-scoped group browse.
+	// ListGroups is visibility-filtered: a caller sees groups they manage OR are a
+	// member of. A capless non-member gets an empty list, not PermissionDenied.
+	t.Run("group_browse_visibility", func(t *testing.T) {
+		// Setup: create a group homed in folderA so we have a concrete folder-homed
+		// group to assert on. The admin creates it; alice is added as a member.
+		groupName := e.name("az-team-a")
+		e.asActor(t, "admin", "groups", "create", groupName, "--folder", folderA)
+		e.asActor(t, "admin", "groups", "add-member", groupName+"@"+folderA, aliceEmail)
+
+		// Helper: collect group names from a `groups list -o json` array.
+		groupNames := func(listJSON string) map[string]bool {
+			var items []struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal([]byte(listJSON), &items); err != nil {
+				return map[string]bool{}
+			}
+			m := make(map[string]bool, len(items))
+			for _, it := range items {
+				if it.Name != "" {
+					m[it.Name] = true
+				}
+			}
+			return m
+		}
+
+		// Admin manages the whole tree and must see the group in the cascade browse.
+		adminGroups := groupNames(e.asActor(t, "admin", "groups", "list", "--cascade", "-o", "json"))
+		if !adminGroups[groupName] {
+			t.Errorf("admin's cascade group list must contain %q; got %v", groupName, adminGroups)
+		}
+
+		// alice is a member of the group — she must see it in the cascade browse even
+		// though she holds no management capability on folderA.
+		aliceGroups := groupNames(e.asActor(t, "az-alice", "groups", "list", "--cascade", "-o", "json"))
+		if !aliceGroups[groupName] {
+			t.Errorf("alice's cascade group list must contain %q (she is a member); got %v", groupName, aliceGroups)
+		}
+
+		// nomad is not a member of any group and holds no management caps — the
+		// browse must be empty (not PermissionDenied).
+		nomadGroups := groupNames(e.asActor(t, "az-nomad", "groups", "list", "--cascade", "-o", "json"))
+		if len(nomadGroups) != 0 {
+			t.Errorf("nomad (no group relationships) must see an empty group list; got %v", nomadGroups)
+		}
+
+		// bob belongs to no group and has no management cap on folderA — he must NOT
+		// see the folderA group.
+		bobGroups := groupNames(e.asActor(t, "az-bob", "groups", "list", "--cascade", "-o", "json"))
+		if bobGroups[groupName] {
+			t.Errorf("bob must NOT see folderA group %q (cross-team, non-member); got %v", groupName, bobGroups)
+		}
+
+		// Without --cascade, folder-homed groups are NOT returned at the root browse.
+		aliceGroupsNoFlag := groupNames(e.asActor(t, "az-alice", "groups", "list", "-o", "json"))
+		if aliceGroupsNoFlag[groupName] {
+			t.Errorf("alice's root (non-cascade) group list must NOT include folder-homed group %q", groupName)
+		}
+
+		// Parent-scoped browse: alice's browse under folderA includes the group; her
+		// browse under folderB does not (cross-team, no relationship).
+		aliceFolderAGroups := groupNames(e.asActor(t, "az-alice", "groups", "list", folderA, "--cascade", "-o", "json"))
+		if !aliceFolderAGroups[groupName] {
+			t.Errorf("alice's folderA cascade group list must contain %q; got %v", groupName, aliceFolderAGroups)
+		}
+		aliceFolderBGroups := groupNames(e.asActor(t, "az-alice", "groups", "list", folderB, "--cascade", "-o", "json"))
+		if len(aliceFolderBGroups) != 0 {
+			t.Errorf("alice's folderB cascade group list must be empty (cross-team); got %v", aliceFolderBGroups)
+		}
+	})
 }
