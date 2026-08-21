@@ -224,19 +224,30 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&identityv1.ResolveGroupResponse{GroupId: grp.ID.String(), Path: path}), nil
 }
 
-// ListGroups returns a page of groups (admin only), ordered by id.
+// ListGroups returns a page of groups the caller may identity:group:read. It is
+// visibility-scoped: a global read holder (incl. admin **) sees every group; a
+// folder-scoped holder sees only groups homed in folders they can read; a caller
+// with no group read caps gets an empty page (not an error).
 func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[identityv1.ListGroupsRequest]) (*connect.Response[identityv1.ListGroupsResponse], error) {
-	if err := s.requireCap(ctx, "identity:group:read", authz.GlobalScope()); err != nil {
-		return nil, err
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
+	// Fast path: a global identity:group:read holder (incl. admin **) sees all.
+	gcaps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, authz.GlobalScope())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	seesAll := gcaps.Allows("identity:group:read")
+
 	limit := req.Msg.PageSize
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 	after := uuid.Nil
 	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
+		id, perr := uuid.Parse(req.Msg.PageToken)
+		if perr != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
 		}
 		after = id
@@ -245,8 +256,21 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	// The per-group cap check is bounded (small group counts, cold admin list)
+	// and the global-holder fast path plus paging keep it cheap. NextPageToken is
+	// driven by the raw page, so pagination stays correct even when some rows are
+	// filtered out — the caller keeps paging with the returned token.
 	out := &identityv1.ListGroupsResponse{}
 	for i := range rows {
+		if !seesAll {
+			caps, cerr := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(rows[i].FolderID))
+			if cerr != nil {
+				return nil, connect.NewError(connect.CodeInternal, cerr)
+			}
+			if !caps.Allows("identity:group:read") {
+				continue
+			}
+		}
 		out.Groups = append(out.Groups, toGroupMsg(rows[i]))
 	}
 	if len(rows) == int(limit) && len(rows) > 0 {
