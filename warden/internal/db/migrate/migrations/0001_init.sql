@@ -8,28 +8,6 @@ CREATE TABLE users (
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE groups (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       text NOT NULL UNIQUE,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE group_memberships (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    group_id        uuid NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    member_user_id  uuid REFERENCES users(id)  ON DELETE CASCADE,
-    member_group_id uuid REFERENCES groups(id) ON DELETE CASCADE,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT one_member CHECK (
-        (member_user_id IS NOT NULL) <> (member_group_id IS NOT NULL)
-    ),
-    CONSTRAINT no_self_member CHECK (member_group_id IS DISTINCT FROM group_id)
-);
-CREATE UNIQUE INDEX uq_membership_user  ON group_memberships(group_id, member_user_id)  WHERE member_user_id  IS NOT NULL;
-CREATE UNIQUE INDEX uq_membership_group ON group_memberships(group_id, member_group_id) WHERE member_group_id IS NOT NULL;
-CREATE INDEX idx_gm_member_user  ON group_memberships(member_user_id)  WHERE member_user_id  IS NOT NULL;
-CREATE INDEX idx_gm_member_group ON group_memberships(member_group_id) WHERE member_group_id IS NOT NULL;
-
 CREATE TABLE folders (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name       text NOT NULL,
@@ -46,6 +24,32 @@ CREATE TABLE folders (
     CONSTRAINT no_self_parent CHECK (parent_id IS DISTINCT FROM id)
 );
 CREATE INDEX idx_folders_parent ON folders(parent_id);
+
+CREATE TABLE groups (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       text NOT NULL CHECK (name ~ '^[a-z0-9_-]+$'),
+    folder_id  uuid REFERENCES folders(id) ON DELETE CASCADE,   -- NULL = global/root; governance scope only
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX uq_group_name_global ON groups(name)            WHERE folder_id IS NULL;
+CREATE UNIQUE INDEX uq_group_name_folder ON groups(folder_id, name) WHERE folder_id IS NOT NULL;
+CREATE INDEX idx_groups_folder ON groups(folder_id) WHERE folder_id IS NOT NULL;
+
+CREATE TABLE group_memberships (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id        uuid NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    member_user_id  uuid REFERENCES users(id)  ON DELETE CASCADE,
+    member_group_id uuid REFERENCES groups(id) ON DELETE CASCADE,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT one_member CHECK (
+        (member_user_id IS NOT NULL) <> (member_group_id IS NOT NULL)
+    ),
+    CONSTRAINT no_self_member CHECK (member_group_id IS DISTINCT FROM group_id)
+);
+CREATE UNIQUE INDEX uq_membership_user  ON group_memberships(group_id, member_user_id)  WHERE member_user_id  IS NOT NULL;
+CREATE UNIQUE INDEX uq_membership_group ON group_memberships(group_id, member_group_id) WHERE member_group_id IS NOT NULL;
+CREATE INDEX idx_gm_member_user  ON group_memberships(member_user_id)  WHERE member_user_id  IS NOT NULL;
+CREATE INDEX idx_gm_member_group ON group_memberships(member_group_id) WHERE member_group_id IS NOT NULL;
 
 CREATE TABLE assets (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,7 +99,7 @@ CREATE INDEX idx_rb_subj_group    ON role_bindings(subject_group_id) WHERE subje
 DROP TABLE role_bindings;
 DROP TABLE roles;
 DROP TABLE assets;
-DROP TABLE folders;
 DROP TABLE group_memberships;
 DROP TABLE groups;
+DROP TABLE folders;
 DROP TABLE users;

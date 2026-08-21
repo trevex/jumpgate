@@ -99,7 +99,7 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Group leads with carol as member
-	leads, err := q.CreateGroup(ctx, "leads")
+	leads, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "leads"})
 	if err != nil {
 		t.Fatal(err)
 	}

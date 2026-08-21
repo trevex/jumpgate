@@ -38,8 +38,10 @@ message User {
 }
 
 message Group {
-  string id   = 1;
-  string name = 2;
+  string id          = 1;
+  string name        = 2;
+  string folder_id   = 3;   // empty = global
+  string folder_path = 4;   // DNS path; empty = global (single-group reads)
 }
 
 message CreateUserResponse {
@@ -78,6 +80,7 @@ message ResolveGroupRequest {
 }
 message ResolveGroupResponse {
   string group_id = 1;
+  string path     = 2;
 }
 
 message ListUsersRequest {
@@ -91,7 +94,8 @@ message ListUsersResponse {
 }
 
 message CreateGroupRequest {
-  string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
+  string name      = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-z0-9_-]+$"}];
+  string folder_id = 2 [(buf.validate.field).string.uuid = true, (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE];  // empty = global
 }
 
 message ListGroupsRequest {
