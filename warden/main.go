@@ -27,7 +27,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/webui"
 	"github.com/trevex/jumpgate/warden/internal/pg"
 	"github.com/trevex/jumpgate/warden/internal/recording"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
@@ -36,6 +35,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 	"github.com/trevex/jumpgate/warden/internal/webcors"
+	"github.com/trevex/jumpgate/warden/internal/webui"
 )
 
 func main() {
