@@ -9,7 +9,7 @@ CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 .PHONY: help gen build test lint fmt ci e2e-ssh \
-        kind-images kind-up kind-down kind-demo kind-e2e \
+        kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
         ui-dev ui-dev-reset ui-build
 
 ui-dev: ## Start the UI dev stack (process-compose: postgres + silo + warden + vite)
@@ -96,4 +96,9 @@ kind-demo: kind-up ## Bring up the env, export the mesh CA, build the CLI, and p
 
 kind-e2e: kind-up ## Bring up the env, run the Go e2e suite, then tear down (KEEP=1 to keep it up)
 	cd test/e2e && JUMPGATE_E2E=1 go test -count=1 -timeout 300s ./...
+	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi
+
+ui-e2e: kind-up ## Bring up kind (warden serves the embedded SPA) and run Playwright against it (KEEP=1 to keep it up)
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web exec playwright test
 	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi

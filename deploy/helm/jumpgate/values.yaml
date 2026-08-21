@@ -13,6 +13,7 @@ warden:
   databaseUrl: ""          # used when postgres.enabled=false
   gatewayEndpoint: ""      # external addr the CLI dials; default localhost:<gateway nodePort>
   logLevel: info
+  cookieInsecure: false    # dev/demo only: drop the Secure cookie flag (HTTP access); prod keeps false
 
 masterKey:
   existingSecret: ""       # Secret containing key VAULT_MASTER_KEY; else generated
