@@ -106,7 +106,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	// identity, which on this plain-h2c server is injected as a fixed "w1" worker (in
 	// production it comes from the mTLS cert SAN via mesh.Middleware).
 	mux := http.NewServeMux()
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, &fakePresigner{}, time.Minute); err != nil {
+	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register user: %v", err)
 	}
 	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
