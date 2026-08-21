@@ -125,24 +125,22 @@ func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[i
 	return connect.NewResponse(&identityv1.ResolveUserResponse{UserId: u.ID.String()}), nil
 }
 
-// ListUsers returns a page of users (admin only), ordered by id.
+// ListUsers returns a page of users (admin only), ordered by (email ASC, id ASC).
 func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
 	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
-	limit := req.Msg.PageSize
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
 	}
-	after := uuid.Nil
-	if req.Msg.PageToken != "" {
-		id, err := uuid.Parse(req.Msg.PageToken)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
-		after = id
+	params := gen.ListUsersParams{Lim: limit}
+	if k != nil {
+		params.AfterEmail = pgtype.Text{String: k.Name, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
 	}
-	rows, err := s.q.ListUsers(ctx, gen.ListUsersParams{Column1: after, Limit: limit})
+	rows, err := s.q.ListUsers(ctx, params)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -150,8 +148,12 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	for i := range rows {
 		out.Users = append(out.Users, toUserMsg(rows[i]))
 	}
-	if len(rows) == int(limit) && len(rows) > 0 {
-		out.NextPageToken = rows[len(rows)-1].ID.String()
+	// Emit a token only when the page was filled; an exact multiple of page_size
+	// costs one extra empty trailing page (standard strict-last-page tradeoff).
+	// encodeNameToken takes the SORT-KEY column: email here.
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeNameToken(last.Email, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

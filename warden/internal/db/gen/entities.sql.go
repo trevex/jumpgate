@@ -450,18 +450,22 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users
-WHERE ($1::uuid IS NULL OR id > $1)
-ORDER BY id
-LIMIT $2
+WHERE (
+  $1::text IS NULL
+  OR (email, id) > ($1, $2::uuid)
+)
+ORDER BY email, id
+LIMIT $3
 `
 
 type ListUsersParams struct {
-	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	AfterEmail pgtype.Text `json:"after_email"`
+	AfterID    pgtype.UUID `json:"after_id"`
+	Lim        int32       `json:"lim"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listUsers, arg.AfterEmail, arg.AfterID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

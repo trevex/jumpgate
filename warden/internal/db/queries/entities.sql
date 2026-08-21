@@ -75,9 +75,12 @@ SELECT * FROM assets WHERE id = $1;
 
 -- name: ListUsers :many
 SELECT * FROM users
-WHERE ($1::uuid IS NULL OR id > $1)
-ORDER BY id
-LIMIT $2;
+WHERE (
+  sqlc.narg('after_email')::text IS NULL
+  OR (email, id) > (sqlc.narg('after_email'), sqlc.narg('after_id')::uuid)
+)
+ORDER BY email, id
+LIMIT sqlc.arg('lim');
 
 -- name: CreateUserFull :one
 INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING *;
