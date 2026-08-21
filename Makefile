@@ -8,7 +8,7 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
-.PHONY: help gen build test lint fmt ci e2e-ssh \
+.PHONY: help gen build test lint fmt ci e2e-ssh web \
         kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
         ui-dev ui-dev-reset ui-build
 
@@ -50,7 +50,12 @@ fmt: ## Auto-format
 	gofmt -w warden cli 2>/dev/null || true
 	cargo fmt --all
 
-ci: gen build test lint ## Full CI pipeline
+web: ## Install + typecheck + build the SPA
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web typecheck
+	pnpm --dir web build
+
+ci: gen build test lint web ## Full CI pipeline
 
 e2e-ssh: ## Opt-in full-stack SSH connect e2e (real warden+gateway+worker binaries; NOT in ci)
 	cargo build --workspace
