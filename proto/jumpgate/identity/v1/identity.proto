@@ -17,6 +17,7 @@ service IdentityService {
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
   rpc ResolveGroup(ResolveGroupRequest) returns (ResolveGroupResponse) {}
   rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
+  rpc GetGroupAccess(GetGroupAccessRequest) returns (GetGroupAccessResponse) {}
   rpc AddUserToGroup(AddUserToGroupRequest) returns (AddUserToGroupResponse) {}
   rpc AddGroupToGroup(AddGroupToGroupRequest) returns (AddGroupToGroupResponse) {}
   rpc RemoveUserFromGroup(RemoveUserFromGroupRequest) returns (RemoveUserFromGroupResponse) {}
@@ -101,6 +102,8 @@ message CreateGroupRequest {
 message ListGroupsRequest {
   int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   string page_token = 2;
+  string parent     = 3; // folder id or DNS path; empty = root (folder-less groups + all folders)
+  bool   cascade    = 4; // descend the whole subtree; default false = direct children only
 }
 
 message ListGroupsResponse {
@@ -162,3 +165,9 @@ message DeleteGroupRequest {
   string group_id = 1 [(buf.validate.field).string.uuid = true];
 }
 message DeleteGroupResponse {}
+
+// GetGroupAccess returns the caller's management capabilities on one group.
+// NotFound (existence hiding) when the caller has no relationship to the group —
+// neither a capability on its scope nor transitive membership.
+message GetGroupAccessRequest  { string group_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetGroupAccessResponse { repeated string capabilities = 1; }

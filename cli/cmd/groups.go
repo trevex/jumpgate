@@ -33,10 +33,14 @@ var groupsCreateCmd = &cobra.Command{
 	RunE:  runGroupsCreate,
 }
 
+var (
+	groupsListCascade bool
+)
+
 var groupsListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [parent]",
 	Short: "List groups",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runGroupsList,
 }
 
@@ -58,6 +62,8 @@ var groupsCreateFolder string
 
 func init() {
 	groupsCreateCmd.Flags().StringVar(&groupsCreateFolder, "folder", "", "folder to home the group in for governance (uuid or DNS path); empty = global")
+
+	groupsListCmd.Flags().BoolVar(&groupsListCascade, "cascade", false, "list groups in the whole subtree")
 
 	groupsCmd.AddCommand(groupsCreateCmd)
 	groupsCmd.AddCommand(groupsListCmd)
@@ -94,14 +100,24 @@ func runGroupsCreate(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func runGroupsList(cmd *cobra.Command, _ []string) error {
+func runGroupsList(cmd *cobra.Command, args []string) error {
 	cl, err := newClient()
 	if err != nil {
 		return err
 	}
 
+	parent := ""
+	if len(args) > 0 {
+		parent = args[0]
+	}
+
 	groups, err := collectPages(func(token string) ([]*identityv1.Group, string, error) {
-		req := connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 100, PageToken: token})
+		req := connect.NewRequest(&identityv1.ListGroupsRequest{
+			Parent:    parent,
+			Cascade:   groupsListCascade,
+			PageSize:  100,
+			PageToken: token,
+		})
 		cl.Authorize(req)
 		resp, err := cl.Identity().ListGroups(cmd.Context(), req)
 		if err != nil {

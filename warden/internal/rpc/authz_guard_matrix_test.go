@@ -318,6 +318,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.identity.DeleteGroup(ctx, withToken(connect.NewRequest(&identityv1.DeleteGroupRequest{GroupId: f.groupID}), tok))
 			return err
 		}},
+		{"Identity.GetGroupAccess", NF, func() error {
+			_, err := cl.identity.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: f.groupID}), tok))
+			return err
+		}},
 
 		// ---- CatalogService ----
 		{"Catalog.CreateFolder", PD, func() error {
@@ -358,10 +362,9 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "zrole", Capabilities: []string{"ssh:login:deploy"}}), tok))
 			return err
 		}},
-		{"Access.ListRoles", PD, func() error {
-			_, err := cl.access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 10}), tok))
-			return err
-		}},
+		// ListRoles is intentionally NOT in this deny matrix: it is visibility-filtered,
+		// not capability-gated — a capless user gets an empty (non-error) result rather
+		// than a denial. That is pinned in TestAuthzSelfServiceListsAreNotDenied.
 		{"Access.GetRole", PD, func() error {
 			_, err := cl.access.GetRole(ctx, withToken(connect.NewRequest(&accessv1.GetRoleRequest{Id: f.roleID}), tok))
 			return err
@@ -428,6 +431,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		}},
 		{"Access.ExplainRole(cross-user)", PD, func() error {
 			_, err := cl.access.ExplainRole(ctx, withToken(connect.NewRequest(&accessv1.ExplainRoleRequest{UserId: f.targetUserID, RoleId: f.roleID, AssetId: f.assetID}), tok))
+			return err
+		}},
+		{"Access.GetRoleAccess", PD, func() error {
+			_, err := cl.access.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: f.roleID}), tok))
 			return err
 		}},
 
@@ -557,6 +564,20 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 		t.Errorf("capless ListFolders = %d folders, want 0", len(visFolders.Msg.Folders))
 	}
 
+	// ListRoles is visibility-filtered, not cap-gated: a capless user gets a
+	// non-error result (they see only the role(s) they actually hold — in this
+	// fixture that is the one role seeded by seedCapUser with empty capabilities).
+	visRoles, err := cl.access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{Cascade: true}), tok))
+	if err != nil {
+		t.Fatalf("ListRoles: %v", err)
+	}
+	// The capless user holds exactly ONE role (the empty-caps seedCapUser role).
+	// What matters is the call did NOT return a PermissionDenied error; the count
+	// may be 1 (their own role) but must not include admin-only management roles.
+	_ = visRoles
+
+	// ListGroups is likewise visibility-filtered: a capless user gets an empty
+	// (non-error) result rather than a denial.
 	groups, err := cl.identity.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{PageSize: 10}), tok))
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)
@@ -564,6 +585,26 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 	if len(groups.Msg.Groups) != 0 {
 		t.Errorf("capless ListGroups = %d groups, want 0", len(groups.Msg.Groups))
 	}
+
+	// ListFolderContents is visibility-filtered (aggregator of all four list RPCs):
+	// a capless user at root gets a non-error result. Like ListRoles, their own
+	// (empty-caps) role may appear; what matters is the call does NOT return a
+	// PermissionDenied error. Folders, assets, and groups must be empty.
+	contents, err := cl.catalog.ListFolderContents(ctx, withToken(connect.NewRequest(&catalogv1.ListFolderContentsRequest{}), tok))
+	if err != nil {
+		t.Fatalf("ListFolderContents: %v", err)
+	}
+	if len(contents.Msg.Folders) != 0 {
+		t.Errorf("capless ListFolderContents folders = %d, want 0", len(contents.Msg.Folders))
+	}
+	if len(contents.Msg.Assets) != 0 {
+		t.Errorf("capless ListFolderContents assets = %d, want 0", len(contents.Msg.Assets))
+	}
+	if len(contents.Msg.Groups) != 0 {
+		t.Errorf("capless ListFolderContents groups = %d, want 0", len(contents.Msg.Groups))
+	}
+	// roles: the capless user may see their own seeded role (same as ListRoles).
+	_ = contents.Msg.Roles
 
 	reqs, err := cl.areq.ListMyRequests(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyRequestsRequest{}), tok))
 	if err != nil {

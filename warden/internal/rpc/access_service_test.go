@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
@@ -516,6 +517,62 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// TestGetRoleAccess: an admin gets role capabilities (its ** wildcard, which
+// CapabilitiesOnScope surfaces on any scope); a scoped cap holder sees their
+// concrete capability; a stranger with no relationship gets PermissionDenied.
+func TestGetRoleAccess(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create a folder and a folder-scoped role.
+	f, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	folderID := uuid.MustParse(f.Msg.Folder.Id)
+
+	r, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name:         "readonly",
+		FolderId:     f.Msg.Folder.Id,
+		Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := r.Msg.Role.Id
+
+	// admin: CapabilitiesOnScope on the role's folder scope surfaces ** wildcard.
+	resp, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), tok))
+	if err != nil {
+		t.Fatalf("admin GetRoleAccess: %v", err)
+	}
+	if len(resp.Msg.Capabilities) == 0 {
+		t.Fatalf("admin caps = %v, want non-empty (holds **)", resp.Msg.Capabilities)
+	}
+
+	// A user with access:role:read scoped to the role's folder sees that capability.
+	seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
+	rtok := authClient(t, url, "roleadmin@x", "password123")
+	racc, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), rtok))
+	if err != nil {
+		t.Fatalf("role-admin GetRoleAccess: %v", err)
+	}
+	if !contains(racc.Msg.Capabilities, "access:role:read") {
+		t.Fatalf("role-admin caps = %v, want access:role:read", racc.Msg.Capabilities)
+	}
+
+	// stranger: capless, no relationship → PermissionDenied (roles are NOT topology).
+	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123")
+	if _, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), stok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("stranger GetRoleAccess = %v, want PermissionDenied", connect.CodeOf(err))
+	}
 }
 
 func TestExplainRole(t *testing.T) {
@@ -1321,7 +1378,7 @@ func TestListRolesFolderPath(t *testing.T) {
 	if _, err := access.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "everywhere", Capabilities: []string{"ssh:login:deploy"}}), tok)); err != nil {
 		t.Fatalf("global role: %v", err)
 	}
-	resp, err := access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), tok))
+	resp, err := access.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50, Cascade: true}), tok))
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -1435,9 +1492,10 @@ func TestAccessCapabilityGatingAndSubset(t *testing.T) {
 		t.Fatalf("dana bind identity role at team = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 
-	// dana CANNOT ListRoles (a global read she lacks).
-	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), danaTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("dana ListRoles = %v, want PermissionDenied", connect.CodeOf(err))
+	// dana CAN call ListRoles — it is visibility-filtered, not cap-gated.
+	// She sees only the roles visible to her (her own role(s)), not an error.
+	if _, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), danaTok)); err != nil {
+		t.Fatalf("dana ListRoles visibility-filtered = %v, want ok", err)
 	}
 
 	// admin (**) can do all of the above.
@@ -1899,6 +1957,209 @@ func TestListPolicySubjectsKeysetPagination(t *testing.T) {
 	for _, s := range page2.Msg.Subjects {
 		if seen[s.Id] {
 			t.Fatalf("duplicate subject id %s across pages", s.Id)
+		}
+	}
+}
+
+// containsRoleID reports whether the given role id is present in roles.
+func containsRoleID(roles []*accessv1.Role, id string) bool {
+	for _, r := range roles {
+		if r.Id == id {
+			return true
+		}
+	}
+	return false
+}
+
+// TestListRolesParentScoped exercises the path-scoped visibility browse for
+// ListRoles. It seeds a global role and a folder-scoped role, then verifies:
+//   - parent="" returns only global roles (not the scoped one)
+//   - parent=<f1 id> returns only the folder-scoped role
+//   - parent="", cascade=true returns both
+//   - a holder user (no cap) who holds the folder role sees it under parent=f1
+//   - results are in (name ASC, id ASC) order
+//   - keyset pagination works across a page boundary
+func TestListRolesParentScoped(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// Create folder f1.
+	f1, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "f1"}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	f1ID := f1.Msg.Folder.Id
+
+	// Create an asset in f1 so the folder role can be bound at asset scope.
+	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: f1ID, Name: "srv",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	assetID := asset.Msg.Asset.Id
+
+	// Seed a global role and a folder-scoped role.
+	globalRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "global-role", Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create global role: %v", err)
+	}
+	globalRoleID := globalRole.Msg.Role.Id
+
+	folderRole, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name: "folder-role", FolderId: f1ID, Capabilities: []string{"ssh:login:deploy"},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create folder role: %v", err)
+	}
+	folderRoleID := folderRole.Msg.Role.Id
+
+	// --- Admin visibility ---
+
+	// parent="" → only global roles (admin's ** bootstrap + globalRole, not folderRole).
+	rootList, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), tok))
+	if err != nil {
+		t.Fatalf("list root: %v", err)
+	}
+	if !containsRoleID(rootList.Msg.Roles, globalRoleID) {
+		t.Errorf("root list: want global-role present")
+	}
+	if containsRoleID(rootList.Msg.Roles, folderRoleID) {
+		t.Errorf("root list: want folder-role absent (not global)")
+	}
+
+	// parent=f1ID → only the folder-scoped role.
+	f1List, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		Parent: f1ID, PageSize: 50,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list f1: %v", err)
+	}
+	if !containsRoleID(f1List.Msg.Roles, folderRoleID) {
+		t.Errorf("f1 list: want folder-role present")
+	}
+	if containsRoleID(f1List.Msg.Roles, globalRoleID) {
+		t.Errorf("f1 list: want global-role absent")
+	}
+
+	// parent="", cascade=true → both roles (global + folder-scoped).
+	cascadeList, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		Cascade: true, PageSize: 50,
+	}), tok))
+	if err != nil {
+		t.Fatalf("list cascade: %v", err)
+	}
+	if !containsRoleID(cascadeList.Msg.Roles, globalRoleID) {
+		t.Errorf("cascade list: want global-role present")
+	}
+	if !containsRoleID(cascadeList.Msg.Roles, folderRoleID) {
+		t.Errorf("cascade list: want folder-role present")
+	}
+
+	// folder_path is populated for the scoped role in f1 list.
+	for _, r := range f1List.Msg.Roles {
+		if r.Id == folderRoleID && r.FolderPath == "" {
+			t.Errorf("folder-role folder_path empty, want non-empty")
+		}
+	}
+
+	// --- Non-admin holder visibility (no management cap) ---
+	// Create a holder who holds the folder role via a standing binding.
+	holder, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "holder@x", DisplayName: "Holder", Password: "password123",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create holder: %v", err)
+	}
+	// Bind the folder role to holder at the asset scope.
+	if _, err := acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
+		RoleId: folderRoleID, ScopeAssetId: assetID, SubjectUserId: holder.Msg.User.Id,
+	}), tok)); err != nil {
+		t.Fatalf("bind holder: %v", err)
+	}
+	holderTok := authClient(t, url, "holder@x", "password123")
+
+	// Holder can see folder-role under parent=f1 with NO management cap.
+	holderList, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		Parent: f1ID, PageSize: 50,
+	}), holderTok))
+	if err != nil {
+		t.Fatalf("holder list f1: %v", err)
+	}
+	if !containsRoleID(holderList.Msg.Roles, folderRoleID) {
+		t.Errorf("holder f1 list: want folder-role present (held via standing binding)")
+	}
+
+	// Holder sees empty list at root (holds no global roles).
+	holderRoot, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{PageSize: 50}), holderTok))
+	if err != nil {
+		t.Fatalf("holder root list: %v", err)
+	}
+	if containsRoleID(holderRoot.Msg.Roles, globalRoleID) {
+		t.Errorf("holder root: should not see global-role they do not hold")
+	}
+
+	// --- Name ordering and pagination ---
+	// Create extra roles under f1 to test (name ASC, id ASC) ordering.
+	// In f1 we have: alpha < beta < folder-role < gamma (4 roles total).
+	// Use page_size=3 so page1 fills (alpha, beta, folder-role) and page2 has 1
+	// row (gamma), which is not full, so no NextPageToken on the last page.
+	names := []string{"alpha", "beta", "gamma"}
+	for _, n := range names {
+		if _, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+			Name: n, FolderId: f1ID, Capabilities: []string{"ssh:login:deploy"},
+		}), tok)); err != nil {
+			t.Fatalf("create extra role %s: %v", n, err)
+		}
+	}
+	// page_size=3: 4 roles in f1 → page1=3, page2=1.
+	page1, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		Parent: f1ID, PageSize: 3,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1.Msg.Roles) != 3 {
+		t.Fatalf("page1: got %d roles, want 3", len(page1.Msg.Roles))
+	}
+	if page1.Msg.NextPageToken == "" {
+		t.Fatal("page1: expected NextPageToken")
+	}
+	// Ordering: "alpha" < "beta" < "folder-role" < "gamma"
+	if page1.Msg.Roles[0].Name != "alpha" || page1.Msg.Roles[1].Name != "beta" || page1.Msg.Roles[2].Name != "folder-role" {
+		t.Errorf("page1 order: got [%s, %s, %s], want [alpha, beta, folder-role]",
+			page1.Msg.Roles[0].Name, page1.Msg.Roles[1].Name, page1.Msg.Roles[2].Name)
+	}
+	page2, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
+		Parent: f1ID, PageSize: 3, PageToken: page1.Msg.NextPageToken,
+	}), tok))
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2.Msg.Roles) != 1 {
+		t.Fatalf("page2: got %d roles, want 1 (gamma only)", len(page2.Msg.Roles))
+	}
+	if page2.Msg.NextPageToken != "" {
+		t.Fatal("page2: expected empty NextPageToken (last page not full)")
+	}
+	if page2.Msg.Roles[0].Name != "gamma" {
+		t.Errorf("page2[0]: got %q, want gamma", page2.Msg.Roles[0].Name)
+	}
+	// No duplicates across pages.
+	seenRole := map[string]bool{}
+	for _, r := range page1.Msg.Roles {
+		seenRole[r.Id] = true
+	}
+	for _, r := range page2.Msg.Roles {
+		if seenRole[r.Id] {
+			t.Fatalf("duplicate role id %s across pages", r.Id)
 		}
 	}
 }
