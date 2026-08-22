@@ -51,6 +51,37 @@ func (s *SessionServer) CreateSession(ctx context.Context, req *connect.Request[
 	}), nil
 }
 
+// CreateWebSession authorizes the caller to reach the asset via the given login
+// (held-closure SSH-login check) and mints a short-lived browser-terminal
+// admission ticket with no client-key binding. The caller is taken from the
+// request context, which cookie and bearer auth both populate. Existence-hiding:
+// an unentitled caller and an unknown asset both yield PermissionDenied.
+func (s *SessionServer) CreateWebSession(ctx context.Context, req *connect.Request[sessionv1.CreateWebSessionRequest]) (*connect.Response[sessionv1.CreateWebSessionResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if req.Msg.Login == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("empty login"))
+	}
+	out, err := s.svc.CreateWebSession(ctx, caller.ID, assetID, req.Msg.Login)
+	switch {
+	case errors.Is(err, session.ErrNoAccess):
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("no session access"))
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&sessionv1.CreateWebSessionResponse{
+		Ticket:          out.Token,
+		GatewayEndpoint: out.Endpoint,
+		ExpiresAt:       timestamppb.New(out.ExpiresAt),
+	}), nil
+}
+
 // parseSSHPublicKey accepts the client public key in either OpenSSH
 // authorized_keys text form or raw SSH wire form. It tries the authorized_keys
 // parse first (what ssh.MarshalAuthorizedKey produces) and falls back to the

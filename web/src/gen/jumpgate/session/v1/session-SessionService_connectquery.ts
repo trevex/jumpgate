@@ -11,3 +11,11 @@ import { SessionService } from "./session_pb";
  * @generated from rpc jumpgate.session.v1.SessionService.CreateSession
  */
 export const createSession = SessionService.method.createSession;
+
+/**
+ * CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
+ * a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
+ *
+ * @generated from rpc jumpgate.session.v1.SessionService.CreateWebSession
+ */
+export const createWebSession = SessionService.method.createWebSession;

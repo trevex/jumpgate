@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/session/v1/session.proto.
  */
 export const file_jumpgate_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wMnoKDlNlc3Npb25TZXJ2aWNlEmgKDUNyZWF0ZVNlc3Npb24SKS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiouanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2UiAEJFWkNnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL3Nlc3Npb24vdjE7c2Vzc2lvbnYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQASJ0ChhDcmVhdGVXZWJTZXNzaW9uUmVzcG9uc2USDgoGdGlja2V0GAEgASgJEhgKEGdhdGV3YXlfZW5kcG9pbnQYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAy7QEKDlNlc3Npb25TZXJ2aWNlEmgKDUNyZWF0ZVNlc3Npb24SKS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiouanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2UiABJxChBDcmVhdGVXZWJTZXNzaW9uEiwuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVXZWJTZXNzaW9uUmVxdWVzdBotLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9zZXNzaW9uL3YxO3Nlc3Npb252MWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.session.v1.CreateSessionRequest
@@ -65,6 +65,55 @@ export const CreateSessionResponseSchema: GenMessage<CreateSessionResponse> = /*
   messageDesc(file_jumpgate_session_v1_session, 1);
 
 /**
+ * @generated from message jumpgate.session.v1.CreateWebSessionRequest
+ */
+export type CreateWebSessionRequest = Message<"jumpgate.session.v1.CreateWebSessionRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+
+  /**
+   * @generated from field: string login = 2;
+   */
+  login: string;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateWebSessionRequest.
+ * Use `create(CreateWebSessionRequestSchema)` to create a new message.
+ */
+export const CreateWebSessionRequestSchema: GenMessage<CreateWebSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 2);
+
+/**
+ * @generated from message jumpgate.session.v1.CreateWebSessionResponse
+ */
+export type CreateWebSessionResponse = Message<"jumpgate.session.v1.CreateWebSessionResponse"> & {
+  /**
+   * @generated from field: string ticket = 1;
+   */
+  ticket: string;
+
+  /**
+   * @generated from field: string gateway_endpoint = 2;
+   */
+  gatewayEndpoint: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 3;
+   */
+  expiresAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateWebSessionResponse.
+ * Use `create(CreateWebSessionResponseSchema)` to create a new message.
+ */
+export const CreateWebSessionResponseSchema: GenMessage<CreateWebSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 3);
+
+/**
  * SessionService is the CLI-facing entrypoint to open a data-plane session. It is
  * authenticated by the standard bearer-token interceptor.
  *
@@ -81,6 +130,17 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof CreateSessionRequestSchema;
     output: typeof CreateSessionResponseSchema;
+  },
+  /**
+   * CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
+   * a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
+   *
+   * @generated from rpc jumpgate.session.v1.SessionService.CreateWebSession
+   */
+  createWebSession: {
+    methodKind: "unary";
+    input: typeof CreateWebSessionRequestSchema;
+    output: typeof CreateWebSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_session_v1_session, 0);
