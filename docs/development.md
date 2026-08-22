@@ -195,6 +195,14 @@ requires `catalog:asset:read`.
   the audit list of session recordings with an in-browser **asciinema** player
   that streams each cast same-origin from `/api/recordings/<id>/cast` (the session
   cookie rides along).
+- **Directory** (`/directory`, shown when the caller holds `identity:user:read` or
+  `identity:group:read`) — manage users and groups. **Users:** list with an
+  active/deactivated status, create, deactivate/reactivate, delete (destructive
+  actions confirm, and you can't act on your own account). **Groups:** list, create
+  (with an optional folder home), delete, and a detail drawer that manages
+  membership — both user members and nested sub-groups (add via searchable pickers,
+  remove inline). Every affordance is gated on the caller's global management
+  capabilities; the server remains the enforcer.
 
 ## Testing
 
