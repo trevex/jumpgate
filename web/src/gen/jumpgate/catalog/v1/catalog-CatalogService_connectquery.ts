@@ -73,3 +73,11 @@ export const resolveFolder = CatalogService.method.resolveFolder;
  * @generated from rpc jumpgate.catalog.v1.CatalogService.ListFolderContents
  */
 export const listFolderContents = CatalogService.method.listFolderContents;
+
+/**
+ * SearchCatalog finds catalog entities (folders/assets/roles/groups) whose name
+ * matches the query, filtered to what the caller may see. Any authenticated caller.
+ *
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.SearchCatalog
+ */
+export const searchCatalog = CatalogService.method.searchCatalog;

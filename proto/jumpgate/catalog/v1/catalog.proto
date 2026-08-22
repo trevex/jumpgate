@@ -32,6 +32,9 @@ service CatalogService {
   // parent="" or omitted = root. has_more=true means additional items exist
   // beyond the 50-item first slice.
   rpc ListFolderContents(ListFolderContentsRequest) returns (ListFolderContentsResponse) {}
+  // SearchCatalog finds catalog entities (folders/assets/roles/groups) whose name
+  // matches the query, filtered to what the caller may see. Any authenticated caller.
+  rpc SearchCatalog(SearchCatalogRequest) returns (SearchCatalogResponse) {}
 }
 
 message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; }
@@ -197,4 +200,19 @@ message ListFolderContentsResponse {
   bool                                roles_has_more   = 6;
   repeated jumpgate.identity.v1.Group groups        = 7;
   bool                                groups_has_more  = 8;
+}
+
+// SearchCatalog finds catalog entities whose name matches the query (case-insensitive
+// substring), filtered to what the caller may see (visibility-filtered, so existence
+// is hidden by construction), capped at limit. Any authenticated caller.
+message SearchCatalogRequest {
+  string query = 1;
+  int32 limit = 2 [(buf.validate.field).int32 = {gte: 0, lte: 50}];
+}
+message SearchCatalogResponse { repeated SearchHit hits = 1; }
+message SearchHit {
+  string kind = 1; // folder | asset | role | group
+  string id = 2;
+  string name = 3;
+  string path = 4; // dotted path (assets/folders/roles); group @-path where applicable
 }
