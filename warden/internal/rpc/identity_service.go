@@ -110,6 +110,12 @@ func (s *IdentityServer) GetUser(ctx context.Context, req *connect.Request[ident
 	return connect.NewResponse(&identityv1.GetUserResponse{User: toUserMsg(u)}), nil
 }
 
+// GetUserDisplay returns minimal display info for a user id (universal directory
+// read). TEMPORARY stub — real impl in a later task.
+func (s *IdentityServer) GetUserDisplay(_ context.Context, _ *connect.Request[identityv1.GetUserDisplayRequest]) (*connect.Response[identityv1.GetUserDisplayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // ResolveUser resolves a user email to an id (admin only). Unknown emails return NotFound.
 func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[identityv1.ResolveUserRequest]) (*connect.Response[identityv1.ResolveUserResponse], error) {
 	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {

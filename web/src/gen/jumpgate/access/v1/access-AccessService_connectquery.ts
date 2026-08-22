@@ -22,6 +22,15 @@ export const listRoles = AccessService.method.listRoles;
 export const getRole = AccessService.method.getRole;
 
 /**
+ * GetRoleDisplay returns a role's decision context (name, folder path, and the
+ * capabilities it grants) for an approver or requester. Authorized by
+ * access:role:read OR being party to a pending access request referencing the role.
+ *
+ * @generated from rpc jumpgate.access.v1.AccessService.GetRoleDisplay
+ */
+export const getRoleDisplay = AccessService.method.getRoleDisplay;
+
+/**
  * @generated from rpc jumpgate.access.v1.AccessService.ResolveRole
  */
 export const resolveRole = AccessService.method.resolveRole;

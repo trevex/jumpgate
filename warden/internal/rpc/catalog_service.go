@@ -433,6 +433,12 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
+// GetAssetDisplay returns an asset's decision context without secret references.
+// TEMPORARY stub — real impl in a later task.
+func (s *CatalogServer) GetAssetDisplay(_ context.Context, _ *connect.Request[catalogv1.GetAssetDisplayRequest]) (*connect.Response[catalogv1.GetAssetDisplayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // UpdateAssetConfig upserts an asset's typed config (admin only). The
 // stored_key_needs_secret CHECK and the stored_secret_id FK surface as
 // InvalidArgument.

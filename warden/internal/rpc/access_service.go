@@ -277,6 +277,12 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	return connect.NewResponse(&accessv1.GetRoleResponse{Role: m}), nil
 }
 
+// GetRoleDisplay returns a role's decision context including granted capabilities.
+// TEMPORARY stub — real impl in a later task.
+func (s *AccessServer) GetRoleDisplay(_ context.Context, _ *connect.Request[accessv1.GetRoleDisplayRequest]) (*connect.Response[accessv1.GetRoleDisplayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
 // AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"
 // (admin only). Mirrors the DB constraints: same-object self-reference is
 // rejected; a duplicate rule is AlreadyExists; an unknown role is InvalidArgument.

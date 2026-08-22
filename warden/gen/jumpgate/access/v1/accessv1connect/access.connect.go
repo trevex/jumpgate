@@ -40,6 +40,9 @@ const (
 	AccessServiceListRolesProcedure = "/jumpgate.access.v1.AccessService/ListRoles"
 	// AccessServiceGetRoleProcedure is the fully-qualified name of the AccessService's GetRole RPC.
 	AccessServiceGetRoleProcedure = "/jumpgate.access.v1.AccessService/GetRole"
+	// AccessServiceGetRoleDisplayProcedure is the fully-qualified name of the AccessService's
+	// GetRoleDisplay RPC.
+	AccessServiceGetRoleDisplayProcedure = "/jumpgate.access.v1.AccessService/GetRoleDisplay"
 	// AccessServiceResolveRoleProcedure is the fully-qualified name of the AccessService's ResolveRole
 	// RPC.
 	AccessServiceResolveRoleProcedure = "/jumpgate.access.v1.AccessService/ResolveRole"
@@ -99,6 +102,10 @@ type AccessServiceClient interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
+	// GetRoleDisplay returns a role's decision context (name, folder path, and the
+	// capabilities it grants) for an approver or requester. Authorized by
+	// access:role:read OR being party to a pending access request referencing the role.
+	GetRoleDisplay(context.Context, *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
 	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
 	// Role grants (userset rewrites).
@@ -149,6 +156,12 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+AccessServiceGetRoleProcedure,
 			connect.WithSchema(accessServiceMethods.ByName("GetRole")),
+			connect.WithClientOptions(opts...),
+		),
+		getRoleDisplay: connect.NewClient[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse](
+			httpClient,
+			baseURL+AccessServiceGetRoleDisplayProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("GetRoleDisplay")),
 			connect.WithClientOptions(opts...),
 		),
 		resolveRole: connect.NewClient[v1.ResolveRoleRequest, v1.ResolveRoleResponse](
@@ -261,6 +274,7 @@ type accessServiceClient struct {
 	createRole          *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
 	listRoles           *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
 	getRole             *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
+	getRoleDisplay      *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
 	resolveRole         *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
 	getRoleAccess       *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
 	addRoleGrant        *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
@@ -293,6 +307,11 @@ func (c *accessServiceClient) ListRoles(ctx context.Context, req *connect.Reques
 // GetRole calls jumpgate.access.v1.AccessService.GetRole.
 func (c *accessServiceClient) GetRole(ctx context.Context, req *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error) {
 	return c.getRole.CallUnary(ctx, req)
+}
+
+// GetRoleDisplay calls jumpgate.access.v1.AccessService.GetRoleDisplay.
+func (c *accessServiceClient) GetRoleDisplay(ctx context.Context, req *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error) {
+	return c.getRoleDisplay.CallUnary(ctx, req)
 }
 
 // ResolveRole calls jumpgate.access.v1.AccessService.ResolveRole.
@@ -386,6 +405,10 @@ type AccessServiceHandler interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
 	GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error)
+	// GetRoleDisplay returns a role's decision context (name, folder path, and the
+	// capabilities it grants) for an approver or requester. Authorized by
+	// access:role:read OR being party to a pending access request referencing the role.
+	GetRoleDisplay(context.Context, *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
 	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
 	// Role grants (userset rewrites).
@@ -432,6 +455,12 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		AccessServiceGetRoleProcedure,
 		svc.GetRole,
 		connect.WithSchema(accessServiceMethods.ByName("GetRole")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessServiceGetRoleDisplayHandler := connect.NewUnaryHandler(
+		AccessServiceGetRoleDisplayProcedure,
+		svc.GetRoleDisplay,
+		connect.WithSchema(accessServiceMethods.ByName("GetRoleDisplay")),
 		connect.WithHandlerOptions(opts...),
 	)
 	accessServiceResolveRoleHandler := connect.NewUnaryHandler(
@@ -544,6 +573,8 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceListRolesHandler.ServeHTTP(w, r)
 		case AccessServiceGetRoleProcedure:
 			accessServiceGetRoleHandler.ServeHTTP(w, r)
+		case AccessServiceGetRoleDisplayProcedure:
+			accessServiceGetRoleDisplayHandler.ServeHTTP(w, r)
 		case AccessServiceResolveRoleProcedure:
 			accessServiceResolveRoleHandler.ServeHTTP(w, r)
 		case AccessServiceGetRoleAccessProcedure:
@@ -597,6 +628,10 @@ func (UnimplementedAccessServiceHandler) ListRoles(context.Context, *connect.Req
 
 func (UnimplementedAccessServiceHandler) GetRole(context.Context, *connect.Request[v1.GetRoleRequest]) (*connect.Response[v1.GetRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.GetRole is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) GetRoleDisplay(context.Context, *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.GetRoleDisplay is not implemented"))
 }
 
 func (UnimplementedAccessServiceHandler) ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error) {

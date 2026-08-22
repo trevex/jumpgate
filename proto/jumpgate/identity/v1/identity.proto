@@ -11,6 +11,10 @@ option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1;
 service IdentityService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {}
   rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+  // GetUserDisplay returns minimal display info (name/email) for a user id.
+  // Any authenticated caller may call it — a general directory read for rendering
+  // user names/avatars; it is NOT capability-gated. Full GetUser stays gated.
+  rpc GetUserDisplay(GetUserDisplayRequest) returns (GetUserDisplayResponse) {}
   rpc ResolveUser(ResolveUserRequest) returns (ResolveUserResponse) {}
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {}
 
@@ -67,6 +71,20 @@ message CreateUserRequest {
 
 message GetUserRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// GetUserDisplay is a universal directory read: any authenticated caller may
+// resolve a user id to display name/email for rendering, with no capability gate.
+message GetUserDisplayRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+message GetUserDisplayResponse {
+  UserDisplay user = 1;
+}
+message UserDisplay {
+  string id           = 1;
+  string display_name = 2;
+  string email        = 3;
 }
 
 message ResolveUserRequest {

@@ -15,6 +15,15 @@ export const createUser = IdentityService.method.createUser;
 export const getUser = IdentityService.method.getUser;
 
 /**
+ * GetUserDisplay returns minimal display info (name/email) for a user id.
+ * Any authenticated caller may call it — a general directory read for rendering
+ * user names/avatars; it is NOT capability-gated. Full GetUser stays gated.
+ *
+ * @generated from rpc jumpgate.identity.v1.IdentityService.GetUserDisplay
+ */
+export const getUserDisplay = IdentityService.method.getUserDisplay;
+
+/**
  * @generated from rpc jumpgate.identity.v1.IdentityService.ResolveUser
  */
 export const resolveUser = IdentityService.method.resolveUser;
