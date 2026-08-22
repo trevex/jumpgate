@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/catalog/v1/catalog.proto.
  */
 export const file_jumpgate_catalog_v1_catalog: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9jYXRhbG9nL3YxL2NhdGFsb2cucHJvdG8SE2p1bXBnYXRlLmNhdGFsb2cudjEiQwoGRm9sZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJcGFyZW50X2lkGAMgASgJEgwKBHBhdGgYBCABKAkiiQEKBUFzc2V0EgoKAmlkGAEgASgJEhEKCWZvbGRlcl9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEgwKBGtpbmQYBCABKAkSLQoDc3NoGAUgASgLMh4uanVtcGdhdGUuY2F0YWxvZy52MS5TU0hDb25maWdIABIMCgRwYXRoGAYgASgJQggKBmNvbmZpZyJrCglTU0hDb25maWcSLQoGbG9naW5zGAEgAygLMh0uanVtcGdhdGUuY2F0YWxvZy52MS5TU0hMb2dpbhIXCg9ob3N0X3B1YmxpY19rZXkYAiABKAkSFgoOdGFyZ2V0X2FkZHJlc3MYAyABKAkiXQoIU1NITG9naW4SFgoFbG9naW4YASABKAlCB7pIBHICEAESJgoEa2luZBgCIAEoCUIYukgVchNSAmNhUghwYXNzd29yZFIDa2V5EhEKCXNlY3JldF9pZBgDIAEoCSJUChNDcmVhdGVGb2xkZXJSZXF1ZXN0EioKBG5hbWUYASABKAlCHLpIGXIXEAEYyAEyEF5bYS16QS1aMC05Xy1dKyQSEQoJcGFyZW50X2lkGAIgASgJIkMKFENyZWF0ZUZvbGRlclJlc3BvbnNlEisKBmZvbGRlchgBIAEoCzIbLmp1bXBnYXRlLmNhdGFsb2cudjEuRm9sZGVyImcKEkxpc3RGb2xkZXJzUmVxdWVzdBIOCgZwYXJlbnQYASABKAkSDwoHY2FzY2FkZRgCIAEoCBIcCglwYWdlX3NpemUYAyABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAQgASgJIlwKE0xpc3RGb2xkZXJzUmVzcG9uc2USLAoHZm9sZGVycxgBIAMoCzIbLmp1bXBnYXRlLmNhdGFsb2cudjEuRm9sZGVyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSLBAQoSQ3JlYXRlQXNzZXRSZXF1ZXN0EhsKCWZvbGRlcl9pZBgBIAEoCUIIukgFcgOwAQESKgoEbmFtZRgCIAEoCUIcukgZchcQARjIATIQXlthLXpBLVowLTlfLV0rJBIpCgRraW5kGAMgASgJQhu6SBhyFlIDc3NoUghwb3N0Z3Jlc1IDazhzUgASLQoDc3NoGAQgASgLMh4uanVtcGdhdGUuY2F0YWxvZy52MS5TU0hDb25maWdIAEIICgZjb25maWciQAoTQ3JlYXRlQXNzZXRSZXNwb25zZRIpCgVhc3NldBgBIAEoCzIaLmp1bXBnYXRlLmNhdGFsb2cudjEuQXNzZXQiLQoPR2V0QXNzZXRSZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABASI9ChBHZXRBc3NldFJlc3BvbnNlEikKBWFzc2V0GAEgASgLMhouanVtcGdhdGUuY2F0YWxvZy52MS5Bc3NldCI0ChZHZXRBc3NldERpc3BsYXlSZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABASJLChdHZXRBc3NldERpc3BsYXlSZXNwb25zZRIwCgVhc3NldBgBIAEoCzIhLmp1bXBnYXRlLmNhdGFsb2cudjEuQXNzZXREaXNwbGF5IqwBCgxBc3NldERpc3BsYXkSCgoCaWQYASABKAkSEQoJZm9sZGVyX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSDAoEa2luZBgEIAEoCRI0CgNzc2gYBSABKAsyJS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNTSENvbmZpZ0Rpc3BsYXlIABIMCgRwYXRoGAYgASgJEhMKC2ZvbGRlcl9wYXRoGAcgASgJQggKBmNvbmZpZyJ5ChBTU0hDb25maWdEaXNwbGF5EjQKBmxvZ2lucxgBIAMoCzIkLmp1bXBnYXRlLmNhdGFsb2cudjEuU1NITG9naW5EaXNwbGF5EhcKD2hvc3RfcHVibGljX2tleRgCIAEoCRIWCg50YXJnZXRfYWRkcmVzcxgDIAEoCSIuCg9TU0hMb2dpbkRpc3BsYXkSDQoFbG9naW4YASABKAkSDAoEa2luZBgCIAEoCSJvChhVcGRhdGVBc3NldENvbmZpZ1JlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEi0KA3NzaBgCIAEoCzIeLmp1bXBnYXRlLmNhdGFsb2cudjEuU1NIQ29uZmlnSABCCAoGY29uZmlnIhsKGVVwZGF0ZUFzc2V0Q29uZmlnUmVzcG9uc2UiZgoRTGlzdEFzc2V0c1JlcXVlc3QSDgoGcGFyZW50GAEgASgJEg8KB2Nhc2NhZGUYAiABKAgSHAoJcGFnZV9zaXplGAMgASgFQgm6SAYaBBhkKAASEgoKcGFnZV90b2tlbhgEIAEoCSJZChJMaXN0QXNzZXRzUmVzcG9uc2USKgoGYXNzZXRzGAEgAygLMhouanVtcGdhdGUuY2F0YWxvZy52MS5Bc3NldBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiOAoHUm9sZVJlZhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2ZvbGRlcl9wYXRoGAMgASgJIjMKFUdldEFzc2V0QWNjZXNzUmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEi0gEKFkdldEFzc2V0QWNjZXNzUmVzcG9uc2USFwoPYWN0aXZlX3JvbGVfaWRzGAEgAygJEhwKFHJlcXVlc3RhYmxlX3JvbGVfaWRzGAIgAygJEjIKDGFjdGl2ZV9yb2xlcxgDIAMoCzIcLmp1bXBnYXRlLmNhdGFsb2cudjEuUm9sZVJlZhI3ChFyZXF1ZXN0YWJsZV9yb2xlcxgEIAMoCzIcLmp1bXBnYXRlLmNhdGFsb2cudjEuUm9sZVJlZhIUCgxjYXBhYmlsaXRpZXMYBSADKAkiNQoWR2V0Rm9sZGVyQWNjZXNzUmVxdWVzdBIbCglmb2xkZXJfaWQYASABKAlCCLpIBXIDsAEBIi8KF0dldEZvbGRlckFjY2Vzc1Jlc3BvbnNlEhQKDGNhcGFiaWxpdGllcxgBIAMoCSIrChNSZXNvbHZlQXNzZXRSZXF1ZXN0EhQKA3JlZhgBIAEoCUIHukgEcgIQASI2ChRSZXNvbHZlQXNzZXRSZXNwb25zZRIQCghhc3NldF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIiwKFFJlc29sdmVGb2xkZXJSZXF1ZXN0EhQKA3JlZhgBIAEoCUIHukgEcgIQASI4ChVSZXNvbHZlRm9sZGVyUmVzcG9uc2USEQoJZm9sZGVyX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiKwoZTGlzdEZvbGRlckNvbnRlbnRzUmVxdWVzdBIOCgZwYXJlbnQYASABKAkisAIKGkxpc3RGb2xkZXJDb250ZW50c1Jlc3BvbnNlEiwKB2ZvbGRlcnMYASADKAsyGy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkZvbGRlchIYChBmb2xkZXJzX2hhc19tb3JlGAIgASgIEioKBmFzc2V0cxgDIAMoCzIaLmp1bXBnYXRlLmNhdGFsb2cudjEuQXNzZXQSFwoPYXNzZXRzX2hhc19tb3JlGAQgASgIEicKBXJvbGVzGAUgAygLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUSFgoOcm9sZXNfaGFzX21vcmUYBiABKAgSKwoGZ3JvdXBzGAcgAygLMhsuanVtcGdhdGUuaWRlbnRpdHkudjEuR3JvdXASFwoPZ3JvdXBzX2hhc19tb3JlGAggASgIIj8KFFNlYXJjaENhdGFsb2dSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhgKBWxpbWl0GAIgASgFQgm6SAYaBBgyKAAiRQoVU2VhcmNoQ2F0YWxvZ1Jlc3BvbnNlEiwKBGhpdHMYASADKAsyHi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNlYXJjaEhpdCJBCglTZWFyY2hIaXQSDAoEa2luZBgBIAEoCRIKCgJpZBgCIAEoCRIMCgRuYW1lGAMgASgJEgwKBHBhdGgYBCABKAky8goKDkNhdGFsb2dTZXJ2aWNlEmUKDENyZWF0ZUZvbGRlchIoLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlRm9sZGVyUmVxdWVzdBopLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlRm9sZGVyUmVzcG9uc2UiABJiCgtMaXN0Rm9sZGVycxInLmp1bXBnYXRlLmNhdGFsb2cudjEuTGlzdEZvbGRlcnNSZXF1ZXN0GiguanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0Rm9sZGVyc1Jlc3BvbnNlIgASYgoLQ3JlYXRlQXNzZXQSJy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkNyZWF0ZUFzc2V0UmVxdWVzdBooLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlQXNzZXRSZXNwb25zZSIAElkKCEdldEFzc2V0EiQuanVtcGdhdGUuY2F0YWxvZy52MS5HZXRBc3NldFJlcXVlc3QaJS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0UmVzcG9uc2UiABJuCg9HZXRBc3NldERpc3BsYXkSKy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0RGlzcGxheVJlcXVlc3QaLC5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0RGlzcGxheVJlc3BvbnNlIgASdAoRVXBkYXRlQXNzZXRDb25maWcSLS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlVwZGF0ZUFzc2V0Q29uZmlnUmVxdWVzdBouLmp1bXBnYXRlLmNhdGFsb2cudjEuVXBkYXRlQXNzZXRDb25maWdSZXNwb25zZSIAEl8KCkxpc3RBc3NldHMSJi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkxpc3RBc3NldHNSZXF1ZXN0GicuanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0QXNzZXRzUmVzcG9uc2UiABJrCg5HZXRBc3NldEFjY2VzcxIqLmp1bXBnYXRlLmNhdGFsb2cudjEuR2V0QXNzZXRBY2Nlc3NSZXF1ZXN0GisuanVtcGdhdGUuY2F0YWxvZy52MS5HZXRBc3NldEFjY2Vzc1Jlc3BvbnNlIgASbgoPR2V0Rm9sZGVyQWNjZXNzEisuanVtcGdhdGUuY2F0YWxvZy52MS5HZXRGb2xkZXJBY2Nlc3NSZXF1ZXN0GiwuanVtcGdhdGUuY2F0YWxvZy52MS5HZXRGb2xkZXJBY2Nlc3NSZXNwb25zZSIAEmUKDFJlc29sdmVBc3NldBIoLmp1bXBnYXRlLmNhdGFsb2cudjEuUmVzb2x2ZUFzc2V0UmVxdWVzdBopLmp1bXBnYXRlLmNhdGFsb2cudjEuUmVzb2x2ZUFzc2V0UmVzcG9uc2UiABJoCg1SZXNvbHZlRm9sZGVyEikuanVtcGdhdGUuY2F0YWxvZy52MS5SZXNvbHZlRm9sZGVyUmVxdWVzdBoqLmp1bXBnYXRlLmNhdGFsb2cudjEuUmVzb2x2ZUZvbGRlclJlc3BvbnNlIgASdwoSTGlzdEZvbGRlckNvbnRlbnRzEi4uanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0Rm9sZGVyQ29udGVudHNSZXF1ZXN0Gi8uanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0Rm9sZGVyQ29udGVudHNSZXNwb25zZSIAEmgKDVNlYXJjaENhdGFsb2cSKS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNlYXJjaENhdGFsb2dSZXF1ZXN0GiouanVtcGdhdGUuY2F0YWxvZy52MS5TZWFyY2hDYXRhbG9nUmVzcG9uc2UiAEJFWkNnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2NhdGFsb2cvdjE7Y2F0YWxvZ3YxYgZwcm90bzM", [file_buf_validate_validate, file_jumpgate_access_v1_access, file_jumpgate_identity_v1_identity]);
+  fileDesc("CiFqdW1wZ2F0ZS9jYXRhbG9nL3YxL2NhdGFsb2cucHJvdG8SE2p1bXBnYXRlLmNhdGFsb2cudjEiQwoGRm9sZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJcGFyZW50X2lkGAMgASgJEgwKBHBhdGgYBCABKAkiiQEKBUFzc2V0EgoKAmlkGAEgASgJEhEKCWZvbGRlcl9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEgwKBGtpbmQYBCABKAkSLQoDc3NoGAUgASgLMh4uanVtcGdhdGUuY2F0YWxvZy52MS5TU0hDb25maWdIABIMCgRwYXRoGAYgASgJQggKBmNvbmZpZyJrCglTU0hDb25maWcSLQoGbG9naW5zGAEgAygLMh0uanVtcGdhdGUuY2F0YWxvZy52MS5TU0hMb2dpbhIXCg9ob3N0X3B1YmxpY19rZXkYAiABKAkSFgoOdGFyZ2V0X2FkZHJlc3MYAyABKAkiXQoIU1NITG9naW4SFgoFbG9naW4YASABKAlCB7pIBHICEAESJgoEa2luZBgCIAEoCUIYukgVchNSAmNhUghwYXNzd29yZFIDa2V5EhEKCXNlY3JldF9pZBgDIAEoCSJ1Cg5TU0hDb25maWdJbnB1dBIyCgZsb2dpbnMYASADKAsyIi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNTSExvZ2luSW5wdXQSFwoPaG9zdF9wdWJsaWNfa2V5GAIgASgJEhYKDnRhcmdldF9hZGRyZXNzGAMgASgJIsYBCg1TU0hMb2dpbklucHV0EhYKBWxvZ2luGAEgASgJQge6SARyAhABEikKAmNhGAIgASgLMhsuanVtcGdhdGUuY2F0YWxvZy52MS5DYUF1dGhIABIzCghwYXNzd29yZBgDIAEoCzIfLmp1bXBnYXRlLmNhdGFsb2cudjEuU2VjcmV0QXV0aEgAEi4KA2tleRgEIAEoCzIfLmp1bXBnYXRlLmNhdGFsb2cudjEuU2VjcmV0QXV0aEgAQg0KBGF1dGgSBbpIAggBIggKBkNhQXV0aCJaCgpTZWNyZXRBdXRoEhMKCW5ld192YWx1ZRgBIAEoDEgAEiYKEmV4aXN0aW5nX3NlY3JldF9pZBgCIAEoCUIIukgFcgOwAQFIAEIPCgZzb3VyY2USBbpIAggBIlQKE0NyZWF0ZUZvbGRlclJlcXVlc3QSKgoEbmFtZRgBIAEoCUIcukgZchcQARjIATIQXlthLXpBLVowLTlfLV0rJBIRCglwYXJlbnRfaWQYAiABKAkiQwoUQ3JlYXRlRm9sZGVyUmVzcG9uc2USKwoGZm9sZGVyGAEgASgLMhsuanVtcGdhdGUuY2F0YWxvZy52MS5Gb2xkZXIiZwoSTGlzdEZvbGRlcnNSZXF1ZXN0Eg4KBnBhcmVudBgBIAEoCRIPCgdjYXNjYWRlGAIgASgIEhwKCXBhZ2Vfc2l6ZRgDIAEoBUIJukgGGgQYZCgAEhIKCnBhZ2VfdG9rZW4YBCABKAkiXAoTTGlzdEZvbGRlcnNSZXNwb25zZRIsCgdmb2xkZXJzGAEgAygLMhsuanVtcGdhdGUuY2F0YWxvZy52MS5Gb2xkZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIqIBChJDcmVhdGVBc3NldFJlcXVlc3QSGwoJZm9sZGVyX2lkGAEgASgJQgi6SAVyA7ABARIqCgRuYW1lGAIgASgJQhy6SBlyFxABGMgBMhBeW2EtekEtWjAtOV8tXSskEjIKA3NzaBgDIAEoCzIjLmp1bXBnYXRlLmNhdGFsb2cudjEuU1NIQ29uZmlnSW5wdXRIAEIPCgZjb25maWcSBbpIAggBIkAKE0NyZWF0ZUFzc2V0UmVzcG9uc2USKQoFYXNzZXQYASABKAsyGi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkFzc2V0Ii0KD0dldEFzc2V0UmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiPQoQR2V0QXNzZXRSZXNwb25zZRIpCgVhc3NldBgBIAEoCzIaLmp1bXBnYXRlLmNhdGFsb2cudjEuQXNzZXQiNAoWR2V0QXNzZXREaXNwbGF5UmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiSwoXR2V0QXNzZXREaXNwbGF5UmVzcG9uc2USMAoFYXNzZXQYASABKAsyIS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkFzc2V0RGlzcGxheSKsAQoMQXNzZXREaXNwbGF5EgoKAmlkGAEgASgJEhEKCWZvbGRlcl9pZBgCIAEoCRIMCgRuYW1lGAMgASgJEgwKBGtpbmQYBCABKAkSNAoDc3NoGAUgASgLMiUuanVtcGdhdGUuY2F0YWxvZy52MS5TU0hDb25maWdEaXNwbGF5SAASDAoEcGF0aBgGIAEoCRITCgtmb2xkZXJfcGF0aBgHIAEoCUIICgZjb25maWcieQoQU1NIQ29uZmlnRGlzcGxheRI0CgZsb2dpbnMYASADKAsyJC5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNTSExvZ2luRGlzcGxheRIXCg9ob3N0X3B1YmxpY19rZXkYAiABKAkSFgoOdGFyZ2V0X2FkZHJlc3MYAyABKAkiLgoPU1NITG9naW5EaXNwbGF5Eg0KBWxvZ2luGAEgASgJEgwKBGtpbmQYAiABKAkiewoYVXBkYXRlQXNzZXRDb25maWdSZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIyCgNzc2gYAiABKAsyIy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNTSENvbmZpZ0lucHV0SABCDwoGY29uZmlnEgW6SAIIASIbChlVcGRhdGVBc3NldENvbmZpZ1Jlc3BvbnNlIjAKEkRlbGV0ZUFzc2V0UmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiFQoTRGVsZXRlQXNzZXRSZXNwb25zZSJyChJVcGRhdGVBc3NldFJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhEKBG5hbWUYAiABKAlIAIgBARIWCglmb2xkZXJfaWQYAyABKAlIAYgBAUIHCgVfbmFtZUIMCgpfZm9sZGVyX2lkIkAKE1VwZGF0ZUFzc2V0UmVzcG9uc2USKQoFYXNzZXQYASABKAsyGi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkFzc2V0IjIKE0RlbGV0ZUZvbGRlclJlcXVlc3QSGwoJZm9sZGVyX2lkGAEgASgJQgi6SAVyA7ABASIWChREZWxldGVGb2xkZXJSZXNwb25zZSJ0ChNVcGRhdGVGb2xkZXJSZXF1ZXN0EhsKCWZvbGRlcl9pZBgBIAEoCUIIukgFcgOwAQESEQoEbmFtZRgCIAEoCUgAiAEBEhYKCXBhcmVudF9pZBgDIAEoCUgBiAEBQgcKBV9uYW1lQgwKCl9wYXJlbnRfaWQiQwoUVXBkYXRlRm9sZGVyUmVzcG9uc2USKwoGZm9sZGVyGAEgASgLMhsuanVtcGdhdGUuY2F0YWxvZy52MS5Gb2xkZXIiZgoRTGlzdEFzc2V0c1JlcXVlc3QSDgoGcGFyZW50GAEgASgJEg8KB2Nhc2NhZGUYAiABKAgSHAoJcGFnZV9zaXplGAMgASgFQgm6SAYaBBhkKAASEgoKcGFnZV90b2tlbhgEIAEoCSJZChJMaXN0QXNzZXRzUmVzcG9uc2USKgoGYXNzZXRzGAEgAygLMhouanVtcGdhdGUuY2F0YWxvZy52MS5Bc3NldBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiOAoHUm9sZVJlZhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2ZvbGRlcl9wYXRoGAMgASgJIjMKFUdldEFzc2V0QWNjZXNzUmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEi0gEKFkdldEFzc2V0QWNjZXNzUmVzcG9uc2USFwoPYWN0aXZlX3JvbGVfaWRzGAEgAygJEhwKFHJlcXVlc3RhYmxlX3JvbGVfaWRzGAIgAygJEjIKDGFjdGl2ZV9yb2xlcxgDIAMoCzIcLmp1bXBnYXRlLmNhdGFsb2cudjEuUm9sZVJlZhI3ChFyZXF1ZXN0YWJsZV9yb2xlcxgEIAMoCzIcLmp1bXBnYXRlLmNhdGFsb2cudjEuUm9sZVJlZhIUCgxjYXBhYmlsaXRpZXMYBSADKAkiNQoWR2V0Rm9sZGVyQWNjZXNzUmVxdWVzdBIbCglmb2xkZXJfaWQYASABKAlCCLpIBXIDsAEBIi8KF0dldEZvbGRlckFjY2Vzc1Jlc3BvbnNlEhQKDGNhcGFiaWxpdGllcxgBIAMoCSIrChNSZXNvbHZlQXNzZXRSZXF1ZXN0EhQKA3JlZhgBIAEoCUIHukgEcgIQASI2ChRSZXNvbHZlQXNzZXRSZXNwb25zZRIQCghhc3NldF9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIiwKFFJlc29sdmVGb2xkZXJSZXF1ZXN0EhQKA3JlZhgBIAEoCUIHukgEcgIQASI4ChVSZXNvbHZlRm9sZGVyUmVzcG9uc2USEQoJZm9sZGVyX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiKwoZTGlzdEZvbGRlckNvbnRlbnRzUmVxdWVzdBIOCgZwYXJlbnQYASABKAkisAIKGkxpc3RGb2xkZXJDb250ZW50c1Jlc3BvbnNlEiwKB2ZvbGRlcnMYASADKAsyGy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkZvbGRlchIYChBmb2xkZXJzX2hhc19tb3JlGAIgASgIEioKBmFzc2V0cxgDIAMoCzIaLmp1bXBnYXRlLmNhdGFsb2cudjEuQXNzZXQSFwoPYXNzZXRzX2hhc19tb3JlGAQgASgIEicKBXJvbGVzGAUgAygLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUSFgoOcm9sZXNfaGFzX21vcmUYBiABKAgSKwoGZ3JvdXBzGAcgAygLMhsuanVtcGdhdGUuaWRlbnRpdHkudjEuR3JvdXASFwoPZ3JvdXBzX2hhc19tb3JlGAggASgIIj8KFFNlYXJjaENhdGFsb2dSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhgKBWxpbWl0GAIgASgFQgm6SAYaBBgyKAAiRQoVU2VhcmNoQ2F0YWxvZ1Jlc3BvbnNlEiwKBGhpdHMYASADKAsyHi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlNlYXJjaEhpdCJBCglTZWFyY2hIaXQSDAoEa2luZBgBIAEoCRIKCgJpZBgCIAEoCRIMCgRuYW1lGAMgASgJEgwKBHBhdGgYBCABKAkyiA4KDkNhdGFsb2dTZXJ2aWNlEmUKDENyZWF0ZUZvbGRlchIoLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlRm9sZGVyUmVxdWVzdBopLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlRm9sZGVyUmVzcG9uc2UiABJiCgtMaXN0Rm9sZGVycxInLmp1bXBnYXRlLmNhdGFsb2cudjEuTGlzdEZvbGRlcnNSZXF1ZXN0GiguanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0Rm9sZGVyc1Jlc3BvbnNlIgASYgoLQ3JlYXRlQXNzZXQSJy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkNyZWF0ZUFzc2V0UmVxdWVzdBooLmp1bXBnYXRlLmNhdGFsb2cudjEuQ3JlYXRlQXNzZXRSZXNwb25zZSIAElkKCEdldEFzc2V0EiQuanVtcGdhdGUuY2F0YWxvZy52MS5HZXRBc3NldFJlcXVlc3QaJS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0UmVzcG9uc2UiABJuCg9HZXRBc3NldERpc3BsYXkSKy5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0RGlzcGxheVJlcXVlc3QaLC5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0RGlzcGxheVJlc3BvbnNlIgASdAoRVXBkYXRlQXNzZXRDb25maWcSLS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlVwZGF0ZUFzc2V0Q29uZmlnUmVxdWVzdBouLmp1bXBnYXRlLmNhdGFsb2cudjEuVXBkYXRlQXNzZXRDb25maWdSZXNwb25zZSIAEmIKC0RlbGV0ZUFzc2V0EicuanVtcGdhdGUuY2F0YWxvZy52MS5EZWxldGVBc3NldFJlcXVlc3QaKC5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkRlbGV0ZUFzc2V0UmVzcG9uc2UiABJiCgtVcGRhdGVBc3NldBInLmp1bXBnYXRlLmNhdGFsb2cudjEuVXBkYXRlQXNzZXRSZXF1ZXN0GiguanVtcGdhdGUuY2F0YWxvZy52MS5VcGRhdGVBc3NldFJlc3BvbnNlIgASZQoMRGVsZXRlRm9sZGVyEiguanVtcGdhdGUuY2F0YWxvZy52MS5EZWxldGVGb2xkZXJSZXF1ZXN0GikuanVtcGdhdGUuY2F0YWxvZy52MS5EZWxldGVGb2xkZXJSZXNwb25zZSIAEmUKDFVwZGF0ZUZvbGRlchIoLmp1bXBnYXRlLmNhdGFsb2cudjEuVXBkYXRlRm9sZGVyUmVxdWVzdBopLmp1bXBnYXRlLmNhdGFsb2cudjEuVXBkYXRlRm9sZGVyUmVzcG9uc2UiABJfCgpMaXN0QXNzZXRzEiYuanVtcGdhdGUuY2F0YWxvZy52MS5MaXN0QXNzZXRzUmVxdWVzdBonLmp1bXBnYXRlLmNhdGFsb2cudjEuTGlzdEFzc2V0c1Jlc3BvbnNlIgASawoOR2V0QXNzZXRBY2Nlc3MSKi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLkdldEFzc2V0QWNjZXNzUmVxdWVzdBorLmp1bXBnYXRlLmNhdGFsb2cudjEuR2V0QXNzZXRBY2Nlc3NSZXNwb25zZSIAEm4KD0dldEZvbGRlckFjY2VzcxIrLmp1bXBnYXRlLmNhdGFsb2cudjEuR2V0Rm9sZGVyQWNjZXNzUmVxdWVzdBosLmp1bXBnYXRlLmNhdGFsb2cudjEuR2V0Rm9sZGVyQWNjZXNzUmVzcG9uc2UiABJlCgxSZXNvbHZlQXNzZXQSKC5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlJlc29sdmVBc3NldFJlcXVlc3QaKS5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlJlc29sdmVBc3NldFJlc3BvbnNlIgASaAoNUmVzb2x2ZUZvbGRlchIpLmp1bXBnYXRlLmNhdGFsb2cudjEuUmVzb2x2ZUZvbGRlclJlcXVlc3QaKi5qdW1wZ2F0ZS5jYXRhbG9nLnYxLlJlc29sdmVGb2xkZXJSZXNwb25zZSIAEncKEkxpc3RGb2xkZXJDb250ZW50cxIuLmp1bXBnYXRlLmNhdGFsb2cudjEuTGlzdEZvbGRlckNvbnRlbnRzUmVxdWVzdBovLmp1bXBnYXRlLmNhdGFsb2cudjEuTGlzdEZvbGRlckNvbnRlbnRzUmVzcG9uc2UiABJoCg1TZWFyY2hDYXRhbG9nEikuanVtcGdhdGUuY2F0YWxvZy52MS5TZWFyY2hDYXRhbG9nUmVxdWVzdBoqLmp1bXBnYXRlLmNhdGFsb2cudjEuU2VhcmNoQ2F0YWxvZ1Jlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9jYXRhbG9nL3YxO2NhdGFsb2d2MWIGcHJvdG8z", [file_buf_validate_validate, file_jumpgate_access_v1_access, file_jumpgate_identity_v1_identity]);
 
 /**
  * @generated from message jumpgate.catalog.v1.Folder
@@ -174,6 +174,129 @@ export const SSHLoginSchema: GenMessage<SSHLogin> = /*@__PURE__*/
   messageDesc(file_jumpgate_catalog_v1_catalog, 3);
 
 /**
+ * ── Write-only SSH config input. Reads still return SSHConfig/SSHLogin. ──
+ *
+ * @generated from message jumpgate.catalog.v1.SSHConfigInput
+ */
+export type SSHConfigInput = Message<"jumpgate.catalog.v1.SSHConfigInput"> & {
+  /**
+   * @generated from field: repeated jumpgate.catalog.v1.SSHLoginInput logins = 1;
+   */
+  logins: SSHLoginInput[];
+
+  /**
+   * @generated from field: string host_public_key = 2;
+   */
+  hostPublicKey: string;
+
+  /**
+   * @generated from field: string target_address = 3;
+   */
+  targetAddress: string;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.SSHConfigInput.
+ * Use `create(SSHConfigInputSchema)` to create a new message.
+ */
+export const SSHConfigInputSchema: GenMessage<SSHConfigInput> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 4);
+
+/**
+ * SSHLoginInput: the auth oneof arm IS the kind (no stringly-typed "ca|password|key").
+ *
+ * @generated from message jumpgate.catalog.v1.SSHLoginInput
+ */
+export type SSHLoginInput = Message<"jumpgate.catalog.v1.SSHLoginInput"> & {
+  /**
+   * @generated from field: string login = 1;
+   */
+  login: string;
+
+  /**
+   * @generated from oneof jumpgate.catalog.v1.SSHLoginInput.auth
+   */
+  auth: {
+    /**
+     * signed cert — no secret
+     *
+     * @generated from field: jumpgate.catalog.v1.CaAuth ca = 2;
+     */
+    value: CaAuth;
+    case: "ca";
+  } | {
+    /**
+     * plaintext password
+     *
+     * @generated from field: jumpgate.catalog.v1.SecretAuth password = 3;
+     */
+    value: SecretAuth;
+    case: "password";
+  } | {
+    /**
+     * private-key PEM
+     *
+     * @generated from field: jumpgate.catalog.v1.SecretAuth key = 4;
+     */
+    value: SecretAuth;
+    case: "key";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.SSHLoginInput.
+ * Use `create(SSHLoginInputSchema)` to create a new message.
+ */
+export const SSHLoginInputSchema: GenMessage<SSHLoginInput> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 5);
+
+/**
+ * @generated from message jumpgate.catalog.v1.CaAuth
+ */
+export type CaAuth = Message<"jumpgate.catalog.v1.CaAuth"> & {
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.CaAuth.
+ * Use `create(CaAuthSchema)` to create a new message.
+ */
+export const CaAuthSchema: GenMessage<CaAuth> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 6);
+
+/**
+ * SecretAuth: "any of" — seal a new value, or reference an existing sealed secret.
+ *
+ * @generated from message jumpgate.catalog.v1.SecretAuth
+ */
+export type SecretAuth = Message<"jumpgate.catalog.v1.SecretAuth"> & {
+  /**
+   * @generated from oneof jumpgate.catalog.v1.SecretAuth.source
+   */
+  source: {
+    /**
+     * write-only; sealed server-side in-tx, never echoed back
+     *
+     * @generated from field: bytes new_value = 1;
+     */
+    value: Uint8Array;
+    case: "newValue";
+  } | {
+    /**
+     * @generated from field: string existing_secret_id = 2;
+     */
+    value: string;
+    case: "existingSecretId";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.SecretAuth.
+ * Use `create(SecretAuthSchema)` to create a new message.
+ */
+export const SecretAuthSchema: GenMessage<SecretAuth> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 7);
+
+/**
  * @generated from message jumpgate.catalog.v1.CreateFolderRequest
  */
 export type CreateFolderRequest = Message<"jumpgate.catalog.v1.CreateFolderRequest"> & {
@@ -193,7 +316,7 @@ export type CreateFolderRequest = Message<"jumpgate.catalog.v1.CreateFolderReque
  * Use `create(CreateFolderRequestSchema)` to create a new message.
  */
 export const CreateFolderRequestSchema: GenMessage<CreateFolderRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 4);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 8);
 
 /**
  * @generated from message jumpgate.catalog.v1.CreateFolderResponse
@@ -210,7 +333,7 @@ export type CreateFolderResponse = Message<"jumpgate.catalog.v1.CreateFolderResp
  * Use `create(CreateFolderResponseSchema)` to create a new message.
  */
 export const CreateFolderResponseSchema: GenMessage<CreateFolderResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 5);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 9);
 
 /**
  * @generated from message jumpgate.catalog.v1.ListFoldersRequest
@@ -246,7 +369,7 @@ export type ListFoldersRequest = Message<"jumpgate.catalog.v1.ListFoldersRequest
  * Use `create(ListFoldersRequestSchema)` to create a new message.
  */
 export const ListFoldersRequestSchema: GenMessage<ListFoldersRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 6);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 10);
 
 /**
  * @generated from message jumpgate.catalog.v1.ListFoldersResponse
@@ -268,7 +391,7 @@ export type ListFoldersResponse = Message<"jumpgate.catalog.v1.ListFoldersRespon
  * Use `create(ListFoldersResponseSchema)` to create a new message.
  */
 export const ListFoldersResponseSchema: GenMessage<ListFoldersResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 7);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 11);
 
 /**
  * @generated from message jumpgate.catalog.v1.CreateAssetRequest
@@ -285,20 +408,15 @@ export type CreateAssetRequest = Message<"jumpgate.catalog.v1.CreateAssetRequest
   name: string;
 
   /**
-   * @generated from field: string kind = 3;
-   */
-  kind: string;
-
-  /**
-   * Optional inline connection config so onboarding is a single call.
+   * Exactly one arm required; the arm selects the kind. New kinds add arms here.
    *
    * @generated from oneof jumpgate.catalog.v1.CreateAssetRequest.config
    */
   config: {
     /**
-     * @generated from field: jumpgate.catalog.v1.SSHConfig ssh = 4;
+     * @generated from field: jumpgate.catalog.v1.SSHConfigInput ssh = 3;
      */
-    value: SSHConfig;
+    value: SSHConfigInput;
     case: "ssh";
   } | { case: undefined; value?: undefined };
 };
@@ -308,7 +426,7 @@ export type CreateAssetRequest = Message<"jumpgate.catalog.v1.CreateAssetRequest
  * Use `create(CreateAssetRequestSchema)` to create a new message.
  */
 export const CreateAssetRequestSchema: GenMessage<CreateAssetRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 8);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 12);
 
 /**
  * @generated from message jumpgate.catalog.v1.CreateAssetResponse
@@ -325,7 +443,7 @@ export type CreateAssetResponse = Message<"jumpgate.catalog.v1.CreateAssetRespon
  * Use `create(CreateAssetResponseSchema)` to create a new message.
  */
 export const CreateAssetResponseSchema: GenMessage<CreateAssetResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 9);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 13);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetAssetRequest
@@ -342,7 +460,7 @@ export type GetAssetRequest = Message<"jumpgate.catalog.v1.GetAssetRequest"> & {
  * Use `create(GetAssetRequestSchema)` to create a new message.
  */
 export const GetAssetRequestSchema: GenMessage<GetAssetRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 10);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 14);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetAssetResponse
@@ -359,7 +477,7 @@ export type GetAssetResponse = Message<"jumpgate.catalog.v1.GetAssetResponse"> &
  * Use `create(GetAssetResponseSchema)` to create a new message.
  */
 export const GetAssetResponseSchema: GenMessage<GetAssetResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 11);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 15);
 
 /**
  * GetAssetDisplay returns an asset's decision context for a request party. It
@@ -380,7 +498,7 @@ export type GetAssetDisplayRequest = Message<"jumpgate.catalog.v1.GetAssetDispla
  * Use `create(GetAssetDisplayRequestSchema)` to create a new message.
  */
 export const GetAssetDisplayRequestSchema: GenMessage<GetAssetDisplayRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 12);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 16);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetAssetDisplayResponse
@@ -397,7 +515,7 @@ export type GetAssetDisplayResponse = Message<"jumpgate.catalog.v1.GetAssetDispl
  * Use `create(GetAssetDisplayResponseSchema)` to create a new message.
  */
 export const GetAssetDisplayResponseSchema: GenMessage<GetAssetDisplayResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 13);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 17);
 
 /**
  * @generated from message jumpgate.catalog.v1.AssetDisplay
@@ -450,7 +568,7 @@ export type AssetDisplay = Message<"jumpgate.catalog.v1.AssetDisplay"> & {
  * Use `create(AssetDisplaySchema)` to create a new message.
  */
 export const AssetDisplaySchema: GenMessage<AssetDisplay> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 14);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 18);
 
 /**
  * @generated from message jumpgate.catalog.v1.SSHConfigDisplay
@@ -477,7 +595,7 @@ export type SSHConfigDisplay = Message<"jumpgate.catalog.v1.SSHConfigDisplay"> &
  * Use `create(SSHConfigDisplaySchema)` to create a new message.
  */
 export const SSHConfigDisplaySchema: GenMessage<SSHConfigDisplay> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 15);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 19);
 
 /**
  * @generated from message jumpgate.catalog.v1.SSHLoginDisplay
@@ -501,7 +619,7 @@ export type SSHLoginDisplay = Message<"jumpgate.catalog.v1.SSHLoginDisplay"> & {
  * Use `create(SSHLoginDisplaySchema)` to create a new message.
  */
 export const SSHLoginDisplaySchema: GenMessage<SSHLoginDisplay> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 16);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 20);
 
 /**
  * @generated from message jumpgate.catalog.v1.UpdateAssetConfigRequest
@@ -517,9 +635,9 @@ export type UpdateAssetConfigRequest = Message<"jumpgate.catalog.v1.UpdateAssetC
    */
   config: {
     /**
-     * @generated from field: jumpgate.catalog.v1.SSHConfig ssh = 2;
+     * @generated from field: jumpgate.catalog.v1.SSHConfigInput ssh = 2;
      */
-    value: SSHConfig;
+    value: SSHConfigInput;
     case: "ssh";
   } | { case: undefined; value?: undefined };
 };
@@ -529,7 +647,7 @@ export type UpdateAssetConfigRequest = Message<"jumpgate.catalog.v1.UpdateAssetC
  * Use `create(UpdateAssetConfigRequestSchema)` to create a new message.
  */
 export const UpdateAssetConfigRequestSchema: GenMessage<UpdateAssetConfigRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 17);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 21);
 
 /**
  * @generated from message jumpgate.catalog.v1.UpdateAssetConfigResponse
@@ -542,7 +660,163 @@ export type UpdateAssetConfigResponse = Message<"jumpgate.catalog.v1.UpdateAsset
  * Use `create(UpdateAssetConfigResponseSchema)` to create a new message.
  */
 export const UpdateAssetConfigResponseSchema: GenMessage<UpdateAssetConfigResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 18);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 22);
+
+/**
+ * @generated from message jumpgate.catalog.v1.DeleteAssetRequest
+ */
+export type DeleteAssetRequest = Message<"jumpgate.catalog.v1.DeleteAssetRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.DeleteAssetRequest.
+ * Use `create(DeleteAssetRequestSchema)` to create a new message.
+ */
+export const DeleteAssetRequestSchema: GenMessage<DeleteAssetRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 23);
+
+/**
+ * @generated from message jumpgate.catalog.v1.DeleteAssetResponse
+ */
+export type DeleteAssetResponse = Message<"jumpgate.catalog.v1.DeleteAssetResponse"> & {
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.DeleteAssetResponse.
+ * Use `create(DeleteAssetResponseSchema)` to create a new message.
+ */
+export const DeleteAssetResponseSchema: GenMessage<DeleteAssetResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 24);
+
+/**
+ * @generated from message jumpgate.catalog.v1.UpdateAssetRequest
+ */
+export type UpdateAssetRequest = Message<"jumpgate.catalog.v1.UpdateAssetRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+
+  /**
+   * present = rename
+   *
+   * @generated from field: optional string name = 2;
+   */
+  name?: string | undefined;
+
+  /**
+   * present = move to this folder
+   *
+   * @generated from field: optional string folder_id = 3;
+   */
+  folderId?: string | undefined;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.UpdateAssetRequest.
+ * Use `create(UpdateAssetRequestSchema)` to create a new message.
+ */
+export const UpdateAssetRequestSchema: GenMessage<UpdateAssetRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 25);
+
+/**
+ * @generated from message jumpgate.catalog.v1.UpdateAssetResponse
+ */
+export type UpdateAssetResponse = Message<"jumpgate.catalog.v1.UpdateAssetResponse"> & {
+  /**
+   * @generated from field: jumpgate.catalog.v1.Asset asset = 1;
+   */
+  asset?: Asset | undefined;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.UpdateAssetResponse.
+ * Use `create(UpdateAssetResponseSchema)` to create a new message.
+ */
+export const UpdateAssetResponseSchema: GenMessage<UpdateAssetResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 26);
+
+/**
+ * @generated from message jumpgate.catalog.v1.DeleteFolderRequest
+ */
+export type DeleteFolderRequest = Message<"jumpgate.catalog.v1.DeleteFolderRequest"> & {
+  /**
+   * @generated from field: string folder_id = 1;
+   */
+  folderId: string;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.DeleteFolderRequest.
+ * Use `create(DeleteFolderRequestSchema)` to create a new message.
+ */
+export const DeleteFolderRequestSchema: GenMessage<DeleteFolderRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 27);
+
+/**
+ * @generated from message jumpgate.catalog.v1.DeleteFolderResponse
+ */
+export type DeleteFolderResponse = Message<"jumpgate.catalog.v1.DeleteFolderResponse"> & {
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.DeleteFolderResponse.
+ * Use `create(DeleteFolderResponseSchema)` to create a new message.
+ */
+export const DeleteFolderResponseSchema: GenMessage<DeleteFolderResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 28);
+
+/**
+ * @generated from message jumpgate.catalog.v1.UpdateFolderRequest
+ */
+export type UpdateFolderRequest = Message<"jumpgate.catalog.v1.UpdateFolderRequest"> & {
+  /**
+   * @generated from field: string folder_id = 1;
+   */
+  folderId: string;
+
+  /**
+   * present = rename
+   *
+   * @generated from field: optional string name = 2;
+   */
+  name?: string | undefined;
+
+  /**
+   * present = move under this parent ("" = root)
+   *
+   * @generated from field: optional string parent_id = 3;
+   */
+  parentId?: string | undefined;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.UpdateFolderRequest.
+ * Use `create(UpdateFolderRequestSchema)` to create a new message.
+ */
+export const UpdateFolderRequestSchema: GenMessage<UpdateFolderRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 29);
+
+/**
+ * @generated from message jumpgate.catalog.v1.UpdateFolderResponse
+ */
+export type UpdateFolderResponse = Message<"jumpgate.catalog.v1.UpdateFolderResponse"> & {
+  /**
+   * @generated from field: jumpgate.catalog.v1.Folder folder = 1;
+   */
+  folder?: Folder | undefined;
+};
+
+/**
+ * Describes the message jumpgate.catalog.v1.UpdateFolderResponse.
+ * Use `create(UpdateFolderResponseSchema)` to create a new message.
+ */
+export const UpdateFolderResponseSchema: GenMessage<UpdateFolderResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_catalog_v1_catalog, 30);
 
 /**
  * @generated from message jumpgate.catalog.v1.ListAssetsRequest
@@ -578,7 +852,7 @@ export type ListAssetsRequest = Message<"jumpgate.catalog.v1.ListAssetsRequest">
  * Use `create(ListAssetsRequestSchema)` to create a new message.
  */
 export const ListAssetsRequestSchema: GenMessage<ListAssetsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 19);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 31);
 
 /**
  * @generated from message jumpgate.catalog.v1.ListAssetsResponse
@@ -600,7 +874,7 @@ export type ListAssetsResponse = Message<"jumpgate.catalog.v1.ListAssetsResponse
  * Use `create(ListAssetsResponseSchema)` to create a new message.
  */
 export const ListAssetsResponseSchema: GenMessage<ListAssetsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 20);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 32);
 
 /**
  * RoleRef names a role for discovery: its id, name, and the leaf->root dotted path
@@ -630,7 +904,7 @@ export type RoleRef = Message<"jumpgate.catalog.v1.RoleRef"> & {
  * Use `create(RoleRefSchema)` to create a new message.
  */
 export const RoleRefSchema: GenMessage<RoleRef> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 21);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 33);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetAssetAccessRequest
@@ -647,7 +921,7 @@ export type GetAssetAccessRequest = Message<"jumpgate.catalog.v1.GetAssetAccessR
  * Use `create(GetAssetAccessRequestSchema)` to create a new message.
  */
 export const GetAssetAccessRequestSchema: GenMessage<GetAssetAccessRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 22);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 34);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetAssetAccessResponse
@@ -693,7 +967,7 @@ export type GetAssetAccessResponse = Message<"jumpgate.catalog.v1.GetAssetAccess
  * Use `create(GetAssetAccessResponseSchema)` to create a new message.
  */
 export const GetAssetAccessResponseSchema: GenMessage<GetAssetAccessResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 23);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 35);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetFolderAccessRequest
@@ -710,7 +984,7 @@ export type GetFolderAccessRequest = Message<"jumpgate.catalog.v1.GetFolderAcces
  * Use `create(GetFolderAccessRequestSchema)` to create a new message.
  */
 export const GetFolderAccessRequestSchema: GenMessage<GetFolderAccessRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 24);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 36);
 
 /**
  * @generated from message jumpgate.catalog.v1.GetFolderAccessResponse
@@ -729,7 +1003,7 @@ export type GetFolderAccessResponse = Message<"jumpgate.catalog.v1.GetFolderAcce
  * Use `create(GetFolderAccessResponseSchema)` to create a new message.
  */
 export const GetFolderAccessResponseSchema: GenMessage<GetFolderAccessResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 25);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 37);
 
 /**
  * ResolveAsset maps a caller-supplied reference (a uuid or a DNS-style dotted path
@@ -750,7 +1024,7 @@ export type ResolveAssetRequest = Message<"jumpgate.catalog.v1.ResolveAssetReque
  * Use `create(ResolveAssetRequestSchema)` to create a new message.
  */
 export const ResolveAssetRequestSchema: GenMessage<ResolveAssetRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 26);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 38);
 
 /**
  * @generated from message jumpgate.catalog.v1.ResolveAssetResponse
@@ -772,7 +1046,7 @@ export type ResolveAssetResponse = Message<"jumpgate.catalog.v1.ResolveAssetResp
  * Use `create(ResolveAssetResponseSchema)` to create a new message.
  */
 export const ResolveAssetResponseSchema: GenMessage<ResolveAssetResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 27);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 39);
 
 /**
  * ResolveFolder maps a caller-supplied reference (a uuid or a DNS-style dotted path
@@ -793,7 +1067,7 @@ export type ResolveFolderRequest = Message<"jumpgate.catalog.v1.ResolveFolderReq
  * Use `create(ResolveFolderRequestSchema)` to create a new message.
  */
 export const ResolveFolderRequestSchema: GenMessage<ResolveFolderRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 28);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 40);
 
 /**
  * @generated from message jumpgate.catalog.v1.ResolveFolderResponse
@@ -815,7 +1089,7 @@ export type ResolveFolderResponse = Message<"jumpgate.catalog.v1.ResolveFolderRe
  * Use `create(ResolveFolderResponseSchema)` to create a new message.
  */
 export const ResolveFolderResponseSchema: GenMessage<ResolveFolderResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 29);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 41);
 
 /**
  * ListFolderContents returns the first bounded slice (up to 50 items per kind) of
@@ -839,7 +1113,7 @@ export type ListFolderContentsRequest = Message<"jumpgate.catalog.v1.ListFolderC
  * Use `create(ListFolderContentsRequestSchema)` to create a new message.
  */
 export const ListFolderContentsRequestSchema: GenMessage<ListFolderContentsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 30);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 42);
 
 /**
  * @generated from message jumpgate.catalog.v1.ListFolderContentsResponse
@@ -891,7 +1165,7 @@ export type ListFolderContentsResponse = Message<"jumpgate.catalog.v1.ListFolder
  * Use `create(ListFolderContentsResponseSchema)` to create a new message.
  */
 export const ListFolderContentsResponseSchema: GenMessage<ListFolderContentsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 31);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 43);
 
 /**
  * SearchCatalog finds catalog entities whose name matches the query (case-insensitive
@@ -917,7 +1191,7 @@ export type SearchCatalogRequest = Message<"jumpgate.catalog.v1.SearchCatalogReq
  * Use `create(SearchCatalogRequestSchema)` to create a new message.
  */
 export const SearchCatalogRequestSchema: GenMessage<SearchCatalogRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 32);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 44);
 
 /**
  * @generated from message jumpgate.catalog.v1.SearchCatalogResponse
@@ -934,7 +1208,7 @@ export type SearchCatalogResponse = Message<"jumpgate.catalog.v1.SearchCatalogRe
  * Use `create(SearchCatalogResponseSchema)` to create a new message.
  */
 export const SearchCatalogResponseSchema: GenMessage<SearchCatalogResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 33);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 45);
 
 /**
  * @generated from message jumpgate.catalog.v1.SearchHit
@@ -970,7 +1244,7 @@ export type SearchHit = Message<"jumpgate.catalog.v1.SearchHit"> & {
  * Use `create(SearchHitSchema)` to create a new message.
  */
 export const SearchHitSchema: GenMessage<SearchHit> = /*@__PURE__*/
-  messageDesc(file_jumpgate_catalog_v1_catalog, 34);
+  messageDesc(file_jumpgate_catalog_v1_catalog, 46);
 
 /**
  * CatalogService manages folders and assets (admin), and exposes each caller's
@@ -1032,6 +1306,38 @@ export const CatalogService: GenService<{
     methodKind: "unary";
     input: typeof UpdateAssetConfigRequestSchema;
     output: typeof UpdateAssetConfigResponseSchema;
+  },
+  /**
+   * @generated from rpc jumpgate.catalog.v1.CatalogService.DeleteAsset
+   */
+  deleteAsset: {
+    methodKind: "unary";
+    input: typeof DeleteAssetRequestSchema;
+    output: typeof DeleteAssetResponseSchema;
+  },
+  /**
+   * @generated from rpc jumpgate.catalog.v1.CatalogService.UpdateAsset
+   */
+  updateAsset: {
+    methodKind: "unary";
+    input: typeof UpdateAssetRequestSchema;
+    output: typeof UpdateAssetResponseSchema;
+  },
+  /**
+   * @generated from rpc jumpgate.catalog.v1.CatalogService.DeleteFolder
+   */
+  deleteFolder: {
+    methodKind: "unary";
+    input: typeof DeleteFolderRequestSchema;
+    output: typeof DeleteFolderResponseSchema;
+  },
+  /**
+   * @generated from rpc jumpgate.catalog.v1.CatalogService.UpdateFolder
+   */
+  updateFolder: {
+    methodKind: "unary";
+    input: typeof UpdateFolderRequestSchema;
+    output: typeof UpdateFolderResponseSchema;
   },
   /**
    * @generated from rpc jumpgate.catalog.v1.CatalogService.ListAssets

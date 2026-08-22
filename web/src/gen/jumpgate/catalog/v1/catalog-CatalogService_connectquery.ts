@@ -40,6 +40,26 @@ export const getAssetDisplay = CatalogService.method.getAssetDisplay;
 export const updateAssetConfig = CatalogService.method.updateAssetConfig;
 
 /**
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.DeleteAsset
+ */
+export const deleteAsset = CatalogService.method.deleteAsset;
+
+/**
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.UpdateAsset
+ */
+export const updateAsset = CatalogService.method.updateAsset;
+
+/**
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.DeleteFolder
+ */
+export const deleteFolder = CatalogService.method.deleteFolder;
+
+/**
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.UpdateFolder
+ */
+export const updateFolder = CatalogService.method.updateFolder;
+
+/**
  * @generated from rpc jumpgate.catalog.v1.CatalogService.ListAssets
  */
 export const listAssets = CatalogService.method.listAssets;

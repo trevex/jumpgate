@@ -50,6 +50,18 @@ const (
 	// CatalogServiceUpdateAssetConfigProcedure is the fully-qualified name of the CatalogService's
 	// UpdateAssetConfig RPC.
 	CatalogServiceUpdateAssetConfigProcedure = "/jumpgate.catalog.v1.CatalogService/UpdateAssetConfig"
+	// CatalogServiceDeleteAssetProcedure is the fully-qualified name of the CatalogService's
+	// DeleteAsset RPC.
+	CatalogServiceDeleteAssetProcedure = "/jumpgate.catalog.v1.CatalogService/DeleteAsset"
+	// CatalogServiceUpdateAssetProcedure is the fully-qualified name of the CatalogService's
+	// UpdateAsset RPC.
+	CatalogServiceUpdateAssetProcedure = "/jumpgate.catalog.v1.CatalogService/UpdateAsset"
+	// CatalogServiceDeleteFolderProcedure is the fully-qualified name of the CatalogService's
+	// DeleteFolder RPC.
+	CatalogServiceDeleteFolderProcedure = "/jumpgate.catalog.v1.CatalogService/DeleteFolder"
+	// CatalogServiceUpdateFolderProcedure is the fully-qualified name of the CatalogService's
+	// UpdateFolder RPC.
+	CatalogServiceUpdateFolderProcedure = "/jumpgate.catalog.v1.CatalogService/UpdateFolder"
 	// CatalogServiceListAssetsProcedure is the fully-qualified name of the CatalogService's ListAssets
 	// RPC.
 	CatalogServiceListAssetsProcedure = "/jumpgate.catalog.v1.CatalogService/ListAssets"
@@ -85,6 +97,10 @@ type CatalogServiceClient interface {
 	// being party to a pending access request that references the asset.
 	GetAssetDisplay(context.Context, *connect.Request[v1.GetAssetDisplayRequest]) (*connect.Response[v1.GetAssetDisplayResponse], error)
 	UpdateAssetConfig(context.Context, *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error)
+	DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error)
+	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
+	DeleteFolder(context.Context, *connect.Request[v1.DeleteFolderRequest]) (*connect.Response[v1.DeleteFolderResponse], error)
+	UpdateFolder(context.Context, *connect.Request[v1.UpdateFolderRequest]) (*connect.Response[v1.UpdateFolderResponse], error)
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
@@ -147,6 +163,30 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("UpdateAssetConfig")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteAsset: connect.NewClient[v1.DeleteAssetRequest, v1.DeleteAssetResponse](
+			httpClient,
+			baseURL+CatalogServiceDeleteAssetProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("DeleteAsset")),
+			connect.WithClientOptions(opts...),
+		),
+		updateAsset: connect.NewClient[v1.UpdateAssetRequest, v1.UpdateAssetResponse](
+			httpClient,
+			baseURL+CatalogServiceUpdateAssetProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("UpdateAsset")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteFolder: connect.NewClient[v1.DeleteFolderRequest, v1.DeleteFolderResponse](
+			httpClient,
+			baseURL+CatalogServiceDeleteFolderProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("DeleteFolder")),
+			connect.WithClientOptions(opts...),
+		),
+		updateFolder: connect.NewClient[v1.UpdateFolderRequest, v1.UpdateFolderResponse](
+			httpClient,
+			baseURL+CatalogServiceUpdateFolderProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("UpdateFolder")),
+			connect.WithClientOptions(opts...),
+		),
 		listAssets: connect.NewClient[v1.ListAssetsRequest, v1.ListAssetsResponse](
 			httpClient,
 			baseURL+CatalogServiceListAssetsProcedure,
@@ -200,6 +240,10 @@ type catalogServiceClient struct {
 	getAsset           *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
 	getAssetDisplay    *connect.Client[v1.GetAssetDisplayRequest, v1.GetAssetDisplayResponse]
 	updateAssetConfig  *connect.Client[v1.UpdateAssetConfigRequest, v1.UpdateAssetConfigResponse]
+	deleteAsset        *connect.Client[v1.DeleteAssetRequest, v1.DeleteAssetResponse]
+	updateAsset        *connect.Client[v1.UpdateAssetRequest, v1.UpdateAssetResponse]
+	deleteFolder       *connect.Client[v1.DeleteFolderRequest, v1.DeleteFolderResponse]
+	updateFolder       *connect.Client[v1.UpdateFolderRequest, v1.UpdateFolderResponse]
 	listAssets         *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
 	getAssetAccess     *connect.Client[v1.GetAssetAccessRequest, v1.GetAssetAccessResponse]
 	getFolderAccess    *connect.Client[v1.GetFolderAccessRequest, v1.GetFolderAccessResponse]
@@ -237,6 +281,26 @@ func (c *catalogServiceClient) GetAssetDisplay(ctx context.Context, req *connect
 // UpdateAssetConfig calls jumpgate.catalog.v1.CatalogService.UpdateAssetConfig.
 func (c *catalogServiceClient) UpdateAssetConfig(ctx context.Context, req *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error) {
 	return c.updateAssetConfig.CallUnary(ctx, req)
+}
+
+// DeleteAsset calls jumpgate.catalog.v1.CatalogService.DeleteAsset.
+func (c *catalogServiceClient) DeleteAsset(ctx context.Context, req *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error) {
+	return c.deleteAsset.CallUnary(ctx, req)
+}
+
+// UpdateAsset calls jumpgate.catalog.v1.CatalogService.UpdateAsset.
+func (c *catalogServiceClient) UpdateAsset(ctx context.Context, req *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
+	return c.updateAsset.CallUnary(ctx, req)
+}
+
+// DeleteFolder calls jumpgate.catalog.v1.CatalogService.DeleteFolder.
+func (c *catalogServiceClient) DeleteFolder(ctx context.Context, req *connect.Request[v1.DeleteFolderRequest]) (*connect.Response[v1.DeleteFolderResponse], error) {
+	return c.deleteFolder.CallUnary(ctx, req)
+}
+
+// UpdateFolder calls jumpgate.catalog.v1.CatalogService.UpdateFolder.
+func (c *catalogServiceClient) UpdateFolder(ctx context.Context, req *connect.Request[v1.UpdateFolderRequest]) (*connect.Response[v1.UpdateFolderResponse], error) {
+	return c.updateFolder.CallUnary(ctx, req)
 }
 
 // ListAssets calls jumpgate.catalog.v1.CatalogService.ListAssets.
@@ -286,6 +350,10 @@ type CatalogServiceHandler interface {
 	// being party to a pending access request that references the asset.
 	GetAssetDisplay(context.Context, *connect.Request[v1.GetAssetDisplayRequest]) (*connect.Response[v1.GetAssetDisplayResponse], error)
 	UpdateAssetConfig(context.Context, *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error)
+	DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error)
+	UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error)
+	DeleteFolder(context.Context, *connect.Request[v1.DeleteFolderRequest]) (*connect.Response[v1.DeleteFolderResponse], error)
+	UpdateFolder(context.Context, *connect.Request[v1.UpdateFolderRequest]) (*connect.Response[v1.UpdateFolderResponse], error)
 	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	GetAssetAccess(context.Context, *connect.Request[v1.GetAssetAccessRequest]) (*connect.Response[v1.GetAssetAccessResponse], error)
 	GetFolderAccess(context.Context, *connect.Request[v1.GetFolderAccessRequest]) (*connect.Response[v1.GetFolderAccessResponse], error)
@@ -344,6 +412,30 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("UpdateAssetConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
+	catalogServiceDeleteAssetHandler := connect.NewUnaryHandler(
+		CatalogServiceDeleteAssetProcedure,
+		svc.DeleteAsset,
+		connect.WithSchema(catalogServiceMethods.ByName("DeleteAsset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceUpdateAssetHandler := connect.NewUnaryHandler(
+		CatalogServiceUpdateAssetProcedure,
+		svc.UpdateAsset,
+		connect.WithSchema(catalogServiceMethods.ByName("UpdateAsset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceDeleteFolderHandler := connect.NewUnaryHandler(
+		CatalogServiceDeleteFolderProcedure,
+		svc.DeleteFolder,
+		connect.WithSchema(catalogServiceMethods.ByName("DeleteFolder")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceUpdateFolderHandler := connect.NewUnaryHandler(
+		CatalogServiceUpdateFolderProcedure,
+		svc.UpdateFolder,
+		connect.WithSchema(catalogServiceMethods.ByName("UpdateFolder")),
+		connect.WithHandlerOptions(opts...),
+	)
 	catalogServiceListAssetsHandler := connect.NewUnaryHandler(
 		CatalogServiceListAssetsProcedure,
 		svc.ListAssets,
@@ -400,6 +492,14 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceGetAssetDisplayHandler.ServeHTTP(w, r)
 		case CatalogServiceUpdateAssetConfigProcedure:
 			catalogServiceUpdateAssetConfigHandler.ServeHTTP(w, r)
+		case CatalogServiceDeleteAssetProcedure:
+			catalogServiceDeleteAssetHandler.ServeHTTP(w, r)
+		case CatalogServiceUpdateAssetProcedure:
+			catalogServiceUpdateAssetHandler.ServeHTTP(w, r)
+		case CatalogServiceDeleteFolderProcedure:
+			catalogServiceDeleteFolderHandler.ServeHTTP(w, r)
+		case CatalogServiceUpdateFolderProcedure:
+			catalogServiceUpdateFolderHandler.ServeHTTP(w, r)
 		case CatalogServiceListAssetsProcedure:
 			catalogServiceListAssetsHandler.ServeHTTP(w, r)
 		case CatalogServiceGetAssetAccessProcedure:
@@ -445,6 +545,22 @@ func (UnimplementedCatalogServiceHandler) GetAssetDisplay(context.Context, *conn
 
 func (UnimplementedCatalogServiceHandler) UpdateAssetConfig(context.Context, *connect.Request[v1.UpdateAssetConfigRequest]) (*connect.Response[v1.UpdateAssetConfigResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.UpdateAssetConfig is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) DeleteAsset(context.Context, *connect.Request[v1.DeleteAssetRequest]) (*connect.Response[v1.DeleteAssetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.DeleteAsset is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) UpdateAsset(context.Context, *connect.Request[v1.UpdateAssetRequest]) (*connect.Response[v1.UpdateAssetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.UpdateAsset is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) DeleteFolder(context.Context, *connect.Request[v1.DeleteFolderRequest]) (*connect.Response[v1.DeleteFolderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.DeleteFolder is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) UpdateFolder(context.Context, *connect.Request[v1.UpdateFolderRequest]) (*connect.Response[v1.UpdateFolderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.UpdateFolder is not implemented"))
 }
 
 func (UnimplementedCatalogServiceHandler) ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error) {

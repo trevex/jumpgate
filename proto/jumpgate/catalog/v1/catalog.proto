@@ -22,6 +22,10 @@ service CatalogService {
   // being party to a pending access request that references the asset.
   rpc GetAssetDisplay(GetAssetDisplayRequest) returns (GetAssetDisplayResponse) {}
   rpc UpdateAssetConfig(UpdateAssetConfigRequest) returns (UpdateAssetConfigResponse) {}
+  rpc DeleteAsset(DeleteAssetRequest) returns (DeleteAssetResponse) {}
+  rpc UpdateAsset(UpdateAssetRequest) returns (UpdateAssetResponse) {}
+  rpc DeleteFolder(DeleteFolderRequest) returns (DeleteFolderResponse) {}
+  rpc UpdateFolder(UpdateFolderRequest) returns (UpdateFolderResponse) {}
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
   rpc GetFolderAccess(GetFolderAccessRequest) returns (GetFolderAccessResponse) {}
@@ -76,6 +80,34 @@ message SSHLogin {
   string secret_id = 3;
 }
 
+// ── Write-only SSH config input. Reads still return SSHConfig/SSHLogin. ──
+message SSHConfigInput {
+  repeated SSHLoginInput logins = 1;
+  string host_public_key = 2;
+  string target_address  = 3;
+}
+
+// SSHLoginInput: the auth oneof arm IS the kind (no stringly-typed "ca|password|key").
+message SSHLoginInput {
+  string login = 1 [(buf.validate.field).string = {min_len: 1}];
+  oneof auth {
+    option (buf.validate.oneof).required = true;
+    CaAuth     ca       = 2;   // signed cert — no secret
+    SecretAuth password = 3;   // plaintext password
+    SecretAuth key      = 4;   // private-key PEM
+  }
+}
+message CaAuth {}
+
+// SecretAuth: "any of" — seal a new value, or reference an existing sealed secret.
+message SecretAuth {
+  oneof source {
+    option (buf.validate.oneof).required = true;
+    bytes  new_value          = 1;  // write-only; sealed server-side in-tx, never echoed back
+    string existing_secret_id = 2 [(buf.validate.field).string.uuid = true];
+  }
+}
+
 message CreateFolderRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
   string parent_id = 2;
@@ -94,10 +126,12 @@ message ListFoldersResponse { repeated Folder folders = 1; string next_page_toke
 
 message CreateAssetRequest {
   string folder_id = 1 [(buf.validate.field).string.uuid = true];
-  string name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
-  string kind = 3 [(buf.validate.field).string = {in: ["ssh", "postgres", "k8s", ""]}];
-  // Optional inline connection config so onboarding is a single call.
-  oneof config { SSHConfig ssh = 4; }
+  string name      = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
+  // Exactly one arm required; the arm selects the kind. New kinds add arms here.
+  oneof config {
+    option (buf.validate.oneof).required = true;
+    SSHConfigInput ssh = 3;
+  }
 }
 message CreateAssetResponse { Asset asset = 1; }
 
@@ -130,9 +164,32 @@ message SSHLoginDisplay {
 
 message UpdateAssetConfigRequest {
   string asset_id = 1 [(buf.validate.field).string.uuid = true];
-  oneof config { SSHConfig ssh = 2; }
+  oneof config {
+    option (buf.validate.oneof).required = true;
+    SSHConfigInput ssh = 2;
+  }
 }
 message UpdateAssetConfigResponse {}
+
+message DeleteAssetRequest  { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
+message DeleteAssetResponse {}
+
+message UpdateAssetRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  optional string name      = 2;  // present = rename
+  optional string folder_id = 3;  // present = move to this folder
+}
+message UpdateAssetResponse { Asset asset = 1; }
+
+message DeleteFolderRequest  { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }
+message DeleteFolderResponse {}
+
+message UpdateFolderRequest {
+  string folder_id = 1 [(buf.validate.field).string.uuid = true];
+  optional string name      = 2;  // present = rename
+  optional string parent_id = 3;  // present = move under this parent ("" = root)
+}
+message UpdateFolderResponse { Folder folder = 1; }
 
 message ListAssetsRequest {
   // Parent folder to browse: "" = root, or a uuid / DNS-style dotted path.
