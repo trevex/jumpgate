@@ -49,7 +49,7 @@ func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantR
 }
 
 func toUserMsg(u gen.User) *identityv1.User {
-	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName}
+	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, Active: !u.DeactivatedAt.Valid}
 }
 
 func toGroupMsg(g gen.Group) *identityv1.Group {

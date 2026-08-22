@@ -458,6 +458,78 @@ func TestGetUserDisplay(t *testing.T) {
 	}
 }
 
+// TestUserActiveFlag pins User.active as the deactivation state surfaced on the
+// User message: a freshly created user is active on both GetUser and in
+// ListUsers; DeactivateUser flips it to false; ReactivateUser flips it back.
+func TestUserActiveFlag(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	created, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "active@x", DisplayName: "Active", Password: "password123",
+	}), tok))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	uid := created.Msg.User.Id
+
+	// activeInList finds our user in ListUsers and reports its Active flag.
+	activeInList := func() bool {
+		list, err := c.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 100}), tok))
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		for _, u := range list.Msg.Users {
+			if u.Id == uid {
+				return u.Active
+			}
+		}
+		t.Fatalf("user %s not found in ListUsers", uid)
+		return false
+	}
+	// activeOnGet reports GetUser's Active flag for our user.
+	activeOnGet := func() bool {
+		got, err := c.GetUser(ctx, withToken(connect.NewRequest(&identityv1.GetUserRequest{Id: uid}), tok))
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		return got.Msg.User.Active
+	}
+
+	// Freshly created → active on both reads.
+	if !activeOnGet() {
+		t.Fatal("new user GetUser Active = false, want true")
+	}
+	if !activeInList() {
+		t.Fatal("new user ListUsers Active = false, want true")
+	}
+
+	// Deactivate → active = false on both reads.
+	if _, err := c.DeactivateUser(ctx, withToken(connect.NewRequest(&identityv1.DeactivateUserRequest{UserId: uid}), tok)); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	if activeOnGet() {
+		t.Fatal("deactivated GetUser Active = true, want false")
+	}
+	if activeInList() {
+		t.Fatal("deactivated ListUsers Active = true, want false")
+	}
+
+	// Reactivate → active = true on both reads.
+	if _, err := c.ReactivateUser(ctx, withToken(connect.NewRequest(&identityv1.ReactivateUserRequest{UserId: uid}), tok)); err != nil {
+		t.Fatalf("reactivate: %v", err)
+	}
+	if !activeOnGet() {
+		t.Fatal("reactivated GetUser Active = false, want true")
+	}
+	if !activeInList() {
+		t.Fatal("reactivated ListUsers Active = false, want true")
+	}
+}
+
 func uuidFromStr(t *testing.T, s string) uuid.UUID {
 	t.Helper()
 	u, err := uuid.Parse(s)

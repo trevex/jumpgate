@@ -27,6 +27,7 @@ type User struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Active        bool                   `protobuf:"varint,5,opt,name=active,proto3" json:"active,omitempty"` // false = deactivated
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -80,6 +81,13 @@ func (x *User) GetDisplayName() string {
 		return x.DisplayName
 	}
 	return ""
+}
+
+func (x *User) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
 }
 
 type Group struct {
@@ -1883,11 +1891,12 @@ var File_jumpgate_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_jumpgate_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"#jumpgate/identity/v1/identity.proto\x12\x14jumpgate.identity.v1\x1a\x1bbuf/validate/validate.proto\"_\n" +
+	"#jumpgate/identity/v1/identity.proto\x12\x14jumpgate.identity.v1\x1a\x1bbuf/validate/validate.proto\"w\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameJ\x04\b\x04\x10\x05R\bis_admin\"i\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x16\n" +
+	"\x06active\x18\x05 \x01(\bR\x06activeJ\x04\b\x04\x10\x05R\bis_admin\"i\n" +
 	"\x05Group\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
