@@ -15,6 +15,7 @@ import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
 import { RecordingsPage } from "./routes/recordings/recordings";
 import { DirectoryPage } from "./routes/directory/directory";
+import { AccessControlPage } from "./routes/access-control/access-control";
 import { TerminalPage } from "./routes/terminal/terminal";
 import { RequireCap, RequireAnyCap } from "./lib/capabilities";
 import { Toaster } from "./components/ui/sonner";
@@ -67,6 +68,20 @@ const router = createBrowserRouter([
         element: (
           <RequireAnyCap caps={["identity:user:read", "identity:group:read"]}>
             <DirectoryPage />
+          </RequireAnyCap>
+        ),
+      },
+      {
+        path: "access-control",
+        element: (
+          <RequireAnyCap
+            caps={[
+              "access:role:read",
+              "access:binding:read",
+              "access:policy:read",
+            ]}
+          >
+            <AccessControlPage />
           </RequireAnyCap>
         ),
       },
