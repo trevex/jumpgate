@@ -35,6 +35,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 	"github.com/trevex/jumpgate/warden/internal/webcors"
+	"github.com/trevex/jumpgate/warden/internal/webui"
 )
 
 func main() {
@@ -181,7 +182,7 @@ func run() error {
 	// User-facing (bearer) mux + server: Auth/Identity/Catalog/Access/AccessRequest/
 	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
 	mux := http.NewServeMux()
-	mux.Handle("/", httpapi.NewRouter(pool))
+	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool)))
 	// Recording download presigning: with a bucket configured, RecordingService
 	// issues short-lived presigned GET URLs against the object store; without one,
 	// a nil presigner makes the download path fail closed.

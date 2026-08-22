@@ -7,6 +7,9 @@ warden:
   # What warden tells the CLI to dial for the data plane. Matches the gateway
   # NodePort forwarded to the host by the kind cluster.
   gatewayEndpoint: "localhost:8443"
+  # kind serves the warden API (and the embedded SPA) over plain HTTP, so the
+  # browser rejects Secure cookies. Drop the Secure flag for the demo/e2e env.
+  cookieInsecure: true
 
 masterKey:
   # STABLE base64-encoded 32-byte demo vault master key. Kept constant so that
