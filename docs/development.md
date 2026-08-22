@@ -158,6 +158,12 @@ serves the app instead.
 
 ### Console views
 
+The console supports **light and dark themes** (following the OS preference by
+default, with a header toggle), and a **⌘K command palette** (also reachable from
+the header search affordance) that searches the catalog via `SearchCatalog` —
+results are visibility-filtered and grouped by kind (folders/assets/roles/groups);
+selecting one opens that node in the Catalog.
+
 The SPA is a single-page console over four views, gated by the caller's
 capabilities (from `WhoAmI`):
 
