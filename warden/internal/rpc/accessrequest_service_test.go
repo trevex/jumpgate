@@ -654,6 +654,86 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("total grants = %d, want 3", len(seen))
 	}
+
+	// asset_path must be populated (e.g. "lmg-c.lmg-folder") for all grants.
+	// logins is empty because lmg-target has no ssh:login caps.
+	for _, g := range append(page1.Msg.Grants, page2.Msg.Grants...) {
+		if g.AssetPath == "" {
+			t.Errorf("grant %s: AssetPath is empty, want non-empty DNS path", g.Id)
+		}
+		if len(g.Logins) != 0 {
+			t.Errorf("grant %s: Logins = %v, want empty (role has no ssh:login caps)", g.Id, g.Logins)
+		}
+	}
+
+	// Verify asset_path format for page1[0] (newest = lmg-c in lmg-folder).
+	// DNS-style: "<asset>.<folder>", i.e. "lmg-c.lmg-folder".
+	wantPath := "lmg-c.lmg-folder"
+	if page1.Msg.Grants[0].AssetPath != wantPath {
+		t.Errorf("page1[0].AssetPath = %q, want %q", page1.Msg.Grants[0].AssetPath, wantPath)
+	}
+
+	// Create a role with ssh:login caps and verify logins are extracted.
+	sshRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "lmg-ssh-role",
+		Capabilities: []byte(`["ssh:login:root","ssh:login:deploy"]`),
+	})
+	if err != nil {
+		t.Fatalf("CreateRole ssh: %v", err)
+	}
+	sshAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "lmg-ssh", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset ssh: %v", err)
+	}
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: sshRole.ID, ScopeAssetID: pgU(sshAsset.ID), RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy ssh: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: requesterRole, ScopeAssetID: pgU(sshAsset.ID), SubjectUserID: pgU(reqUID),
+	}); err != nil {
+		t.Fatalf("bind requester ssh: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: approverRole, ScopeAssetID: pgU(sshAsset.ID), SubjectUserID: pgU(appUID),
+	}); err != nil {
+		t.Fatalf("bind approver ssh: %v", err)
+	}
+	sshReq, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: sshRole.ID.String(), AssetId: sshAsset.ID.String(), DurationSeconds: 3600,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("RequestAccess ssh: %v", err)
+	}
+	if _, err := client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{
+		RequestId: sshReq.Msg.Request.Id,
+	}), appTok)); err != nil {
+		t.Fatalf("ApproveRequest ssh: %v", err)
+	}
+	sshPage, err := client.ListMyGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListMyGrantsRequest{
+		PageSize: 1,
+	}), reqTok))
+	if err != nil {
+		t.Fatalf("ListMyGrants ssh: %v", err)
+	}
+	if len(sshPage.Msg.Grants) != 1 {
+		t.Fatalf("ssh page: got %d grants, want 1", len(sshPage.Msg.Grants))
+	}
+	sshGrant := sshPage.Msg.Grants[0]
+	if sshGrant.AssetPath != "lmg-ssh.lmg-folder" {
+		t.Errorf("ssh grant AssetPath = %q, want %q", sshGrant.AssetPath, "lmg-ssh.lmg-folder")
+	}
+	wantLogins := map[string]bool{"root": true, "deploy": true}
+	if len(sshGrant.Logins) != len(wantLogins) {
+		t.Errorf("ssh grant Logins = %v, want [root deploy]", sshGrant.Logins)
+	}
+	for _, l := range sshGrant.Logins {
+		if !wantLogins[l] {
+			t.Errorf("ssh grant unexpected login %q", l)
+		}
+	}
 }
 
 // TestListGrantsKeysetPagination verifies (granted_at DESC, id) keyset pagination

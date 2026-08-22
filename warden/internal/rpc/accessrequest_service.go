@@ -2,7 +2,9 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -100,6 +102,44 @@ func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
 		msg.RevokedAt = g.RevokedAt.UTC().Format(time.RFC3339)
 	}
 	return msg
+}
+
+// grantAssetPath resolves the DNS-style asset path for a grant (best-effort;
+// returns "" on any lookup error so the caller degrades gracefully).
+func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.UUID) string {
+	a, err := s.q.GetAsset(ctx, assetID)
+	if err != nil {
+		return ""
+	}
+	fp, err := s.q.FolderPath(ctx, a.FolderID)
+	if err != nil {
+		return a.Name
+	}
+	return joinPath(fp, a.Name)
+}
+
+// grantLoginsFromRole extracts the ssh:login:<x> capability values from a
+// role's JSON capability array. Wildcard values ("*", "**") are skipped.
+func (s *AccessRequestServer) grantLoginsFromRole(ctx context.Context, roleID uuid.UUID) []string {
+	r, err := s.q.GetRole(ctx, roleID)
+	if err != nil {
+		return nil
+	}
+	var caps []string
+	if err := json.Unmarshal(r.Capabilities, &caps); err != nil {
+		return nil
+	}
+	var logins []string
+	for _, c := range caps {
+		parts := strings.SplitN(c, ":", 3)
+		if len(parts) == 3 && parts[0] == "ssh" && parts[1] == "login" {
+			login := parts[2]
+			if login != "*" && login != "**" {
+				logins = append(logins, login)
+			}
+		}
+	}
+	return logins
 }
 
 // ResolveApproval returns the effective request policy for a (role, asset) pair (admin only).
@@ -326,7 +366,10 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 	}
 	out := &accessrequestv1.ListMyGrantsResponse{}
 	for i := range rows {
-		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
+		msg := toGrantMsg(rows[i])
+		msg.AssetPath = s.grantAssetPath(ctx, rows[i].AssetID)
+		msg.Logins = s.grantLoginsFromRole(ctx, rows[i].RoleID)
+		out.Grants = append(out.Grants, msg)
 	}
 	// Emit a token only when the page was filled; an exact multiple of page_size
 	// therefore costs one extra round-trip returning an empty final page (the

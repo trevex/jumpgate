@@ -135,6 +135,13 @@ message Grant {
   string revoked_at = 7;      // RFC3339, empty if not revoked
   string revoked_reason = 8;  // empty if not revoked
   bool active = 9;            // revoked_at IS NULL AND expires_at > now()
+  // DNS-style asset path (e.g. "pg-primary.db.prod"), populated by ListMyGrants
+  // and ListGrants so the UI can emit a valid connect command without a separate lookup.
+  string asset_path = 10;
+  // SSH login principals extracted from the granted role's ssh:login:<x> capabilities.
+  // One entry per concrete login. Empty for roles without ssh:login caps (password/key assets
+  // may still be connectable; the CLI resolves those by asset path alone).
+  repeated string logins = 11;
 }
 
 message RevokeGrantRequest {
