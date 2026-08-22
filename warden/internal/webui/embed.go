@@ -23,7 +23,7 @@ func Handler(next http.Handler) http.Handler {
 	files := http.FileServer(http.FS(sub))
 	index, _ := fs.ReadFile(sub, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/jumpgate.") || r.URL.Path == "/healthz" {
+		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/jumpgate.") || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}

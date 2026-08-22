@@ -1,20 +1,24 @@
 // Package recording provides object-store access for session recordings. It
-// issues short-lived presigned download URLs for recorded objects.
+// issues short-lived presigned download URLs for recorded objects and supports
+// server-side streaming of objects directly to HTTP clients.
 package recording
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// S3Presigner issues short-lived presigned GET URLs for recording objects.
+// S3Presigner issues short-lived presigned GET URLs for recording objects and
+// can also stream object bodies directly (for server-proxy use).
 type S3Presigner struct {
-	client *s3.PresignClient
+	raw    *s3.Client        // for GetObject (direct streaming)
+	client *s3.PresignClient // for PresignGetObject (URL generation)
 	bucket string
 }
 
@@ -29,13 +33,13 @@ func NewS3Presigner(ctx context.Context, bucket, endpoint, region string) (*S3Pr
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+	raw := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		if endpoint != "" {
 			o.BaseEndpoint = &endpoint
 			o.UsePathStyle = true
 		}
 	})
-	return &S3Presigner{client: s3.NewPresignClient(client), bucket: bucket}, nil
+	return &S3Presigner{raw: raw, client: s3.NewPresignClient(raw), bucket: bucket}, nil
 }
 
 // PresignGet returns a presigned GET URL for objectKey valid for ttl.
@@ -47,4 +51,14 @@ func (p *S3Presigner) PresignGet(ctx context.Context, objectKey string, ttl time
 		return "", time.Time{}, fmt.Errorf("presign get: %w", err)
 	}
 	return req.URL, time.Now().Add(ttl), nil
+}
+
+// GetObject streams the object body for key from the bucket. The caller is
+// responsible for closing the returned ReadCloser.
+func (p *S3Presigner) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
+	out, err := p.raw.GetObject(ctx, &s3.GetObjectInput{Bucket: &p.bucket, Key: &key})
+	if err != nil {
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	return out.Body, nil
 }

@@ -1,5 +1,5 @@
-// Package httpapi builds the control-plane HTTP surface. In M2a it serves the
-// health endpoint (now DB-aware); the REST API is added in M2b.
+// Package httpapi builds the control-plane HTTP surface. It serves the
+// health endpoint (DB-aware) and the recording cast proxy.
 package httpapi
 
 import (
@@ -18,8 +18,9 @@ type Pinger interface {
 }
 
 // NewRouter returns the control-plane HTTP handler. db may be nil (health then
-// reports process liveness only).
-func NewRouter(db Pinger) http.Handler {
+// reports process liveness only). deps is optional; pass RouterDeps{} to skip
+// the recording cast proxy.
+func NewRouter(db Pinger, deps ...RouterDeps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
@@ -39,6 +40,16 @@ func NewRouter(db Pinger) http.Handler {
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
 	})
+
+	// Recording cast proxy: streams asciicast objects server-side so the browser
+	// never needs a presigned URL. Only mounted when deps are provided.
+	if len(deps) > 0 {
+		d := deps[0]
+		if d.Validate != nil && d.Load != nil {
+			authMw := CookieAuth(d.Validate, d.Load)
+			r.With(authMw).Get("/api/recordings/{sessionId}/cast", castHandler(d.Queries, d.Authorizer, d.Getter))
+		}
+	}
 
 	return r
 }

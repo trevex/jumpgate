@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
@@ -179,23 +180,43 @@ func run() error {
 		}
 	}
 
-	// User-facing (bearer) mux + server: Auth/Identity/Catalog/Access/AccessRequest/
-	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
-	mux := http.NewServeMux()
-	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool)))
 	// Recording download presigning: with a bucket configured, RecordingService
 	// issues short-lived presigned GET URLs against the object store; without one,
-	// a nil presigner makes the download path fail closed.
+	// a nil presigner makes the download path fail closed. The concrete
+	// *recording.S3Presigner also implements httpapi.ObjectGetter for the
+	// server-side cast proxy — stored separately so both are threaded to their
+	// respective consumers without a type assertion.
 	var recordingPresign rpc.Presigner
+	var castGetter httpapi.ObjectGetter
 	if cfg.RecordingBucket != "" {
 		presign, err := recording.NewS3Presigner(ctx, cfg.RecordingBucket, cfg.RecordingS3Endpoint, cfg.RecordingS3Region)
 		if err != nil {
 			return err
 		}
 		recordingPresign = presign
+		castGetter = presign // *S3Presigner implements ObjectGetter (GetObject)
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}
+
+	// User-facing (bearer) mux + server: Auth/Identity/Catalog/Access/AccessRequest/
+	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
+	//
+	// Build the token lookup once here so it can be shared with both the RPC
+	// interceptor (via RegisterUserServices) and the httpapi cookie-auth middleware
+	// (via RouterDeps). RegisterUserServices builds its own internally — that is fine
+	// because auth.Lookup is stateless.
+	apiQ := gen.New(pool)
+	apiTokens := auth.NewTokenService(apiQ)
+	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
+	mux := http.NewServeMux()
+	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool, httpapi.RouterDeps{
+		Queries:    apiQ,
+		Authorizer: authorizer,
+		Getter:     castGetter,
+		Validate:   apiLookup.Validate,
+		Load:       apiLookup.Load,
+	})))
 	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL, cfg.CookieSecure()); err != nil {
 		return err
 	}
