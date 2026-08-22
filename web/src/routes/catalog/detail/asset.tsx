@@ -9,7 +9,7 @@
  */
 
 import { useQuery } from "@connectrpc/connect-query";
-import { Server, Copy, Check, Terminal } from "lucide-react";
+import { Server, Copy, Check, Terminal, SquareArrowOutUpRight } from "lucide-react";
 import { useState, useCallback } from "react";
 import { getAssetAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { Badge } from "@/components/ui/badge";
@@ -79,11 +79,12 @@ function CopyButton({ text }: { text: string }) {
 // ─── SSH connect block ────────────────────────────────────────────────────────
 
 interface ConnectBlockProps {
+  assetId: string;
   logins: string[];
   assetPath: string;
 }
 
-function ConnectBlock({ logins, assetPath }: ConnectBlockProps) {
+function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
   if (logins.length === 0 || !assetPath) return null;
 
   return (
@@ -91,17 +92,29 @@ function ConnectBlock({ logins, assetPath }: ConnectBlockProps) {
       <div className="flex flex-col gap-1.5" role="list" aria-label="Connect commands">
         {logins.map((login) => {
           const cmd = `jumpgate connect ${login}@${assetPath}`;
+          const terminalHref = `/terminal/${assetId}?login=${encodeURIComponent(login)}`;
           return (
-            <div
-              key={login}
-              className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2"
-              role="listitem"
-            >
-              <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
-                {cmd}
-              </code>
-              <CopyButton text={cmd} />
+            <div key={login} className="flex flex-col gap-1.5" role="listitem">
+              <div className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2">
+                <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
+                  {cmd}
+                </code>
+                <CopyButton text={cmd} />
+              </div>
+              <a
+                href={terminalHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "inline-flex w-fit items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:underline",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                )}
+                aria-label={`Open browser terminal as ${login}`}
+              >
+                <SquareArrowOutUpRight className="h-3 w-3" aria-hidden="true" />
+                Open terminal
+              </a>
             </div>
           );
         })}
@@ -166,7 +179,7 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
       {/* SSH connect block (only when connect caps present) */}
       {sshLogins.length > 0 && (
         <>
-          <ConnectBlock logins={sshLogins} assetPath={path ?? ""} />
+          <ConnectBlock assetId={id} logins={sshLogins} assetPath={path ?? ""} />
           <div className="h-px bg-border" role="separator" />
         </>
       )}

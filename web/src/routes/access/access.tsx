@@ -40,6 +40,7 @@ import {
   ClipboardList,
   KeyRound,
   AlertTriangle,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -491,6 +492,28 @@ function GrantCard({ grant }: { grant: Grant }) {
               </code>
               <InlineCopyButton text={cmd} label="Copy connect command" />
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* Open in-browser terminal — one link per concrete SSH login */}
+      {active && grant.logins.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {grant.logins.map((login) => (
+            <a
+              key={login}
+              href={`/terminal/${grant.assetId}?login=${encodeURIComponent(login)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:underline",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+              aria-label={`Open browser terminal as ${login}`}
+            >
+              <SquareArrowOutUpRight className="h-3 w-3" aria-hidden="true" />
+              Open terminal ({login})
+            </a>
           ))}
         </div>
       )}

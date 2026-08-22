@@ -15,6 +15,7 @@ import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
 import { RecordingsPage } from "./routes/recordings/recordings";
 import { DirectoryPage } from "./routes/directory/directory";
+import { TerminalPage } from "./routes/terminal/terminal";
 import { RequireCap, RequireAnyCap } from "./lib/capabilities";
 import { Toaster } from "./components/ui/sonner";
 
@@ -39,6 +40,16 @@ const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    // Bare, chromeless full-screen terminal — authenticated but rendered
+    // outside the AppShell so it can own the whole viewport.
+    path: "/terminal/:assetId",
+    element: (
+      <RequireAuth>
+        <TerminalPage />
+      </RequireAuth>
+    ),
   },
   {
     path: "/",
