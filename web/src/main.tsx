@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
+import { ThemeProvider } from "next-themes";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { transport } from "./transport";
 import { RequireAuth } from "./auth";
@@ -74,11 +75,18 @@ if (root == null) throw new Error("no #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster position="bottom-right" richColors />
-      </QueryClientProvider>
-    </TransportProvider>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster position="bottom-right" richColors />
+        </QueryClientProvider>
+      </TransportProvider>
+    </ThemeProvider>
   </StrictMode>
 );

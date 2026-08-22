@@ -16,6 +16,7 @@ import { capsCover, useCapabilities } from "../lib/capabilities";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
+import { ThemeToggle } from "../components/theme-toggle";
 import { cn } from "../lib/utils";
 
 // ─── Pending-approvals badge count ──────────────────────────────────────────
@@ -211,11 +212,15 @@ export function AppShell() {
         {/* ── Main content ── */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Top bar */}
-          <header className="flex h-14 shrink-0 items-center border-b border-border bg-background px-6">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
             {/* Page title injected by child route via context / future enhancement */}
             <span className="text-sm text-muted-foreground">
               Privileged access management
             </span>
+            {/* Right cluster — search affordance (added later) sits alongside the theme toggle */}
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+            </div>
           </header>
 
           {/* Scrollable page area */}
