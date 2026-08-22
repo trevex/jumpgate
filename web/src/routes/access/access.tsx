@@ -5,16 +5,11 @@
  *   Requests — the caller's own JIT requests, paginated, with colour-coded
  *              status badges and a "Load more" button.
  *   Grants   — the caller's access grants (active + past), with a live
- *              expiry countdown and a copy-able connect command.
+ *              expiry countdown and copy-able connect command(s).
  *
- * The Grant DTO carries only role_id and asset_id (UUIDs), not names or
- * paths. The connect command uses the role_id and asset_id as identifiers
- * until richer data is returned by a future enriched endpoint; the UI shows
- * whichever label fields are available and falls back gracefully.
- *
- * Note: Grant does NOT carry the asset path or login, so we derive the
- * connect command as `jumpgate connect <asset_id>` (the CLI accepts a UUID
- * as well as a path). A future enhancement would enrich grants with path+login.
+ * Grant.assetPath and Grant.logins are populated by the server so the UI
+ * can emit valid `jumpgate connect <login>@<asset_path>` commands without
+ * any extra lookups.
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -43,6 +38,7 @@ import {
   ClipboardList,
   KeyRound,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -106,15 +102,18 @@ function InlineCopyButton({ text, label }: { text: string; label?: string }) {
 // ─── Expiry countdown (ticking) ───────────────────────────────────────────────
 
 function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
-  const [remaining, setRemaining] = useState(() => timeRemaining(expiresAt));
-  const expired = isExpired(expiresAt);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (expired) return;
-    // Update every 30 s — granularity matches the human-readable output
-    const id = setInterval(() => setRemaining(timeRemaining(expiresAt)), 30_000);
+    // Update every 30 s — recompute expired + remaining on each tick
+    const id = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(id);
-  }, [expiresAt, expired]);
+  }, [expiresAt]);
+
+  // Recompute on every tick so the badge flips when a grant lapses while open
+  const expired = isExpired(expiresAt);
+  const remaining = timeRemaining(expiresAt);
+  void tick; // consumed via the setter above; included to keep the dep honest
 
   return (
     <span
@@ -347,17 +346,87 @@ function RequestsTab() {
 // ─── Grants tab ───────────────────────────────────────────────────────────────
 
 /**
- * Grant does not carry asset path or SSH login. We derive the connect command
- * from what we have: `jumpgate connect <asset_id>` — the CLI resolves UUIDs.
- * A future RPC enrichment would add path+login here.
+ * Build connect commands from the enriched grant.
+ * - If the role has ssh:login caps, return one `jumpgate connect <login>@<path>` per login.
+ * - If assetPath is set but no logins (e.g. password/key asset), return one bare-path command.
+ * - If neither, return an empty array (connect block is omitted).
  */
-function grantConnectCmd(grant: Grant): string {
-  return `jumpgate connect ${grant.assetId}`;
+function grantConnectCmds(grant: Grant): string[] {
+  const path = grant.assetPath;
+  if (grant.logins.length > 0 && path) {
+    return grant.logins.map((login) => `jumpgate connect ${login}@${path}`);
+  }
+  if (path) {
+    return [`jumpgate connect ${path}`];
+  }
+  return [];
 }
+
+// ─── Two-step revoke button ───────────────────────────────────────────────────
+
+const REVOKE_CONFIRM_MS = 4_000;
+
+function RevokeButton({
+  onConfirmed,
+  isRevoking,
+}: {
+  onConfirmed: () => void;
+  isRevoking: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel confirm-state if the component unmounts or revoking starts
+  useEffect(() => {
+    if (isRevoking) setConfirming(false);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [isRevoking]);
+
+  function handleClick() {
+    if (!confirming) {
+      setConfirming(true);
+      timerRef.current = setTimeout(() => setConfirming(false), REVOKE_CONFIRM_MS);
+    } else {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setConfirming(false);
+      onConfirmed();
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleClick}
+      disabled={isRevoking}
+      className={cn(
+        "h-6 text-[11px] transition-colors",
+        confirming
+          ? "border-red-400 bg-red-50 text-red-700 hover:bg-red-100"
+          : "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700",
+      )}
+      aria-label={confirming ? "Click again to confirm revoke" : "Revoke this grant"}
+    >
+      {isRevoking ? (
+        "Revoking…"
+      ) : confirming ? (
+        <span className="flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+          Confirm revoke?
+        </span>
+      ) : (
+        "Revoke"
+      )}
+    </Button>
+  );
+}
+
+// ─── Grant card ───────────────────────────────────────────────────────────────
 
 function GrantCard({ grant }: { grant: Grant }) {
   const queryClient = useQueryClient();
-  const expired = isExpired(grant.expiresAt);
   const revoked = Boolean(grant.revokedAt);
   const active = grant.active;
 
@@ -371,7 +440,7 @@ function GrantCard({ grant }: { grant: Grant }) {
     },
   });
 
-  const connectCmd = grantConnectCmd(grant);
+  const connectCmds = grantConnectCmds(grant);
 
   return (
     <div
@@ -379,16 +448,16 @@ function GrantCard({ grant }: { grant: Grant }) {
         "flex flex-col gap-2 rounded-lg border border-border bg-background p-4 transition-colors",
         !active && "opacity-60",
       )}
-      aria-label={`Grant for asset ${shortId(grant.assetId)}`}
+      aria-label={`Grant for asset ${grant.assetPath || shortId(grant.assetId)}`}
     >
-      {/* Top row: role + expiry */}
+      {/* Top row: asset / role + expiry status */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span
-            className="font-mono text-[11px] text-muted-foreground truncate"
+            className="font-mono text-[11px] text-foreground truncate"
             title={grant.assetId}
           >
-            {shortId(grant.assetId)}
+            {grant.assetPath || shortId(grant.assetId)}
           </span>
           <span
             className="text-[11px] text-muted-foreground truncate"
@@ -406,19 +475,19 @@ function GrantCard({ grant }: { grant: Grant }) {
             >
               Revoked
             </Badge>
-          ) : expired ? (
-            <Badge
-              variant="outline"
-              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide"
-            >
-              Expired
-            </Badge>
-          ) : (
+          ) : grant.active ? (
             <Badge
               variant="outline"
               className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-green-700 tracking-wide"
             >
               Active
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide"
+            >
+              Expired
             </Badge>
           )}
           {grant.expiresAt && (
@@ -427,38 +496,34 @@ function GrantCard({ grant }: { grant: Grant }) {
         </div>
       </div>
 
-      {/* Connect command */}
-      {active && (
-        <div className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2">
-          <Terminal
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
-            {connectCmd}
-          </code>
-          <InlineCopyButton
-            text={connectCmd}
-            label="Copy connect command"
-          />
+      {/* Connect command(s) — one row per login */}
+      {active && connectCmds.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {connectCmds.map((cmd) => (
+            <div
+              key={cmd}
+              className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2"
+            >
+              <Terminal
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
+                {cmd}
+              </code>
+              <InlineCopyButton text={cmd} label="Copy connect command" />
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Revoke button — active grants only */}
+      {/* Revoke — two-step confirm, active grants only */}
       {active && (
         <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              doRevoke({ grantId: grant.id, reason: "Self-revoked" })
-            }
-            disabled={isRevoking}
-            className="h-6 border-red-200 text-[11px] text-red-600 hover:bg-red-50 hover:text-red-700"
-            aria-label="Revoke this grant"
-          >
-            {isRevoking ? "Revoking…" : "Revoke"}
-          </Button>
+          <RevokeButton
+            isRevoking={isRevoking}
+            onConfirmed={() => doRevoke({ grantId: grant.id, reason: "Self-revoked" })}
+          />
         </div>
       )}
 

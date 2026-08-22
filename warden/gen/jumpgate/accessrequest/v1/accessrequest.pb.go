@@ -847,6 +847,13 @@ type Grant struct {
 	RevokedAt     string                 `protobuf:"bytes,7,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`             // RFC3339, empty if not revoked
 	RevokedReason string                 `protobuf:"bytes,8,opt,name=revoked_reason,json=revokedReason,proto3" json:"revoked_reason,omitempty"` // empty if not revoked
 	Active        bool                   `protobuf:"varint,9,opt,name=active,proto3" json:"active,omitempty"`                                   // revoked_at IS NULL AND expires_at > now()
+	// DNS-style asset path (e.g. "pg-primary.db.prod"), populated by ListMyGrants
+	// and ListGrants so the UI can emit a valid connect command without a separate lookup.
+	AssetPath string `protobuf:"bytes,10,opt,name=asset_path,json=assetPath,proto3" json:"asset_path,omitempty"`
+	// SSH login principals extracted from the granted role's ssh:login:<x> capabilities.
+	// One entry per concrete login. Empty for roles without ssh:login caps (password/key assets
+	// may still be connectable; the CLI resolves those by asset path alone).
+	Logins        []string `protobuf:"bytes,11,rep,name=logins,proto3" json:"logins,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -942,6 +949,20 @@ func (x *Grant) GetActive() bool {
 		return x.Active
 	}
 	return false
+}
+
+func (x *Grant) GetAssetPath() string {
+	if x != nil {
+		return x.AssetPath
+	}
+	return ""
+}
+
+func (x *Grant) GetLogins() []string {
+	if x != nil {
+		return x.Logins
+	}
+	return nil
 }
 
 type RevokeGrantRequest struct {
@@ -1325,7 +1346,7 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"\x8c\x01\n" +
 	"\x1cListPendingApprovalsResponse\x12D\n" +
 	"\brequests\x18\x01 \x03(\v2(.jumpgate.accessrequest.v1.AccessRequestR\brequests\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8f\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xc6\x02\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12\x19\n" +
@@ -1338,7 +1359,11 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\n" +
 	"revoked_at\x18\a \x01(\tR\trevokedAt\x12%\n" +
 	"\x0erevoked_reason\x18\b \x01(\tR\rrevokedReason\x12\x16\n" +
-	"\x06active\x18\t \x01(\bR\x06active\"Q\n" +
+	"\x06active\x18\t \x01(\bR\x06active\x12\x1d\n" +
+	"\n" +
+	"asset_path\x18\n" +
+	" \x01(\tR\tassetPath\x12\x16\n" +
+	"\x06logins\x18\v \x03(\tR\x06logins\"Q\n" +
 	"\x12RevokeGrantRequest\x12#\n" +
 	"\bgrant_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agrantId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"M\n" +

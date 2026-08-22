@@ -11,10 +11,16 @@
 
 import { useState, useCallback } from "react";
 import { useMutation } from "@connectrpc/connect-query";
+import { createConnectQueryKey } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { RoleRef } from "@/gen/jumpgate/catalog/v1/catalog_pb";
-import { requestAccess } from "@/gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
+import {
+  requestAccess,
+  listMyRequests,
+  listMyGrants,
+  listPendingApprovals,
+} from "@/gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
 import {
   Sheet,
   SheetContent,
@@ -230,7 +236,11 @@ export function RequestSheet({
       toast.success("Access requested", {
         description: "Your request has been submitted.",
       });
-      queryClient.invalidateQueries();
+      // Scope invalidation to the access-request queries only — avoid
+      // flushing catalog/vault queries which are unaffected by a new request.
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listMyRequests, cardinality: undefined }) });
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listMyGrants, cardinality: undefined }) });
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listPendingApprovals, cardinality: undefined }) });
       handleOpenChange(false);
     },
     onError: (err) => {
