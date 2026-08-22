@@ -132,7 +132,7 @@ func TestMoveFolderDeniedOnContainmentBreak(t *testing.T) {
 	other := env.createFolder(t, "other") // sibling of a at root
 	assetID := env.createSSHAsset(t, m, "box", "app", []byte("pw"))
 	roleID := env.createFolderScopedRole(t, "reader", a) // homed at a
-	env.bindRoleToAssetScoped(t, roleID, assetID)         // valid: a in ancestors(box)
+	env.bindRoleToAssetScoped(t, roleID, assetID)        // valid: a in ancestors(box)
 
 	// Move m under other: box's ancestors become {box(folder m), other, root}, losing a → break.
 	_, err := env.catalog.UpdateFolder(env.adminCtx, connect.NewRequest(&catalogv1.UpdateFolderRequest{
