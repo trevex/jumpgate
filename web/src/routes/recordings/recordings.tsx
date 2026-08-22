@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { EmptyState, ErrorState } from "@/components/states/states";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
 import {
@@ -228,33 +229,6 @@ function RecordingRow({ rec, isSelected, onSelect }: RecordingRowProps) {
   );
 }
 
-// ─── Empty / error states ─────────────────────────────────────────────────────
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-      <Film className="h-12 w-12 text-muted-foreground/20" aria-hidden="true" />
-      <p className="text-[14px] font-medium text-foreground">No recordings yet</p>
-      <p className="text-[12px] text-muted-foreground max-w-xs">
-        Session recordings will appear here once SSH sessions have been recorded.
-      </p>
-    </div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 py-16 text-center">
-      <AlertTriangle className="h-8 w-8 text-destructive/60" aria-hidden="true" />
-      <p className="text-[13px] text-muted-foreground max-w-sm">{message}</p>
-      <Button variant="outline" size="sm" onClick={onRetry} className="h-7 gap-1.5 text-[12px]">
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-        Retry
-      </Button>
-    </div>
-  );
-}
-
 // ─── Asciinema player panel ───────────────────────────────────────────────────
 
 interface PlayerPanelProps {
@@ -445,9 +419,18 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
             </TableBody>
           </Table>
         ) : isError ? (
-          <ErrorState message={connectErrorMessage(error)} onRetry={() => void refetch()} />
+          <ErrorState
+            icon={AlertTriangle}
+            message={connectErrorMessage(error)}
+            onRetry={() => void refetch()}
+          />
         ) : allRecordings.length === 0 ? (
-          <EmptyState />
+          <EmptyState
+            icon={Film}
+            size="lg"
+            title="No recordings yet"
+            message="Session recordings will appear here once SSH sessions have been recorded."
+          />
         ) : (
           <>
             <Table>

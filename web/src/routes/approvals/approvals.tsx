@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { EmptyState, ErrorState } from "@/components/states/states";
 import { relativeTime, connectErrorMessage } from "@/lib/format";
 import {
   ClipboardCheck,
@@ -489,42 +490,6 @@ function RequestRow({ req }: RequestRowProps) {
   );
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
-
-function EmptyInbox() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-      <ClipboardCheck
-        className="h-12 w-12 text-muted-foreground/25"
-        aria-hidden="true"
-      />
-      <p className="text-[14px] font-medium text-foreground">All clear</p>
-      <p className="text-[13px] text-muted-foreground max-w-xs">
-        Nothing awaiting your approval.
-      </p>
-    </div>
-  );
-}
-
-// ─── Error state ──────────────────────────────────────────────────────────────
-
-function InboxError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 py-16 text-center">
-      <p className="text-[13px] text-muted-foreground max-w-sm">{message}</p>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onRetry}
-        className="h-7 gap-1.5 text-[12px]"
-      >
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-        Retry
-      </Button>
-    </div>
-  );
-}
-
 // ─── Table header ─────────────────────────────────────────────────────────────
 
 function TableHeader() {
@@ -583,12 +548,17 @@ export function ApprovalsPage() {
         {isLoading ? (
           <TableSkeletons />
         ) : isError ? (
-          <InboxError
+          <ErrorState
             message={connectErrorMessage(error)}
             onRetry={() => void refetch()}
           />
         ) : requests.length === 0 ? (
-          <EmptyInbox />
+          <EmptyState
+            icon={ClipboardCheck}
+            size="lg"
+            title="All clear"
+            message="Nothing awaiting your approval."
+          />
         ) : (
           <div role="list" aria-label="Pending approval requests">
             <TableHeader />

@@ -30,7 +30,7 @@ import type {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { cn } from "@/lib/utils";
 import { relativeTime, timeRemaining, isExpired, connectErrorMessage } from "@/lib/format";
 import {
@@ -39,7 +39,6 @@ import {
   Terminal,
   ClipboardList,
   KeyRound,
-  RefreshCw,
   AlertTriangle,
 } from "lucide-react";
 
@@ -128,40 +127,6 @@ function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
     >
       {expired ? "expired" : remaining}
     </span>
-  );
-}
-
-// ─── Loading skeleton rows ────────────────────────────────────────────────────
-
-function RowSkeletons({ count = 4 }: { count?: number }) {
-  return (
-    <div className="flex flex-col divide-y divide-border" aria-busy="true" aria-label="Loading">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3">
-          <Skeleton className="h-4 w-28 rounded" />
-          <Skeleton className="h-4 w-20 rounded" />
-          <Skeleton className="h-4 w-12 rounded" />
-          <Skeleton className="h-4 flex-1 rounded" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Empty state ──────────────────────────────────────────────────────────────
-
-function EmptyState({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      <Icon className="h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
-      <p className="text-[13px] text-muted-foreground">{message}</p>
-    </div>
   );
 }
 
@@ -276,7 +241,7 @@ function RequestsTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.requests]);
 
-  const { data: moreData, refetch: fetchMore } = useQuery(
+  const { refetch: fetchMore } = useQuery(
     listMyRequests,
     { pageSize: 25, pageToken: nextToken },
     { enabled: false },
@@ -295,24 +260,15 @@ function RequestsTab() {
     }
   }
 
-  if (isLoading) return <RowSkeletons />;
+  if (isLoading) return <LoadingRows />;
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center gap-3 py-12 text-center">
-        <p className="text-[13px] text-muted-foreground">
-          {connectErrorMessage(error)}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => { initialised.current = false; refetch(); }}
-          className="h-7 gap-1.5 text-[12px]"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Retry
-        </Button>
-      </div>
+      <ErrorState
+        size="sm"
+        message={connectErrorMessage(error)}
+        onRetry={() => { initialised.current = false; refetch(); }}
+      />
     );
   }
 
@@ -607,24 +563,15 @@ function GrantsTab() {
     }
   }
 
-  if (isLoading) return <RowSkeletons />;
+  if (isLoading) return <LoadingRows />;
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center gap-3 py-12 text-center">
-        <p className="text-[13px] text-muted-foreground">
-          {connectErrorMessage(error)}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => { initialised.current = false; refetch(); }}
-          className="h-7 gap-1.5 text-[12px]"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Retry
-        </Button>
-      </div>
+      <ErrorState
+        size="sm"
+        message={connectErrorMessage(error)}
+        onRetry={() => { initialised.current = false; refetch(); }}
+      />
     );
   }
 
