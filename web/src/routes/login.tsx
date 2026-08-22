@@ -21,10 +21,10 @@ export function LoginPage() {
     },
   });
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
     mutate({ email, password, cookieOnly: true });
-  }
+  };
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
