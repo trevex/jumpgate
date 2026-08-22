@@ -4,8 +4,11 @@ import { test, expect, type Page } from "@playwright/test";
 // self-signed (mesh-CA) cert, so the browser must accept it.
 test.use({ ignoreHTTPSErrors: true });
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+// alice has a concrete `ssh:login:demo` standing binding on password-box (via the
+// seeded sre group), so her asset detail shows the connect/terminal affordances —
+// an admin holding `**` does not (the UI only surfaces concrete login caps).
+const ALICE_EMAIL = process.env.E2E_ALICE_EMAIL ?? "alice@demo.test";
+const ALICE_PASSWORD = process.env.E2E_ALICE_PASSWORD ?? "alice-password-1234";
 
 async function login(page: Page, email: string, password: string): Promise<void> {
   await page.goto("/");
@@ -39,7 +42,7 @@ test("in-browser terminal opens a session and echoes a command", async ({ page }
   test.setTimeout(120_000);
   const marker = "JG_WEBTTY_" + Date.now().toString(36).toUpperCase();
 
-  await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  await login(page, ALICE_EMAIL, ALICE_PASSWORD);
 
   // Browse to the seeded connectable asset (password-box, demo login) and read the
   // "Open terminal" target off its detail pane (gets the real asset id via the UI).
@@ -47,7 +50,7 @@ test("in-browser terminal opens a session and echoes a command", async ({ page }
   const tree = page.locator('nav[aria-label="Catalog tree"]');
   await tree.getByRole("button", { name: "password-box" }).click();
 
-  const openTerminal = page.getByRole("link", { name: "Open terminal" }).first();
+  const openTerminal = page.getByRole("link", { name: /Open browser terminal/ }).first();
   await expect(openTerminal).toBeVisible();
   const href = await openTerminal.getAttribute("href");
   expect(href).toContain("/terminal/");
@@ -59,7 +62,8 @@ test("in-browser terminal opens a session and echoes a command", async ({ page }
   // The session connects (status pill), then we drive a command and read it back.
   await expect(page.getByRole("status")).toContainText(/connected/i, { timeout: 30_000 });
   await page.locator(".xterm").click();
-  await page.keyboard.type(`echo ${marker}\n`);
+  await page.keyboard.type(`echo ${marker}`);
+  await page.keyboard.press("Enter"); // xterm sends CR — required to run the command
 
   // The echoed marker appears in the terminal — proving browser → gateway → worker
   // → target round-trip.
