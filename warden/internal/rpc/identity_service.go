@@ -110,10 +110,27 @@ func (s *IdentityServer) GetUser(ctx context.Context, req *connect.Request[ident
 	return connect.NewResponse(&identityv1.GetUserResponse{User: toUserMsg(u)}), nil
 }
 
-// GetUserDisplay returns minimal display info for a user id (universal directory
-// read). TEMPORARY stub — real impl in a later task.
-func (s *IdentityServer) GetUserDisplay(_ context.Context, _ *connect.Request[identityv1.GetUserDisplayRequest]) (*connect.Response[identityv1.GetUserDisplayResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// GetUserDisplay returns minimal display info (id, display name, email) for a
+// user id. It is a universal directory read: any authenticated caller may call
+// it, with no capability check, so the console can render user names/avatars.
+// The full GetUser (capability-gated, richer) is unaffected. A missing or
+// malformed id returns NotFound. A deactivated user is still returned — this is
+// display metadata, not an authorization decision.
+func (s *IdentityServer) GetUserDisplay(ctx context.Context, req *connect.Request[identityv1.GetUserDisplayRequest]) (*connect.Response[identityv1.GetUserDisplayResponse], error) {
+	if _, ok := auth.UserFromContext(ctx); !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	id, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("user not found"))
+	}
+	u, err := s.q.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("user not found"))
+	}
+	return connect.NewResponse(&identityv1.GetUserDisplayResponse{User: &identityv1.UserDisplay{
+		Id: u.ID.String(), DisplayName: u.DisplayName, Email: u.Email,
+	}}), nil
 }
 
 // ResolveUser resolves a user email to an id (admin only). Unknown emails return NotFound.
