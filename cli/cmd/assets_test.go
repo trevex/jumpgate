@@ -13,14 +13,12 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
-	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
-	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 )
 
 // stubAssets serves the catalog service. `assets ssh create` is a single
 // CreateAsset call carrying the inline (ca) SSH logins; `assets ssh login set`
-// is a GetAsset + UpdateAssetConfig read-modify-write (plus a vault seal for
-// password/key kinds, served by stubVault).
+// is a GetAsset + UpdateAssetConfig read-modify-write where password/key secrets
+// ride inline as new_value and are sealed server-side in-tx (no vault round-trip).
 type stubAssets struct {
 	catalogv1connect.UnimplementedCatalogServiceHandler
 
@@ -52,10 +50,7 @@ func (s *stubAssets) CreateAsset(_ context.Context, req *connect.Request[catalog
 		Id:       "a-123",
 		FolderId: req.Msg.GetFolderId(),
 		Name:     req.Msg.GetName(),
-		Kind:     req.Msg.GetKind(),
-	}
-	if ssh := req.Msg.GetSsh(); ssh != nil {
-		asset.Config = &catalogv1.Asset_Ssh{Ssh: ssh}
+		Kind:     "ssh",
 	}
 	return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: asset}), nil
 }
@@ -90,20 +85,6 @@ func (s *stubAssets) GetAssetAccess(_ context.Context, _ *connect.Request[catalo
 	}), nil
 }
 
-// stubVault serves the vault service; SetAssetSecret records its request and
-// returns a fixed sealed secret id.
-type stubVault struct {
-	vaultv1connect.UnimplementedVaultServiceHandler
-
-	gotSetAssetSecret *vaultv1.SetAssetSecretRequest
-	secretID          string
-}
-
-func (v *stubVault) SetAssetSecret(_ context.Context, req *connect.Request[vaultv1.SetAssetSecretRequest]) (*connect.Response[vaultv1.SetAssetSecretResponse], error) {
-	v.gotSetAssetSecret = req.Msg
-	return connect.NewResponse(&vaultv1.SetAssetSecretResponse{Id: v.secretID}), nil
-}
-
 // resetAssetsFlags restores mutated package-global flag state between runs so
 // slice flags (which cobra accumulates into) do not leak across tests.
 func resetAssetsFlags() {
@@ -128,15 +109,13 @@ func resetAssetsFlags() {
 	assetsListCascade = false
 }
 
-// newAssetsStub serves the catalog handler (and optionally the vault handler)
-// off one server and returns its URL.
-func newAssetsStub(t *testing.T, s *stubAssets, v *stubVault) string {
+// newAssetsStub serves the catalog handler off one server and returns its URL.
+// Secrets are sealed server-side in-tx as part of UpdateAssetConfig now, so the
+// CLI no longer makes a separate VaultService round-trip on the create/rotate path.
+func newAssetsStub(t *testing.T, s *stubAssets) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle(catalogv1connect.NewCatalogServiceHandler(s))
-	if v != nil {
-		mux.Handle(vaultv1connect.NewVaultServiceHandler(v))
-	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -146,7 +125,7 @@ func TestAssetsSSHCreate(t *testing.T) {
 	const folderID = "11111111-1111-1111-1111-111111111111"
 	s := &stubAssets{}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -170,9 +149,6 @@ func TestAssetsSSHCreate(t *testing.T) {
 	if s.gotCreateAsset.GetName() != "prod-box" {
 		t.Fatalf("name=%q", s.gotCreateAsset.GetName())
 	}
-	if s.gotCreateAsset.GetKind() != "ssh" {
-		t.Fatalf("kind=%q", s.gotCreateAsset.GetKind())
-	}
 
 	// The inline SSH config (ca logins) rides on the single CreateAsset call.
 	ssh := s.gotCreateAsset.GetSsh()
@@ -183,10 +159,10 @@ func TestAssetsSSHCreate(t *testing.T) {
 	if len(logins) != 2 {
 		t.Fatalf("logins=%v", logins)
 	}
-	if logins[0].GetLogin() != "root" || logins[0].GetKind() != "ca" {
+	if logins[0].GetLogin() != "root" || sshLoginInputKind(logins[0]) != "ca" {
 		t.Fatalf("login[0]=%v", logins[0])
 	}
-	if logins[1].GetLogin() != "deploy" || logins[1].GetKind() != "ca" {
+	if logins[1].GetLogin() != "deploy" || sshLoginInputKind(logins[1]) != "ca" {
 		t.Fatalf("login[1]=%v", logins[1])
 	}
 	if ssh.GetTargetAddress() != "10.0.0.5:22" {
@@ -205,7 +181,7 @@ func TestAssetsSSHCreateCommaSeparatedLogins(t *testing.T) {
 	const folderID = "22222222-2222-2222-2222-222222222222"
 	s := &stubAssets{}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -238,9 +214,8 @@ func TestAssetsSSHLoginSetPassword(t *testing.T) {
 		HostPublicKey: "ssh-ed25519 AAA",
 		Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
 	}}
-	v := &stubVault{secretID: "sec-999"}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, v))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -257,22 +232,9 @@ func TestAssetsSSHLoginSetPassword(t *testing.T) {
 		t.Fatalf("execute: %v", err)
 	}
 
-	// The password was sealed under name=login, with the trailing newline trimmed.
-	if v.gotSetAssetSecret == nil {
-		t.Fatal("SetAssetSecret was not called")
-	}
-	if v.gotSetAssetSecret.GetAssetId() != assetID {
-		t.Fatalf("secret asset id=%q", v.gotSetAssetSecret.GetAssetId())
-	}
-	if v.gotSetAssetSecret.GetName() != "deploy" {
-		t.Fatalf("secret name=%q", v.gotSetAssetSecret.GetName())
-	}
-	if string(v.gotSetAssetSecret.GetValue()) != "hunter2" {
-		t.Fatalf("secret value=%q", v.gotSetAssetSecret.GetValue())
-	}
-
-	// UpdateAssetConfig carries the new password login (with the sealed id) plus
-	// the preserved ca login, and preserves host/target.
+	// UpdateAssetConfig carries the new password login (with the plaintext secret
+	// inlined as new_value, sealed server-side in-tx) plus the preserved ca login,
+	// and preserves host/target. No separate vault round-trip happens anymore.
 	upd := s.gotUpdateAssetConfig
 	if upd == nil {
 		t.Fatal("UpdateAssetConfig was not called")
@@ -284,30 +246,36 @@ func TestAssetsSSHLoginSetPassword(t *testing.T) {
 	if len(cfg.GetLogins()) != 2 {
 		t.Fatalf("logins=%v", cfg.GetLogins())
 	}
-	var deploy *catalogv1.SSHLogin
+	var deploy *catalogv1.SSHLoginInput
 	haveRoot := false
 	for _, l := range cfg.GetLogins() {
 		switch l.GetLogin() {
 		case "deploy":
 			deploy = l
 		case "root":
-			haveRoot = l.GetKind() == "ca"
+			haveRoot = sshLoginInputKind(l) == "ca"
 		}
 	}
 	if !haveRoot {
 		t.Fatalf("ca login 'root' was not preserved: %v", cfg.GetLogins())
 	}
-	if deploy == nil || deploy.GetKind() != "password" || deploy.GetSecretId() != "sec-999" {
+	if deploy == nil || sshLoginInputKind(deploy) != "password" {
 		t.Fatalf("password login=%v", deploy)
+	}
+	// The trailing newline is trimmed; the plaintext rides as new_value, not a ref.
+	if string(deploy.GetPassword().GetNewValue()) != "hunter2" {
+		t.Fatalf("password new_value=%q", deploy.GetPassword().GetNewValue())
+	}
+	if deploy.GetPassword().GetExistingSecretId() != "" {
+		t.Fatalf("password should carry new_value, not an existing id: %v", deploy.GetPassword())
 	}
 }
 
 func TestAssetsSSHLoginSetPasswordRequiresStdin(t *testing.T) {
 	const assetID = "33333333-3333-3333-3333-333333333333"
 	s := &stubAssets{}
-	v := &stubVault{secretID: "sec-1"}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, v))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -322,8 +290,9 @@ func TestAssetsSSHLoginSetPasswordRequiresStdin(t *testing.T) {
 	if err := rootCmd.Execute(); err == nil {
 		t.Fatal("expected an error when --password-stdin is missing")
 	}
-	if v.gotSetAssetSecret != nil {
-		t.Fatal("no secret should be sealed on a validation error")
+	// Validation fails before any RPC, so UpdateAssetConfig is never reached.
+	if s.gotUpdateAssetConfig != nil {
+		t.Fatal("no config update should happen on a validation error")
 	}
 }
 
@@ -336,7 +305,7 @@ func TestAssetsSSHLoginList(t *testing.T) {
 		},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -365,7 +334,7 @@ func TestAssetsList(t *testing.T) {
 		{Id: "a-1", Name: "prod-box", Kind: "ssh", Path: "prod-box.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -388,7 +357,7 @@ func TestAssetsGet(t *testing.T) {
 	const assetID = "44444444-4444-4444-4444-444444444444"
 	s := &stubAssets{}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -417,7 +386,7 @@ func TestAssetsGetRoleNameFallback(t *testing.T) {
 		RequestableRoleIds: []string{"role-req-id"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -439,7 +408,7 @@ func TestAssetsListWithParentPathColumn(t *testing.T) {
 		{Id: "a-99", Name: "pg-primary", Kind: "ssh", FolderId: folderID, Path: "pg-primary.db.prod"},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -466,7 +435,7 @@ func TestAssetsSSHCreatePathColumn(t *testing.T) {
 	// is empty). That is fine — we only assert the PATH header exists, not a
 	// specific value, since this test focuses on the column being present.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 
@@ -501,7 +470,7 @@ func TestAssetsSSHCreateJSONHasIDAndPath(t *testing.T) {
 		},
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s, nil))
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
 	t.Setenv("JUMPGATE_TOKEN", "tok")
 	t.Cleanup(resetAssetsFlags)
 

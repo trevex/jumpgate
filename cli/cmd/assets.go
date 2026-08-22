@@ -12,9 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/trevex/jumpgate/cli/internal/output"
-	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
-	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 )
 
 var assetHeaders = []string{"ID", "NAME", "KIND", "FOLDER", "PATH"}
@@ -98,6 +96,27 @@ var assetsGetCmd = &cobra.Command{
 	RunE:  runAssetsGet,
 }
 
+var assetsDeleteCmd = &cobra.Command{
+	Use:   "delete <asset>",
+	Short: "Delete an asset",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAssetsDelete,
+}
+
+var assetsRenameCmd = &cobra.Command{
+	Use:   "rename <asset> <new-name>",
+	Short: "Rename an asset",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runAssetsRename,
+}
+
+var assetsMoveCmd = &cobra.Command{
+	Use:   "move <asset> <folder>",
+	Short: "Move an asset into another folder",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runAssetsMove,
+}
+
 func init() {
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateFolder, "folder", "", "folder id or name (required)")
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateTarget, "target", "", "target host:port")
@@ -123,6 +142,9 @@ func init() {
 	assetsCmd.AddCommand(assetsSSHCmd)
 	assetsCmd.AddCommand(assetsListCmd)
 	assetsCmd.AddCommand(assetsGetCmd)
+	assetsCmd.AddCommand(assetsDeleteCmd)
+	assetsCmd.AddCommand(assetsRenameCmd)
+	assetsCmd.AddCommand(assetsMoveCmd)
 	rootCmd.AddCommand(assetsCmd)
 }
 
@@ -145,9 +167,12 @@ func runAssetsSSHCreate(cmd *cobra.Command, args []string) error {
 
 	// Inline --login entries are ca-only: no secrets exist yet. Password/key
 	// logins are added afterwards via `assets ssh login set`.
-	logins := make([]*catalogv1.SSHLogin, 0, len(sshCreateLogins))
+	logins := make([]*catalogv1.SSHLoginInput, 0, len(sshCreateLogins))
 	for _, name := range sshCreateLogins {
-		logins = append(logins, &catalogv1.SSHLogin{Login: name, Kind: "ca"})
+		logins = append(logins, &catalogv1.SSHLoginInput{
+			Login: name,
+			Auth:  &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}},
+		})
 	}
 
 	// One call: the asset and its SSH config are created together, so there is no
@@ -155,8 +180,7 @@ func runAssetsSSHCreate(cmd *cobra.Command, args []string) error {
 	createReq := connect.NewRequest(&catalogv1.CreateAssetRequest{
 		FolderId: folderID,
 		Name:     args[0],
-		Kind:     "ssh",
-		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
 			Logins:        logins,
 			HostPublicKey: sshCreateHostKey,
 			TargetAddress: sshCreateTarget,
@@ -218,9 +242,9 @@ func runAssetsSSHLoginSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// For password/key, seal the secret first and bind it to the asset; ca has
-	// no secret.
-	var secretID string
+	// For password/key, read the new secret; it is sealed server-side in-tx as
+	// part of UpdateAssetConfig (no separate vault round-trip). ca has no secret.
+	var newSecret []byte
 	switch kind {
 	case "password":
 		value, err := io.ReadAll(cmd.InOrStdin())
@@ -231,10 +255,7 @@ func runAssetsSSHLoginSet(cmd *cobra.Command, args []string) error {
 		if len(value) == 0 {
 			return fmt.Errorf("empty password on stdin")
 		}
-		secretID, err = setAssetSecret(cmd, cl, assetID, sshLoginName, value)
-		if err != nil {
-			return err
-		}
+		newSecret = value
 	case "key":
 		value, err := os.ReadFile(sshLoginKeyFile) // #nosec G304 -- key-file is the operator's chosen path
 		if err != nil {
@@ -243,14 +264,11 @@ func runAssetsSSHLoginSet(cmd *cobra.Command, args []string) error {
 		if len(value) == 0 {
 			return fmt.Errorf("empty key file %q", sshLoginKeyFile)
 		}
-		secretID, err = setAssetSecret(cmd, cl, assetID, sshLoginName, value)
-		if err != nil {
-			return err
-		}
+		newSecret = value
 	}
 
 	// Read-modify-write: fetch the current SSH config, replace/append this login,
-	// preserving host/target and the other logins.
+	// preserving host/target and the other logins (with their existing secrets).
 	getReq := connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: assetID})
 	cl.Authorize(getReq)
 	getResp, err := cl.Catalog().GetAsset(cmd.Context(), getReq)
@@ -258,37 +276,37 @@ func runAssetsSSHLoginSet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg := getResp.Msg.GetAsset().GetSsh()
-	if cfg == nil {
-		cfg = &catalogv1.SSHConfig{}
-	}
+	cur := getResp.Msg.GetAsset().GetSsh()
 
-	entry := &catalogv1.SSHLogin{Login: sshLoginName, Kind: kind, SecretId: secretID}
-	replaced := false
-	for i, l := range cfg.GetLogins() {
-		if l.GetLogin() == sshLoginName {
-			cfg.Logins[i] = entry
-			replaced = true
-			break
+	// Rebuild the write-side input from the current read-side config, mapping each
+	// existing login to its input arm and preserving its already-sealed secret.
+	input := &catalogv1.SSHConfigInput{}
+	if cur != nil {
+		input.HostPublicKey = cur.GetHostPublicKey()
+		input.TargetAddress = cur.GetTargetAddress()
+		for _, l := range cur.GetLogins() {
+			if l.GetLogin() == sshLoginName {
+				continue // the target login is (re)built below
+			}
+			input.Logins = append(input.Logins, existingLoginInput(l))
 		}
 	}
-	if !replaced {
-		cfg.Logins = append(cfg.Logins, entry)
-	}
+
+	input.Logins = append(input.Logins, newLoginInput(sshLoginName, kind, newSecret))
 
 	updReq := connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
 		AssetId: assetID,
-		Config:  &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: cfg},
+		Config:  &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: input},
 	})
 	cl.Authorize(updReq)
 	if _, err := cl.Catalog().UpdateAssetConfig(cmd.Context(), updReq); err != nil {
 		return err
 	}
 
-	rows := make([][]string, 0, len(cfg.GetLogins()))
-	msgs := make([]proto.Message, 0, len(cfg.GetLogins()))
-	for _, l := range cfg.GetLogins() {
-		rows = append(rows, sshLoginRow(l))
+	rows := make([][]string, 0, len(input.GetLogins()))
+	msgs := make([]proto.Message, 0, len(input.GetLogins()))
+	for _, l := range input.GetLogins() {
+		rows = append(rows, sshLoginInputRow(l))
 		msgs = append(msgs, l)
 	}
 	return output.RenderProtoList(cmd.OutOrStdout(), flagOutput, msgs, &output.Table{
@@ -328,20 +346,58 @@ func runAssetsSSHLoginList(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// setAssetSecret seals value under name for the asset and returns the sealed
-// secret id.
-func setAssetSecret(cmd *cobra.Command, cl *wardenclient.Client, assetID, name string, value []byte) (string, error) {
-	req := connect.NewRequest(&vaultv1.SetAssetSecretRequest{
-		AssetId: assetID,
-		Name:    name,
-		Value:   value,
-	})
-	cl.Authorize(req)
-	resp, err := cl.Vault().SetAssetSecret(cmd.Context(), req)
-	if err != nil {
-		return "", err
+// existingLoginInput maps a read-side login to its write-side input arm,
+// preserving the already-sealed secret (by id) for password/key logins.
+func existingLoginInput(l *catalogv1.SSHLogin) *catalogv1.SSHLoginInput {
+	in := &catalogv1.SSHLoginInput{Login: l.GetLogin()}
+	switch l.GetKind() {
+	case "password":
+		in.Auth = &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: l.GetSecretId()},
+		}}
+	case "key":
+		in.Auth = &catalogv1.SSHLoginInput_Key{Key: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: l.GetSecretId()},
+		}}
+	default: // ca (or unknown → ca, which carries no secret)
+		in.Auth = &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}
 	}
-	return resp.Msg.GetId(), nil
+	return in
+}
+
+// newLoginInput builds the write-side input for the login being added/replaced.
+// For password/key, secret is the new plaintext to seal server-side in-tx.
+func newLoginInput(login, kind string, secret []byte) *catalogv1.SSHLoginInput {
+	in := &catalogv1.SSHLoginInput{Login: login}
+	switch kind {
+	case "password":
+		in.Auth = &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_NewValue{NewValue: secret},
+		}}
+	case "key":
+		in.Auth = &catalogv1.SSHLoginInput_Key{Key: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_NewValue{NewValue: secret},
+		}}
+	default: // ca
+		in.Auth = &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}
+	}
+	return in
+}
+
+// sshLoginInputKind renders the auth kind of a write-side login input.
+func sshLoginInputKind(l *catalogv1.SSHLoginInput) string {
+	switch l.GetAuth().(type) {
+	case *catalogv1.SSHLoginInput_Password:
+		return "password"
+	case *catalogv1.SSHLoginInput_Key:
+		return "key"
+	default:
+		return "ca"
+	}
+}
+
+func sshLoginInputRow(l *catalogv1.SSHLoginInput) []string {
+	return []string{l.GetLogin(), sshLoginInputKind(l)}
 }
 
 // trimTrailingNewline strips a single trailing "\n" or "\r\n" so a secret typed
@@ -418,6 +474,75 @@ func runAssetsGet(cmd *cobra.Command, args []string) error {
 			strings.Join(roleRefNames(access.GetRequestableRoles(), access.GetRequestableRoleIds()), ", "),
 		}},
 	})
+}
+
+func runAssetsDelete(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	req := connect.NewRequest(&catalogv1.DeleteAssetRequest{AssetId: assetID})
+	cl.Authorize(req)
+	if _, err := cl.Catalog().DeleteAsset(cmd.Context(), req); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "deleted asset %s\n", args[0])
+	return nil
+}
+
+func runAssetsRename(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	name := args[1]
+	req := connect.NewRequest(&catalogv1.UpdateAssetRequest{AssetId: assetID, Name: &name})
+	cl.Authorize(req)
+	if _, err := cl.Catalog().UpdateAsset(cmd.Context(), req); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "renamed asset %s to %s\n", args[0], name)
+	return nil
+}
+
+func runAssetsMove(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	folderID, err := resolveFolderID(cmd.Context(), cl, args[1])
+	if err != nil {
+		return err
+	}
+
+	req := connect.NewRequest(&catalogv1.UpdateAssetRequest{AssetId: assetID, FolderId: &folderID})
+	cl.Authorize(req)
+	if _, err := cl.Catalog().UpdateAsset(cmd.Context(), req); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "moved asset %s into %s\n", args[0], args[1])
+	return nil
 }
 
 // roleRefNames renders role refs by name (its folder path suffixed when scoped, e.g.
