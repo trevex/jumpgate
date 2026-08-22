@@ -6,8 +6,8 @@
  * Loading / empty / error use the shared state components; "Load more" appends
  * the next page.
  *
- * Selecting a row opens a detail Sheet showing the group's name and home.
- * Membership management lands in a later task — the detail reserves that seam.
+ * Selecting a row opens the group detail Sheet (`group-detail.tsx`), which shows
+ * the group's name/home and manages its membership (users + nested sub-groups).
  *
  * Mutations (capability-gated, server-enforced):
  *   - "New group" (header, `identity:group:create`) opens a create dialog.
@@ -44,16 +44,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NewGroupDialog } from "./new-group-dialog";
+import { GroupDetailSheet } from "./group-detail";
 import { canCreateGroup, canDeleteGroup } from "./group-actions";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
@@ -164,56 +158,6 @@ function GroupHome({ group }: { group: Group }) {
     );
   }
   return <span className="font-mono text-[12px]">{group.folderPath}</span>;
-}
-
-// ─── Detail Sheet (stub — membership lands in a later task) ────────────────────
-
-function GroupDetailSheet({
-  group,
-  onOpenChange,
-}: {
-  group: Group | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Sheet open={group !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md">
-        {group && (
-          <>
-            <SheetHeader>
-              <SheetTitle className="text-[15px]">{group.name}</SheetTitle>
-              <SheetDescription className="text-[13px]">
-                {group.folderPath ? (
-                  <>
-                    Governed under{" "}
-                    <span className="font-mono text-foreground">
-                      {group.folderPath}
-                    </span>
-                    .
-                  </>
-                ) : (
-                  <>A global group.</>
-                )}
-              </SheetDescription>
-            </SheetHeader>
-
-            <div className="mt-6 rounded-md border border-dashed border-border px-4 py-8 text-center">
-              <UsersRound
-                className="mx-auto h-8 w-8 text-muted-foreground/25"
-                aria-hidden="true"
-              />
-              <p className="mt-3 text-[13px] font-medium text-foreground">
-                Members
-              </p>
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                Membership management is coming soon.
-              </p>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  );
 }
 
 // ─── Groups tab ───────────────────────────────────────────────────────────────
