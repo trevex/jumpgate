@@ -62,7 +62,7 @@ message Teardown {
 message SetupSessionRequest {
   string session_token = 1 [(buf.validate.field).string.min_len = 1];
   string worker_id = 2 [(buf.validate.field).string.min_len = 1];
-  bytes client_ssh_public_key = 3 [(buf.validate.field).bytes.min_len = 1]; // Kc — cnf-bound
+  bytes client_ssh_public_key = 3; // Kc — cnf-bound for SSH; empty for mode=web browser terminals (warden enforces cnf only on the SSH path)
   bytes target_public_key = 4 [(buf.validate.field).bytes.min_len = 1]; // Kw — certified for the target (ca path)
   string login = 6 [(buf.validate.field).string.min_len = 1]; // requested target login; warden picks the credential
 }
