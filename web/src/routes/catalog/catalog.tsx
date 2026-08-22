@@ -13,39 +13,12 @@ import { LayoutGrid } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Tree } from "./tree";
-import type { SelectedNode, NodeKind } from "./tree";
+import type { SelectedNode } from "./tree";
 import { AssetDetail } from "./detail/asset";
 import { RoleDetail } from "./detail/role";
 import { GroupDetail } from "./detail/group";
 import { FolderDetail } from "./detail/folder";
-
-// ─── URL-param selection persistence ─────────────────────────────────────────
-
-function encodeSelection(node: SelectedNode): string {
-  // kind:id[:name[:path[:assetKind]]] — name/path are URL-encoded
-  const parts = [
-    node.kind,
-    node.id,
-    encodeURIComponent(node.name),
-    encodeURIComponent(node.path ?? ""),
-    encodeURIComponent(node.assetKind ?? ""),
-  ];
-  return parts.join(":");
-}
-
-function decodeSelection(raw: string): SelectedNode | null {
-  const parts = raw.split(":");
-  if (parts.length < 3) return null;
-  const kind = parts[0] as NodeKind;
-  if (!["folder", "asset", "role", "group"].includes(kind)) return null;
-  return {
-    kind,
-    id: parts[1],
-    name: decodeURIComponent(parts[2] ?? ""),
-    path: decodeURIComponent(parts[3] ?? "") || undefined,
-    assetKind: decodeURIComponent(parts[4] ?? "") || undefined,
-  };
-}
+import { encodeSelection, decodeSelection } from "./selection";
 
 // ─── Detail pane switcher ─────────────────────────────────────────────────────
 
