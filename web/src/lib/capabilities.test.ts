@@ -10,6 +10,16 @@ describe("capsCover", () => {
     expect(capsCover(["recording:read"], "recording:read")).toBe(true);
   });
 
+  it("single-level glob does NOT match a deeper same-scope cap (segment count)", () => {
+    // matches the server: "*" is exactly one segment, so a 2-segment pattern
+    // cannot cover a 3-segment want.
+    expect(capsCover(["recording:*"], "recording:read:exempt")).toBe(false);
+  });
+
+  it("recursive glob DOES match a deeper cap", () => {
+    expect(capsCover(["recording:**"], "recording:read:exempt")).toBe(true);
+  });
+
   it("single-level glob covers a matching action", () => {
     expect(capsCover(["catalog:asset:*"], "catalog:asset:read")).toBe(true);
   });
