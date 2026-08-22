@@ -4,18 +4,16 @@
  * Manages the authorization configuration — roles (+ capabilities, folder
  * scope, grant edges), standing bindings, and request policies — all
  * capability-gated. A tab shell (Roles / Bindings / Policies) mirrors the
- * Directory tab styling. The Roles and Bindings tabs are live; Policies renders
- * a "Coming soon" placeholder until its slice lands. Each tab trigger is
- * cap-gated so a caller only sees the sections they can read.
+ * Directory tab styling. Each tab trigger is cap-gated so a caller only sees the
+ * sections they can read.
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/states/states";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
-import { ScrollText } from "lucide-react";
 import { RolesTab } from "./roles-tab";
 import { BindingsTab } from "./bindings-tab";
+import { PoliciesTab } from "./policies-tab";
 
 const TAB_TRIGGER = cn(
   "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
@@ -93,11 +91,7 @@ export function AccessControlPage() {
             value="policies"
             className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
           >
-            <EmptyState
-              icon={ScrollText}
-              title="Policies"
-              message="Request policy management is coming soon."
-            />
+            <PoliciesTab />
           </TabsContent>
         )}
       </Tabs>
