@@ -1,11 +1,14 @@
 /**
- * source-role-picker.tsx — Access control ▸ Roles ▸ detail ▸ Add grant edge.
+ * role-picker.tsx — shared cmdk role selector.
  *
- * A cmdk command dialog listing roles (via `listRoles`), used to pick the
- * SOURCE role of a grant edge (holding the source confers the target role).
- * The target role itself is excluded (a role can't grant from itself). Unlike
- * the folder picker this lists eagerly rather than server-searching — the role
- * set is small and admin-facing — so cmdk's built-in client filter stays on.
+ * A CommandDialog listing roles (via `listRoles`), client-filtered by name /
+ * folder path (cmdk's built-in filter). An optional `excludeId` drops one role
+ * from the list (e.g. a grant edge can't source from its own target). Fires
+ * `onSelect` with a minimal `PickedRole` — the single role-result contract
+ * shared across Access-control (grant edges, bindings, policies).
+ *
+ * The role set is small and admin-facing, so it lists eagerly (one page) rather
+ * than server-searching.
  */
 
 import { useMemo } from "react";
@@ -20,25 +23,34 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { listRoles } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
-import type { Role } from "@/gen/jumpgate/access/v1/access_pb";
 
 const PAGE_SIZE = 100;
 
-interface SourceRolePickerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** Role id to exclude (the edge's target — a role can't source from itself). */
-  excludeRoleId: string;
-  /** Fired with the chosen source role. */
-  onSelect: (role: Role) => void;
+/** The minimal role result — the shared role-picker contract. */
+export interface PickedRole {
+  id: string;
+  name: string;
+  folderPath: string;
 }
 
-export function SourceRolePicker({
+interface RolePickerProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Optional role id to omit from the list. */
+  excludeId?: string;
+  /** Fired with the chosen role, then the dialog closes. */
+  onSelect: (role: PickedRole) => void;
+  /** Optional heading override for the dialog's aria label. */
+  label?: string;
+}
+
+export function RolePicker({
   open,
   onOpenChange,
-  excludeRoleId,
+  excludeId,
   onSelect,
-}: SourceRolePickerProps) {
+  label = "Choose a role",
+}: RolePickerProps) {
   const { data, isFetching, isError } = useQuery(
     listRoles,
     { pageSize: PAGE_SIZE, pageToken: "" },
@@ -46,21 +58,17 @@ export function SourceRolePicker({
   );
 
   const roles = useMemo(
-    () => (data?.roles ?? []).filter((r) => r.id !== excludeRoleId),
-    [data?.roles, excludeRoleId],
+    () => (data?.roles ?? []).filter((r) => r.id !== excludeId),
+    [data?.roles, excludeId],
   );
 
-  function pick(role: Role) {
+  function pick(role: PickedRole) {
     onSelect(role);
     onOpenChange(false);
   }
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      label="Choose a source role"
-    >
+    <CommandDialog open={open} onOpenChange={onOpenChange} label={label}>
       <CommandInput placeholder="Search roles…" />
       <CommandList aria-busy={isFetching}>
         {isError ? (
@@ -74,14 +82,20 @@ export function SourceRolePicker({
             <span>Loading…</span>
           </div>
         ) : roles.length === 0 ? (
-          <CommandEmpty>No other roles.</CommandEmpty>
+          <CommandEmpty>No roles.</CommandEmpty>
         ) : (
           <CommandGroup heading="Roles">
             {roles.map((role) => (
               <CommandItem
                 key={role.id}
                 value={`${role.name} ${role.folderPath} ${role.id}`}
-                onSelect={() => pick(role)}
+                onSelect={() =>
+                  pick({
+                    id: role.id,
+                    name: role.name,
+                    folderPath: role.folderPath,
+                  })
+                }
               >
                 <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate text-foreground">{role.name}</span>

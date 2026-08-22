@@ -52,7 +52,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { canUpdateRole, canDeleteRole } from "./role-actions";
-import { SourceRolePicker } from "./source-role-picker";
+import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import {
   ShieldCheck,
   GitFork,
@@ -204,7 +204,7 @@ function GrantEdgeRow({
 
 function AddGrantEdge({ roleId }: { roleId: string }) {
   const invalidate = useInvalidateGrants(roleId);
-  const [source, setSource] = useState<Role | null>(null);
+  const [source, setSource] = useState<PickedRole | null>(null);
   const [via, setVia] = useState<string>("same_object");
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -271,11 +271,12 @@ function AddGrantEdge({ roleId }: { roleId: string }) {
         {isPending ? "Adding…" : "Add edge"}
       </Button>
 
-      <SourceRolePicker
+      <RolePicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        excludeRoleId={roleId}
+        excludeId={roleId}
         onSelect={setSource}
+        label="Choose a source role"
       />
     </div>
   );
