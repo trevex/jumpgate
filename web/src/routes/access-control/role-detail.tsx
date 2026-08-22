@@ -18,8 +18,6 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   listRoles,
@@ -51,6 +49,7 @@ import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states"
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { canUpdateRole, canDeleteRole } from "./role-actions";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import {
@@ -72,30 +71,6 @@ const VIA_LABEL: Record<string, string> = {
 
 function shortId(id: string): string {
   return id.split("-")[0] ?? id;
-}
-
-// ─── Grants query key (shared, scoped to one role) ────────────────────────────
-
-function grantsQueryKey(roleId: string) {
-  return createConnectQueryKey({
-    schema: listRoleGrants,
-    input: { roleId, pageSize: GRANTS_PAGE_SIZE, pageToken: "" },
-    cardinality: "finite",
-  });
-}
-
-function useInvalidateGrants(roleId: string) {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({ queryKey: grantsQueryKey(roleId) });
-}
-
-function useInvalidateRoles() {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({ schema: listRoles, cardinality: undefined }),
-    });
 }
 
 // ─── Capabilities section ─────────────────────────────────────────────────────
@@ -140,15 +115,13 @@ function CapabilitiesSection({ roleId }: { roleId: string }) {
 // ─── Grant edge row (source enriched via getRoleDisplay) ──────────────────────
 
 function GrantEdgeRow({
-  roleId,
   grant,
   canRemove,
 }: {
-  roleId: string;
   grant: RoleGrant;
   canRemove: boolean;
 }) {
-  const invalidate = useInvalidateGrants(roleId);
+  const invalidateList = useInvalidateList();
   const { data } = useQuery(
     getRoleDisplay,
     { id: grant.sourceRoleId },
@@ -163,7 +136,7 @@ function GrantEdgeRow({
       toast.success("Grant edge removed", {
         description: `${sourceName} no longer confers this role.`,
       });
-      invalidate();
+      void invalidateList(listRoleGrants);
     },
     onError: (err) => toast.error("Remove failed", { description: connectErrorMessage(err) }),
   });
@@ -203,7 +176,7 @@ function GrantEdgeRow({
 // ─── Add grant edge control ───────────────────────────────────────────────────
 
 function AddGrantEdge({ roleId }: { roleId: string }) {
-  const invalidate = useInvalidateGrants(roleId);
+  const invalidateList = useInvalidateList();
   const [source, setSource] = useState<PickedRole | null>(null);
   const [via, setVia] = useState<string>("same_object");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -213,7 +186,7 @@ function AddGrantEdge({ roleId }: { roleId: string }) {
       toast.success("Grant edge added", {
         description: `${source?.name ?? "source role"} now confers this role.`,
       });
-      invalidate();
+      void invalidateList(listRoleGrants);
       setSource(null);
       setVia("same_object");
     },
@@ -316,7 +289,6 @@ function GrantEdgesSection({ roleId }: { roleId: string }) {
           {grants.map((grant) => (
             <GrantEdgeRow
               key={grant.id}
-              roleId={roleId}
               grant={grant}
               canRemove={canUpdate}
             />
@@ -338,7 +310,7 @@ function DeleteRole({
   role: Role;
   onDeleted: () => void;
 }) {
-  const invalidateRoles = useInvalidateRoles();
+  const invalidateList = useInvalidateList();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { mutate: doDelete, isPending } = useMutation(deleteRole, {
@@ -346,7 +318,7 @@ function DeleteRole({
       toast.success("Role deleted", {
         description: `${role.name} and everything that used it was removed.`,
       });
-      invalidateRoles();
+      void invalidateList(listRoles);
       setConfirmOpen(false);
       onDeleted();
     },

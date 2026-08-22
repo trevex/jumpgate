@@ -23,8 +23,6 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   listRequestPolicies,
@@ -69,6 +67,7 @@ import { ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { canUpdatePolicy, canDeletePolicy, isValidApprovals } from "./policy-actions";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import {
@@ -110,33 +109,6 @@ function formatDuration(seconds: bigint): string {
   const minutes = Math.floor(total / 60);
   if (minutes >= 1) return `${minutes}m`;
   return `${total}s`;
-}
-
-// ─── Subjects query key (shared, scoped to one policy) ────────────────────────
-
-function subjectsQueryKey(policyId: string) {
-  return createConnectQueryKey({
-    schema: listPolicySubjects,
-    input: { policyId, pageSize: SUBJECTS_PAGE_SIZE, pageToken: "" },
-    cardinality: "finite",
-  });
-}
-
-function useInvalidateSubjects(policyId: string) {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({ queryKey: subjectsQueryKey(policyId) });
-}
-
-function useInvalidatePolicies() {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({
-        schema: listRequestPolicies,
-        cardinality: undefined,
-      }),
-    });
 }
 
 // ─── Enriched role name (inline) ──────────────────────────────────────────────
@@ -248,7 +220,7 @@ function SubjectRow({
   groupNames: Map<string, string>;
   canRemove: boolean;
 }) {
-  const invalidate = useInvalidateSubjects(policyId);
+  const invalidateList = useInvalidateList();
   const { data } = useQuery(
     getUserDisplay,
     { id: subject.subjectUserId },
@@ -265,7 +237,7 @@ function SubjectRow({
       toast.success("Subject removed", {
         description: `${label} was removed from this policy.`,
       });
-      invalidate();
+      void invalidateList(listPolicySubjects);
     },
     onError: (err) => toast.error("Remove failed", { description: connectErrorMessage(err) }),
   });
@@ -299,13 +271,13 @@ function SubjectRow({
 // ─── Add-subject control ──────────────────────────────────────────────────────
 
 function AddSubject({ policyId, kind }: { policyId: string; kind: SubjectKind }) {
-  const invalidate = useInvalidateSubjects(policyId);
+  const invalidateList = useInvalidateList();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const { mutate: doAdd } = useMutation(addPolicySubject, {
     onSuccess: () => {
       toast.success("Subject added");
-      invalidate();
+      void invalidateList(listPolicySubjects);
     },
     onError: (err) => toast.error("Add failed", { description: connectErrorMessage(err) }),
   });
@@ -451,7 +423,7 @@ function EditPolicyDialog({
   onOpenChange: (open: boolean) => void;
   onUpdated: (next: RequestPolicy) => void;
 }) {
-  const invalidatePolicies = useInvalidatePolicies();
+  const invalidateList = useInvalidateList();
 
   const [approvals, setApprovals] = useState(String(policy.requiredApprovals));
   const [hours, setHours] = useState(
@@ -487,7 +459,7 @@ function EditPolicyDialog({
   const { mutate: doUpdate, isPending } = useMutation(updateRequestPolicy, {
     onSuccess: (res) => {
       toast.success("Policy updated");
-      invalidatePolicies();
+      void invalidateList(listRequestPolicies);
       if (res.policy) onUpdated(res.policy);
       onOpenChange(false);
     },
@@ -736,13 +708,13 @@ function DeletePolicy({
   policy: RequestPolicy;
   onDeleted: () => void;
 }) {
-  const invalidatePolicies = useInvalidatePolicies();
+  const invalidateList = useInvalidateList();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { mutate: doDelete, isPending } = useMutation(deleteRequestPolicy, {
     onSuccess: () => {
       toast.success("Policy deleted");
-      invalidatePolicies();
+      void invalidateList(listRequestPolicies);
       setConfirmOpen(false);
       onDeleted();
     },

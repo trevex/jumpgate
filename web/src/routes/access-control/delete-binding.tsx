@@ -12,8 +12,6 @@
 
 import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import {
@@ -24,9 +22,10 @@ import type { RoleBinding } from "@/gen/jumpgate/access/v1/access_pb";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 
 export function DeleteBinding({ binding }: { binding: RoleBinding }) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { mutate: doDelete, isPending } = useMutation(deleteRoleBinding, {
@@ -34,12 +33,7 @@ export function DeleteBinding({ binding }: { binding: RoleBinding }) {
       toast.success("Binding deleted", {
         description: "The subject no longer holds this role at this scope.",
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({
-          schema: listRoleBindings,
-          cardinality: undefined,
-        }),
-      });
+      void invalidateList(listRoleBindings);
       setConfirmOpen(false);
     },
     onError: (err) =>
