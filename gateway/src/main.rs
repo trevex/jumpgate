@@ -53,11 +53,19 @@ async fn main() -> anyhow::Result<()> {
         };
     let server_config = tls::server_config(&config.tls_cert, &config.tls_key)?;
 
+    let console_origin = gateway::terminal::OriginPolicy::from_env();
+    if console_origin.is_unset() {
+        tracing::warn!(
+            "GATEWAY_CONSOLE_ORIGIN unset — the browser-terminal WebSocket endpoint allows any Origin (dev only)"
+        );
+    }
+
     let state = GatewayState {
         roster: Roster::default(),
         counters: LoadCounters::default(),
         mesh_certs,
         verification_key: Arc::new(RwLock::new(None)),
+        console_origin: Arc::new(console_origin),
     };
 
     // Roster client: stream worker updates + fetch the session verification key.

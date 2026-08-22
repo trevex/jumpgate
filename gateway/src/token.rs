@@ -18,6 +18,13 @@ pub struct Claims {
     pub asset_id: String,
     /// `proto` — protocol, e.g. "ssh"; selects the worker pool.
     pub proto: String,
+    /// `mode` — admission mode. `"web"` for browser-terminal tickets (no client
+    /// key, ticket-bound login); empty or `"ssh"` for the CLI tunnel path.
+    /// Absent on older tokens → `""`.
+    pub mode: String,
+    /// `login` — the ticket-bound target login. Set on `mode="web"` tickets (the
+    /// browser offers no SSH username); empty otherwise. Absent → `""`.
+    pub login: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,12 +67,22 @@ pub fn verify(token: &str, ed25519_public_key: &[u8]) -> Result<Claims, TokenErr
             .map(|s| s.to_string())
             .ok_or(TokenError::MissingClaim(k))
     };
+    // Optional claims default to "" when absent (older/SSH tokens omit them).
+    let get_opt = |k: &'static str| -> String {
+        claims
+            .get_claim(k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    };
 
     Ok(Claims {
         session_id: get("jti")?,
         user_id: get("sub")?,
         asset_id: get("asset")?,
         proto: get("proto")?,
+        mode: get_opt("mode"),
+        login: get_opt("login"),
     })
 }
 
@@ -118,6 +135,43 @@ mod tests {
         (token, pk_bytes)
     }
 
+    /// Mint a web-mode ticket: `mode="web"`, a bound `login`, and an empty `cnf`
+    /// (browser tickets carry no client-key confirmation). Returns the token and
+    /// the verifying public key.
+    fn mint_web_token(login: &str, exp_offset_secs: i64) -> (String, Vec<u8>) {
+        use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
+
+        let kp = AsymmetricKeyPair::<V4>::generate().unwrap();
+        let pk_bytes = kp.public.as_bytes().to_vec();
+
+        let now = OffsetDateTime::now_utc();
+        let exp = now + Duration::seconds(exp_offset_secs);
+        let past = now - Duration::seconds(120);
+
+        let mut claims =
+            PasetoClaims::new_expires_in(&core::time::Duration::from_secs(60)).unwrap();
+        claims.expiration(&exp.format(&Rfc3339).unwrap()).unwrap();
+        claims.not_before(&past.format(&Rfc3339).unwrap()).unwrap();
+        claims.issued_at(&past.format(&Rfc3339).unwrap()).unwrap();
+        claims
+            .token_identifier("11111111-1111-1111-1111-111111111111")
+            .unwrap();
+        claims
+            .subject("22222222-2222-2222-2222-222222222222")
+            .unwrap();
+        claims
+            .add_additional("asset", "33333333-3333-3333-3333-333333333333")
+            .unwrap();
+        claims.add_additional("proto", "ssh").unwrap();
+        claims.add_additional("mode", "web").unwrap();
+        claims.add_additional("login", login).unwrap();
+        // Web tickets carry an empty cnf.
+        claims.add_additional("cnf", "").unwrap();
+
+        let token = public::sign(&kp.secret, &claims, None, None).unwrap();
+        (token, pk_bytes)
+    }
+
     #[test]
     fn verifies_valid_token_reads_proto() {
         let (tok, pk) = mint_test_token("ssh", 60);
@@ -126,6 +180,30 @@ mod tests {
         assert!(!claims.session_id.is_empty());
         assert!(!claims.user_id.is_empty());
         assert!(!claims.asset_id.is_empty());
+    }
+
+    #[test]
+    fn ssh_token_has_empty_mode_and_login() {
+        // The CLI/SSH mint sets neither mode nor login → both read back "".
+        let (tok, pk) = mint_test_token("ssh", 60);
+        let claims = verify(&tok, &pk).unwrap();
+        assert_eq!(claims.mode, "");
+        assert_eq!(claims.login, "");
+    }
+
+    #[test]
+    fn web_token_exposes_mode_and_login() {
+        let (tok, pk) = mint_web_token("deploy", 60);
+        let claims = verify(&tok, &pk).unwrap();
+        assert_eq!(claims.mode, "web");
+        assert_eq!(claims.login, "deploy");
+        assert_eq!(claims.proto, "ssh");
+    }
+
+    #[test]
+    fn web_token_rejected_when_expired() {
+        let (tok, pk) = mint_web_token("deploy", -60);
+        assert!(verify(&tok, &pk).is_err());
     }
 
     #[test]
