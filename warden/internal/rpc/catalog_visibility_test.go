@@ -34,7 +34,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 		return r.Msg.Folder.Id
 	}
 	mustA := func(folder, name string) string {
-		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name}), tok))
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("asset %s: %v", name, err)
 		}

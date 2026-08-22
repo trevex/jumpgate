@@ -598,7 +598,7 @@ func TestExplainRole(t *testing.T) {
 	// folder prod ⊃ db; asset pg in db.
 	prod := mustF("prod", "")
 	dbf := mustF("db", prod)
-	pg, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: dbf, Name: "pg"}), tok))
+	pg, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: dbf, Name: "pg", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("asset pg: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestRequestPolicyCRUD(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: folder.Msg.Folder.Id, Name: "pg-prod",
+		FolderId: folder.Msg.Folder.Id, Name: "pg-prod", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
@@ -880,7 +880,7 @@ func TestCreateRequestPolicyName(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: folder.Msg.Folder.Id, Name: "web-server",
+		FolderId: folder.Msg.Folder.Id, Name: "web-server", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
@@ -929,7 +929,7 @@ func TestCreateRequestPolicyName(t *testing.T) {
 		t.Fatalf("create role2: %v", err)
 	}
 	asset2, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: folder.Msg.Folder.Id, Name: "db-server",
+		FolderId: folder.Msg.Folder.Id, Name: "db-server", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset2: %v", err)
@@ -1041,7 +1041,7 @@ func TestResolvePolicy(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: folder.Msg.Folder.Id, Name: "web-server",
+		FolderId: folder.Msg.Folder.Id, Name: "web-server", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
@@ -1299,7 +1299,7 @@ func TestRoleContainment(t *testing.T) {
 		return r.Msg.GetFolder().GetId()
 	}
 	mkAsset := func(name, folder string) string {
-		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name}), tok))
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("asset %s: %v", name, err)
 		}
@@ -1802,7 +1802,7 @@ func TestListRequestPoliciesKeysetPagination(t *testing.T) {
 	var policyIDs []string // in creation order (oldest first)
 	for _, assetName := range []string{"asset-a", "asset-b", "asset-c"} {
 		a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-			Name: assetName, FolderId: folderID, Kind: "ssh",
+			Name: assetName, FolderId: folderID, Config: emptySSHConfig(),
 		}), tok))
 		if err != nil {
 			t.Fatalf("create asset %s: %v", assetName, err)
@@ -2001,7 +2001,7 @@ func TestListRolesParentScoped(t *testing.T) {
 
 	// Create an asset in f1 so the folder role can be bound at asset scope.
 	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f1ID, Name: "srv",
+		FolderId: f1ID, Name: "srv", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)

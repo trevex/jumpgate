@@ -48,9 +48,17 @@ func TestVaultNilSealerFailsClosed(t *testing.T) {
 	}
 }
 
-// newAsset creates a folder + asset (of the given kind) and returns the asset id.
-// Each call uses a unique folder name so multiple calls within a single test do not
-// collide on the catalog_names uniqueness constraint.
+// emptySSHConfig is the minimal valid CreateAssetRequest config oneof: an SSH asset
+// with no logins. It satisfies the (required) config oneof for tests that only need
+// an asset to exist (asset kind is always "ssh" now).
+func emptySSHConfig() *catalogv1.CreateAssetRequest_Ssh {
+	return &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{}}
+}
+
+// newAsset creates a folder + asset (SSH, no logins) and returns the asset. Each
+// call uses a unique folder name so multiple calls within a single test do not
+// collide on the catalog_names uniqueness constraint. The kind argument is retained
+// for call-site clarity but all assets are SSH.
 func newAsset(t *testing.T, url, tok, kind string) *catalogv1.Asset {
 	t.Helper()
 	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
@@ -60,7 +68,7 @@ func newAsset(t *testing.T, url, tok, kind string) *catalogv1.Asset {
 	if err != nil {
 		t.Fatalf("create folder: %v", err)
 	}
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "asset-" + kind, Kind: kind}), tok))
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "asset-" + kind, Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
@@ -318,21 +326,17 @@ func TestAssetSecretMetaHasNoValue(t *testing.T) {
 	}
 }
 
+// TestCreateAssetKind asserts the asset kind is derived server-side from the config
+// oneof arm (currently always "ssh"): clients no longer supply a kind, so every
+// onboarded asset is "ssh".
 func TestCreateAssetKind(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	tok := adminToken(t, url)
 
-	// Explicit kind persists.
-	pg := newAsset(t, url, tok, "postgres")
-	if pg.Kind != "postgres" {
-		t.Fatalf("CreateAsset(kind=postgres) got kind %q", pg.Kind)
-	}
-
-	// Empty kind defaults to "ssh".
-	def := newAsset(t, url, tok, "")
-	if def.Kind != "ssh" {
-		t.Fatalf("CreateAsset(kind=\"\") got kind %q, want ssh", def.Kind)
+	a := newAsset(t, url, tok, "ssh")
+	if a.Kind != "ssh" {
+		t.Fatalf("CreateAsset got kind %q, want ssh", a.Kind)
 	}
 }
 
@@ -379,7 +383,7 @@ func TestVaultCapabilityGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create folder A: %v", err)
 	}
-	assetA, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fA.Msg.Folder.Id, Name: "a", Kind: "ssh"}), atok))
+	assetA, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fA.Msg.Folder.Id, Name: "a", Config: emptySSHConfig()}), atok))
 	if err != nil {
 		t.Fatalf("create asset A: %v", err)
 	}
@@ -387,7 +391,7 @@ func TestVaultCapabilityGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create folder B: %v", err)
 	}
-	assetB, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fB.Msg.Folder.Id, Name: "b", Kind: "ssh"}), atok))
+	assetB, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fB.Msg.Folder.Id, Name: "b", Config: emptySSHConfig()}), atok))
 	if err != nil {
 		t.Fatalf("create asset B: %v", err)
 	}

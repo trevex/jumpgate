@@ -75,7 +75,7 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc, terminator, authorizer), opts)
 	mux.Handle(idPath, idHandler)
 
-	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, pool, authorizer, arSvc), opts)
+	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, pool, authorizer, arSvc, sealer, nil), opts)
 	mux.Handle(catPath, catHandler)
 
 	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, roles, authorizer, arSvc, arSvc), opts)

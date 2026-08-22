@@ -55,7 +55,7 @@ func TestCatalogAdminCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create folder: %v", err)
 	}
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "pg-prod"}), tok))
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "pg-prod", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
@@ -89,12 +89,12 @@ func TestCatalogCreateAssetWithSSHConfig(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	created, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f.Msg.Folder.Id, Name: "box", Kind: "ssh",
-		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+		FolderId: f.Msg.Folder.Id, Name: "box",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
 			TargetAddress: "10.0.0.9:22",
-			Logins: []*catalogv1.SSHLogin{
-				{Login: "root", Kind: "ca"},
-				{Login: "deploy", Kind: "ca"},
+			Logins: []*catalogv1.SSHLoginInput{
+				{Login: "root", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}},
+				{Login: "deploy", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}},
 			},
 		}},
 	}), tok))
@@ -127,8 +127,9 @@ func TestCatalogCreateAssetWithSSHConfig(t *testing.T) {
 }
 
 // TestCatalogCreateAssetConfigRollsBack asserts CreateAsset with a bad inline
-// config (a password login without a secret violates the CHECK) rolls back the
-// asset — no orphan.
+// config (existing_secret_id is forbidden on create — a brand-new asset has no
+// secrets) is rejected AFTER the asset row is inserted, and the whole tx rolls
+// back — no orphan asset.
 func TestCatalogCreateAssetConfigRollsBack(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -141,9 +142,10 @@ func TestCatalogCreateAssetConfigRollsBack(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	_, err = c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f.Msg.Folder.Id, Name: "orphan", Kind: "ssh",
-		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
-			Logins: []*catalogv1.SSHLogin{{Login: "root", Kind: "password"}},
+		FolderId: f.Msg.Folder.Id, Name: "orphan",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
+			Logins: []*catalogv1.SSHLoginInput{{Login: "root", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+				Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: uuid.NewString()}}}}},
 		}},
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -158,9 +160,10 @@ func TestCatalogCreateAssetConfigRollsBack(t *testing.T) {
 	}
 }
 
-// TestCatalogUpdateAssetConfigPasswordLogin covers adding a password login after a
-// secret is seeded: the login round-trips (carrying its secret_id), while a
-// password login with an empty secret_id is rejected by the CHECK.
+// TestCatalogUpdateAssetConfigPasswordLogin covers a password login on
+// UpdateAssetConfig: an inline new_value seals a fresh secret (the login round-trips
+// carrying a non-empty secret_id), and an existing_secret_id belonging to the asset
+// is accepted (the login round-trips carrying that same secret_id).
 func TestCatalogUpdateAssetConfigPasswordLogin(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -169,21 +172,20 @@ func TestCatalogUpdateAssetConfigPasswordLogin(t *testing.T) {
 	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
 
-	secretID := seedAssetSecret(t, pool, asset.Id, "demo")
-
-	upd := func(ssh *catalogv1.SSHConfig) error {
+	upd := func(ssh *catalogv1.SSHConfigInput) error {
 		_, err := c.UpdateAssetConfig(ctx, withToken(connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
 			AssetId: asset.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: ssh},
 		}), tok))
 		return err
 	}
 
-	// A password login bound to the same-asset secret round-trips.
-	if err := upd(&catalogv1.SSHConfig{
+	// A password login with an inline new_value seals a fresh secret and round-trips.
+	if err := upd(&catalogv1.SSHConfigInput{
 		TargetAddress: "10.0.0.9:22",
-		Logins:        []*catalogv1.SSHLogin{{Login: "demo", Kind: "password", SecretId: secretID}},
+		Logins: []*catalogv1.SSHLoginInput{{Login: "demo", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_NewValue{NewValue: []byte("s3cr3t")}}}}},
 	}); err != nil {
-		t.Fatalf("update with password login: %v", err)
+		t.Fatalf("update with inline password login: %v", err)
 	}
 	got, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: asset.Id}), tok))
 	if err != nil {
@@ -193,21 +195,30 @@ func TestCatalogUpdateAssetConfigPasswordLogin(t *testing.T) {
 	if s == nil || len(s.GetLogins()) != 1 {
 		t.Fatalf("expected one login, got %+v", got.Msg.Asset)
 	}
-	if l := s.GetLogins()[0]; l.GetLogin() != "demo" || l.GetKind() != "password" || l.GetSecretId() != secretID {
-		t.Fatalf("password login mismatch: %+v", l)
+	sealed := s.GetLogins()[0]
+	if sealed.GetLogin() != "demo" || sealed.GetKind() != "password" || sealed.GetSecretId() == "" {
+		t.Fatalf("sealed password login mismatch: %+v", sealed)
 	}
 
-	// A password login with no secret violates the ssh_login_secret_present CHECK.
-	if connect.CodeOf(upd(&catalogv1.SSHConfig{
+	// Re-using that same secret via existing_secret_id round-trips to the same id.
+	if err := upd(&catalogv1.SSHConfigInput{
 		TargetAddress: "10.0.0.9:22",
-		Logins:        []*catalogv1.SSHLogin{{Login: "demo", Kind: "password"}},
-	})) != connect.CodeInvalidArgument {
-		t.Fatal("password login without a secret not rejected InvalidArgument")
+		Logins: []*catalogv1.SSHLoginInput{{Login: "demo", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: sealed.GetSecretId()}}}}},
+	}); err != nil {
+		t.Fatalf("update with existing_secret_id: %v", err)
+	}
+	got2, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: asset.Id}), tok))
+	if err != nil {
+		t.Fatalf("GetAsset (existing): %v", err)
+	}
+	if l := got2.Msg.Asset.GetSsh().GetLogins()[0]; l.GetSecretId() != sealed.GetSecretId() {
+		t.Fatalf("existing_secret_id login = %+v, want secret_id %s", l, sealed.GetSecretId())
 	}
 }
 
 // TestCatalogUpdateAssetConfigForeignSecret asserts a login on asset A that
-// references asset B's secret is rejected by the composite FK.
+// references asset B's secret via existing_secret_id is rejected (same-asset check).
 func TestCatalogUpdateAssetConfigForeignSecret(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -221,9 +232,10 @@ func TestCatalogUpdateAssetConfigForeignSecret(t *testing.T) {
 	foreignSecret := seedAssetSecret(t, pool, assetB.Id, "demo")
 
 	_, err := c.UpdateAssetConfig(ctx, withToken(connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
-		AssetId: assetA.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+		AssetId: assetA.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
 			TargetAddress: "10.0.0.9:22",
-			Logins:        []*catalogv1.SSHLogin{{Login: "demo", Kind: "password", SecretId: foreignSecret}},
+			Logins: []*catalogv1.SSHLoginInput{{Login: "demo", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+				Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: foreignSecret}}}}},
 		}},
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
@@ -251,15 +263,18 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 	}
 	hostKey := strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey())))
 
-	upd := func(ssh *catalogv1.SSHConfig) error {
+	caLogin := func() []*catalogv1.SSHLoginInput {
+		return []*catalogv1.SSHLoginInput{{Login: "root", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}}}
+	}
+	upd := func(ssh *catalogv1.SSHConfigInput) error {
 		_, err := c.UpdateAssetConfig(ctx, withToken(connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
 			AssetId: asset.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: ssh},
 		}), tok))
 		return err
 	}
 
-	if err := upd(&catalogv1.SSHConfig{
-		Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
+	if err := upd(&catalogv1.SSHConfigInput{
+		Logins:        caLogin(),
 		HostPublicKey: hostKey, TargetAddress: "10.0.0.9:22",
 	}); err != nil {
 		t.Fatalf("update with host key: %v", err)
@@ -273,7 +288,7 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 	}
 
 	// Clearing host/target and replacing the login set.
-	if err := upd(&catalogv1.SSHConfig{Logins: []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}}}); err != nil {
+	if err := upd(&catalogv1.SSHConfigInput{Logins: caLogin()}); err != nil {
 		t.Fatalf("update clear: %v", err)
 	}
 	got2, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: asset.Id}), tok))
@@ -284,16 +299,17 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 		t.Fatalf("not cleared: %+v", got2.Msg.Asset)
 	}
 
-	if connect.CodeOf(upd(&catalogv1.SSHConfig{
-		Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
+	if connect.CodeOf(upd(&catalogv1.SSHConfigInput{
+		Logins:        caLogin(),
 		HostPublicKey: "not a key",
 	})) != connect.CodeInvalidArgument {
 		t.Fatal("bad host key not rejected InvalidArgument")
 	}
 }
 
-// TestCatalogGetAsset covers an asset with no config (config omitted) and an
-// unknown asset (NotFound).
+// TestCatalogGetAsset covers an asset onboarded with an empty SSH config (a config
+// row exists but carries no logins/target) and an unknown asset (NotFound). Every
+// asset now has a config row since the config oneof is required at create.
 func TestCatalogGetAsset(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -306,8 +322,8 @@ func TestCatalogGetAsset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAsset: %v", err)
 	}
-	if got.Msg.Asset.GetSsh() != nil {
-		t.Fatalf("expected no config, got %+v", got.Msg.Asset.GetSsh())
+	if s := got.Msg.Asset.GetSsh(); s == nil || len(s.GetLogins()) != 0 || s.GetTargetAddress() != "" {
+		t.Fatalf("expected empty ssh config, got %+v", got.Msg.Asset.GetSsh())
 	}
 	_, err = c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: "11111111-1111-1111-1111-111111111111"}), tok))
 	if connect.CodeOf(err) != connect.CodeNotFound {
@@ -354,10 +370,10 @@ func TestGetAssetDisplay(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f.Msg.Folder.Id, Name: "pg-primary", Kind: "ssh",
-		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+		FolderId: f.Msg.Folder.Id, Name: "pg-primary",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
 			TargetAddress: "10.0.0.5:22",
-			Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
+			Logins:        []*catalogv1.SSHLoginInput{{Login: "root", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}}},
 		}},
 	}), tok))
 	if err != nil {
@@ -375,9 +391,9 @@ func TestGetAssetDisplay(t *testing.T) {
 	q := gen.New(pool)
 
 	// A server whose fake authorizes the request-party path.
-	allowSrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: true})
+	allowSrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: true}, testSealer(t), nil)
 	// A server whose fake denies the request-party path (only the cap path can pass).
-	denySrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: false})
+	denySrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: false}, testSealer(t), nil)
 
 	assertSSH := func(t *testing.T, resp *catalogv1.GetAssetDisplayResponse) {
 		t.Helper()
@@ -484,11 +500,11 @@ func TestCreateAssetSiblingUniqueness(t *testing.T) {
 	}
 	fid := f.Msg.Folder.Id
 	mkAsset := func(name string) error {
-		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name}), tok))
+		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name, Config: emptySSHConfig()}), tok))
 		return err
 	}
 
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: "web"}), tok))
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: "web", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
@@ -532,7 +548,7 @@ func TestCatalogReadsPopulatePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db: %v", err)
 	}
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg-primary"}), tok))
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg-primary", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("asset: %v", err)
 	}
@@ -589,7 +605,7 @@ func TestCreateFolderAssetRaceSingleWinner(t *testing.T) {
 	}()
 	go func() {
 		<-start
-		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: pid, Name: "web"}), tok))
+		_, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: pid, Name: "web", Config: emptySSHConfig()}), tok))
 		errs <- err
 	}()
 	close(start)
@@ -627,8 +643,8 @@ func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 		t.Fatalf("non-admin GetAsset = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 	_, err = c.UpdateAssetConfig(ctx, withToken(connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
-		AssetId: asset.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: &catalogv1.SSHConfig{
-			Logins: []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
+		AssetId: asset.Id, Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
+			Logins: []*catalogv1.SSHLoginInput{{Login: "root", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}}},
 		}},
 	}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
@@ -723,7 +739,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	}
 
 	// dana CAN create an asset under team (holds catalog:asset:create on team).
-	danaAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: team.Msg.Folder.Id, Name: "box", Kind: "ssh"}), danatok))
+	danaAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: team.Msg.Folder.Id, Name: "box", Config: emptySSHConfig()}), danatok))
 	if err != nil {
 		t.Fatalf("dana CreateAsset under team: %v", err)
 	}
@@ -733,7 +749,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	}
 
 	// dana CANNOT create an asset under demo (the parent — she only holds it on team).
-	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "nope", Kind: "ssh"}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "nope", Config: emptySSHConfig()}), danatok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("dana CreateAsset under demo = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 	// dana CANNOT create a folder (no catalog:folder:create anywhere).
@@ -742,7 +758,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	}
 
 	// The admin (**) CAN do all of the above.
-	adminAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "admin-box", Kind: "ssh"}), tok))
+	adminAsset, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: demo.Msg.Folder.Id, Name: "admin-box", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("admin CreateAsset under demo: %v", err)
 	}
@@ -783,7 +799,7 @@ func TestSearchCatalog(t *testing.T) {
 	// Under vis: an asset, a role, and a group whose names all share "pg". Plus a
 	// child folder named with "pg" so folder hits are covered too.
 	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: visF.Msg.Folder.Id, Name: "pg-primary", Kind: "ssh",
+		FolderId: visF.Msg.Folder.Id, Name: "pg-primary", Config: emptySSHConfig(),
 	}), tok)); err != nil {
 		t.Fatalf("create vis asset: %v", err)
 	}
@@ -808,7 +824,7 @@ func TestSearchCatalog(t *testing.T) {
 
 	// Under hidden: an asset the caller must NEVER see, whose name also matches "pg".
 	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: hiddenF.Msg.Folder.Id, Name: "pg-secret", Kind: "ssh",
+		FolderId: hiddenF.Msg.Folder.Id, Name: "pg-secret", Config: emptySSHConfig(),
 	}), tok)); err != nil {
 		t.Fatalf("create hidden asset: %v", err)
 	}
@@ -844,7 +860,7 @@ func TestSearchCatalog(t *testing.T) {
 	}
 
 	authorizer := authz.NewSQLAuthorizer(pool)
-	srv := rpc.NewCatalogServer(q, pool, authorizer, nil)
+	srv := rpc.NewCatalogServer(q, pool, authorizer, nil, testSealer(t), nil)
 	searcherCtx := auth.WithUser(ctx, auth.CurrentUser{ID: su.ID, Email: "searcher@x"})
 
 	// (a) substring "pg" returns the caller's visible matches across multiple kinds.
@@ -961,7 +977,7 @@ func TestResolveAssetAdminBypassAndTargetedCheck(t *testing.T) {
 
 	prod, _ := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "prod"}), tok))
 	db, _ := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "db", ParentId: prod.Msg.Folder.Id}), tok))
-	a, _ := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Kind: "ssh"}), tok))
+	a, _ := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Config: emptySSHConfig()}), tok))
 
 	// ADMIN resolves the asset by path WITH NO grant (the key change).
 	got, err := c.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: "pg.db.prod"}), tok))
@@ -998,7 +1014,7 @@ func TestResolveAsset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db: %v", err)
 	}
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Kind: "ssh"}), tok))
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: db.Msg.Folder.Id, Name: "pg", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("asset: %v", err)
 	}

@@ -106,7 +106,7 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 	f.folderID = folder.Msg.Folder.Id
 
 	asset, err := cl.catalog.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f.folderID, Name: "ga", Kind: "ssh",
+		FolderId: f.folderID, Name: "ga", Config: emptySSHConfig(),
 	}), adminTok))
 	if err != nil {
 		t.Fatalf("fixture asset: %v", err)
@@ -342,7 +342,7 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		// (non-error) result, not a denial. That is pinned in
 		// TestAuthzSelfServiceListsAreNotDenied.
 		{"Catalog.CreateAsset", PD, func() error {
-			_, err := cl.catalog.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.folderID, Name: "za", Kind: "ssh"}), tok))
+			_, err := cl.catalog.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.folderID, Name: "za", Config: emptySSHConfig()}), tok))
 			return err
 		}},
 		{"Catalog.GetAsset", PD, func() error {

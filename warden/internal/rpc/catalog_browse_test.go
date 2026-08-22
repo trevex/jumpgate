@@ -39,7 +39,7 @@ func TestListFoldersParentScoped(t *testing.T) {
 		return r.Msg.Folder.Id
 	}
 	mustA := func(folder, name string) string {
-		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name}), tok))
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("asset %s: %v", name, err)
 		}
@@ -125,7 +125,7 @@ func TestListAssetsUnified(t *testing.T) {
 		return r.Msg.Folder.Id
 	}
 	mustA := func(folder, name string) string {
-		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name}), tok))
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: folder, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("asset %s: %v", name, err)
 		}
@@ -205,7 +205,7 @@ func TestGetAssetAccessCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "box"}), tok))
+	a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: "box", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestListAssetsPagination(t *testing.T) {
 
 	// Create assets with names deliberately out of alphabetical order.
 	mustA := func(name string) string {
-		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name}), tok))
+		r, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fid, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("create asset %s: %v", name, err)
 		}
@@ -422,7 +422,7 @@ func TestListFolderContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create subfolder: %v", err)
 	}
-	_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: "box"}), tok))
+	_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: "box", Config: emptySSHConfig()}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestListFolderContents(t *testing.T) {
 	// ── overflow: seed 51 more assets (1 already exists → total 52) ──────────
 	for i := 0; i < 51; i++ {
 		name := fmt.Sprintf("overflow-%03d", i)
-		_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: name}), tok))
+		_, err = cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: fID, Name: name, Config: emptySSHConfig()}), tok))
 		if err != nil {
 			t.Fatalf("seed overflow asset %d: %v", i, err)
 		}

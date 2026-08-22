@@ -195,3 +195,9 @@ WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);
 -- name: PoliciesScopedToFoldersOrAssets :many
 SELECT * FROM request_policies
 WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);
+
+-- name: DeleteOrphanSecretsForAsset :exec
+-- Drop asset_secrets no longer referenced by any of the asset's logins.
+DELETE FROM asset_secrets s
+WHERE s.asset_id = $1
+  AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL);

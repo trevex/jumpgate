@@ -70,7 +70,7 @@ func setupTwoFolders(t *testing.T, url, adminTok string) twoFolder {
 		if err != nil {
 			t.Fatalf("folder %s: %v", fname, err)
 		}
-		a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: aname, Kind: "ssh"}), adminTok))
+		a, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: f.Msg.Folder.Id, Name: aname, Config: emptySSHConfig()}), adminTok))
 		if err != nil {
 			t.Fatalf("asset %s: %v", aname, err)
 		}
@@ -107,7 +107,7 @@ func TestAuthzFolderScopeIsolation(t *testing.T) {
 	} else if len(la.Msg.Assets) == 0 {
 		t.Fatalf("ListAssets(A) should list team-a's manageable asset, got none")
 	}
-	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderA, Name: "box-a2", Kind: "ssh"}), tok)); err != nil {
+	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderA, Name: "box-a2", Config: emptySSHConfig()}), tok)); err != nil {
 		t.Fatalf("CreateAsset(A) should succeed: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func TestAuthzFolderScopeIsolation(t *testing.T) {
 	if _, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Parent: tf.folderB}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("ListAssets(B) = %v, want NotFound (existence hiding)", connect.CodeOf(err))
 	}
-	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderB, Name: "box-b2", Kind: "ssh"}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderB, Name: "box-b2", Config: emptySSHConfig()}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("CreateAsset(B) = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 

@@ -120,6 +120,18 @@ func (q *Queries) DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.U
 	return err
 }
 
+const deleteOrphanSecretsForAsset = `-- name: DeleteOrphanSecretsForAsset :exec
+DELETE FROM asset_secrets s
+WHERE s.asset_id = $1
+  AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
+`
+
+// Drop asset_secrets no longer referenced by any of the asset's logins.
+func (q *Queries) DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOrphanSecretsForAsset, assetID)
+	return err
+}
+
 const deletePolicySubjectsForAsset = `-- name: DeletePolicySubjectsForAsset :exec
 DELETE FROM request_policy_subjects
 WHERE policy_id IN (SELECT id FROM request_policies WHERE scope_asset_id = $1)

@@ -182,7 +182,7 @@ func TestResolveApproval(t *testing.T) {
 		t.Fatalf("create folder: %v", err)
 	}
 	asset, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: folder.Msg.Folder.Id, Name: "pg-prod",
+		FolderId: folder.Msg.Folder.Id, Name: "pg-prod", Config: emptySSHConfig(),
 	}), tok))
 	if err != nil {
 		t.Fatalf("create asset: %v", err)

@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
 // PostgreSQL SQLSTATE codes used to map DB constraint failures to Connect codes.
@@ -63,14 +64,23 @@ type CatalogServer struct {
 	pool       *pgxpool.Pool
 	authorizer authz.Authorizer
 	reqReads   requestReadAuthorizer
+	sealer     *secrets.Sealer
+	terminator assetTerminator // wired in a later task; nil for now
+}
+
+// assetTerminator signals live-session teardown for an asset's sessions. Backed by
+// *dataplane.Terminator; a nil terminator disables teardown.
+type assetTerminator interface {
+	TerminateAssetSessions(ctx context.Context, assetID uuid.UUID) error
 }
 
 // NewCatalogServer constructs the CatalogService implementation. pool is used to
 // run CreateAsset + its inline config as one transaction. reqReads authorizes the
 // request-party path of GetAssetDisplay; a nil reqReads disables that path (only
-// the capability check can then grant a display read).
-func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer) *CatalogServer {
-	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads}
+// the capability check can then grant a display read). sealer seals inline SSH
+// login secrets during onboarding; a nil sealer fails those write paths closed.
+func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer, sealer *secrets.Sealer, terminator assetTerminator) *CatalogServer {
+	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads, sealer: sealer, terminator: terminator}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {
@@ -129,54 +139,22 @@ func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig, logins []gen.SshA
 	return msg
 }
 
-// validateSSHConfig checks the parts protovalidate can't: an optional
-// host_public_key must be a parseable authorized_keys line, and each login's
-// secret_id (when set) must be a UUID.
-func validateSSHConfig(ssh *catalogv1.SSHConfig) error {
-	if ssh.GetHostPublicKey() != "" {
-		if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(ssh.GetHostPublicKey())); err != nil {
+// validateSSHConfigInput checks the parts protovalidate can't: an optional
+// host_public_key must be a parseable authorized_keys line, and login names must be
+// unique within the config (a duplicate would silently collapse under the
+// (asset_id, login) upsert conflict).
+func validateSSHConfigInput(in *catalogv1.SSHConfigInput) error {
+	if in.GetHostPublicKey() != "" {
+		if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(in.GetHostPublicKey())); err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
 		}
 	}
-	for _, l := range ssh.GetLogins() {
-		if _, _, err := optUUID(l.GetSecretId()); err != nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad secret_id"))
+	seen := make(map[string]struct{}, len(in.GetLogins()))
+	for _, l := range in.GetLogins() {
+		if _, dup := seen[l.GetLogin()]; dup {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate login "+l.GetLogin()))
 		}
-	}
-	return nil
-}
-
-// upsertSSHConfigParams builds the DB params for an asset's SSH connection config
-// (host/target). The per-login rows are written separately.
-func upsertSSHConfigParams(assetID uuid.UUID, ssh *catalogv1.SSHConfig) gen.UpsertSSHAssetConfigParams {
-	return gen.UpsertSSHAssetConfigParams{
-		AssetID:       assetID,
-		HostPublicKey: ssh.GetHostPublicKey(),
-		TargetAddress: ssh.GetTargetAddress(),
-	}
-}
-
-// replaceSSHLogins replaces the asset's login set: delete all existing rows, then
-// upsert one row per configured login. A CHECK / composite-FK violation (a
-// password/key login without a valid same-asset secret) surfaces via the caller's
-// mapWriteErr as InvalidArgument.
-func replaceSSHLogins(ctx context.Context, q *gen.Queries, assetID uuid.UUID, ssh *catalogv1.SSHConfig) error {
-	if err := q.DeleteSSHAssetLoginsForAsset(ctx, assetID); err != nil {
-		return err
-	}
-	for _, l := range ssh.GetLogins() {
-		secret, _, err := optUUID(l.GetSecretId())
-		if err != nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad secret_id"))
-		}
-		if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
-			AssetID:  assetID,
-			Login:    l.GetLogin(),
-			Kind:     l.GetKind(),
-			SecretID: secret,
-		}); err != nil {
-			return err
-		}
+		seen[l.GetLogin()] = struct{}{}
 	}
 	return nil
 }
@@ -343,28 +321,25 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 }
 
 // CreateAsset creates an asset in a folder (admin only). The asset row, its
-// catalog_names entry, and any inline SSH config are written in one transaction.
+// catalog_names entry, and its inline SSH config — including any inline login
+// secrets, sealed in place — are written in one transaction. The asset kind is
+// derived server-side from the config oneof arm (currently always "ssh").
 func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
-	fid, err := uuid.Parse(req.Msg.FolderId)
+	fid, err := uuid.Parse(req.Msg.GetFolderId())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
 	if err := s.requireCap(ctx, "catalog:asset:create", authz.FolderScope(fid)); err != nil {
 		return nil, err
 	}
-	kind := req.Msg.Kind
-	if kind == "" {
-		kind = "ssh"
+	sshIn := req.Msg.GetSsh()
+	if sshIn == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
 	}
-	name := strings.ToLower(req.Msg.Name)
-	params := gen.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: kind}
-
-	ssh := req.Msg.GetSsh()
-	if ssh != nil {
-		if err := validateSSHConfig(ssh); err != nil {
-			return nil, err
-		}
+	if err := validateSSHConfigInput(sshIn); err != nil {
+		return nil, err
 	}
+	name := strings.ToLower(req.Msg.GetName())
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -373,7 +348,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
 
-	a, err := qtx.CreateAsset(ctx, params)
+	a, err := qtx.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}
@@ -381,20 +356,16 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 		return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 	}
 
-	// Without inline config we still commit the tx (asset + registry row).
-	if ssh == nil {
-		if err := tx.Commit(ctx); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		return connect.NewResponse(&catalogv1.CreateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
-	}
-
-	cfg, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(a.ID, ssh))
+	rows, err := s.resolveSSHConfigInput(ctx, qtx, a.ID, sshIn, true)
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, err
 	}
-	if err := replaceSSHLogins(ctx, qtx, a.ID, ssh); err != nil {
-		return nil, mapWriteErr(err)
+	if err := writeSSHConfig(ctx, qtx, a.ID, sshIn.GetHostPublicKey(), sshIn.GetTargetAddress(), rows); err != nil {
+		return nil, mapWriteErr(err) // CHECK / composite-FK → InvalidArgument
+	}
+	cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	logins, err := qtx.ListSSHAssetLogins(ctx, a.ID)
 	if err != nil {
@@ -515,25 +486,34 @@ func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Requ
 	if err := s.requireCap(ctx, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	ssh := req.Msg.GetSsh()
-	if ssh == nil {
+	sshIn := req.Msg.GetSsh()
+	if sshIn == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
 	}
-	if err := validateSSHConfig(ssh); err != nil {
+	if err := validateSSHConfigInput(sshIn); err != nil {
 		return nil, err
 	}
-	// Upsert the connection config and replace the login set atomically.
+	// The asset must exist (existence check, matching GetAsset's NotFound contract).
+	if _, err := s.q.GetAsset(ctx, assetID); err != nil {
+		return nil, notFoundOrInternal(err)
+	}
+	// Seal inline secrets, upsert the connection config, replace the login set, and
+	// prune any now-orphaned secrets — all atomically.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
-	if _, err := qtx.UpsertSSHAssetConfig(ctx, upsertSSHConfigParams(assetID, ssh)); err != nil {
-		return nil, mapWriteErr(err)
+	rows, err := s.resolveSSHConfigInput(ctx, qtx, assetID, sshIn, false)
+	if err != nil {
+		return nil, err
 	}
-	if err := replaceSSHLogins(ctx, qtx, assetID, ssh); err != nil {
+	if err := writeSSHConfig(ctx, qtx, assetID, sshIn.GetHostPublicKey(), sshIn.GetTargetAddress(), rows); err != nil {
 		return nil, mapWriteErr(err) // CHECK / composite-FK → InvalidArgument
+	}
+	if err := qtx.DeleteOrphanSecretsForAsset(ctx, assetID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

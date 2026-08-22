@@ -53,6 +53,8 @@ type Querier interface {
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
+	// Drop asset_secrets no longer referenced by any of the asset's logins.
+	DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	// Deletes the policies for which the role is the requestable role (meaningless once
 	// the role is gone). Part of the DeleteRole cascade.
