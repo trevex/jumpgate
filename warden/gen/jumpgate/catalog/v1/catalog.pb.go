@@ -2801,10 +2801,10 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\bpassword\x18\x03 \x01(\v2\x1f.jumpgate.catalog.v1.SecretAuthH\x00R\bpassword\x123\n" +
 	"\x03key\x18\x04 \x01(\v2\x1f.jumpgate.catalog.v1.SecretAuthH\x00R\x03keyB\r\n" +
 	"\x04auth\x12\x05\xbaH\x02\b\x01\"\b\n" +
-	"\x06CaAuth\"v\n" +
+	"\x06CaAuth\"\x7f\n" +
 	"\n" +
-	"SecretAuth\x12\x1d\n" +
-	"\tnew_value\x18\x01 \x01(\fH\x00R\bnewValue\x128\n" +
+	"SecretAuth\x12&\n" +
+	"\tnew_value\x18\x01 \x01(\fB\a\xbaH\x04z\x02\x10\x01H\x00R\bnewValue\x128\n" +
 	"\x12existing_secret_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x10existingSecretIdB\x0f\n" +
 	"\x06source\x12\x05\xbaH\x02\b\x01\"d\n" +
 	"\x13CreateFolderRequest\x120\n" +

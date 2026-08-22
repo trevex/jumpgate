@@ -94,6 +94,21 @@ func TestCreateAssetInlineSecretsAtomic(t *testing.T) {
 	}
 }
 
+func TestCreateAssetRejectsEmptyInlineSecret(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	folderID := env.createFolder(t, "prod")
+	_, err := env.catalog.CreateAsset(env.adminCtx, connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folderID, Name: "pg",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{Logins: []*catalogv1.SSHLoginInput{
+			{Login: "app", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+				Source: &catalogv1.SecretAuth_NewValue{NewValue: []byte{}}}}},
+		}}},
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("want InvalidArgument for empty new_value, got %v", err)
+	}
+}
+
 func TestCreateAssetRejectsExistingSecretId(t *testing.T) {
 	env := newCatalogTestEnv(t)
 	folderID := env.createFolder(t, "prod")

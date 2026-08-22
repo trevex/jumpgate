@@ -61,6 +61,12 @@ func (s *CatalogServer) resolveSSHConfigInput(ctx context.Context, q *gen.Querie
 func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries, assetID uuid.UUID, login string, sa *catalogv1.SecretAuth, onCreate bool) (pgtype.UUID, error) {
 	switch src := sa.GetSource().(type) {
 	case *catalogv1.SecretAuth_NewValue:
+		// Defense-in-depth: the proto edge (bytes.min_len = 1) rejects empty inline
+		// secrets for real RPC callers, but in-process callers bypass the validation
+		// interceptor. Guard here so an empty secret is never sealed.
+		if len(src.NewValue) == 0 {
+			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": empty secret"))
+		}
 		if s.sealer == nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
 		}
@@ -72,7 +78,7 @@ func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries,
 		if err != nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInternal, err)
 		}
-		return pgtype.UUID{Bytes: row.ID, Valid: true}, nil
+		return pgUUID(row.ID), nil
 	case *catalogv1.SecretAuth_ExistingSecretId:
 		if onCreate {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": existing_secret_id cannot be used on create; use new_value"))
@@ -91,7 +97,7 @@ func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries,
 		if sec.AssetID != assetID {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": existing_secret_id does not belong to this asset"))
 		}
-		return pgtype.UUID{Bytes: sid, Valid: true}, nil
+		return pgUUID(sid), nil
 	default:
 		return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": secret source required"))
 	}

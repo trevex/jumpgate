@@ -103,7 +103,7 @@ message CaAuth {}
 message SecretAuth {
   oneof source {
     option (buf.validate.oneof).required = true;
-    bytes  new_value          = 1;  // write-only; sealed server-side in-tx, never echoed back
+    bytes  new_value          = 1 [(buf.validate.field).bytes.min_len = 1];  // write-only; sealed server-side in-tx, never echoed back
     string existing_secret_id = 2 [(buf.validate.field).string.uuid = true];
   }
 }
