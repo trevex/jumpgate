@@ -17,7 +17,6 @@ import {
   Server,
   KeyRound,
   Users,
-  Ticket,
   Loader2,
   AlertCircle,
 } from "lucide-react";
