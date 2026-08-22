@@ -240,6 +240,15 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 // invariant "authenticated ≠ authorized" across the whole surface. If a new RPC
 // is added without a guard, or a guard is removed, a case here flips to OK and
 // fails.
+//
+// The display reads (GetUserDisplay / GetAssetDisplay / GetRoleDisplay) are
+// intentionally NOT in this matrix: they are not capability gates. GetUserDisplay
+// is a universal directory read (any authenticated caller), and GetAssetDisplay /
+// GetRoleDisplay additionally allow a caller who is party to a pending access
+// request that references the entity. A capability-less user can therefore
+// legitimately read them, so they would (correctly) flip a capless-denied case to
+// OK — don't add them here. Their authorization is covered by their own unit tests
+// (TestGetUserDisplay / TestGetAssetDisplay / TestGetRoleDisplay).
 func TestAuthzGuardMatrix(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
