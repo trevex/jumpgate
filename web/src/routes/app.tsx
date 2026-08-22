@@ -7,6 +7,7 @@ import {
   KeyRound,
   ClipboardCheck,
   Film,
+  UsersRound,
   LogOut,
   ShieldCheck,
   Search,
@@ -38,6 +39,11 @@ interface NavItem {
   badge?: () => React.ReactNode;
   /** If present, item only renders when this cap is held */
   requiresCap?: string;
+  /**
+   * If present, item only renders when the caller holds AT LEAST ONE of these
+   * caps (OR gate). Composes with `requiresCap` — both must pass when both set.
+   */
+  requiresAnyCap?: string[];
 }
 
 // ─── Sidebar nav link ────────────────────────────────────────────────────────
@@ -51,6 +57,13 @@ function SideNavLink({ item, caps }: SideNavLinkProps) {
   const pendingCount = usePendingCount();
 
   if (item.requiresCap != null && !capsCover(caps, item.requiresCap)) {
+    return null;
+  }
+
+  if (
+    item.requiresAnyCap != null &&
+    !item.requiresAnyCap.some((cap) => capsCover(caps, cap))
+  ) {
     return null;
   }
 
@@ -115,6 +128,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Approvals",
     to: "/approvals",
     icon: ClipboardCheck,
+  },
+  {
+    label: "Directory",
+    to: "/directory",
+    icon: UsersRound,
+    requiresAnyCap: ["identity:user:read", "identity:group:read"],
   },
   {
     label: "Recordings",

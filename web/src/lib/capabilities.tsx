@@ -41,3 +41,14 @@ export function RequireCap({ cap, children }: { cap: string; children: ReactNode
   if (!capsCover(useCapabilities(), cap)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
+
+/**
+ * RequireAnyCap guards a route that is reachable by holders of ANY of several
+ * caps (OR). Used where a section aggregates multiple resources — e.g. the
+ * Directory needs either `identity:user:read` or `identity:group:read`.
+ */
+export function RequireAnyCap({ caps, children }: { caps: string[]; children: ReactNode }) {
+  const held = useCapabilities();
+  if (!caps.some((cap) => capsCover(held, cap))) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}

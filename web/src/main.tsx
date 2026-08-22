@@ -14,7 +14,8 @@ import { CatalogPage } from "./routes/catalog/catalog";
 import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
 import { RecordingsPage } from "./routes/recordings/recordings";
-import { RequireCap } from "./lib/capabilities";
+import { DirectoryPage } from "./routes/directory/directory";
+import { RequireCap, RequireAnyCap } from "./lib/capabilities";
 import { Toaster } from "./components/ui/sonner";
 
 const queryClient = new QueryClient({
@@ -50,6 +51,14 @@ const router = createBrowserRouter([
       { index: true, element: <CatalogPage /> },
       { path: "access", element: <MyAccessPage /> },
       { path: "approvals", element: <ApprovalsPage /> },
+      {
+        path: "directory",
+        element: (
+          <RequireAnyCap caps={["identity:user:read", "identity:group:read"]}>
+            <DirectoryPage />
+          </RequireAnyCap>
+        ),
+      },
       {
         path: "recordings",
         element: (
