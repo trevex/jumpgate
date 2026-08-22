@@ -46,10 +46,10 @@ import {
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
-  pending:   "border-amber-300 bg-amber-50 text-amber-700",
-  granted:   "border-green-300 bg-green-50 text-green-700",
-  denied:    "border-red-300 bg-red-50 text-red-700",
-  cancelled: "border-slate-200 bg-slate-50 text-slate-500",
+  pending:   "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  granted:   "border-green-300 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300",
+  denied:    "border-red-300 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+  cancelled: "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -87,7 +87,7 @@ function InlineCopyButton({ text, label }: { text: string; label?: string }) {
         "flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         copied
-          ? "text-green-600"
+          ? "text-green-600 dark:text-green-400"
           : "text-muted-foreground hover:text-foreground",
       )}
       aria-label={copied ? "Copied" : (label ?? "Copy")}
@@ -426,8 +426,8 @@ function RevokeButton({
       className={cn(
         "h-6 text-[11px] transition-colors",
         confirming
-          ? "border-red-400 bg-red-50 text-red-700 hover:bg-red-100"
-          : "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700",
+          ? "border-red-400 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/50 dark:bg-red-500/15 dark:text-red-300 dark:hover:bg-red-500/25"
+          : "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300",
       )}
       aria-label={confirming ? "Click again to confirm revoke" : "Revoke this grant"}
     >
@@ -493,21 +493,21 @@ function GrantCard({ grant }: { grant: Grant }) {
           {revoked ? (
             <Badge
               variant="outline"
-              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-red-600 tracking-wide"
+              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-red-600 tracking-wide dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
             >
               Revoked
             </Badge>
           ) : grant.active ? (
             <Badge
               variant="outline"
-              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-green-700 tracking-wide"
+              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-green-700 tracking-wide dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
             >
               Active
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide"
+              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300"
             >
               Expired
             </Badge>
