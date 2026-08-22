@@ -378,6 +378,86 @@ func TestResolveGroupAddressing(t *testing.T) {
 	}
 }
 
+// TestGetUserDisplay pins GetUserDisplay as a universal directory read: any
+// authenticated caller (no capabilities) gets {id, display_name, email} for a
+// user id; a missing/malformed id is NotFound; a deactivated user is still
+// returned (display-only, not an authz decision).
+func TestGetUserDisplay(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	c := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// A capless (non-admin) caller does the display reads.
+	seedCapUser(t, pool, "capless@x", "caplesspass", `[]`)
+	capless := authClient(t, url, "capless@x", "caplesspass")
+
+	// An existing target user with a distinct display name + email.
+	target, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "target@x", DisplayName: "Target Person", Password: "password123",
+	}), atok))
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	targetID := target.Msg.User.Id
+
+	// Capless caller reads the target's display: all three fields match.
+	got, err := c.GetUserDisplay(ctx, withToken(connect.NewRequest(&identityv1.GetUserDisplayRequest{Id: targetID}), capless))
+	if err != nil {
+		t.Fatalf("capless GetUserDisplay: %v", err)
+	}
+	if got.Msg.User == nil {
+		t.Fatal("GetUserDisplay: nil user")
+	}
+	if got.Msg.User.Id != targetID {
+		t.Fatalf("display id = %q, want %q", got.Msg.User.Id, targetID)
+	}
+	if got.Msg.User.DisplayName != "Target Person" {
+		t.Fatalf("display name = %q, want %q", got.Msg.User.DisplayName, "Target Person")
+	}
+	if got.Msg.User.Email != "target@x" {
+		t.Fatalf("display email = %q, want %q", got.Msg.User.Email, "target@x")
+	}
+
+	// A missing id → NotFound.
+	if _, err := c.GetUserDisplay(ctx, withToken(connect.NewRequest(&identityv1.GetUserDisplayRequest{
+		Id: "00000000-0000-0000-0000-000000000000",
+	}), capless)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("missing id code = %v, want NotFound", connect.CodeOf(err))
+	}
+
+	// A malformed id is rejected by request validation (string.uuid) before the
+	// handler runs → InvalidArgument, mirroring GetUser.
+	if _, err := c.GetUserDisplay(ctx, withToken(connect.NewRequest(&identityv1.GetUserDisplayRequest{
+		Id: "not-a-uuid",
+	}), capless)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("malformed id code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+
+	// A deactivated user is still returned (display-only, not an authz decision).
+	dead, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
+		Email: "dead@x", DisplayName: "Deactivated One", Password: "password123",
+	}), atok))
+	if err != nil {
+		t.Fatalf("create dead: %v", err)
+	}
+	if _, err := c.DeactivateUser(ctx, withToken(connect.NewRequest(&identityv1.DeactivateUserRequest{
+		UserId: dead.Msg.User.Id,
+	}), atok)); err != nil {
+		t.Fatalf("deactivate dead: %v", err)
+	}
+	deadDisp, err := c.GetUserDisplay(ctx, withToken(connect.NewRequest(&identityv1.GetUserDisplayRequest{
+		Id: dead.Msg.User.Id,
+	}), capless))
+	if err != nil {
+		t.Fatalf("GetUserDisplay(deactivated): %v", err)
+	}
+	if deadDisp.Msg.User.DisplayName != "Deactivated One" || deadDisp.Msg.User.Email != "dead@x" {
+		t.Fatalf("deactivated display = %+v, want name/email preserved", deadDisp.Msg.User)
+	}
+}
+
 func uuidFromStr(t *testing.T, s string) uuid.UUID {
 	t.Helper()
 	u, err := uuid.Parse(s)
