@@ -91,9 +91,9 @@ function relativeTimeMs(unixMs: bigint): string {
 // ─── Recording status badge ───────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
-  completed: "border-green-200 bg-green-50 text-green-700",
-  recording: "border-blue-200 bg-blue-50 text-blue-700",
-  failed:    "border-red-200 bg-red-50 text-red-700",
+  completed: "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300",
+  recording: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
+  failed:    "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
 };
 
 function StatusBadge({ status }: { status: string }) {

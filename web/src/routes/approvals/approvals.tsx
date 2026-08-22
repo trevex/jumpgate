@@ -150,7 +150,7 @@ function ApprovalProgress({
   return (
     <Badge
       variant="outline"
-      className="rounded border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold tabular-nums text-amber-700"
+      className="rounded border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold tabular-nums text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
       aria-label={`${approvalsSoFar} of ${requiredApprovals} approvals received`}
     >
       {approvalsSoFar}/{requiredApprovals}
@@ -470,7 +470,7 @@ function RequestRow({ req }: RequestRowProps) {
             onClick={() => setDenyOpen(true)}
             disabled={isApproving}
             aria-label={`Deny ${requesterDisplay}'s request`}
-            className="h-7 gap-1 px-3 text-[12px] border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+            className="h-7 gap-1 px-3 text-[12px] border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/50"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             Deny

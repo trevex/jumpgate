@@ -62,7 +62,7 @@ function CopyButton({ text }: { text: string }) {
         "flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         copied
-          ? "text-green-600"
+          ? "text-green-600 dark:text-green-400"
           : "text-muted-foreground hover:text-foreground",
       )}
       aria-label={copied ? "Copied" : "Copy command"}
