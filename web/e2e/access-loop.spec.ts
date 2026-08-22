@@ -160,3 +160,27 @@ test("request → approve → connect-command → audit across four actors", asy
     await adminCtx.close();
   }
 });
+
+test("⌘K command palette finds a seeded asset", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  try {
+    await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+
+    // Open the palette via the header affordance (the ⌘K key path is equivalent).
+    await page.getByRole("button", { name: "Search catalog" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Typing queries SearchCatalog (debounced); the seeded asset shows up as a hit.
+    await page
+      .getByPlaceholder("Search folders, assets, roles, groups…")
+      .fill("demo-box");
+    await expect(
+      dialog.getByRole("option", { name: /demo-box/ }).first(),
+    ).toBeVisible();
+  } finally {
+    await ctx.close();
+  }
+});
