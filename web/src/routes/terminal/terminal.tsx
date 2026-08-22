@@ -177,6 +177,10 @@ export function TerminalPage() {
 
     termRef.current = term;
     fitRef.current = fit;
+    // Expose the live terminal for e2e observability (reading the screen buffer is
+    // renderer-agnostic, unlike scraping the canvas/DOM). Harmless — it's the
+    // caller's own session.
+    (window as unknown as { __jumpgateTerm?: XTerm }).__jumpgateTerm = term;
 
     return () => {
       term.dispose();
