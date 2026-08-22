@@ -17,8 +17,6 @@
 
 import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ShieldCheck, User, Users, Folder, Boxes, Globe } from "lucide-react";
 import {
@@ -41,6 +39,7 @@ import {
 } from "@/components/pickers/subject-picker";
 import { ScopePicker, type PickedScope } from "@/components/pickers/scope-picker";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 
 interface NewBindingDialogProps {
   open: boolean;
@@ -52,7 +51,7 @@ const FIELD_LABEL =
 const FIELD_HINT = "text-[11px] text-muted-foreground";
 
 export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   const [role, setRole] = useState<PickedRole | null>(null);
   const [subject, setSubject] = useState<PickedSubject | null>(null);
@@ -73,12 +72,7 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
       toast.success("Binding created", {
         description: `${subject?.label ?? "The subject"} now holds ${role?.name ?? "the role"}.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({
-          schema: listRoleBindings,
-          cardinality: undefined,
-        }),
-      });
+      void invalidateList(listRoleBindings);
       reset();
       onOpenChange(false);
     },

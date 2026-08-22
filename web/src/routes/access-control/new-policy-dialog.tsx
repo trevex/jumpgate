@@ -20,8 +20,6 @@
 
 import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ShieldCheck, Folder, Boxes, Layers } from "lucide-react";
 import {
@@ -42,6 +40,7 @@ import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import { ScopePicker, type PickedScope } from "@/components/pickers/scope-picker";
 import { connectErrorMessage } from "@/lib/format";
 import { isValidPolicyName, isValidApprovals } from "./policy-actions";
+import { useInvalidateList } from "@/lib/query";
 
 interface NewPolicyDialogProps {
   open: boolean;
@@ -89,7 +88,7 @@ function RoleField({
 }
 
 export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   const [name, setName] = useState("");
   const [role, setRole] = useState<PickedRole | null>(null);
@@ -119,12 +118,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
       toast.success("Policy created", {
         description: `${role?.name ?? "The role"} is now requestable.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({
-          schema: listRequestPolicies,
-          cardinality: undefined,
-        }),
-      });
+      void invalidateList(listRequestPolicies);
       reset();
       onOpenChange(false);
     },
