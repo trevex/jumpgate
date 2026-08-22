@@ -816,6 +816,200 @@ func (s *CatalogServer) DeleteAsset(ctx context.Context, req *connect.Request[ca
 	return connect.NewResponse(&catalogv1.DeleteAssetResponse{}), nil
 }
 
+// UpdateAsset renames and/or moves an asset. A rename rewrites the asset row and its
+// catalog_names entry (sibling collision → AlreadyExists). A move re-validates
+// containment (FailedPrecondition if it would strand a folder-scoped role granted by
+// a binding/policy on this asset), then rewrites folder_id and fires authz_changed so
+// the sweeper tears down any now-disallowed live sessions. Existence-hidden.
+func (s *CatalogServer) UpdateAsset(ctx context.Context, req *connect.Request[catalogv1.UpdateAssetRequest]) (*connect.Response[catalogv1.UpdateAssetResponse], error) {
+	id, err := uuid.Parse(req.Msg.GetAssetId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid asset_id"))
+	}
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	visible, err := authz.AssetVisible(ctx, s.authorizer, u.ID, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if !visible {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:update", authz.AssetScope(id)); err != nil {
+		return nil, err
+	}
+	cur, err := s.q.GetAsset(ctx, id)
+	if err != nil {
+		return nil, notFoundOrInternal(err)
+	}
+	newName := cur.Name
+	newFolder := cur.FolderID // assets.folder_id is NOT NULL (uuid.UUID)
+	moving := false
+	if req.Msg.Name != nil {
+		newName = strings.ToLower(req.Msg.GetName())
+	}
+	if req.Msg.FolderId != nil {
+		f, err := uuid.Parse(req.Msg.GetFolderId())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid folder_id"))
+		}
+		if f != newFolder {
+			// Creating the asset in its new home requires create there.
+			if err := s.requireCap(ctx, "catalog:asset:create", authz.FolderScope(f)); err != nil {
+				return nil, err
+			}
+			newFolder, moving = f, true
+		}
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+
+	if moving {
+		if err := s.validateAssetMove(ctx, q, id, newFolder); err != nil {
+			return nil, err
+		}
+		if err := q.UpdateAssetFolder(ctx, gen.UpdateAssetFolderParams{ID: id, FolderID: newFolder}); err != nil {
+			return nil, mapWriteErr(err)
+		}
+	}
+	if newName != cur.Name || moving {
+		if err := q.UpdateAssetName(ctx, gen.UpdateAssetNameParams{ID: id, Name: newName}); err != nil {
+			return nil, mapWriteErr(err)
+		}
+		if err := q.UpdateAssetCatalogName(ctx, gen.UpdateAssetCatalogNameParams{AssetID: pgUUID(id), ParentID: pgUUID(newFolder), Name: newName}); err != nil {
+			return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+		}
+	}
+	if moving {
+		if err := q.NotifyAuthzChanged(ctx); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	a, err := s.q.GetAsset(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.UpdateAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsg(a), a.FolderID, a.Name)}), nil
+}
+
+// UpdateFolder renames and/or reparents a folder. A rename rewrites the folder row
+// and its catalog_names entry (sibling collision → AlreadyExists). A move guards
+// against a cycle (reparenting under a descendant → FailedPrecondition), re-validates
+// containment for every binding/policy in the moved subtree (FailedPrecondition if it
+// would strand a folder-scoped role), then rewrites parent_id and fires authz_changed.
+// A ParentId of "" moves the folder to the root. Existence-hidden.
+func (s *CatalogServer) UpdateFolder(ctx context.Context, req *connect.Request[catalogv1.UpdateFolderRequest]) (*connect.Response[catalogv1.UpdateFolderResponse], error) {
+	id, err := uuid.Parse(req.Msg.GetFolderId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid folder_id"))
+	}
+	// Existence-hide: a caller who can't read it sees NotFound; then require update.
+	if s.requireCap(ctx, "catalog:folder:read", authz.FolderScope(id)) != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+	}
+	if err := s.requireCap(ctx, "catalog:folder:update", authz.FolderScope(id)); err != nil {
+		return nil, err
+	}
+	cur, err := s.q.GetFolder(ctx, id)
+	if err != nil {
+		return nil, folderNotFoundOrInternal(err)
+	}
+
+	newName := cur.Name
+	if req.Msg.Name != nil {
+		newName = strings.ToLower(req.Msg.GetName())
+	}
+	newParent := cur.ParentID // pgtype.UUID; NULL = root
+	moving := false
+	if req.Msg.ParentId != nil {
+		if req.Msg.GetParentId() == "" {
+			if cur.ParentID.Valid { // only a change if it isn't already root
+				newParent, moving = pgtype.UUID{}, true
+			}
+		} else {
+			pid, err := uuid.Parse(req.Msg.GetParentId())
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid parent_id"))
+			}
+			if !cur.ParentID.Valid || uuid.UUID(cur.ParentID.Bytes) != pid {
+				// Placing the folder under its new parent requires create there.
+				if err := s.requireCap(ctx, "catalog:folder:create", authz.FolderScope(pid)); err != nil {
+					return nil, err
+				}
+				newParent, moving = pgUUID(pid), true
+			}
+		}
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+
+	if moving {
+		// Cycle guard: the new parent may not be the folder itself or a descendant.
+		subList, err := q.FolderSubtreeIDs(ctx, id)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if newParent.Valid {
+			np := uuid.UUID(newParent.Bytes)
+			for _, sid := range subList {
+				if sid == np {
+					return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot move a folder into its own subtree"))
+				}
+			}
+			// Containment re-validation only applies for a move under a real folder;
+			// a root move only widens the ancestor set (never breaks containment).
+			if err := s.validateFolderMove(ctx, q, id, np); err != nil {
+				return nil, err
+			}
+		}
+		if err := q.UpdateFolderParent(ctx, gen.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
+			return nil, mapWriteErr(err)
+		}
+	}
+	if newName != cur.Name || moving {
+		if err := q.UpdateFolderName(ctx, gen.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
+			return nil, mapWriteErr(err)
+		}
+		if err := q.UpdateFolderCatalogName(ctx, gen.UpdateFolderCatalogNameParams{FolderID: pgUUID(id), ParentID: newParent, Name: newName}); err != nil {
+			return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
+		}
+	}
+	if moving {
+		if err := q.NotifyAuthzChanged(ctx); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	f, err := s.q.GetFolder(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	msg := toFolderMsg(f)
+	if path, perr := s.q.FolderPath(ctx, f.ID); perr == nil {
+		msg.Path = path
+	}
+	return connect.NewResponse(&catalogv1.UpdateFolderResponse{Folder: msg}), nil
+}
+
 // folderNotFoundOrInternal maps pgx.ErrNoRows to NotFound and any other error to Internal.
 func folderNotFoundOrInternal(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
