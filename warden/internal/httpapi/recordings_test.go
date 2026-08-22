@@ -158,6 +158,49 @@ func doGet(t *testing.T, url, token, secFetchSite string) *http.Response {
 	return resp
 }
 
+// doHead issues a HEAD request optionally with a Bearer token and/or
+// Sec-Fetch-Site header.
+func doHead(t *testing.T, url, token, secFetchSite string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if secFetchSite != "" {
+		req.Header.Set("Sec-Fetch-Site", secFetchSite)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+// doGetCookie issues a GET request carrying the token in the jumpgate_session
+// cookie (browser path) rather than the Authorization header, optionally with a
+// Sec-Fetch-Site header to exercise the CSRF gate.
+func doGetCookie(t *testing.T, url, token, secFetchSite string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		req.Header.Set("Cookie", auth.SessionCookie+"="+token)
+	}
+	if secFetchSite != "" {
+		req.Header.Set("Sec-Fetch-Site", secFetchSite)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 // ─── tests ────────────────────────────────────────────────────────────────────
 
 // TestCastNoAuth: no token → 401.
@@ -217,5 +260,95 @@ func TestCastNoCapOrMissingRecording(t *testing.T) {
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("(no token, unknown id) want 401, got %d", resp2.StatusCode)
+	}
+}
+
+// TestCastHeadAuthorized: authorized user + existing recording, HEAD probe →
+// 200, asciicast Content-Type, and NO body. Same status as the GET path so the
+// player's HEAD probe faithfully predicts a streamable recording.
+func TestCastHeadAuthorized(t *testing.T) {
+	getter := &fakeObjectGetter{body: `{"version":2}` + "\n" + `[0.5,"o","hi"]`}
+	pool, srvURL, lookup := castServer(t, getter)
+
+	assetID := uuid.New()
+	userID, tok := seedUserWithCap(t, pool, lookup, "carol@test", true)
+	sessID := seedRecording(t, pool, userID, assetID)
+
+	resp := doHead(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200 for authorized HEAD, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "asciicast") {
+		t.Errorf("Content-Type = %q, want application/x-asciicast", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) != 0 {
+		t.Errorf("HEAD response must have no body, got %d bytes: %q", len(body), body)
+	}
+}
+
+// TestCastHeadUnauthorizedOrMissing: HEAD mirrors GET's existence-hiding —
+// a user without recording:read (or a missing recording) → 404.
+func TestCastHeadUnauthorizedOrMissing(t *testing.T) {
+	getter := &fakeObjectGetter{body: "x"}
+	pool, srvURL, lookup := castServer(t, getter)
+
+	_, noCap := seedUserWithCap(t, pool, lookup, "dave@test", false)
+
+	// (a) valid token, no recording:read, random session ID → 404
+	resp := doHead(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", noCap, "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("(no cap) want 404 for HEAD, got %d", resp.StatusCode)
+	}
+
+	// (b) no token → 401 (auth before existence check), same as GET.
+	resp2 := doHead(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", "", "")
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("(no token) want 401 for HEAD, got %d", resp2.StatusCode)
+	}
+}
+
+// TestCastCookieSameOrigin: a browser-style request carrying the token in the
+// jumpgate_session cookie with Sec-Fetch-Site: same-origin → 200 (exercises the
+// cookie CSRF gate, which the Bearer-only tests don't cover).
+func TestCastCookieSameOrigin(t *testing.T) {
+	const castBody = `{"version":2}` + "\n" + `[0.5,"o","cookie-hello"]`
+	getter := &fakeObjectGetter{body: castBody}
+	pool, srvURL, lookup := castServer(t, getter)
+
+	assetID := uuid.New()
+	userID, tok := seedUserWithCap(t, pool, lookup, "erin@test", true)
+	sessID := seedRecording(t, pool, userID, assetID)
+
+	resp := doGetCookie(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "same-origin")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("want 200 for same-origin cookie GET, got %d: %s", resp.StatusCode, body)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "cookie-hello") {
+		t.Errorf("body missing expected content: %q", string(body))
+	}
+}
+
+// TestCastCookieMissingSecFetch: the same cookie WITHOUT Sec-Fetch-Site is
+// blocked by the fail-closed CSRF gate — no user is attached, so the handler
+// returns 401.
+func TestCastCookieMissingSecFetch(t *testing.T) {
+	getter := &fakeObjectGetter{body: `{"version":2}`}
+	pool, srvURL, lookup := castServer(t, getter)
+
+	assetID := uuid.New()
+	userID, tok := seedUserWithCap(t, pool, lookup, "frank@test", true)
+	sessID := seedRecording(t, pool, userID, assetID)
+
+	resp := doGetCookie(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401 for cookie without Sec-Fetch-Site (CSRF gate), got %d", resp.StatusCode)
 	}
 }
