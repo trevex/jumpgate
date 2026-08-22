@@ -5,8 +5,7 @@
  * active roles, requestable roles, and (when ssh:login:* caps are present)
  * a Connect command block with a copy button.
  *
- * A "Request access" button is rendered but disabled — Task 3 will wire it
- * to the request sheet.
+ * The "Request access" button opens RequestSheet (Task 3).
  */
 
 import { useQuery } from "@connectrpc/connect-query";
@@ -16,6 +15,7 @@ import { getAssetAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { RequestSheet } from "../request-sheet";
 import {
   CapList,
   DetailSection,
@@ -117,11 +117,11 @@ export interface AssetDetailProps {
   name: string;
   path?: string;
   assetKind?: string;
-  /** Task 3 will replace this with a real handler */
-  onRequest?: (roleId: string) => void;
 }
 
-export function AssetDetail({ id, name, path, assetKind, onRequest: _onRequest }: AssetDetailProps) {
+export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+
   const { data, isLoading, isError, error } = useQuery(
     getAssetAccess,
     { assetId: id },
@@ -191,26 +191,33 @@ export function AssetDetail({ id, name, path, assetKind, onRequest: _onRequest }
 
       {/* Requestable roles */}
       {hasRequestable && (
-        <DetailSection title="Requestable roles">
-          <ul className="flex flex-wrap gap-1.5" aria-label="Requestable roles">
-            {data.requestableRoles.map((r) => (
-              <li key={r.id}>
-                <RolePill name={r.name} folderPath={r.folderPath} />
-              </li>
-            ))}
-          </ul>
-          {/* TODO(Task 3): wire to request sheet — for now disabled */}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className="mt-1 h-7 text-[12px] cursor-not-allowed"
-            aria-label="Request access (coming soon)"
-            title="Request access — available in Task 3"
-          >
-            Request access
-          </Button>
-        </DetailSection>
+        <>
+          <DetailSection title="Requestable roles">
+            <ul className="flex flex-wrap gap-1.5" aria-label="Requestable roles">
+              {data.requestableRoles.map((r) => (
+                <li key={r.id}>
+                  <RolePill name={r.name} folderPath={r.folderPath} />
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSheetOpen(true)}
+              className="mt-1 h-7 text-[12px]"
+              aria-label="Request access to this asset"
+            >
+              Request access
+            </Button>
+          </DetailSection>
+
+          <RequestSheet
+            asset={{ id, name, path }}
+            requestableRoles={data.requestableRoles}
+            open={sheetOpen}
+            onOpenChange={setSheetOpen}
+          />
+        </>
       )}
 
       {/* No access state */}

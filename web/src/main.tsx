@@ -14,6 +14,7 @@ import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
 import { RecordingsPage } from "./routes/recordings/recordings";
 import { RequireCap } from "./lib/capabilities";
+import { Toaster } from "./components/ui/sonner";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -76,6 +77,7 @@ createRoot(root).render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
+        <Toaster position="bottom-right" richColors />
       </QueryClientProvider>
     </TransportProvider>
   </StrictMode>
