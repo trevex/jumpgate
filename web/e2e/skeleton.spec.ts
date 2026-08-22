@@ -11,11 +11,11 @@ test("login shows capabilities then logout", async ({ page }) => {
   await page.getByLabel("password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
-  await expect(
-    page.getByLabel("capabilities").getByText("**"),
-  ).toBeVisible();
+  // The app shell renders: the primary nav and the signed-in footer (the email
+  // is carried on a span labelled "Signed in as <email>").
+  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
+  await expect(page.getByLabel(`Signed in as ${email}`)).toBeVisible();
 
-  await page.getByRole("button", { name: "Log out" }).click();
+  await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
 });

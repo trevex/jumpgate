@@ -156,12 +156,44 @@ same-origin alongside the API. The default `go build` (no tag) omits the SPA
 entirely, so Go builds and tests need no frontend toolchain — in development Vite
 serves the app instead.
 
+### Console views
+
+The SPA is a single-page console over four views, gated by the caller's
+capabilities (from `WhoAmI`):
+
+- **Catalog** (`/`) — a lazy governance tree of folders with their assets, roles,
+  and groups. Each node loads its children on expand (`ListFolderContents`), and
+  selecting an asset opens a detail pane showing the caller's capabilities and
+  active roles on it, any requestable roles, and — when SSH connect capabilities
+  are present — a ready-to-run `jumpgate connect` command. Requestable roles open
+  a slide-over that files a JIT request (`RequestAccess`) with a role, duration,
+  and reason.
+- **My Access** (`/access`) — the caller's own JIT lifecycle: a **Requests** tab
+  (pending/granted/denied with status badges) and a **Grants** tab (active grants
+  with a live expiry countdown, self-revoke, and the copy-able connect command the
+  server derives for each grant).
+- **Approvals** (`/approvals`) — the approver inbox of pending requests the caller
+  may decide, with inline approve and a confirm-dialog deny. The nav badge shows
+  the pending count.
+- **Recordings** (`/recordings`, only when the caller holds `recording:read`) —
+  the audit list of session recordings with an in-browser **asciinema** player
+  that streams each cast same-origin from `/api/recordings/<id>/cast` (the session
+  cookie rides along).
+
 ## Testing
 
 - **Web:** `make web` installs, typechecks (`tsc --noEmit`), and builds the SPA;
   this runs as part of `make ci`. `make ui-e2e` runs the **Playwright** suite
   (Nix-provided chromium) against the kind environment where warden serves the
-  embedded SPA — it is opt-in and kept out of `ci` (like `kind-e2e`).
+  embedded SPA — it is opt-in and kept out of `ci` (like `kind-e2e`). It first
+  seeds the fixtures via the CLI (`TestUISeed` in `test/e2e`: a JIT-requestable
+  asset gated by a cross-approval policy, plus a standing-access asset that alice
+  connects to so the audit view has a completed recording), then drives the
+  multi-actor browser story in `web/e2e/access-loop.spec.ts` — alice requests
+  access, bob approves, alice sees her grant's connect command, and an admin
+  auditor plays the recording back — each actor in an isolated browser context.
+  The seed assumes a fresh `kind-up`; pass `KEEP=1` to leave the cluster running
+  after the run.
 - **Go:** standard `go test`; tests exercise real behavior (e.g. the warden
   health test drives an `httptest` server and decodes real JSON). Integration tests
   boot an ephemeral Postgres via `internal/testsupport` (initdb/pg_ctl, no Docker).
