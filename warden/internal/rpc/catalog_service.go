@@ -756,6 +756,66 @@ func (s *CatalogServer) DeleteFolder(ctx context.Context, req *connect.Request[c
 	return connect.NewResponse(&catalogv1.DeleteFolderResponse{}), nil
 }
 
+// DeleteAsset removes an asset and everything about it: its secrets, logins,
+// asset-scoped bindings/policies, and live sessions. Session teardown is signalled
+// FIRST (while the rows still exist), then the rows are deleted in the RESTRICT-safe
+// order (logins before secrets) in one tx.
+func (s *CatalogServer) DeleteAsset(ctx context.Context, req *connect.Request[catalogv1.DeleteAssetRequest]) (*connect.Response[catalogv1.DeleteAssetResponse], error) {
+	id, err := uuid.Parse(req.Msg.GetAssetId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid asset_id"))
+	}
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	visible, err := authz.AssetVisible(ctx, s.authorizer, u.ID, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if !visible {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+	}
+	if err := s.requireCap(ctx, "catalog:asset:delete", authz.AssetScope(id)); err != nil {
+		return nil, err
+	}
+	// Signal teardown while live_sessions rows still exist.
+	if s.terminator != nil {
+		if err := s.terminator.TerminateAssetSessions(ctx, id); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	// RESTRICT-safe order: logins reference secrets, so drop logins first.
+	if err := q.DeleteSSHAssetLoginsForAsset(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeleteAssetSecretsForAsset(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeleteRoleBindingsForAsset(ctx, pgUUID(id)); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeletePolicySubjectsForAsset(ctx, pgUUID(id)); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeleteRequestPoliciesForAsset(ctx, pgUUID(id)); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeleteAsset(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.DeleteAssetResponse{}), nil
+}
+
 // folderNotFoundOrInternal maps pgx.ErrNoRows to NotFound and any other error to Internal.
 func folderNotFoundOrInternal(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {

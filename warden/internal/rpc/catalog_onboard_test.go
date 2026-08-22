@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -19,6 +20,8 @@ import (
 type catalogTestEnv struct {
 	catalog  *rpc.CatalogServer
 	adminCtx context.Context
+	pool     *pgxpool.Pool
+	userID   uuid.UUID
 }
 
 // newCatalogTestEnv builds a CatalogServer over an ephemeral Postgres, seeds a
@@ -38,7 +41,7 @@ func newCatalogTestEnv(t *testing.T) *catalogTestEnv {
 
 	adminID := userID(t, pool, "admin@x")
 	adminCtx := auth.WithUser(context.Background(), auth.CurrentUser{ID: adminID, Email: "admin@x"})
-	return &catalogTestEnv{catalog: srv, adminCtx: adminCtx}
+	return &catalogTestEnv{catalog: srv, adminCtx: adminCtx, pool: pool, userID: adminID}
 }
 
 // createFolder creates a top-level folder and returns its id.
@@ -59,6 +62,56 @@ func (e *catalogTestEnv) createChildFolder(t *testing.T, name, parentID string) 
 		t.Fatalf("createChildFolder(%q under %q): %v", name, parentID, err)
 	}
 	return f.Msg.Folder.Id
+}
+
+// createSSHAsset onboards an SSH asset under folderID with a ca login "deploy" and a
+// password login named login carrying secret as an inline new_value; returns the id.
+func (e *catalogTestEnv) createSSHAsset(t *testing.T, folderID, name, login string, secret []byte) string {
+	t.Helper()
+	resp, err := e.catalog.CreateAsset(e.adminCtx, connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folderID,
+		Name:     name,
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
+			TargetAddress: "10.0.0.5:22",
+			Logins: []*catalogv1.SSHLoginInput{
+				{Login: "deploy", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}},
+				{Login: login, Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+					Source: &catalogv1.SecretAuth_NewValue{NewValue: secret}}}},
+			},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("createSSHAsset(%q): %v", name, err)
+	}
+	return resp.Msg.Asset.Id
+}
+
+// bindRoleToAsset inserts a role and a standing role_binding scoped to assetID with the
+// seeded admin as the subject, so DeleteAsset has an asset-scoped binding to cascade.
+func (e *catalogTestEnv) bindRoleToAsset(t *testing.T, assetID string) {
+	t.Helper()
+	var roleID string
+	if err := e.pool.QueryRow(context.Background(),
+		`INSERT INTO roles(name, capabilities) VALUES('r-'||substr(md5(random()::text),1,8), '[]') RETURNING id`,
+	).Scan(&roleID); err != nil {
+		t.Fatalf("insert role: %v", err)
+	}
+	if _, err := e.pool.Exec(context.Background(),
+		`INSERT INTO role_bindings(role_id, scope_asset_id, subject_user_id) VALUES($1, $2, $3)`,
+		roleID, assetID, e.userID,
+	); err != nil {
+		t.Fatalf("insert role_binding: %v", err)
+	}
+}
+
+// count runs a single-int aggregate query on the env pool.
+func (e *catalogTestEnv) count(t *testing.T, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := e.pool.QueryRow(context.Background(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("count %q: %v", query, err)
+	}
+	return n
 }
 
 func TestCreateAssetInlineSecretsAtomic(t *testing.T) {

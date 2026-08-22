@@ -131,6 +131,22 @@ func (t *Terminator) TerminateUser(ctx context.Context, userID uuid.UUID, reason
 	return n, nil
 }
 
+// TerminateAssetSessions marks every live session for assetID for teardown and
+// NOTIFYs the workers, BEFORE the asset row (and its cascading live_sessions rows)
+// are deleted — otherwise the rows vanish and the teardown can't be routed.
+func (t *Terminator) TerminateAssetSessions(ctx context.Context, assetID uuid.UUID) error {
+	sessions, err := gen.New(t.pool).ListLiveSessionsByAsset(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	for _, s := range sessions {
+		if err := t.requestTeardown(ctx, s.ID, "asset_deleted"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // requestTeardown marks a session terminating (once) and (re-)delivers the teardown
 // signal. MarkLiveSessionTerminating flips a NULL terminate_requested_at and returns
 // 0 rows thereafter, so the session.terminated audit event is recorded exactly once.
