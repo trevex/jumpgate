@@ -45,7 +45,7 @@ use crate::control::SessionRegistry;
 
 /// Current wall-clock time as unix milliseconds (saturating at 0 before the
 /// epoch). Used to stamp recording start/end timestamps.
-fn unix_millis_now() -> i64 {
+pub(crate) fn unix_millis_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -54,6 +54,75 @@ fn unix_millis_now() -> i64 {
 use crate::setup::{setup_session, SetupOutcome, TargetCredential};
 use crate::{proxy, target};
 use jumpgate_mesh::tls::MeshClientCerts;
+
+/// Dial the target and authenticate the second hop by the login's configured
+/// credential kind (cert / password / key), returning the connected russh client
+/// handle. Shared by the SSH and browser-terminal ingresses so both authenticate
+/// the target identically. On error the caller aborts the hop (never bridges).
+pub(crate) async fn dial_target_by_auth(
+    target_address: &str,
+    login: &str,
+    target_auth: &TargetAuth,
+) -> anyhow::Result<russh::client::Handle<target::TargetHandler>> {
+    match target_auth {
+        TargetAuth::Cert { certificate, kw } => {
+            target::dial_target(target_address, login, kw, certificate).await
+        }
+        TargetAuth::Password(password) => {
+            target::authenticate_password(target_address, login, password).await
+        }
+        TargetAuth::Key(pem) => target::authenticate_publickey(target_address, login, pem).await,
+    }
+}
+
+/// Build a streaming recorder: a multipart upload to the recording bucket under
+/// `object_key`, fed by [`crate::record::spawn_recorder`], with the asciicast
+/// header sized to `width`x`height`.
+///
+/// Returns the tap handle, the recorder task's join handle, and the recording's
+/// start timestamp (unix ms). Fails when recording is not configured (no bucket)
+/// or the object store rejects the multipart-upload create — either is a
+/// fail-closed trigger for a `recording_required` session. Shared by the SSH and
+/// browser-terminal ingresses so recordings are byte-identical across both.
+pub(crate) async fn build_recorder(
+    recording: &RecordingSettings,
+    object_key: &str,
+    width: u16,
+    height: u16,
+) -> anyhow::Result<(
+    crate::record::RecorderHandle,
+    tokio::task::JoinHandle<crate::record::RecordingReport>,
+    i64,
+)> {
+    if recording.bucket.is_empty() {
+        anyhow::bail!("recording bucket not configured");
+    }
+    let uploader = crate::record::S3Uploader::create(
+        &recording.endpoint,
+        &recording.region,
+        &recording.bucket,
+        object_key.to_string(),
+    )
+    .await?;
+
+    let (width, height) = if width != 0 && height != 0 {
+        (width, height)
+    } else {
+        (80, 24)
+    };
+    let started_ms = unix_millis_now();
+    let header = crate::asciicast::Header::new(width, height, started_ms / 1000);
+
+    let (handle, join) = crate::record::spawn_recorder(
+        uploader,
+        header,
+        crate::record::RecorderConfig {
+            part_size: recording.part_size,
+            channel_bound: 1024,
+        },
+    );
+    Ok((handle, join, started_ms))
+}
 
 /// How the worker authenticates the second hop to the target, discriminated by
 /// the asset login's configured kind:
@@ -199,11 +268,18 @@ fn public_key_line(pk: &PublicKey) -> Result<Vec<u8>, AuthError> {
 /// The worker still generates and offers `Kw` in every case (the proto requires
 /// `target_public_key`); only its *use* is gated to the `Cert` path.
 ///
+/// `kc` is the client's ephemeral key for the SSH ingress (proof-of-possession
+/// binds it via the token's `cnf`). The browser-terminal ingress has no client
+/// key: it passes `None`, which sends an EMPTY client key — warden's `mode=web`
+/// tokens skip the `cnf` proof and take the login from the ticket. Every other
+/// check (SetupSession authorization, cert-over-Kw, host-scoped principals) is
+/// identical for both ingresses.
+///
 /// Returns the cached [`SessionState`] on success; ANY failure is an
 /// [`AuthError`] and the caller MUST reject. It never returns `Ok` on error.
 pub async fn authorize(
     login: &str,
-    kc: &PublicKey,
+    kc: Option<&PublicKey>,
     setup: &SetupFn,
 ) -> Result<SessionState, AuthError> {
     // 1. Fresh per-session Kw (ed25519). Infallible in practice; treat a keygen
@@ -211,7 +287,12 @@ pub async fn authorize(
     let kw = PrivateKey::random(&mut rand::rng(), russh::keys::ssh_key::Algorithm::Ed25519)
         .map_err(|e| AuthError::Setup(format!("generate Kw: {e}")))?;
 
-    let kc_pub = public_key_line(kc)?;
+    // An SSH-ingress client offers its Kc; the browser terminal has none, so we
+    // send an empty client key (warden's web tokens carry no `cnf` to prove).
+    let kc_pub = match kc {
+        Some(kc) => public_key_line(kc)?,
+        None => Vec::new(),
+    };
     let kw_pub = public_key_line(kw.public_key())?;
 
     // 2. Redeem the token. A transport/authorization error is a hard reject.
@@ -543,17 +624,6 @@ impl SshHandler {
         tokio::task::JoinHandle<crate::record::RecordingReport>,
         i64,
     )> {
-        if self.recording.bucket.is_empty() {
-            anyhow::bail!("recording bucket not configured");
-        }
-        let uploader = crate::record::S3Uploader::create(
-            &self.recording.endpoint,
-            &self.recording.region,
-            &self.recording.bucket,
-            state.recording_object_key.clone(),
-        )
-        .await?;
-
         // Header dimensions come from the remembered pty (fallback 80x24).
         let (width, height) = self
             .pty
@@ -561,18 +631,7 @@ impl SshHandler {
             .map(|p| (p.col_width as u16, p.row_height as u16))
             .filter(|(w, h)| *w != 0 && *h != 0)
             .unwrap_or((80, 24));
-        let started_ms = unix_millis_now();
-        let header = crate::asciicast::Header::new(width, height, started_ms / 1000);
-
-        let (handle, join) = crate::record::spawn_recorder(
-            uploader,
-            header,
-            crate::record::RecorderConfig {
-                part_size: self.recording.part_size,
-                channel_bound: 1024,
-            },
-        );
-        Ok((handle, join, started_ms))
+        build_recorder(&self.recording, &state.recording_object_key, width, height).await
     }
 
     /// Dial the target and open the matching channel (applying the remembered
@@ -589,17 +648,7 @@ impl SshHandler {
     )> {
         // Authenticate the target hop by the login's configured kind. On error,
         // the caller aborts the hop (never bridges).
-        let handle = match &state.target_auth {
-            TargetAuth::Cert { certificate, kw } => {
-                target::dial_target(&state.target_address, login, kw, certificate).await?
-            }
-            TargetAuth::Password(password) => {
-                target::authenticate_password(&state.target_address, login, password).await?
-            }
-            TargetAuth::Key(pem) => {
-                target::authenticate_publickey(&state.target_address, login, pem).await?
-            }
-        };
+        let handle = dial_target_by_auth(&state.target_address, login, &state.target_auth).await?;
 
         let target_channel = handle.channel_open_session().await?;
 
@@ -634,7 +683,7 @@ impl Handler for SshHandler {
         user: &str,
         public_key: &PublicKey,
     ) -> Result<Auth, Self::Error> {
-        match authorize(user, public_key, &self.setup).await {
+        match authorize(user, Some(public_key), &self.setup).await {
             Ok(state) => {
                 tracing::info!(
                     session_id = %state.session_id,
@@ -860,6 +909,39 @@ async fn handle_conn(
         tls.flush().await.context("flush CONNECT 200 response")?;
     }
 
+    let recording = RecordingSettings {
+        bucket: config.recording_bucket.clone(),
+        endpoint: config.recording_s3_endpoint.clone(),
+        region: config.recording_s3_region.clone(),
+        part_size: config.recording_part_size,
+    };
+
+    // Branch on the preamble: `X-Jumpgate-Terminal: 1` selects the browser-terminal
+    // ingress (framed opcode protocol), everything else is the SSH tunnel path.
+    if req.terminal {
+        // The login is authoritative from the preamble (the browser offers no SSH
+        // username); warden's web token also carries it. A terminal CONNECT with
+        // no login header is malformed — refuse the connection.
+        let login = req
+            .login
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("terminal CONNECT missing X-Jumpgate-Login header"))?;
+        tracing::info!(%peer, authority = %req.authority, %login, "gateway terminal CONNECT received; starting terminal ingress");
+        let deps = crate::terminal::TerminalDeps {
+            token: req.token,
+            login,
+            worker_id: config.worker_id.clone(),
+            warden_addr: config.warden_mesh_addr.clone(),
+            warden_spiffe: config.warden_spiffe.clone(),
+            certs: mesh_certs,
+            registry,
+            session_ended_tx,
+            recording,
+        };
+        crate::terminal::run_terminal(deps, tls).await;
+        return Ok(());
+    }
+
     tracing::info!(%peer, authority = %req.authority, "gateway CONNECT received; starting SSH server");
 
     let handler = SshHandler::new(
@@ -870,12 +952,7 @@ async fn handle_conn(
         mesh_certs,
         registry,
         session_ended_tx,
-        RecordingSettings {
-            bucket: config.recording_bucket.clone(),
-            endpoint: config.recording_s3_endpoint.clone(),
-            region: config.recording_s3_region.clone(),
-            part_size: config.recording_part_size,
-        },
+        recording,
     );
 
     // Run the SSH server over the already-authenticated tunnel. `run_stream`
@@ -1006,7 +1083,7 @@ mod tests {
         // Warden mints [deploy@<path>, deploy@<id>]; both are scoped to `deploy`.
         let setup = stub_ok(ca, vec!["deploy@prod.db".into(), "deploy@a1b2c3".into()]);
 
-        let state = authorize("deploy", kc.public_key(), &setup)
+        let state = authorize("deploy", Some(kc.public_key()), &setup)
             .await
             .expect("all principals scoped to deploy → accept");
 
@@ -1029,7 +1106,7 @@ mod tests {
         let kc = ed25519();
         let setup = stub_password("hunter2");
 
-        let state = authorize("demo", kc.public_key(), &setup)
+        let state = authorize("demo", Some(kc.public_key()), &setup)
             .await
             .expect("password credential → accept");
 
@@ -1051,7 +1128,7 @@ mod tests {
             .to_string();
         let setup = stub_key(pem.clone().into_bytes());
 
-        let state = authorize("demo", kc.public_key(), &setup)
+        let state = authorize("demo", Some(kc.public_key()), &setup)
             .await
             .expect("key credential → accept");
 
@@ -1100,7 +1177,7 @@ mod tests {
         // Cert is scoped to "deploy"; the client asks for "root".
         let setup = stub_ok(ca, vec!["deploy@prod.db".into()]);
 
-        let err = authorize("root", kc.public_key(), &setup)
+        let err = authorize("root", Some(kc.public_key()), &setup)
             .await
             .expect_err("principals not scoped to root → reject");
         assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
@@ -1113,7 +1190,7 @@ mod tests {
         // A legacy bare-login cert ("deploy", no @scope) must no longer be accepted.
         let setup = stub_ok(ca, vec!["deploy".into()]);
 
-        let err = authorize("deploy", kc.public_key(), &setup)
+        let err = authorize("deploy", Some(kc.public_key()), &setup)
             .await
             .expect_err("bare (unscoped) principal → reject");
         assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
@@ -1122,7 +1199,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_when_setup_session_errors() {
         let kc = ed25519();
-        let err = authorize("deploy", kc.public_key(), &stub_err())
+        let err = authorize("deploy", Some(kc.public_key()), &stub_err())
             .await
             .expect_err("SetupSession error → reject");
         assert!(matches!(err, AuthError::Setup(_)));
@@ -1149,7 +1226,7 @@ mod tests {
             })
         });
 
-        let err = authorize("deploy", kc.public_key(), &setup)
+        let err = authorize("deploy", Some(kc.public_key()), &setup)
             .await
             .expect_err("cert not over Kw → reject");
         assert!(matches!(err, AuthError::CertNotOverKw));
@@ -1169,7 +1246,7 @@ mod tests {
                 })
             })
         });
-        let err = authorize("deploy", kc.public_key(), &setup)
+        let err = authorize("deploy", Some(kc.public_key()), &setup)
             .await
             .expect_err("garbage cert → reject");
         assert!(matches!(err, AuthError::CertParse(_)));

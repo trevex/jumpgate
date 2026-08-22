@@ -14,3 +14,4 @@ pub mod record;
 pub mod server;
 pub mod setup;
 pub mod target;
+pub mod terminal;

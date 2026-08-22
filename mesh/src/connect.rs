@@ -10,6 +10,12 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 pub struct ConnectReq {
     pub authority: String,
     pub token: String,
+    /// `true` when the `X-Jumpgate-Terminal: 1` header is present — the gateway
+    /// relays a framed browser-terminal opcode stream rather than an SSH tunnel.
+    pub terminal: bool,
+    /// The requested login, carried by `X-Jumpgate-Login` on terminal-mode
+    /// CONNECTs (the browser has no SSH username to offer). `None` when absent.
+    pub login: Option<String>,
 }
 
 /// Max CONNECT header size we will buffer before giving up (abuse guard).
@@ -53,6 +59,8 @@ pub fn parse_connect(buf: &[u8]) -> Result<Option<(ConnectReq, usize)>, ConnectE
     }
     let authority = req.path.ok_or(ConnectError::Malformed)?.to_string();
     let mut token = None;
+    let mut terminal = false;
+    let mut login = None;
     for h in req.headers.iter() {
         if h.name.eq_ignore_ascii_case("authorization") {
             if let Ok(v) = std::str::from_utf8(h.value) {
@@ -63,13 +71,35 @@ pub fn parse_connect(buf: &[u8]) -> Result<Option<(ConnectReq, usize)>, ConnectE
                     token = Some(t.trim().to_string());
                 }
             }
+        } else if h.name.eq_ignore_ascii_case("x-jumpgate-terminal") {
+            // Any non-empty value other than "0"/"false" selects terminal mode;
+            // the gateway sends exactly "1".
+            if let Ok(v) = std::str::from_utf8(h.value) {
+                let v = v.trim();
+                terminal = !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false");
+            }
+        } else if h.name.eq_ignore_ascii_case("x-jumpgate-login") {
+            if let Ok(v) = std::str::from_utf8(h.value) {
+                let v = v.trim();
+                if !v.is_empty() {
+                    login = Some(v.to_string());
+                }
+            }
         }
     }
     let token = token.ok_or(ConnectError::MissingAuth)?;
     if token.is_empty() {
         return Err(ConnectError::MissingAuth);
     }
-    Ok(Some((ConnectReq { authority, token }, consumed)))
+    Ok(Some((
+        ConnectReq {
+            authority,
+            token,
+            terminal,
+            login,
+        },
+        consumed,
+    )))
 }
 
 /// Read a full CONNECT request from an async stream (up to MAX_HEADER bytes).
@@ -107,6 +137,18 @@ pub fn response_status(code: u16, reason: &str) -> Vec<u8> {
 pub fn write_connect_request(authority: &str, token: &str) -> Vec<u8> {
     format!(
         "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nAuthorization: Bearer {token}\r\n\r\n"
+    )
+    .into_bytes()
+}
+
+/// Build the terminal-mode CONNECT request the gateway sends the worker: the
+/// same shape as [`write_connect_request`] plus the `X-Jumpgate-Terminal: 1` and
+/// `X-Jumpgate-Login` headers that make the worker branch to its framed-terminal
+/// ingress. The `login` is authoritative for the browser hop (the browser offers
+/// no SSH username of its own).
+pub fn write_terminal_connect_request(authority: &str, token: &str, login: &str) -> Vec<u8> {
+    format!(
+        "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nAuthorization: Bearer {token}\r\nX-Jumpgate-Terminal: 1\r\nX-Jumpgate-Login: {login}\r\n\r\n"
     )
     .into_bytes()
 }
@@ -154,6 +196,50 @@ mod tests {
         assert_eq!(req.authority, "asset-1");
         assert_eq!(req.token, "abc.def.ghi");
         assert_eq!(consumed, raw.len());
+    }
+
+    #[test]
+    fn plain_connect_is_not_terminal() {
+        let raw =
+            b"CONNECT asset-1 HTTP/1.1\r\nHost: gw\r\nAuthorization: Bearer abc.def.ghi\r\n\r\n";
+        let (req, _) = parse_connect(raw).unwrap().unwrap();
+        assert!(!req.terminal, "no X-Jumpgate-Terminal header → SSH path");
+        assert_eq!(req.login, None);
+    }
+
+    #[test]
+    fn parses_terminal_headers() {
+        let raw = b"CONNECT asset-1 HTTP/1.1\r\nHost: gw\r\nAuthorization: Bearer tok\r\nX-Jumpgate-Terminal: 1\r\nX-Jumpgate-Login: deploy\r\n\r\n";
+        let (req, _) = parse_connect(raw).unwrap().unwrap();
+        assert!(req.terminal, "X-Jumpgate-Terminal: 1 → terminal path");
+        assert_eq!(req.login.as_deref(), Some("deploy"));
+    }
+
+    #[test]
+    fn terminal_header_zero_or_false_is_not_terminal() {
+        for v in ["0", "false", " "] {
+            let raw = format!(
+                "CONNECT a HTTP/1.1\r\nAuthorization: Bearer tok\r\nX-Jumpgate-Terminal: {v}\r\n\r\n"
+            );
+            let (req, _) = parse_connect(raw.as_bytes()).unwrap().unwrap();
+            assert!(!req.terminal, "X-Jumpgate-Terminal: {v:?} must not enable");
+        }
+    }
+
+    #[test]
+    fn writes_terminal_connect_request() {
+        let out = write_terminal_connect_request("asset-9", "tok-9", "deploy");
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.starts_with("CONNECT asset-9 HTTP/1.1\r\n"));
+        assert!(s.contains("Authorization: Bearer tok-9\r\n"));
+        assert!(s.contains("X-Jumpgate-Terminal: 1\r\n"));
+        assert!(s.contains("X-Jumpgate-Login: deploy\r\n"));
+        assert!(s.ends_with("\r\n\r\n"));
+        // The parser round-trips exactly what we emit.
+        let (req, _) = parse_connect(&out).unwrap().unwrap();
+        assert!(req.terminal);
+        assert_eq!(req.login.as_deref(), Some("deploy"));
+        assert_eq!(req.token, "tok-9");
     }
 
     #[test]
