@@ -14,6 +14,10 @@ service AccessService {
   rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {}
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {}
   rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {}
+  // GetRoleDisplay returns a role's decision context (name, folder path, and the
+  // capabilities it grants) for an approver or requester. Authorized by
+  // access:role:read OR being party to a pending access request referencing the role.
+  rpc GetRoleDisplay(GetRoleDisplayRequest) returns (GetRoleDisplayResponse) {}
   rpc ResolveRole(ResolveRoleRequest) returns (ResolveRoleResponse) {}
   rpc GetRoleAccess(GetRoleAccessRequest) returns (GetRoleAccessResponse) {}
 
@@ -76,6 +80,17 @@ message ListRolesResponse { repeated Role roles = 1; string next_page_token = 2;
 
 message GetRoleRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
 message GetRoleResponse { Role role = 1; }
+
+// GetRoleDisplay returns a role's decision context — name, folder path, and the
+// capabilities it grants — for a request party judging an access request.
+message GetRoleDisplayRequest { string id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetRoleDisplayResponse { RoleDisplay role = 1; }
+message RoleDisplay {
+  string id = 1;
+  string name = 2;
+  string folder_path = 3;
+  repeated string capabilities = 4;
+}
 
 message ResolveRoleRequest  { string ref = 1 [(buf.validate.field).string = {min_len: 1}]; }
 message ResolveRoleResponse { string role_id = 1; string path = 2; }

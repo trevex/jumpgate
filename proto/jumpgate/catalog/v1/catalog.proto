@@ -16,6 +16,11 @@ service CatalogService {
   rpc ListFolders(ListFoldersRequest) returns (ListFoldersResponse) {}
   rpc CreateAsset(CreateAssetRequest) returns (CreateAssetResponse) {}
   rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {}
+  // GetAssetDisplay returns an asset's decision context (path, kind, and for SSH
+  // the target address + available logins) for an approver or requester to judge
+  // a request — WITHOUT any secret references. Authorized by catalog:asset:read OR
+  // being party to a pending access request that references the asset.
+  rpc GetAssetDisplay(GetAssetDisplayRequest) returns (GetAssetDisplayResponse) {}
   rpc UpdateAssetConfig(UpdateAssetConfigRequest) returns (UpdateAssetConfigResponse) {}
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {}
   rpc GetAssetAccess(GetAssetAccessRequest) returns (GetAssetAccessResponse) {}
@@ -95,6 +100,30 @@ message CreateAssetResponse { Asset asset = 1; }
 
 message GetAssetRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
 message GetAssetResponse { Asset asset = 1; }
+
+// GetAssetDisplay returns an asset's decision context for a request party. It
+// mirrors Asset/SSHConfig/SSHLogin but deliberately carries NO secret references
+// (SSHLoginDisplay has no secret_id field) so it can never leak vault material.
+message GetAssetDisplayRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetAssetDisplayResponse { AssetDisplay asset = 1; }
+message AssetDisplay {
+  string id = 1;
+  string folder_id = 2;
+  string name = 3;
+  string kind = 4;
+  oneof config { SSHConfigDisplay ssh = 5; }
+  string path = 6;
+  string folder_path = 7;
+}
+message SSHConfigDisplay {
+  repeated SSHLoginDisplay logins = 1;
+  string host_public_key = 2;
+  string target_address = 3;
+}
+message SSHLoginDisplay {
+  string login = 1;
+  string kind = 2; // ca | password | key — secret_id intentionally omitted
+}
 
 message UpdateAssetConfigRequest {
   string asset_id = 1 [(buf.validate.field).string.uuid = true];

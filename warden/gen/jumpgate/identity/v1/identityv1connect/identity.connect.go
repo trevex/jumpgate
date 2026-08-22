@@ -38,6 +38,9 @@ const (
 	IdentityServiceCreateUserProcedure = "/jumpgate.identity.v1.IdentityService/CreateUser"
 	// IdentityServiceGetUserProcedure is the fully-qualified name of the IdentityService's GetUser RPC.
 	IdentityServiceGetUserProcedure = "/jumpgate.identity.v1.IdentityService/GetUser"
+	// IdentityServiceGetUserDisplayProcedure is the fully-qualified name of the IdentityService's
+	// GetUserDisplay RPC.
+	IdentityServiceGetUserDisplayProcedure = "/jumpgate.identity.v1.IdentityService/GetUserDisplay"
 	// IdentityServiceResolveUserProcedure is the fully-qualified name of the IdentityService's
 	// ResolveUser RPC.
 	IdentityServiceResolveUserProcedure = "/jumpgate.identity.v1.IdentityService/ResolveUser"
@@ -89,6 +92,10 @@ const (
 type IdentityServiceClient interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	// GetUserDisplay returns minimal display info (name/email) for a user id.
+	// Any authenticated caller may call it — a general directory read for rendering
+	// user names/avatars; it is NOT capability-gated. Full GetUser stays gated.
+	GetUserDisplay(context.Context, *connect.Request[v1.GetUserDisplayRequest]) (*connect.Response[v1.GetUserDisplayResponse], error)
 	ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	CreateGroup(context.Context, *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error)
@@ -127,6 +134,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IdentityServiceGetUserProcedure,
 			connect.WithSchema(identityServiceMethods.ByName("GetUser")),
+			connect.WithClientOptions(opts...),
+		),
+		getUserDisplay: connect.NewClient[v1.GetUserDisplayRequest, v1.GetUserDisplayResponse](
+			httpClient,
+			baseURL+IdentityServiceGetUserDisplayProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("GetUserDisplay")),
 			connect.WithClientOptions(opts...),
 		),
 		resolveUser: connect.NewClient[v1.ResolveUserRequest, v1.ResolveUserResponse](
@@ -226,6 +239,7 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type identityServiceClient struct {
 	createUser           *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
 	getUser              *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
+	getUserDisplay       *connect.Client[v1.GetUserDisplayRequest, v1.GetUserDisplayResponse]
 	resolveUser          *connect.Client[v1.ResolveUserRequest, v1.ResolveUserResponse]
 	listUsers            *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
 	createGroup          *connect.Client[v1.CreateGroupRequest, v1.CreateGroupResponse]
@@ -251,6 +265,11 @@ func (c *identityServiceClient) CreateUser(ctx context.Context, req *connect.Req
 // GetUser calls jumpgate.identity.v1.IdentityService.GetUser.
 func (c *identityServiceClient) GetUser(ctx context.Context, req *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error) {
 	return c.getUser.CallUnary(ctx, req)
+}
+
+// GetUserDisplay calls jumpgate.identity.v1.IdentityService.GetUserDisplay.
+func (c *identityServiceClient) GetUserDisplay(ctx context.Context, req *connect.Request[v1.GetUserDisplayRequest]) (*connect.Response[v1.GetUserDisplayResponse], error) {
+	return c.getUserDisplay.CallUnary(ctx, req)
 }
 
 // ResolveUser calls jumpgate.identity.v1.IdentityService.ResolveUser.
@@ -332,6 +351,10 @@ func (c *identityServiceClient) DeleteGroup(ctx context.Context, req *connect.Re
 type IdentityServiceHandler interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	// GetUserDisplay returns minimal display info (name/email) for a user id.
+	// Any authenticated caller may call it — a general directory read for rendering
+	// user names/avatars; it is NOT capability-gated. Full GetUser stays gated.
+	GetUserDisplay(context.Context, *connect.Request[v1.GetUserDisplayRequest]) (*connect.Response[v1.GetUserDisplayResponse], error)
 	ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	CreateGroup(context.Context, *connect.Request[v1.CreateGroupRequest]) (*connect.Response[v1.CreateGroupResponse], error)
@@ -366,6 +389,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		IdentityServiceGetUserProcedure,
 		svc.GetUser,
 		connect.WithSchema(identityServiceMethods.ByName("GetUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	identityServiceGetUserDisplayHandler := connect.NewUnaryHandler(
+		IdentityServiceGetUserDisplayProcedure,
+		svc.GetUserDisplay,
+		connect.WithSchema(identityServiceMethods.ByName("GetUserDisplay")),
 		connect.WithHandlerOptions(opts...),
 	)
 	identityServiceResolveUserHandler := connect.NewUnaryHandler(
@@ -464,6 +493,8 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceCreateUserHandler.ServeHTTP(w, r)
 		case IdentityServiceGetUserProcedure:
 			identityServiceGetUserHandler.ServeHTTP(w, r)
+		case IdentityServiceGetUserDisplayProcedure:
+			identityServiceGetUserDisplayHandler.ServeHTTP(w, r)
 		case IdentityServiceResolveUserProcedure:
 			identityServiceResolveUserHandler.ServeHTTP(w, r)
 		case IdentityServiceListUsersProcedure:
@@ -509,6 +540,10 @@ func (UnimplementedIdentityServiceHandler) CreateUser(context.Context, *connect.
 
 func (UnimplementedIdentityServiceHandler) GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.GetUser is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) GetUserDisplay(context.Context, *connect.Request[v1.GetUserDisplayRequest]) (*connect.Response[v1.GetUserDisplayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.GetUserDisplay is not implemented"))
 }
 
 func (UnimplementedIdentityServiceHandler) ResolveUser(context.Context, *connect.Request[v1.ResolveUserRequest]) (*connect.Response[v1.ResolveUserResponse], error) {

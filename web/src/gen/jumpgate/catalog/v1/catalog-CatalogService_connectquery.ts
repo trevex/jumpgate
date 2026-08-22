@@ -25,6 +25,16 @@ export const createAsset = CatalogService.method.createAsset;
 export const getAsset = CatalogService.method.getAsset;
 
 /**
+ * GetAssetDisplay returns an asset's decision context (path, kind, and for SSH
+ * the target address + available logins) for an approver or requester to judge
+ * a request — WITHOUT any secret references. Authorized by catalog:asset:read OR
+ * being party to a pending access request that references the asset.
+ *
+ * @generated from rpc jumpgate.catalog.v1.CatalogService.GetAssetDisplay
+ */
+export const getAssetDisplay = CatalogService.method.getAssetDisplay;
+
+/**
  * @generated from rpc jumpgate.catalog.v1.CatalogService.UpdateAssetConfig
  */
 export const updateAssetConfig = CatalogService.method.updateAssetConfig;

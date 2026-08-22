@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/access/v1/access.proto.
  */
 export const file_jumpgate_access_v1_access: GenFile = /*@__PURE__*/
-  fileDesc("Ch9qdW1wZ2F0ZS9hY2Nlc3MvdjEvYWNjZXNzLnByb3RvEhJqdW1wZ2F0ZS5hY2Nlc3MudjEicwoEUm9sZRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhQKDGNhcGFiaWxpdGllcxgEIAMoCRIRCglmb2xkZXJfaWQYBSABKAkSEwoLZm9sZGVyX3BhdGgYBiABKAlKBAgDEARSDXJlc291cmNlX3R5cGUi+gEKEUNyZWF0ZVJvbGVSZXF1ZXN0EicKBG5hbWUYASABKAlCGbpIFnIUEAEYyAEyDV5bYS16MC05Xy1dKyQShgEKDGNhcGFiaWxpdGllcxgDIAMoCUJwukhtkgFqImhyZjJkXihcKlwqfChbYS16MC05XSsoLVthLXowLTldKykqfFwqKSg6KFthLXowLTldKygtW2EtejAtOV0rKSp8XCopKSo6KFthLXowLTldKygtW2EtejAtOV0rKSp8XCp8XCpcKikpJBIeCglmb2xkZXJfaWQYBCABKAlCC7pICNgBAXIDsAEBSgQIAhADUg1yZXNvdXJjZV90eXBlIjwKEkNyZWF0ZVJvbGVSZXNwb25zZRImCgRyb2xlGAEgASgLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUiZQoQTGlzdFJvbGVzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJEg4KBnBhcmVudBgDIAEoCRIPCgdjYXNjYWRlGAQgASgIIlUKEUxpc3RSb2xlc1Jlc3BvbnNlEicKBXJvbGVzGAEgAygLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIiYKDkdldFJvbGVSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASI5Cg9HZXRSb2xlUmVzcG9uc2USJgoEcm9sZRgBIAEoCzIYLmp1bXBnYXRlLmFjY2Vzcy52MS5Sb2xlIioKElJlc29sdmVSb2xlUmVxdWVzdBIUCgNyZWYYASABKAlCB7pIBHICEAEiNAoTUmVzb2x2ZVJvbGVSZXNwb25zZRIPCgdyb2xlX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiTQoJUm9sZUdyYW50EgoKAmlkGAEgASgJEg8KB3JvbGVfaWQYAiABKAkSFgoOc291cmNlX3JvbGVfaWQYAyABKAkSCwoDdmlhGAQgASgJInsKE0FkZFJvbGVHcmFudFJlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESIAoOc291cmNlX3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEicKA3ZpYRgDIAEoCUIaukgXchVSC3NhbWVfb2JqZWN0UgZwYXJlbnQiRAoUQWRkUm9sZUdyYW50UmVzcG9uc2USLAoFZ3JhbnQYASABKAsyHS5qdW1wZ2F0ZS5hY2Nlc3MudjEuUm9sZUdyYW50Ii4KFlJlbW92ZVJvbGVHcmFudFJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIhkKF1JlbW92ZVJvbGVHcmFudFJlc3BvbnNlImQKFUxpc3RSb2xlR3JhbnRzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABARIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAMgASgJImAKFkxpc3RSb2xlR3JhbnRzUmVzcG9uc2USLQoGZ3JhbnRzGAEgAygLMh0uanVtcGdhdGUuYWNjZXNzLnYxLlJvbGVHcmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkijgEKC1JvbGVCaW5kaW5nEgoKAmlkGAEgASgJEg8KB3JvbGVfaWQYAiABKAkSFwoPc2NvcGVfZm9sZGVyX2lkGAMgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAQgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgFIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAYgASgJIqUBChhDcmVhdGVSb2xlQmluZGluZ1JlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESFwoPc2NvcGVfZm9sZGVyX2lkGAMgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAQgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgFIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAYgASgJSgQIAhADUgRraW5kIicKGUNyZWF0ZVJvbGVCaW5kaW5nUmVzcG9uc2USCgoCaWQYASABKAkiMAoYRGVsZXRlUm9sZUJpbmRpbmdSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIbChlEZWxldGVSb2xlQmluZGluZ1Jlc3BvbnNlIsABChdMaXN0Um9sZUJpbmRpbmdzUmVxdWVzdBIPCgdyb2xlX2lkGAEgASgJEhcKD3Njb3BlX2ZvbGRlcl9pZBgCIAEoCRIWCg5zY29wZV9hc3NldF9pZBgDIAEoCRIXCg9zdWJqZWN0X3VzZXJfaWQYBCABKAkSGAoQc3ViamVjdF9ncm91cF9pZBgFIAEoCRIcCglwYWdlX3NpemUYBiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAcgASgJImYKGExpc3RSb2xlQmluZGluZ3NSZXNwb25zZRIxCghiaW5kaW5ncxgBIAMoCzIfLmp1bXBnYXRlLmFjY2Vzcy52MS5Sb2xlQmluZGluZxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAki2gEKDVJlcXVlc3RQb2xpY3kSCgoCaWQYASABKAkSDwoHcm9sZV9pZBgCIAEoCRIXCg9zY29wZV9mb2xkZXJfaWQYAyABKAkSFgoOc2NvcGVfYXNzZXRfaWQYBCABKAkSGgoScmVxdWlyZWRfYXBwcm92YWxzGAUgASgFEhkKEXJlcXVlc3Rlcl9yb2xlX2lkGAYgASgJEhgKEGFwcHJvdmVyX3JvbGVfaWQYByABKAkSHAoUbWF4X2R1cmF0aW9uX3NlY29uZHMYCCABKAMSDAoEbmFtZRgJIAEoCSKVAgoaQ3JlYXRlUmVxdWVzdFBvbGljeVJlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESFwoPc2NvcGVfZm9sZGVyX2lkGAIgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAMgASgJEiUKEnJlcXVpcmVkX2FwcHJvdmFscxgEIAEoBUIJukgGGgQYFCgAEhkKEXJlcXVlc3Rlcl9yb2xlX2lkGAUgASgJEhgKEGFwcHJvdmVyX3JvbGVfaWQYBiABKAkSJQoUbWF4X2R1cmF0aW9uX3NlY29uZHMYByABKANCB7pIBCICKAASKAoEbmFtZRgIIAEoCUIaukgXchUYyAEyEF5bYS16QS1aMC05Xy1dKiQiUAobQ3JlYXRlUmVxdWVzdFBvbGljeVJlc3BvbnNlEjEKBnBvbGljeRgBIAEoCzIhLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXF1ZXN0UG9saWN5IrUBChpVcGRhdGVSZXF1ZXN0UG9saWN5UmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESJQoScmVxdWlyZWRfYXBwcm92YWxzGAIgASgFQgm6SAYaBBgUKAASGQoRcmVxdWVzdGVyX3JvbGVfaWQYAyABKAkSGAoQYXBwcm92ZXJfcm9sZV9pZBgEIAEoCRIlChRtYXhfZHVyYXRpb25fc2Vjb25kcxgFIAEoA0IHukgEIgIoACJQChtVcGRhdGVSZXF1ZXN0UG9saWN5UmVzcG9uc2USMQoGcG9saWN5GAEgASgLMiEuanVtcGdhdGUuYWNjZXNzLnYxLlJlcXVlc3RQb2xpY3kiMgoaRGVsZXRlUmVxdWVzdFBvbGljeVJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIh0KG0RlbGV0ZVJlcXVlc3RQb2xpY3lSZXNwb25zZSJpChpMaXN0UmVxdWVzdFBvbGljaWVzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABARIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAMgASgJImsKG0xpc3RSZXF1ZXN0UG9saWNpZXNSZXNwb25zZRIzCghwb2xpY2llcxgBIAMoCzIhLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXF1ZXN0UG9saWN5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJvCg1Qb2xpY3lTdWJqZWN0EgoKAmlkGAEgASgJEhEKCXBvbGljeV9pZBgCIAEoCRIMCgRraW5kGAMgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgEIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAUgASgJIkkKFFJlc29sdmVQb2xpY3lSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESGgoIYXNzZXRfaWQYAiABKAlCCLpIBXIDsAEBIioKFVJlc29sdmVQb2xpY3lSZXNwb25zZRIRCglwb2xpY3lfaWQYASABKAkikwEKF0FkZFBvbGljeVN1YmplY3RSZXF1ZXN0EhsKCXBvbGljeV9pZBgBIAEoCUIIukgFcgOwAQESKAoEa2luZBgCIAEoCUIaukgXchVSCXJlcXVlc3RlclIIYXBwcm92ZXISFwoPc3ViamVjdF91c2VyX2lkGAMgASgJEhgKEHN1YmplY3RfZ3JvdXBfaWQYBCABKAkiJgoYQWRkUG9saWN5U3ViamVjdFJlc3BvbnNlEgoKAmlkGAEgASgJIjIKGlJlbW92ZVBvbGljeVN1YmplY3RSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIdChtSZW1vdmVQb2xpY3lTdWJqZWN0UmVzcG9uc2UiagoZTGlzdFBvbGljeVN1YmplY3RzUmVxdWVzdBIbCglwb2xpY3lfaWQYASABKAlCCLpIBXIDsAEBEhwKCXBhZ2Vfc2l6ZRgCIAEoBUIJukgGGgQYZCgAEhIKCnBhZ2VfdG9rZW4YAyABKAkiagoaTGlzdFBvbGljeVN1YmplY3RzUmVzcG9uc2USMwoIc3ViamVjdHMYASADKAsyIS5qdW1wZ2F0ZS5hY2Nlc3MudjEuUG9saWN5U3ViamVjdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiZgoSRXhwbGFpblJvbGVSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBEhkKB3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEhoKCGFzc2V0X2lkGAMgASgJQgi6SAVyA7ABASJZChFSb2xlR3JhbnRQYXRoU3RlcBIPCgdyb2xlX2lkGAEgASgJEhMKC29iamVjdF9raW5kGAIgASgJEhEKCW9iamVjdF9pZBgDIAEoCRILCgN2aWEYBCABKAkibAoPRXhwbGFpblJvbGVQYXRoEjQKBXN0ZXBzGAEgAygLMiUuanVtcGdhdGUuYWNjZXNzLnYxLlJvbGVHcmFudFBhdGhTdGVwEhIKCmJpbmRpbmdfaWQYAiABKAkSDwoHc3ViamVjdBgDIAEoCSJYChNFeHBsYWluUm9sZVJlc3BvbnNlEg0KBWhvbGRzGAEgASgIEjIKBXBhdGhzGAIgAygLMiMuanVtcGdhdGUuYWNjZXNzLnYxLkV4cGxhaW5Sb2xlUGF0aCIxChRHZXRSb2xlQWNjZXNzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABASItChVHZXRSb2xlQWNjZXNzUmVzcG9uc2USFAoMY2FwYWJpbGl0aWVzGAEgAygJMpURCg1BY2Nlc3NTZXJ2aWNlEl0KCkNyZWF0ZVJvbGUSJS5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUm9sZVJlcXVlc3QaJi5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUm9sZVJlc3BvbnNlIgASWgoJTGlzdFJvbGVzEiQuanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSb2xlc1JlcXVlc3QaJS5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJvbGVzUmVzcG9uc2UiABJUCgdHZXRSb2xlEiIuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVSZXF1ZXN0GiMuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVSZXNwb25zZSIAEmAKC1Jlc29sdmVSb2xlEiYuanVtcGdhdGUuYWNjZXNzLnYxLlJlc29sdmVSb2xlUmVxdWVzdBonLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXNvbHZlUm9sZVJlc3BvbnNlIgASZgoNR2V0Um9sZUFjY2VzcxIoLmp1bXBnYXRlLmFjY2Vzcy52MS5HZXRSb2xlQWNjZXNzUmVxdWVzdBopLmp1bXBnYXRlLmFjY2Vzcy52MS5HZXRSb2xlQWNjZXNzUmVzcG9uc2UiABJjCgxBZGRSb2xlR3JhbnQSJy5qdW1wZ2F0ZS5hY2Nlc3MudjEuQWRkUm9sZUdyYW50UmVxdWVzdBooLmp1bXBnYXRlLmFjY2Vzcy52MS5BZGRSb2xlR3JhbnRSZXNwb25zZSIAEmwKD1JlbW92ZVJvbGVHcmFudBIqLmp1bXBnYXRlLmFjY2Vzcy52MS5SZW1vdmVSb2xlR3JhbnRSZXF1ZXN0GisuanVtcGdhdGUuYWNjZXNzLnYxLlJlbW92ZVJvbGVHcmFudFJlc3BvbnNlIgASaQoOTGlzdFJvbGVHcmFudHMSKS5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJvbGVHcmFudHNSZXF1ZXN0GiouanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSb2xlR3JhbnRzUmVzcG9uc2UiABJyChFDcmVhdGVSb2xlQmluZGluZxIsLmp1bXBnYXRlLmFjY2Vzcy52MS5DcmVhdGVSb2xlQmluZGluZ1JlcXVlc3QaLS5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUm9sZUJpbmRpbmdSZXNwb25zZSIAEnIKEURlbGV0ZVJvbGVCaW5kaW5nEiwuanVtcGdhdGUuYWNjZXNzLnYxLkRlbGV0ZVJvbGVCaW5kaW5nUmVxdWVzdBotLmp1bXBnYXRlLmFjY2Vzcy52MS5EZWxldGVSb2xlQmluZGluZ1Jlc3BvbnNlIgASbwoQTGlzdFJvbGVCaW5kaW5ncxIrLmp1bXBnYXRlLmFjY2Vzcy52MS5MaXN0Um9sZUJpbmRpbmdzUmVxdWVzdBosLmp1bXBnYXRlLmFjY2Vzcy52MS5MaXN0Um9sZUJpbmRpbmdzUmVzcG9uc2UiABJ4ChNDcmVhdGVSZXF1ZXN0UG9saWN5Ei4uanVtcGdhdGUuYWNjZXNzLnYxLkNyZWF0ZVJlcXVlc3RQb2xpY3lSZXF1ZXN0Gi8uanVtcGdhdGUuYWNjZXNzLnYxLkNyZWF0ZVJlcXVlc3RQb2xpY3lSZXNwb25zZSIAEngKE1VwZGF0ZVJlcXVlc3RQb2xpY3kSLi5qdW1wZ2F0ZS5hY2Nlc3MudjEuVXBkYXRlUmVxdWVzdFBvbGljeVJlcXVlc3QaLy5qdW1wZ2F0ZS5hY2Nlc3MudjEuVXBkYXRlUmVxdWVzdFBvbGljeVJlc3BvbnNlIgASeAoTRGVsZXRlUmVxdWVzdFBvbGljeRIuLmp1bXBnYXRlLmFjY2Vzcy52MS5EZWxldGVSZXF1ZXN0UG9saWN5UmVxdWVzdBovLmp1bXBnYXRlLmFjY2Vzcy52MS5EZWxldGVSZXF1ZXN0UG9saWN5UmVzcG9uc2UiABJ4ChNMaXN0UmVxdWVzdFBvbGljaWVzEi4uanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSZXF1ZXN0UG9saWNpZXNSZXF1ZXN0Gi8uanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSZXF1ZXN0UG9saWNpZXNSZXNwb25zZSIAEm8KEEFkZFBvbGljeVN1YmplY3QSKy5qdW1wZ2F0ZS5hY2Nlc3MudjEuQWRkUG9saWN5U3ViamVjdFJlcXVlc3QaLC5qdW1wZ2F0ZS5hY2Nlc3MudjEuQWRkUG9saWN5U3ViamVjdFJlc3BvbnNlIgASZgoNUmVzb2x2ZVBvbGljeRIoLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXNvbHZlUG9saWN5UmVxdWVzdBopLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXNvbHZlUG9saWN5UmVzcG9uc2UiABJ4ChNSZW1vdmVQb2xpY3lTdWJqZWN0Ei4uanVtcGdhdGUuYWNjZXNzLnYxLlJlbW92ZVBvbGljeVN1YmplY3RSZXF1ZXN0Gi8uanVtcGdhdGUuYWNjZXNzLnYxLlJlbW92ZVBvbGljeVN1YmplY3RSZXNwb25zZSIAEnUKEkxpc3RQb2xpY3lTdWJqZWN0cxItLmp1bXBnYXRlLmFjY2Vzcy52MS5MaXN0UG9saWN5U3ViamVjdHNSZXF1ZXN0Gi4uanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RQb2xpY3lTdWJqZWN0c1Jlc3BvbnNlIgASYAoLRXhwbGFpblJvbGUSJi5qdW1wZ2F0ZS5hY2Nlc3MudjEuRXhwbGFpblJvbGVSZXF1ZXN0GicuanVtcGdhdGUuYWNjZXNzLnYxLkV4cGxhaW5Sb2xlUmVzcG9uc2UiAEJDWkFnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2FjY2Vzcy92MTthY2Nlc3N2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("Ch9qdW1wZ2F0ZS9hY2Nlc3MvdjEvYWNjZXNzLnByb3RvEhJqdW1wZ2F0ZS5hY2Nlc3MudjEicwoEUm9sZRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhQKDGNhcGFiaWxpdGllcxgEIAMoCRIRCglmb2xkZXJfaWQYBSABKAkSEwoLZm9sZGVyX3BhdGgYBiABKAlKBAgDEARSDXJlc291cmNlX3R5cGUi+gEKEUNyZWF0ZVJvbGVSZXF1ZXN0EicKBG5hbWUYASABKAlCGbpIFnIUEAEYyAEyDV5bYS16MC05Xy1dKyQShgEKDGNhcGFiaWxpdGllcxgDIAMoCUJwukhtkgFqImhyZjJkXihcKlwqfChbYS16MC05XSsoLVthLXowLTldKykqfFwqKSg6KFthLXowLTldKygtW2EtejAtOV0rKSp8XCopKSo6KFthLXowLTldKygtW2EtejAtOV0rKSp8XCp8XCpcKikpJBIeCglmb2xkZXJfaWQYBCABKAlCC7pICNgBAXIDsAEBSgQIAhADUg1yZXNvdXJjZV90eXBlIjwKEkNyZWF0ZVJvbGVSZXNwb25zZRImCgRyb2xlGAEgASgLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUiZQoQTGlzdFJvbGVzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJEg4KBnBhcmVudBgDIAEoCRIPCgdjYXNjYWRlGAQgASgIIlUKEUxpc3RSb2xlc1Jlc3BvbnNlEicKBXJvbGVzGAEgAygLMhguanVtcGdhdGUuYWNjZXNzLnYxLlJvbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIiYKDkdldFJvbGVSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASI5Cg9HZXRSb2xlUmVzcG9uc2USJgoEcm9sZRgBIAEoCzIYLmp1bXBnYXRlLmFjY2Vzcy52MS5Sb2xlIi0KFUdldFJvbGVEaXNwbGF5UmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQEiRwoWR2V0Um9sZURpc3BsYXlSZXNwb25zZRItCgRyb2xlGAEgASgLMh8uanVtcGdhdGUuYWNjZXNzLnYxLlJvbGVEaXNwbGF5IlIKC1JvbGVEaXNwbGF5EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZm9sZGVyX3BhdGgYAyABKAkSFAoMY2FwYWJpbGl0aWVzGAQgAygJIioKElJlc29sdmVSb2xlUmVxdWVzdBIUCgNyZWYYASABKAlCB7pIBHICEAEiNAoTUmVzb2x2ZVJvbGVSZXNwb25zZRIPCgdyb2xlX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiTQoJUm9sZUdyYW50EgoKAmlkGAEgASgJEg8KB3JvbGVfaWQYAiABKAkSFgoOc291cmNlX3JvbGVfaWQYAyABKAkSCwoDdmlhGAQgASgJInsKE0FkZFJvbGVHcmFudFJlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESIAoOc291cmNlX3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEicKA3ZpYRgDIAEoCUIaukgXchVSC3NhbWVfb2JqZWN0UgZwYXJlbnQiRAoUQWRkUm9sZUdyYW50UmVzcG9uc2USLAoFZ3JhbnQYASABKAsyHS5qdW1wZ2F0ZS5hY2Nlc3MudjEuUm9sZUdyYW50Ii4KFlJlbW92ZVJvbGVHcmFudFJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIhkKF1JlbW92ZVJvbGVHcmFudFJlc3BvbnNlImQKFUxpc3RSb2xlR3JhbnRzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABARIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAMgASgJImAKFkxpc3RSb2xlR3JhbnRzUmVzcG9uc2USLQoGZ3JhbnRzGAEgAygLMh0uanVtcGdhdGUuYWNjZXNzLnYxLlJvbGVHcmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkijgEKC1JvbGVCaW5kaW5nEgoKAmlkGAEgASgJEg8KB3JvbGVfaWQYAiABKAkSFwoPc2NvcGVfZm9sZGVyX2lkGAMgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAQgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgFIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAYgASgJIqUBChhDcmVhdGVSb2xlQmluZGluZ1JlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESFwoPc2NvcGVfZm9sZGVyX2lkGAMgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAQgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgFIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAYgASgJSgQIAhADUgRraW5kIicKGUNyZWF0ZVJvbGVCaW5kaW5nUmVzcG9uc2USCgoCaWQYASABKAkiMAoYRGVsZXRlUm9sZUJpbmRpbmdSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIbChlEZWxldGVSb2xlQmluZGluZ1Jlc3BvbnNlIsABChdMaXN0Um9sZUJpbmRpbmdzUmVxdWVzdBIPCgdyb2xlX2lkGAEgASgJEhcKD3Njb3BlX2ZvbGRlcl9pZBgCIAEoCRIWCg5zY29wZV9hc3NldF9pZBgDIAEoCRIXCg9zdWJqZWN0X3VzZXJfaWQYBCABKAkSGAoQc3ViamVjdF9ncm91cF9pZBgFIAEoCRIcCglwYWdlX3NpemUYBiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAcgASgJImYKGExpc3RSb2xlQmluZGluZ3NSZXNwb25zZRIxCghiaW5kaW5ncxgBIAMoCzIfLmp1bXBnYXRlLmFjY2Vzcy52MS5Sb2xlQmluZGluZxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAki2gEKDVJlcXVlc3RQb2xpY3kSCgoCaWQYASABKAkSDwoHcm9sZV9pZBgCIAEoCRIXCg9zY29wZV9mb2xkZXJfaWQYAyABKAkSFgoOc2NvcGVfYXNzZXRfaWQYBCABKAkSGgoScmVxdWlyZWRfYXBwcm92YWxzGAUgASgFEhkKEXJlcXVlc3Rlcl9yb2xlX2lkGAYgASgJEhgKEGFwcHJvdmVyX3JvbGVfaWQYByABKAkSHAoUbWF4X2R1cmF0aW9uX3NlY29uZHMYCCABKAMSDAoEbmFtZRgJIAEoCSKVAgoaQ3JlYXRlUmVxdWVzdFBvbGljeVJlcXVlc3QSGQoHcm9sZV9pZBgBIAEoCUIIukgFcgOwAQESFwoPc2NvcGVfZm9sZGVyX2lkGAIgASgJEhYKDnNjb3BlX2Fzc2V0X2lkGAMgASgJEiUKEnJlcXVpcmVkX2FwcHJvdmFscxgEIAEoBUIJukgGGgQYFCgAEhkKEXJlcXVlc3Rlcl9yb2xlX2lkGAUgASgJEhgKEGFwcHJvdmVyX3JvbGVfaWQYBiABKAkSJQoUbWF4X2R1cmF0aW9uX3NlY29uZHMYByABKANCB7pIBCICKAASKAoEbmFtZRgIIAEoCUIaukgXchUYyAEyEF5bYS16QS1aMC05Xy1dKiQiUAobQ3JlYXRlUmVxdWVzdFBvbGljeVJlc3BvbnNlEjEKBnBvbGljeRgBIAEoCzIhLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXF1ZXN0UG9saWN5IrUBChpVcGRhdGVSZXF1ZXN0UG9saWN5UmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQESJQoScmVxdWlyZWRfYXBwcm92YWxzGAIgASgFQgm6SAYaBBgUKAASGQoRcmVxdWVzdGVyX3JvbGVfaWQYAyABKAkSGAoQYXBwcm92ZXJfcm9sZV9pZBgEIAEoCRIlChRtYXhfZHVyYXRpb25fc2Vjb25kcxgFIAEoA0IHukgEIgIoACJQChtVcGRhdGVSZXF1ZXN0UG9saWN5UmVzcG9uc2USMQoGcG9saWN5GAEgASgLMiEuanVtcGdhdGUuYWNjZXNzLnYxLlJlcXVlc3RQb2xpY3kiMgoaRGVsZXRlUmVxdWVzdFBvbGljeVJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIh0KG0RlbGV0ZVJlcXVlc3RQb2xpY3lSZXNwb25zZSJpChpMaXN0UmVxdWVzdFBvbGljaWVzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABARIcCglwYWdlX3NpemUYAiABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAMgASgJImsKG0xpc3RSZXF1ZXN0UG9saWNpZXNSZXNwb25zZRIzCghwb2xpY2llcxgBIAMoCzIhLmp1bXBnYXRlLmFjY2Vzcy52MS5SZXF1ZXN0UG9saWN5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJvCg1Qb2xpY3lTdWJqZWN0EgoKAmlkGAEgASgJEhEKCXBvbGljeV9pZBgCIAEoCRIMCgRraW5kGAMgASgJEhcKD3N1YmplY3RfdXNlcl9pZBgEIAEoCRIYChBzdWJqZWN0X2dyb3VwX2lkGAUgASgJIkkKFFJlc29sdmVQb2xpY3lSZXF1ZXN0EhUKBG5hbWUYASABKAlCB7pIBHICEAESGgoIYXNzZXRfaWQYAiABKAlCCLpIBXIDsAEBIioKFVJlc29sdmVQb2xpY3lSZXNwb25zZRIRCglwb2xpY3lfaWQYASABKAkikwEKF0FkZFBvbGljeVN1YmplY3RSZXF1ZXN0EhsKCXBvbGljeV9pZBgBIAEoCUIIukgFcgOwAQESKAoEa2luZBgCIAEoCUIaukgXchVSCXJlcXVlc3RlclIIYXBwcm92ZXISFwoPc3ViamVjdF91c2VyX2lkGAMgASgJEhgKEHN1YmplY3RfZ3JvdXBfaWQYBCABKAkiJgoYQWRkUG9saWN5U3ViamVjdFJlc3BvbnNlEgoKAmlkGAEgASgJIjIKGlJlbW92ZVBvbGljeVN1YmplY3RSZXF1ZXN0EhQKAmlkGAEgASgJQgi6SAVyA7ABASIdChtSZW1vdmVQb2xpY3lTdWJqZWN0UmVzcG9uc2UiagoZTGlzdFBvbGljeVN1YmplY3RzUmVxdWVzdBIbCglwb2xpY3lfaWQYASABKAlCCLpIBXIDsAEBEhwKCXBhZ2Vfc2l6ZRgCIAEoBUIJukgGGgQYZCgAEhIKCnBhZ2VfdG9rZW4YAyABKAkiagoaTGlzdFBvbGljeVN1YmplY3RzUmVzcG9uc2USMwoIc3ViamVjdHMYASADKAsyIS5qdW1wZ2F0ZS5hY2Nlc3MudjEuUG9saWN5U3ViamVjdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiZgoSRXhwbGFpblJvbGVSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBEhkKB3JvbGVfaWQYAiABKAlCCLpIBXIDsAEBEhoKCGFzc2V0X2lkGAMgASgJQgi6SAVyA7ABASJZChFSb2xlR3JhbnRQYXRoU3RlcBIPCgdyb2xlX2lkGAEgASgJEhMKC29iamVjdF9raW5kGAIgASgJEhEKCW9iamVjdF9pZBgDIAEoCRILCgN2aWEYBCABKAkibAoPRXhwbGFpblJvbGVQYXRoEjQKBXN0ZXBzGAEgAygLMiUuanVtcGdhdGUuYWNjZXNzLnYxLlJvbGVHcmFudFBhdGhTdGVwEhIKCmJpbmRpbmdfaWQYAiABKAkSDwoHc3ViamVjdBgDIAEoCSJYChNFeHBsYWluUm9sZVJlc3BvbnNlEg0KBWhvbGRzGAEgASgIEjIKBXBhdGhzGAIgAygLMiMuanVtcGdhdGUuYWNjZXNzLnYxLkV4cGxhaW5Sb2xlUGF0aCIxChRHZXRSb2xlQWNjZXNzUmVxdWVzdBIZCgdyb2xlX2lkGAEgASgJQgi6SAVyA7ABASItChVHZXRSb2xlQWNjZXNzUmVzcG9uc2USFAoMY2FwYWJpbGl0aWVzGAEgAygJMoASCg1BY2Nlc3NTZXJ2aWNlEl0KCkNyZWF0ZVJvbGUSJS5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUm9sZVJlcXVlc3QaJi5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUm9sZVJlc3BvbnNlIgASWgoJTGlzdFJvbGVzEiQuanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSb2xlc1JlcXVlc3QaJS5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJvbGVzUmVzcG9uc2UiABJUCgdHZXRSb2xlEiIuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVSZXF1ZXN0GiMuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVSZXNwb25zZSIAEmkKDkdldFJvbGVEaXNwbGF5EikuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVEaXNwbGF5UmVxdWVzdBoqLmp1bXBnYXRlLmFjY2Vzcy52MS5HZXRSb2xlRGlzcGxheVJlc3BvbnNlIgASYAoLUmVzb2x2ZVJvbGUSJi5qdW1wZ2F0ZS5hY2Nlc3MudjEuUmVzb2x2ZVJvbGVSZXF1ZXN0GicuanVtcGdhdGUuYWNjZXNzLnYxLlJlc29sdmVSb2xlUmVzcG9uc2UiABJmCg1HZXRSb2xlQWNjZXNzEiguanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVBY2Nlc3NSZXF1ZXN0GikuanVtcGdhdGUuYWNjZXNzLnYxLkdldFJvbGVBY2Nlc3NSZXNwb25zZSIAEmMKDEFkZFJvbGVHcmFudBInLmp1bXBnYXRlLmFjY2Vzcy52MS5BZGRSb2xlR3JhbnRSZXF1ZXN0GiguanVtcGdhdGUuYWNjZXNzLnYxLkFkZFJvbGVHcmFudFJlc3BvbnNlIgASbAoPUmVtb3ZlUm9sZUdyYW50EiouanVtcGdhdGUuYWNjZXNzLnYxLlJlbW92ZVJvbGVHcmFudFJlcXVlc3QaKy5qdW1wZ2F0ZS5hY2Nlc3MudjEuUmVtb3ZlUm9sZUdyYW50UmVzcG9uc2UiABJpCg5MaXN0Um9sZUdyYW50cxIpLmp1bXBnYXRlLmFjY2Vzcy52MS5MaXN0Um9sZUdyYW50c1JlcXVlc3QaKi5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJvbGVHcmFudHNSZXNwb25zZSIAEnIKEUNyZWF0ZVJvbGVCaW5kaW5nEiwuanVtcGdhdGUuYWNjZXNzLnYxLkNyZWF0ZVJvbGVCaW5kaW5nUmVxdWVzdBotLmp1bXBnYXRlLmFjY2Vzcy52MS5DcmVhdGVSb2xlQmluZGluZ1Jlc3BvbnNlIgAScgoRRGVsZXRlUm9sZUJpbmRpbmcSLC5qdW1wZ2F0ZS5hY2Nlc3MudjEuRGVsZXRlUm9sZUJpbmRpbmdSZXF1ZXN0Gi0uanVtcGdhdGUuYWNjZXNzLnYxLkRlbGV0ZVJvbGVCaW5kaW5nUmVzcG9uc2UiABJvChBMaXN0Um9sZUJpbmRpbmdzEisuanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSb2xlQmluZGluZ3NSZXF1ZXN0GiwuanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RSb2xlQmluZGluZ3NSZXNwb25zZSIAEngKE0NyZWF0ZVJlcXVlc3RQb2xpY3kSLi5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUmVxdWVzdFBvbGljeVJlcXVlc3QaLy5qdW1wZ2F0ZS5hY2Nlc3MudjEuQ3JlYXRlUmVxdWVzdFBvbGljeVJlc3BvbnNlIgASeAoTVXBkYXRlUmVxdWVzdFBvbGljeRIuLmp1bXBnYXRlLmFjY2Vzcy52MS5VcGRhdGVSZXF1ZXN0UG9saWN5UmVxdWVzdBovLmp1bXBnYXRlLmFjY2Vzcy52MS5VcGRhdGVSZXF1ZXN0UG9saWN5UmVzcG9uc2UiABJ4ChNEZWxldGVSZXF1ZXN0UG9saWN5Ei4uanVtcGdhdGUuYWNjZXNzLnYxLkRlbGV0ZVJlcXVlc3RQb2xpY3lSZXF1ZXN0Gi8uanVtcGdhdGUuYWNjZXNzLnYxLkRlbGV0ZVJlcXVlc3RQb2xpY3lSZXNwb25zZSIAEngKE0xpc3RSZXF1ZXN0UG9saWNpZXMSLi5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJlcXVlc3RQb2xpY2llc1JlcXVlc3QaLy5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFJlcXVlc3RQb2xpY2llc1Jlc3BvbnNlIgASbwoQQWRkUG9saWN5U3ViamVjdBIrLmp1bXBnYXRlLmFjY2Vzcy52MS5BZGRQb2xpY3lTdWJqZWN0UmVxdWVzdBosLmp1bXBnYXRlLmFjY2Vzcy52MS5BZGRQb2xpY3lTdWJqZWN0UmVzcG9uc2UiABJmCg1SZXNvbHZlUG9saWN5EiguanVtcGdhdGUuYWNjZXNzLnYxLlJlc29sdmVQb2xpY3lSZXF1ZXN0GikuanVtcGdhdGUuYWNjZXNzLnYxLlJlc29sdmVQb2xpY3lSZXNwb25zZSIAEngKE1JlbW92ZVBvbGljeVN1YmplY3QSLi5qdW1wZ2F0ZS5hY2Nlc3MudjEuUmVtb3ZlUG9saWN5U3ViamVjdFJlcXVlc3QaLy5qdW1wZ2F0ZS5hY2Nlc3MudjEuUmVtb3ZlUG9saWN5U3ViamVjdFJlc3BvbnNlIgASdQoSTGlzdFBvbGljeVN1YmplY3RzEi0uanVtcGdhdGUuYWNjZXNzLnYxLkxpc3RQb2xpY3lTdWJqZWN0c1JlcXVlc3QaLi5qdW1wZ2F0ZS5hY2Nlc3MudjEuTGlzdFBvbGljeVN1YmplY3RzUmVzcG9uc2UiABJgCgtFeHBsYWluUm9sZRImLmp1bXBnYXRlLmFjY2Vzcy52MS5FeHBsYWluUm9sZVJlcXVlc3QaJy5qdW1wZ2F0ZS5hY2Nlc3MudjEuRXhwbGFpblJvbGVSZXNwb25zZSIAQkNaQWdpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvYWNjZXNzL3YxO2FjY2Vzc3YxYgZwcm90bzM", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.access.v1.Role
@@ -200,6 +200,75 @@ export const GetRoleResponseSchema: GenMessage<GetRoleResponse> = /*@__PURE__*/
   messageDesc(file_jumpgate_access_v1_access, 6);
 
 /**
+ * GetRoleDisplay returns a role's decision context — name, folder path, and the
+ * capabilities it grants — for a request party judging an access request.
+ *
+ * @generated from message jumpgate.access.v1.GetRoleDisplayRequest
+ */
+export type GetRoleDisplayRequest = Message<"jumpgate.access.v1.GetRoleDisplayRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message jumpgate.access.v1.GetRoleDisplayRequest.
+ * Use `create(GetRoleDisplayRequestSchema)` to create a new message.
+ */
+export const GetRoleDisplayRequestSchema: GenMessage<GetRoleDisplayRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_access_v1_access, 7);
+
+/**
+ * @generated from message jumpgate.access.v1.GetRoleDisplayResponse
+ */
+export type GetRoleDisplayResponse = Message<"jumpgate.access.v1.GetRoleDisplayResponse"> & {
+  /**
+   * @generated from field: jumpgate.access.v1.RoleDisplay role = 1;
+   */
+  role?: RoleDisplay | undefined;
+};
+
+/**
+ * Describes the message jumpgate.access.v1.GetRoleDisplayResponse.
+ * Use `create(GetRoleDisplayResponseSchema)` to create a new message.
+ */
+export const GetRoleDisplayResponseSchema: GenMessage<GetRoleDisplayResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_access_v1_access, 8);
+
+/**
+ * @generated from message jumpgate.access.v1.RoleDisplay
+ */
+export type RoleDisplay = Message<"jumpgate.access.v1.RoleDisplay"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string folder_path = 3;
+   */
+  folderPath: string;
+
+  /**
+   * @generated from field: repeated string capabilities = 4;
+   */
+  capabilities: string[];
+};
+
+/**
+ * Describes the message jumpgate.access.v1.RoleDisplay.
+ * Use `create(RoleDisplaySchema)` to create a new message.
+ */
+export const RoleDisplaySchema: GenMessage<RoleDisplay> = /*@__PURE__*/
+  messageDesc(file_jumpgate_access_v1_access, 9);
+
+/**
  * @generated from message jumpgate.access.v1.ResolveRoleRequest
  */
 export type ResolveRoleRequest = Message<"jumpgate.access.v1.ResolveRoleRequest"> & {
@@ -214,7 +283,7 @@ export type ResolveRoleRequest = Message<"jumpgate.access.v1.ResolveRoleRequest"
  * Use `create(ResolveRoleRequestSchema)` to create a new message.
  */
 export const ResolveRoleRequestSchema: GenMessage<ResolveRoleRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 7);
+  messageDesc(file_jumpgate_access_v1_access, 10);
 
 /**
  * @generated from message jumpgate.access.v1.ResolveRoleResponse
@@ -236,7 +305,7 @@ export type ResolveRoleResponse = Message<"jumpgate.access.v1.ResolveRoleRespons
  * Use `create(ResolveRoleResponseSchema)` to create a new message.
  */
 export const ResolveRoleResponseSchema: GenMessage<ResolveRoleResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 8);
+  messageDesc(file_jumpgate_access_v1_access, 11);
 
 /**
  * @generated from message jumpgate.access.v1.RoleGrant
@@ -268,7 +337,7 @@ export type RoleGrant = Message<"jumpgate.access.v1.RoleGrant"> & {
  * Use `create(RoleGrantSchema)` to create a new message.
  */
 export const RoleGrantSchema: GenMessage<RoleGrant> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 9);
+  messageDesc(file_jumpgate_access_v1_access, 12);
 
 /**
  * @generated from message jumpgate.access.v1.AddRoleGrantRequest
@@ -295,7 +364,7 @@ export type AddRoleGrantRequest = Message<"jumpgate.access.v1.AddRoleGrantReques
  * Use `create(AddRoleGrantRequestSchema)` to create a new message.
  */
 export const AddRoleGrantRequestSchema: GenMessage<AddRoleGrantRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 10);
+  messageDesc(file_jumpgate_access_v1_access, 13);
 
 /**
  * @generated from message jumpgate.access.v1.AddRoleGrantResponse
@@ -312,7 +381,7 @@ export type AddRoleGrantResponse = Message<"jumpgate.access.v1.AddRoleGrantRespo
  * Use `create(AddRoleGrantResponseSchema)` to create a new message.
  */
 export const AddRoleGrantResponseSchema: GenMessage<AddRoleGrantResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 11);
+  messageDesc(file_jumpgate_access_v1_access, 14);
 
 /**
  * @generated from message jumpgate.access.v1.RemoveRoleGrantRequest
@@ -329,7 +398,7 @@ export type RemoveRoleGrantRequest = Message<"jumpgate.access.v1.RemoveRoleGrant
  * Use `create(RemoveRoleGrantRequestSchema)` to create a new message.
  */
 export const RemoveRoleGrantRequestSchema: GenMessage<RemoveRoleGrantRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 12);
+  messageDesc(file_jumpgate_access_v1_access, 15);
 
 /**
  * @generated from message jumpgate.access.v1.RemoveRoleGrantResponse
@@ -342,7 +411,7 @@ export type RemoveRoleGrantResponse = Message<"jumpgate.access.v1.RemoveRoleGran
  * Use `create(RemoveRoleGrantResponseSchema)` to create a new message.
  */
 export const RemoveRoleGrantResponseSchema: GenMessage<RemoveRoleGrantResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 13);
+  messageDesc(file_jumpgate_access_v1_access, 16);
 
 /**
  * @generated from message jumpgate.access.v1.ListRoleGrantsRequest
@@ -369,7 +438,7 @@ export type ListRoleGrantsRequest = Message<"jumpgate.access.v1.ListRoleGrantsRe
  * Use `create(ListRoleGrantsRequestSchema)` to create a new message.
  */
 export const ListRoleGrantsRequestSchema: GenMessage<ListRoleGrantsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 14);
+  messageDesc(file_jumpgate_access_v1_access, 17);
 
 /**
  * @generated from message jumpgate.access.v1.ListRoleGrantsResponse
@@ -391,7 +460,7 @@ export type ListRoleGrantsResponse = Message<"jumpgate.access.v1.ListRoleGrantsR
  * Use `create(ListRoleGrantsResponseSchema)` to create a new message.
  */
 export const ListRoleGrantsResponseSchema: GenMessage<ListRoleGrantsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 15);
+  messageDesc(file_jumpgate_access_v1_access, 18);
 
 /**
  * @generated from message jumpgate.access.v1.RoleBinding
@@ -433,7 +502,7 @@ export type RoleBinding = Message<"jumpgate.access.v1.RoleBinding"> & {
  * Use `create(RoleBindingSchema)` to create a new message.
  */
 export const RoleBindingSchema: GenMessage<RoleBinding> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 16);
+  messageDesc(file_jumpgate_access_v1_access, 19);
 
 /**
  * @generated from message jumpgate.access.v1.CreateRoleBindingRequest
@@ -470,7 +539,7 @@ export type CreateRoleBindingRequest = Message<"jumpgate.access.v1.CreateRoleBin
  * Use `create(CreateRoleBindingRequestSchema)` to create a new message.
  */
 export const CreateRoleBindingRequestSchema: GenMessage<CreateRoleBindingRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 17);
+  messageDesc(file_jumpgate_access_v1_access, 20);
 
 /**
  * @generated from message jumpgate.access.v1.CreateRoleBindingResponse
@@ -487,7 +556,7 @@ export type CreateRoleBindingResponse = Message<"jumpgate.access.v1.CreateRoleBi
  * Use `create(CreateRoleBindingResponseSchema)` to create a new message.
  */
 export const CreateRoleBindingResponseSchema: GenMessage<CreateRoleBindingResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 18);
+  messageDesc(file_jumpgate_access_v1_access, 21);
 
 /**
  * @generated from message jumpgate.access.v1.DeleteRoleBindingRequest
@@ -504,7 +573,7 @@ export type DeleteRoleBindingRequest = Message<"jumpgate.access.v1.DeleteRoleBin
  * Use `create(DeleteRoleBindingRequestSchema)` to create a new message.
  */
 export const DeleteRoleBindingRequestSchema: GenMessage<DeleteRoleBindingRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 19);
+  messageDesc(file_jumpgate_access_v1_access, 22);
 
 /**
  * @generated from message jumpgate.access.v1.DeleteRoleBindingResponse
@@ -517,7 +586,7 @@ export type DeleteRoleBindingResponse = Message<"jumpgate.access.v1.DeleteRoleBi
  * Use `create(DeleteRoleBindingResponseSchema)` to create a new message.
  */
 export const DeleteRoleBindingResponseSchema: GenMessage<DeleteRoleBindingResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 20);
+  messageDesc(file_jumpgate_access_v1_access, 23);
 
 /**
  * ListRoleBindings filters are all optional; an empty request lists all bindings.
@@ -566,7 +635,7 @@ export type ListRoleBindingsRequest = Message<"jumpgate.access.v1.ListRoleBindin
  * Use `create(ListRoleBindingsRequestSchema)` to create a new message.
  */
 export const ListRoleBindingsRequestSchema: GenMessage<ListRoleBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 21);
+  messageDesc(file_jumpgate_access_v1_access, 24);
 
 /**
  * @generated from message jumpgate.access.v1.ListRoleBindingsResponse
@@ -588,7 +657,7 @@ export type ListRoleBindingsResponse = Message<"jumpgate.access.v1.ListRoleBindi
  * Use `create(ListRoleBindingsResponseSchema)` to create a new message.
  */
 export const ListRoleBindingsResponseSchema: GenMessage<ListRoleBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 22);
+  messageDesc(file_jumpgate_access_v1_access, 25);
 
 /**
  * @generated from message jumpgate.access.v1.RequestPolicy
@@ -655,7 +724,7 @@ export type RequestPolicy = Message<"jumpgate.access.v1.RequestPolicy"> & {
  * Use `create(RequestPolicySchema)` to create a new message.
  */
 export const RequestPolicySchema: GenMessage<RequestPolicy> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 23);
+  messageDesc(file_jumpgate_access_v1_access, 26);
 
 /**
  * @generated from message jumpgate.access.v1.CreateRequestPolicyRequest
@@ -717,7 +786,7 @@ export type CreateRequestPolicyRequest = Message<"jumpgate.access.v1.CreateReque
  * Use `create(CreateRequestPolicyRequestSchema)` to create a new message.
  */
 export const CreateRequestPolicyRequestSchema: GenMessage<CreateRequestPolicyRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 24);
+  messageDesc(file_jumpgate_access_v1_access, 27);
 
 /**
  * @generated from message jumpgate.access.v1.CreateRequestPolicyResponse
@@ -734,7 +803,7 @@ export type CreateRequestPolicyResponse = Message<"jumpgate.access.v1.CreateRequ
  * Use `create(CreateRequestPolicyResponseSchema)` to create a new message.
  */
 export const CreateRequestPolicyResponseSchema: GenMessage<CreateRequestPolicyResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 25);
+  messageDesc(file_jumpgate_access_v1_access, 28);
 
 /**
  * @generated from message jumpgate.access.v1.UpdateRequestPolicyRequest
@@ -777,7 +846,7 @@ export type UpdateRequestPolicyRequest = Message<"jumpgate.access.v1.UpdateReque
  * Use `create(UpdateRequestPolicyRequestSchema)` to create a new message.
  */
 export const UpdateRequestPolicyRequestSchema: GenMessage<UpdateRequestPolicyRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 26);
+  messageDesc(file_jumpgate_access_v1_access, 29);
 
 /**
  * @generated from message jumpgate.access.v1.UpdateRequestPolicyResponse
@@ -794,7 +863,7 @@ export type UpdateRequestPolicyResponse = Message<"jumpgate.access.v1.UpdateRequ
  * Use `create(UpdateRequestPolicyResponseSchema)` to create a new message.
  */
 export const UpdateRequestPolicyResponseSchema: GenMessage<UpdateRequestPolicyResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 27);
+  messageDesc(file_jumpgate_access_v1_access, 30);
 
 /**
  * @generated from message jumpgate.access.v1.DeleteRequestPolicyRequest
@@ -811,7 +880,7 @@ export type DeleteRequestPolicyRequest = Message<"jumpgate.access.v1.DeleteReque
  * Use `create(DeleteRequestPolicyRequestSchema)` to create a new message.
  */
 export const DeleteRequestPolicyRequestSchema: GenMessage<DeleteRequestPolicyRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 28);
+  messageDesc(file_jumpgate_access_v1_access, 31);
 
 /**
  * @generated from message jumpgate.access.v1.DeleteRequestPolicyResponse
@@ -824,7 +893,7 @@ export type DeleteRequestPolicyResponse = Message<"jumpgate.access.v1.DeleteRequ
  * Use `create(DeleteRequestPolicyResponseSchema)` to create a new message.
  */
 export const DeleteRequestPolicyResponseSchema: GenMessage<DeleteRequestPolicyResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 29);
+  messageDesc(file_jumpgate_access_v1_access, 32);
 
 /**
  * @generated from message jumpgate.access.v1.ListRequestPoliciesRequest
@@ -851,7 +920,7 @@ export type ListRequestPoliciesRequest = Message<"jumpgate.access.v1.ListRequest
  * Use `create(ListRequestPoliciesRequestSchema)` to create a new message.
  */
 export const ListRequestPoliciesRequestSchema: GenMessage<ListRequestPoliciesRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 30);
+  messageDesc(file_jumpgate_access_v1_access, 33);
 
 /**
  * @generated from message jumpgate.access.v1.ListRequestPoliciesResponse
@@ -873,7 +942,7 @@ export type ListRequestPoliciesResponse = Message<"jumpgate.access.v1.ListReques
  * Use `create(ListRequestPoliciesResponseSchema)` to create a new message.
  */
 export const ListRequestPoliciesResponseSchema: GenMessage<ListRequestPoliciesResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 31);
+  messageDesc(file_jumpgate_access_v1_access, 34);
 
 /**
  * @generated from message jumpgate.access.v1.PolicySubject
@@ -912,7 +981,7 @@ export type PolicySubject = Message<"jumpgate.access.v1.PolicySubject"> & {
  * Use `create(PolicySubjectSchema)` to create a new message.
  */
 export const PolicySubjectSchema: GenMessage<PolicySubject> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 32);
+  messageDesc(file_jumpgate_access_v1_access, 35);
 
 /**
  * ResolvePolicy maps a (name, asset scope) to a policy id. Admin only; NotFound if
@@ -937,7 +1006,7 @@ export type ResolvePolicyRequest = Message<"jumpgate.access.v1.ResolvePolicyRequ
  * Use `create(ResolvePolicyRequestSchema)` to create a new message.
  */
 export const ResolvePolicyRequestSchema: GenMessage<ResolvePolicyRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 33);
+  messageDesc(file_jumpgate_access_v1_access, 36);
 
 /**
  * @generated from message jumpgate.access.v1.ResolvePolicyResponse
@@ -954,7 +1023,7 @@ export type ResolvePolicyResponse = Message<"jumpgate.access.v1.ResolvePolicyRes
  * Use `create(ResolvePolicyResponseSchema)` to create a new message.
  */
 export const ResolvePolicyResponseSchema: GenMessage<ResolvePolicyResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 34);
+  messageDesc(file_jumpgate_access_v1_access, 37);
 
 /**
  * @generated from message jumpgate.access.v1.AddPolicySubjectRequest
@@ -988,7 +1057,7 @@ export type AddPolicySubjectRequest = Message<"jumpgate.access.v1.AddPolicySubje
  * Use `create(AddPolicySubjectRequestSchema)` to create a new message.
  */
 export const AddPolicySubjectRequestSchema: GenMessage<AddPolicySubjectRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 35);
+  messageDesc(file_jumpgate_access_v1_access, 38);
 
 /**
  * @generated from message jumpgate.access.v1.AddPolicySubjectResponse
@@ -1005,7 +1074,7 @@ export type AddPolicySubjectResponse = Message<"jumpgate.access.v1.AddPolicySubj
  * Use `create(AddPolicySubjectResponseSchema)` to create a new message.
  */
 export const AddPolicySubjectResponseSchema: GenMessage<AddPolicySubjectResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 36);
+  messageDesc(file_jumpgate_access_v1_access, 39);
 
 /**
  * @generated from message jumpgate.access.v1.RemovePolicySubjectRequest
@@ -1022,7 +1091,7 @@ export type RemovePolicySubjectRequest = Message<"jumpgate.access.v1.RemovePolic
  * Use `create(RemovePolicySubjectRequestSchema)` to create a new message.
  */
 export const RemovePolicySubjectRequestSchema: GenMessage<RemovePolicySubjectRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 37);
+  messageDesc(file_jumpgate_access_v1_access, 40);
 
 /**
  * @generated from message jumpgate.access.v1.RemovePolicySubjectResponse
@@ -1035,7 +1104,7 @@ export type RemovePolicySubjectResponse = Message<"jumpgate.access.v1.RemovePoli
  * Use `create(RemovePolicySubjectResponseSchema)` to create a new message.
  */
 export const RemovePolicySubjectResponseSchema: GenMessage<RemovePolicySubjectResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 38);
+  messageDesc(file_jumpgate_access_v1_access, 41);
 
 /**
  * @generated from message jumpgate.access.v1.ListPolicySubjectsRequest
@@ -1062,7 +1131,7 @@ export type ListPolicySubjectsRequest = Message<"jumpgate.access.v1.ListPolicySu
  * Use `create(ListPolicySubjectsRequestSchema)` to create a new message.
  */
 export const ListPolicySubjectsRequestSchema: GenMessage<ListPolicySubjectsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 39);
+  messageDesc(file_jumpgate_access_v1_access, 42);
 
 /**
  * @generated from message jumpgate.access.v1.ListPolicySubjectsResponse
@@ -1084,7 +1153,7 @@ export type ListPolicySubjectsResponse = Message<"jumpgate.access.v1.ListPolicyS
  * Use `create(ListPolicySubjectsResponseSchema)` to create a new message.
  */
 export const ListPolicySubjectsResponseSchema: GenMessage<ListPolicySubjectsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 40);
+  messageDesc(file_jumpgate_access_v1_access, 43);
 
 /**
  * @generated from message jumpgate.access.v1.ExplainRoleRequest
@@ -1111,7 +1180,7 @@ export type ExplainRoleRequest = Message<"jumpgate.access.v1.ExplainRoleRequest"
  * Use `create(ExplainRoleRequestSchema)` to create a new message.
  */
 export const ExplainRoleRequestSchema: GenMessage<ExplainRoleRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 41);
+  messageDesc(file_jumpgate_access_v1_access, 44);
 
 /**
  * @generated from message jumpgate.access.v1.RoleGrantPathStep
@@ -1143,7 +1212,7 @@ export type RoleGrantPathStep = Message<"jumpgate.access.v1.RoleGrantPathStep"> 
  * Use `create(RoleGrantPathStepSchema)` to create a new message.
  */
 export const RoleGrantPathStepSchema: GenMessage<RoleGrantPathStep> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 42);
+  messageDesc(file_jumpgate_access_v1_access, 45);
 
 /**
  * @generated from message jumpgate.access.v1.ExplainRolePath
@@ -1170,7 +1239,7 @@ export type ExplainRolePath = Message<"jumpgate.access.v1.ExplainRolePath"> & {
  * Use `create(ExplainRolePathSchema)` to create a new message.
  */
 export const ExplainRolePathSchema: GenMessage<ExplainRolePath> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 43);
+  messageDesc(file_jumpgate_access_v1_access, 46);
 
 /**
  * @generated from message jumpgate.access.v1.ExplainRoleResponse
@@ -1192,7 +1261,7 @@ export type ExplainRoleResponse = Message<"jumpgate.access.v1.ExplainRoleRespons
  * Use `create(ExplainRoleResponseSchema)` to create a new message.
  */
 export const ExplainRoleResponseSchema: GenMessage<ExplainRoleResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 44);
+  messageDesc(file_jumpgate_access_v1_access, 47);
 
 /**
  * GetRoleAccess returns the caller's management capabilities on one role.
@@ -1213,7 +1282,7 @@ export type GetRoleAccessRequest = Message<"jumpgate.access.v1.GetRoleAccessRequ
  * Use `create(GetRoleAccessRequestSchema)` to create a new message.
  */
 export const GetRoleAccessRequestSchema: GenMessage<GetRoleAccessRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 45);
+  messageDesc(file_jumpgate_access_v1_access, 48);
 
 /**
  * @generated from message jumpgate.access.v1.GetRoleAccessResponse
@@ -1230,7 +1299,7 @@ export type GetRoleAccessResponse = Message<"jumpgate.access.v1.GetRoleAccessRes
  * Use `create(GetRoleAccessResponseSchema)` to create a new message.
  */
 export const GetRoleAccessResponseSchema: GenMessage<GetRoleAccessResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_access_v1_access, 46);
+  messageDesc(file_jumpgate_access_v1_access, 49);
 
 /**
  * AccessService manages authorization configuration (admin): roles, role
@@ -1265,6 +1334,18 @@ export const AccessService: GenService<{
     methodKind: "unary";
     input: typeof GetRoleRequestSchema;
     output: typeof GetRoleResponseSchema;
+  },
+  /**
+   * GetRoleDisplay returns a role's decision context (name, folder path, and the
+   * capabilities it grants) for an approver or requester. Authorized by
+   * access:role:read OR being party to a pending access request referencing the role.
+   *
+   * @generated from rpc jumpgate.access.v1.AccessService.GetRoleDisplay
+   */
+  getRoleDisplay: {
+    methodKind: "unary";
+    input: typeof GetRoleDisplayRequestSchema;
+    output: typeof GetRoleDisplayResponseSchema;
   },
   /**
    * @generated from rpc jumpgate.access.v1.AccessService.ResolveRole

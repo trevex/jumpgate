@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/identity/v1/identity.proto.
  */
 export const file_jumpgate_identity_v1_identity: GenFile = /*@__PURE__*/
-  fileDesc("CiNqdW1wZ2F0ZS9pZGVudGl0eS92MS9pZGVudGl0eS5wcm90bxIUanVtcGdhdGUuaWRlbnRpdHkudjEiRwoEVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAlKBAgEEAVSCGlzX2FkbWluIkkKBUdyb3VwEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJZm9sZGVyX2lkGAMgASgJEhMKC2ZvbGRlcl9wYXRoGAQgASgJIj4KEkNyZWF0ZVVzZXJSZXNwb25zZRIoCgR1c2VyGAEgASgLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlciI7Cg9HZXRVc2VyUmVzcG9uc2USKAoEdXNlchgBIAEoCzIaLmp1bXBnYXRlLmlkZW50aXR5LnYxLlVzZXIiQQoTQ3JlYXRlR3JvdXBSZXNwb25zZRIqCgVncm91cBgBIAEoCzIbLmp1bXBnYXRlLmlkZW50aXR5LnYxLkdyb3VwIngKEUNyZWF0ZVVzZXJSZXF1ZXN0EhYKBWVtYWlsGAEgASgJQge6SARyAmABEiAKDGRpc3BsYXlfbmFtZRgCIAEoCUIKukgHcgUQARjIARIZCghwYXNzd29yZBgDIAEoCUIHukgEcgIQCEoECAQQBVIIaXNfYWRtaW4iJgoOR2V0VXNlclJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIiwKElJlc29sdmVVc2VyUmVxdWVzdBIWCgVlbWFpbBgBIAEoCUIHukgEcgIQASImChNSZXNvbHZlVXNlclJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkiLAoTUmVzb2x2ZUdyb3VwUmVxdWVzdBIVCgRuYW1lGAEgASgJQge6SARyAhABIjYKFFJlc29sdmVHcm91cFJlc3BvbnNlEhAKCGdyb3VwX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiRAoQTGlzdFVzZXJzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJIlcKEUxpc3RVc2Vyc1Jlc3BvbnNlEikKBXVzZXJzGAEgAygLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiXQoSQ3JlYXRlR3JvdXBSZXF1ZXN0EicKBG5hbWUYASABKAlCGbpIFnIUEAEYyAEyDV5bYS16MC05Xy1dKyQSHgoJZm9sZGVyX2lkGAIgASgJQgu6SAjYAQFyA7ABASJmChFMaXN0R3JvdXBzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJEg4KBnBhcmVudBgDIAEoCRIPCgdjYXNjYWRlGAQgASgIIloKEkxpc3RHcm91cHNSZXNwb25zZRIrCgZncm91cHMYASADKAsyGy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5Hcm91cBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiTgoVQWRkVXNlclRvR3JvdXBSZXF1ZXN0EhoKCGdyb3VwX2lkGAEgASgJQgi6SAVyA7ABARIZCgd1c2VyX2lkGAIgASgJQgi6SAVyA7ABASIYChZBZGRVc2VyVG9Hcm91cFJlc3BvbnNlIlcKFkFkZEdyb3VwVG9Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEiEKD21lbWJlcl9ncm91cF9pZBgCIAEoCUIIukgFcgOwAQEiGQoXQWRkR3JvdXBUb0dyb3VwUmVzcG9uc2UiUwoaUmVtb3ZlVXNlckZyb21Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBIh0KG1JlbW92ZVVzZXJGcm9tR3JvdXBSZXNwb25zZSJcChtSZW1vdmVHcm91cEZyb21Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEiEKD21lbWJlcl9ncm91cF9pZBgCIAEoCUIIukgFcgOwAQEiHgocUmVtb3ZlR3JvdXBGcm9tR3JvdXBSZXNwb25zZSJnChdMaXN0R3JvdXBNZW1iZXJzUmVxdWVzdBIaCghncm91cF9pZBgBIAEoCUIIukgFcgOwAQESHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkKAASEgoKcGFnZV90b2tlbhgDIAEoCSKLAQoYTGlzdEdyb3VwTWVtYmVyc1Jlc3BvbnNlEikKBXVzZXJzGAEgAygLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlchIrCgZncm91cHMYAiADKAsyGy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5Hcm91cBIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkiMgoVRGVhY3RpdmF0ZVVzZXJSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBIhgKFkRlYWN0aXZhdGVVc2VyUmVzcG9uc2UiMgoVUmVhY3RpdmF0ZVVzZXJSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBIhgKFlJlYWN0aXZhdGVVc2VyUmVzcG9uc2UiLgoRRGVsZXRlVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiFAoSRGVsZXRlVXNlclJlc3BvbnNlIjAKEkRlbGV0ZUdyb3VwUmVxdWVzdBIaCghncm91cF9pZBgBIAEoCUIIukgFcgOwAQEiFQoTRGVsZXRlR3JvdXBSZXNwb25zZSIzChVHZXRHcm91cEFjY2Vzc1JlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBIi4KFkdldEdyb3VwQWNjZXNzUmVzcG9uc2USFAoMY2FwYWJpbGl0aWVzGAEgAygJMrEOCg9JZGVudGl0eVNlcnZpY2USYQoKQ3JlYXRlVXNlchInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkNyZWF0ZVVzZXJSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuQ3JlYXRlVXNlclJlc3BvbnNlIgASWAoHR2V0VXNlchIkLmp1bXBnYXRlLmlkZW50aXR5LnYxLkdldFVzZXJSZXF1ZXN0GiUuanVtcGdhdGUuaWRlbnRpdHkudjEuR2V0VXNlclJlc3BvbnNlIgASZAoLUmVzb2x2ZVVzZXISKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZXNvbHZlVXNlclJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZXNvbHZlVXNlclJlc3BvbnNlIgASXgoJTGlzdFVzZXJzEiYuanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdFVzZXJzUmVxdWVzdBonLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RVc2Vyc1Jlc3BvbnNlIgASZAoLQ3JlYXRlR3JvdXASKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5DcmVhdGVHcm91cFJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5DcmVhdGVHcm91cFJlc3BvbnNlIgASZwoMUmVzb2x2ZUdyb3VwEikuanVtcGdhdGUuaWRlbnRpdHkudjEuUmVzb2x2ZUdyb3VwUmVxdWVzdBoqLmp1bXBnYXRlLmlkZW50aXR5LnYxLlJlc29sdmVHcm91cFJlc3BvbnNlIgASYQoKTGlzdEdyb3VwcxInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RHcm91cHNSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdEdyb3Vwc1Jlc3BvbnNlIgASbQoOR2V0R3JvdXBBY2Nlc3MSKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRHcm91cEFjY2Vzc1JlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRHcm91cEFjY2Vzc1Jlc3BvbnNlIgASbQoOQWRkVXNlclRvR3JvdXASKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5BZGRVc2VyVG9Hcm91cFJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5BZGRVc2VyVG9Hcm91cFJlc3BvbnNlIgAScAoPQWRkR3JvdXBUb0dyb3VwEiwuanVtcGdhdGUuaWRlbnRpdHkudjEuQWRkR3JvdXBUb0dyb3VwUmVxdWVzdBotLmp1bXBnYXRlLmlkZW50aXR5LnYxLkFkZEdyb3VwVG9Hcm91cFJlc3BvbnNlIgASfAoTUmVtb3ZlVXNlckZyb21Hcm91cBIwLmp1bXBnYXRlLmlkZW50aXR5LnYxLlJlbW92ZVVzZXJGcm9tR3JvdXBSZXF1ZXN0GjEuanVtcGdhdGUuaWRlbnRpdHkudjEuUmVtb3ZlVXNlckZyb21Hcm91cFJlc3BvbnNlIgASfwoUUmVtb3ZlR3JvdXBGcm9tR3JvdXASMS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZW1vdmVHcm91cEZyb21Hcm91cFJlcXVlc3QaMi5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZW1vdmVHcm91cEZyb21Hcm91cFJlc3BvbnNlIgAScwoQTGlzdEdyb3VwTWVtYmVycxItLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RHcm91cE1lbWJlcnNSZXF1ZXN0Gi4uanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdEdyb3VwTWVtYmVyc1Jlc3BvbnNlIgASbQoORGVhY3RpdmF0ZVVzZXISKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWFjdGl2YXRlVXNlclJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWFjdGl2YXRlVXNlclJlc3BvbnNlIgASbQoOUmVhY3RpdmF0ZVVzZXISKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZWFjdGl2YXRlVXNlclJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZWFjdGl2YXRlVXNlclJlc3BvbnNlIgASYQoKRGVsZXRlVXNlchInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkRlbGV0ZVVzZXJSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuRGVsZXRlVXNlclJlc3BvbnNlIgASZAoLRGVsZXRlR3JvdXASKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWxldGVHcm91cFJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWxldGVHcm91cFJlc3BvbnNlIgBCR1pFZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9pZGVudGl0eS92MTtpZGVudGl0eXYxYgZwcm90bzM", [file_buf_validate_validate]);
+  fileDesc("CiNqdW1wZ2F0ZS9pZGVudGl0eS92MS9pZGVudGl0eS5wcm90bxIUanVtcGdhdGUuaWRlbnRpdHkudjEiRwoEVXNlchIKCgJpZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAlKBAgEEAVSCGlzX2FkbWluIkkKBUdyb3VwEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJZm9sZGVyX2lkGAMgASgJEhMKC2ZvbGRlcl9wYXRoGAQgASgJIj4KEkNyZWF0ZVVzZXJSZXNwb25zZRIoCgR1c2VyGAEgASgLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlciI7Cg9HZXRVc2VyUmVzcG9uc2USKAoEdXNlchgBIAEoCzIaLmp1bXBnYXRlLmlkZW50aXR5LnYxLlVzZXIiQQoTQ3JlYXRlR3JvdXBSZXNwb25zZRIqCgVncm91cBgBIAEoCzIbLmp1bXBnYXRlLmlkZW50aXR5LnYxLkdyb3VwIngKEUNyZWF0ZVVzZXJSZXF1ZXN0EhYKBWVtYWlsGAEgASgJQge6SARyAmABEiAKDGRpc3BsYXlfbmFtZRgCIAEoCUIKukgHcgUQARjIARIZCghwYXNzd29yZBgDIAEoCUIHukgEcgIQCEoECAQQBVIIaXNfYWRtaW4iJgoOR2V0VXNlclJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIi0KFUdldFVzZXJEaXNwbGF5UmVxdWVzdBIUCgJpZBgBIAEoCUIIukgFcgOwAQEiSQoWR2V0VXNlckRpc3BsYXlSZXNwb25zZRIvCgR1c2VyGAEgASgLMiEuanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlckRpc3BsYXkiPgoLVXNlckRpc3BsYXkSCgoCaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEg0KBWVtYWlsGAMgASgJIiwKElJlc29sdmVVc2VyUmVxdWVzdBIWCgVlbWFpbBgBIAEoCUIHukgEcgIQASImChNSZXNvbHZlVXNlclJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkiLAoTUmVzb2x2ZUdyb3VwUmVxdWVzdBIVCgRuYW1lGAEgASgJQge6SARyAhABIjYKFFJlc29sdmVHcm91cFJlc3BvbnNlEhAKCGdyb3VwX2lkGAEgASgJEgwKBHBhdGgYAiABKAkiRAoQTGlzdFVzZXJzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJIlcKEUxpc3RVc2Vyc1Jlc3BvbnNlEikKBXVzZXJzGAEgAygLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiXQoSQ3JlYXRlR3JvdXBSZXF1ZXN0EicKBG5hbWUYASABKAlCGbpIFnIUEAEYyAEyDV5bYS16MC05Xy1dKyQSHgoJZm9sZGVyX2lkGAIgASgJQgu6SAjYAQFyA7ABASJmChFMaXN0R3JvdXBzUmVxdWVzdBIcCglwYWdlX3NpemUYASABKAVCCbpIBhoEGGQoABISCgpwYWdlX3Rva2VuGAIgASgJEg4KBnBhcmVudBgDIAEoCRIPCgdjYXNjYWRlGAQgASgIIloKEkxpc3RHcm91cHNSZXNwb25zZRIrCgZncm91cHMYASADKAsyGy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5Hcm91cBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiTgoVQWRkVXNlclRvR3JvdXBSZXF1ZXN0EhoKCGdyb3VwX2lkGAEgASgJQgi6SAVyA7ABARIZCgd1c2VyX2lkGAIgASgJQgi6SAVyA7ABASIYChZBZGRVc2VyVG9Hcm91cFJlc3BvbnNlIlcKFkFkZEdyb3VwVG9Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEiEKD21lbWJlcl9ncm91cF9pZBgCIAEoCUIIukgFcgOwAQEiGQoXQWRkR3JvdXBUb0dyb3VwUmVzcG9uc2UiUwoaUmVtb3ZlVXNlckZyb21Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEhkKB3VzZXJfaWQYAiABKAlCCLpIBXIDsAEBIh0KG1JlbW92ZVVzZXJGcm9tR3JvdXBSZXNwb25zZSJcChtSZW1vdmVHcm91cEZyb21Hcm91cFJlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBEiEKD21lbWJlcl9ncm91cF9pZBgCIAEoCUIIukgFcgOwAQEiHgocUmVtb3ZlR3JvdXBGcm9tR3JvdXBSZXNwb25zZSJnChdMaXN0R3JvdXBNZW1iZXJzUmVxdWVzdBIaCghncm91cF9pZBgBIAEoCUIIukgFcgOwAQESHAoJcGFnZV9zaXplGAIgASgFQgm6SAYaBBhkKAASEgoKcGFnZV90b2tlbhgDIAEoCSKLAQoYTGlzdEdyb3VwTWVtYmVyc1Jlc3BvbnNlEikKBXVzZXJzGAEgAygLMhouanVtcGdhdGUuaWRlbnRpdHkudjEuVXNlchIrCgZncm91cHMYAiADKAsyGy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5Hcm91cBIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkiMgoVRGVhY3RpdmF0ZVVzZXJSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBIhgKFkRlYWN0aXZhdGVVc2VyUmVzcG9uc2UiMgoVUmVhY3RpdmF0ZVVzZXJSZXF1ZXN0EhkKB3VzZXJfaWQYASABKAlCCLpIBXIDsAEBIhgKFlJlYWN0aXZhdGVVc2VyUmVzcG9uc2UiLgoRRGVsZXRlVXNlclJlcXVlc3QSGQoHdXNlcl9pZBgBIAEoCUIIukgFcgOwAQEiFAoSRGVsZXRlVXNlclJlc3BvbnNlIjAKEkRlbGV0ZUdyb3VwUmVxdWVzdBIaCghncm91cF9pZBgBIAEoCUIIukgFcgOwAQEiFQoTRGVsZXRlR3JvdXBSZXNwb25zZSIzChVHZXRHcm91cEFjY2Vzc1JlcXVlc3QSGgoIZ3JvdXBfaWQYASABKAlCCLpIBXIDsAEBIi4KFkdldEdyb3VwQWNjZXNzUmVzcG9uc2USFAoMY2FwYWJpbGl0aWVzGAEgAygJMqAPCg9JZGVudGl0eVNlcnZpY2USYQoKQ3JlYXRlVXNlchInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkNyZWF0ZVVzZXJSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuQ3JlYXRlVXNlclJlc3BvbnNlIgASWAoHR2V0VXNlchIkLmp1bXBnYXRlLmlkZW50aXR5LnYxLkdldFVzZXJSZXF1ZXN0GiUuanVtcGdhdGUuaWRlbnRpdHkudjEuR2V0VXNlclJlc3BvbnNlIgASbQoOR2V0VXNlckRpc3BsYXkSKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRVc2VyRGlzcGxheVJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRVc2VyRGlzcGxheVJlc3BvbnNlIgASZAoLUmVzb2x2ZVVzZXISKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZXNvbHZlVXNlclJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZXNvbHZlVXNlclJlc3BvbnNlIgASXgoJTGlzdFVzZXJzEiYuanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdFVzZXJzUmVxdWVzdBonLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RVc2Vyc1Jlc3BvbnNlIgASZAoLQ3JlYXRlR3JvdXASKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5DcmVhdGVHcm91cFJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5DcmVhdGVHcm91cFJlc3BvbnNlIgASZwoMUmVzb2x2ZUdyb3VwEikuanVtcGdhdGUuaWRlbnRpdHkudjEuUmVzb2x2ZUdyb3VwUmVxdWVzdBoqLmp1bXBnYXRlLmlkZW50aXR5LnYxLlJlc29sdmVHcm91cFJlc3BvbnNlIgASYQoKTGlzdEdyb3VwcxInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RHcm91cHNSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdEdyb3Vwc1Jlc3BvbnNlIgASbQoOR2V0R3JvdXBBY2Nlc3MSKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRHcm91cEFjY2Vzc1JlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5HZXRHcm91cEFjY2Vzc1Jlc3BvbnNlIgASbQoOQWRkVXNlclRvR3JvdXASKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5BZGRVc2VyVG9Hcm91cFJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5BZGRVc2VyVG9Hcm91cFJlc3BvbnNlIgAScAoPQWRkR3JvdXBUb0dyb3VwEiwuanVtcGdhdGUuaWRlbnRpdHkudjEuQWRkR3JvdXBUb0dyb3VwUmVxdWVzdBotLmp1bXBnYXRlLmlkZW50aXR5LnYxLkFkZEdyb3VwVG9Hcm91cFJlc3BvbnNlIgASfAoTUmVtb3ZlVXNlckZyb21Hcm91cBIwLmp1bXBnYXRlLmlkZW50aXR5LnYxLlJlbW92ZVVzZXJGcm9tR3JvdXBSZXF1ZXN0GjEuanVtcGdhdGUuaWRlbnRpdHkudjEuUmVtb3ZlVXNlckZyb21Hcm91cFJlc3BvbnNlIgASfwoUUmVtb3ZlR3JvdXBGcm9tR3JvdXASMS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZW1vdmVHcm91cEZyb21Hcm91cFJlcXVlc3QaMi5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZW1vdmVHcm91cEZyb21Hcm91cFJlc3BvbnNlIgAScwoQTGlzdEdyb3VwTWVtYmVycxItLmp1bXBnYXRlLmlkZW50aXR5LnYxLkxpc3RHcm91cE1lbWJlcnNSZXF1ZXN0Gi4uanVtcGdhdGUuaWRlbnRpdHkudjEuTGlzdEdyb3VwTWVtYmVyc1Jlc3BvbnNlIgASbQoORGVhY3RpdmF0ZVVzZXISKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWFjdGl2YXRlVXNlclJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWFjdGl2YXRlVXNlclJlc3BvbnNlIgASbQoOUmVhY3RpdmF0ZVVzZXISKy5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZWFjdGl2YXRlVXNlclJlcXVlc3QaLC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5SZWFjdGl2YXRlVXNlclJlc3BvbnNlIgASYQoKRGVsZXRlVXNlchInLmp1bXBnYXRlLmlkZW50aXR5LnYxLkRlbGV0ZVVzZXJSZXF1ZXN0GiguanVtcGdhdGUuaWRlbnRpdHkudjEuRGVsZXRlVXNlclJlc3BvbnNlIgASZAoLRGVsZXRlR3JvdXASKC5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWxldGVHcm91cFJlcXVlc3QaKS5qdW1wZ2F0ZS5pZGVudGl0eS52MS5EZWxldGVHcm91cFJlc3BvbnNlIgBCR1pFZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9pZGVudGl0eS92MTtpZGVudGl0eXYxYgZwcm90bzM", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.identity.v1.User
@@ -172,6 +172,70 @@ export const GetUserRequestSchema: GenMessage<GetUserRequest> = /*@__PURE__*/
   messageDesc(file_jumpgate_identity_v1_identity, 6);
 
 /**
+ * GetUserDisplay is a universal directory read: any authenticated caller may
+ * resolve a user id to display name/email for rendering, with no capability gate.
+ *
+ * @generated from message jumpgate.identity.v1.GetUserDisplayRequest
+ */
+export type GetUserDisplayRequest = Message<"jumpgate.identity.v1.GetUserDisplayRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message jumpgate.identity.v1.GetUserDisplayRequest.
+ * Use `create(GetUserDisplayRequestSchema)` to create a new message.
+ */
+export const GetUserDisplayRequestSchema: GenMessage<GetUserDisplayRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_identity_v1_identity, 7);
+
+/**
+ * @generated from message jumpgate.identity.v1.GetUserDisplayResponse
+ */
+export type GetUserDisplayResponse = Message<"jumpgate.identity.v1.GetUserDisplayResponse"> & {
+  /**
+   * @generated from field: jumpgate.identity.v1.UserDisplay user = 1;
+   */
+  user?: UserDisplay | undefined;
+};
+
+/**
+ * Describes the message jumpgate.identity.v1.GetUserDisplayResponse.
+ * Use `create(GetUserDisplayResponseSchema)` to create a new message.
+ */
+export const GetUserDisplayResponseSchema: GenMessage<GetUserDisplayResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_identity_v1_identity, 8);
+
+/**
+ * @generated from message jumpgate.identity.v1.UserDisplay
+ */
+export type UserDisplay = Message<"jumpgate.identity.v1.UserDisplay"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string email = 3;
+   */
+  email: string;
+};
+
+/**
+ * Describes the message jumpgate.identity.v1.UserDisplay.
+ * Use `create(UserDisplaySchema)` to create a new message.
+ */
+export const UserDisplaySchema: GenMessage<UserDisplay> = /*@__PURE__*/
+  messageDesc(file_jumpgate_identity_v1_identity, 9);
+
+/**
  * @generated from message jumpgate.identity.v1.ResolveUserRequest
  */
 export type ResolveUserRequest = Message<"jumpgate.identity.v1.ResolveUserRequest"> & {
@@ -186,7 +250,7 @@ export type ResolveUserRequest = Message<"jumpgate.identity.v1.ResolveUserReques
  * Use `create(ResolveUserRequestSchema)` to create a new message.
  */
 export const ResolveUserRequestSchema: GenMessage<ResolveUserRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 7);
+  messageDesc(file_jumpgate_identity_v1_identity, 10);
 
 /**
  * @generated from message jumpgate.identity.v1.ResolveUserResponse
@@ -203,7 +267,7 @@ export type ResolveUserResponse = Message<"jumpgate.identity.v1.ResolveUserRespo
  * Use `create(ResolveUserResponseSchema)` to create a new message.
  */
 export const ResolveUserResponseSchema: GenMessage<ResolveUserResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 8);
+  messageDesc(file_jumpgate_identity_v1_identity, 11);
 
 /**
  * @generated from message jumpgate.identity.v1.ResolveGroupRequest
@@ -220,7 +284,7 @@ export type ResolveGroupRequest = Message<"jumpgate.identity.v1.ResolveGroupRequ
  * Use `create(ResolveGroupRequestSchema)` to create a new message.
  */
 export const ResolveGroupRequestSchema: GenMessage<ResolveGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 9);
+  messageDesc(file_jumpgate_identity_v1_identity, 12);
 
 /**
  * @generated from message jumpgate.identity.v1.ResolveGroupResponse
@@ -242,7 +306,7 @@ export type ResolveGroupResponse = Message<"jumpgate.identity.v1.ResolveGroupRes
  * Use `create(ResolveGroupResponseSchema)` to create a new message.
  */
 export const ResolveGroupResponseSchema: GenMessage<ResolveGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 10);
+  messageDesc(file_jumpgate_identity_v1_identity, 13);
 
 /**
  * @generated from message jumpgate.identity.v1.ListUsersRequest
@@ -264,7 +328,7 @@ export type ListUsersRequest = Message<"jumpgate.identity.v1.ListUsersRequest"> 
  * Use `create(ListUsersRequestSchema)` to create a new message.
  */
 export const ListUsersRequestSchema: GenMessage<ListUsersRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 11);
+  messageDesc(file_jumpgate_identity_v1_identity, 14);
 
 /**
  * @generated from message jumpgate.identity.v1.ListUsersResponse
@@ -286,7 +350,7 @@ export type ListUsersResponse = Message<"jumpgate.identity.v1.ListUsersResponse"
  * Use `create(ListUsersResponseSchema)` to create a new message.
  */
 export const ListUsersResponseSchema: GenMessage<ListUsersResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 12);
+  messageDesc(file_jumpgate_identity_v1_identity, 15);
 
 /**
  * @generated from message jumpgate.identity.v1.CreateGroupRequest
@@ -310,7 +374,7 @@ export type CreateGroupRequest = Message<"jumpgate.identity.v1.CreateGroupReques
  * Use `create(CreateGroupRequestSchema)` to create a new message.
  */
 export const CreateGroupRequestSchema: GenMessage<CreateGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 13);
+  messageDesc(file_jumpgate_identity_v1_identity, 16);
 
 /**
  * @generated from message jumpgate.identity.v1.ListGroupsRequest
@@ -346,7 +410,7 @@ export type ListGroupsRequest = Message<"jumpgate.identity.v1.ListGroupsRequest"
  * Use `create(ListGroupsRequestSchema)` to create a new message.
  */
 export const ListGroupsRequestSchema: GenMessage<ListGroupsRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 14);
+  messageDesc(file_jumpgate_identity_v1_identity, 17);
 
 /**
  * @generated from message jumpgate.identity.v1.ListGroupsResponse
@@ -368,7 +432,7 @@ export type ListGroupsResponse = Message<"jumpgate.identity.v1.ListGroupsRespons
  * Use `create(ListGroupsResponseSchema)` to create a new message.
  */
 export const ListGroupsResponseSchema: GenMessage<ListGroupsResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 15);
+  messageDesc(file_jumpgate_identity_v1_identity, 18);
 
 /**
  * @generated from message jumpgate.identity.v1.AddUserToGroupRequest
@@ -390,7 +454,7 @@ export type AddUserToGroupRequest = Message<"jumpgate.identity.v1.AddUserToGroup
  * Use `create(AddUserToGroupRequestSchema)` to create a new message.
  */
 export const AddUserToGroupRequestSchema: GenMessage<AddUserToGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 16);
+  messageDesc(file_jumpgate_identity_v1_identity, 19);
 
 /**
  * @generated from message jumpgate.identity.v1.AddUserToGroupResponse
@@ -403,7 +467,7 @@ export type AddUserToGroupResponse = Message<"jumpgate.identity.v1.AddUserToGrou
  * Use `create(AddUserToGroupResponseSchema)` to create a new message.
  */
 export const AddUserToGroupResponseSchema: GenMessage<AddUserToGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 17);
+  messageDesc(file_jumpgate_identity_v1_identity, 20);
 
 /**
  * @generated from message jumpgate.identity.v1.AddGroupToGroupRequest
@@ -425,7 +489,7 @@ export type AddGroupToGroupRequest = Message<"jumpgate.identity.v1.AddGroupToGro
  * Use `create(AddGroupToGroupRequestSchema)` to create a new message.
  */
 export const AddGroupToGroupRequestSchema: GenMessage<AddGroupToGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 18);
+  messageDesc(file_jumpgate_identity_v1_identity, 21);
 
 /**
  * @generated from message jumpgate.identity.v1.AddGroupToGroupResponse
@@ -438,7 +502,7 @@ export type AddGroupToGroupResponse = Message<"jumpgate.identity.v1.AddGroupToGr
  * Use `create(AddGroupToGroupResponseSchema)` to create a new message.
  */
 export const AddGroupToGroupResponseSchema: GenMessage<AddGroupToGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 19);
+  messageDesc(file_jumpgate_identity_v1_identity, 22);
 
 /**
  * @generated from message jumpgate.identity.v1.RemoveUserFromGroupRequest
@@ -460,7 +524,7 @@ export type RemoveUserFromGroupRequest = Message<"jumpgate.identity.v1.RemoveUse
  * Use `create(RemoveUserFromGroupRequestSchema)` to create a new message.
  */
 export const RemoveUserFromGroupRequestSchema: GenMessage<RemoveUserFromGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 20);
+  messageDesc(file_jumpgate_identity_v1_identity, 23);
 
 /**
  * @generated from message jumpgate.identity.v1.RemoveUserFromGroupResponse
@@ -473,7 +537,7 @@ export type RemoveUserFromGroupResponse = Message<"jumpgate.identity.v1.RemoveUs
  * Use `create(RemoveUserFromGroupResponseSchema)` to create a new message.
  */
 export const RemoveUserFromGroupResponseSchema: GenMessage<RemoveUserFromGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 21);
+  messageDesc(file_jumpgate_identity_v1_identity, 24);
 
 /**
  * @generated from message jumpgate.identity.v1.RemoveGroupFromGroupRequest
@@ -495,7 +559,7 @@ export type RemoveGroupFromGroupRequest = Message<"jumpgate.identity.v1.RemoveGr
  * Use `create(RemoveGroupFromGroupRequestSchema)` to create a new message.
  */
 export const RemoveGroupFromGroupRequestSchema: GenMessage<RemoveGroupFromGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 22);
+  messageDesc(file_jumpgate_identity_v1_identity, 25);
 
 /**
  * @generated from message jumpgate.identity.v1.RemoveGroupFromGroupResponse
@@ -508,7 +572,7 @@ export type RemoveGroupFromGroupResponse = Message<"jumpgate.identity.v1.RemoveG
  * Use `create(RemoveGroupFromGroupResponseSchema)` to create a new message.
  */
 export const RemoveGroupFromGroupResponseSchema: GenMessage<RemoveGroupFromGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 23);
+  messageDesc(file_jumpgate_identity_v1_identity, 26);
 
 /**
  * @generated from message jumpgate.identity.v1.ListGroupMembersRequest
@@ -535,7 +599,7 @@ export type ListGroupMembersRequest = Message<"jumpgate.identity.v1.ListGroupMem
  * Use `create(ListGroupMembersRequestSchema)` to create a new message.
  */
 export const ListGroupMembersRequestSchema: GenMessage<ListGroupMembersRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 24);
+  messageDesc(file_jumpgate_identity_v1_identity, 27);
 
 /**
  * @generated from message jumpgate.identity.v1.ListGroupMembersResponse
@@ -562,7 +626,7 @@ export type ListGroupMembersResponse = Message<"jumpgate.identity.v1.ListGroupMe
  * Use `create(ListGroupMembersResponseSchema)` to create a new message.
  */
 export const ListGroupMembersResponseSchema: GenMessage<ListGroupMembersResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 25);
+  messageDesc(file_jumpgate_identity_v1_identity, 28);
 
 /**
  * @generated from message jumpgate.identity.v1.DeactivateUserRequest
@@ -579,7 +643,7 @@ export type DeactivateUserRequest = Message<"jumpgate.identity.v1.DeactivateUser
  * Use `create(DeactivateUserRequestSchema)` to create a new message.
  */
 export const DeactivateUserRequestSchema: GenMessage<DeactivateUserRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 26);
+  messageDesc(file_jumpgate_identity_v1_identity, 29);
 
 /**
  * @generated from message jumpgate.identity.v1.DeactivateUserResponse
@@ -592,7 +656,7 @@ export type DeactivateUserResponse = Message<"jumpgate.identity.v1.DeactivateUse
  * Use `create(DeactivateUserResponseSchema)` to create a new message.
  */
 export const DeactivateUserResponseSchema: GenMessage<DeactivateUserResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 27);
+  messageDesc(file_jumpgate_identity_v1_identity, 30);
 
 /**
  * @generated from message jumpgate.identity.v1.ReactivateUserRequest
@@ -609,7 +673,7 @@ export type ReactivateUserRequest = Message<"jumpgate.identity.v1.ReactivateUser
  * Use `create(ReactivateUserRequestSchema)` to create a new message.
  */
 export const ReactivateUserRequestSchema: GenMessage<ReactivateUserRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 28);
+  messageDesc(file_jumpgate_identity_v1_identity, 31);
 
 /**
  * @generated from message jumpgate.identity.v1.ReactivateUserResponse
@@ -622,7 +686,7 @@ export type ReactivateUserResponse = Message<"jumpgate.identity.v1.ReactivateUse
  * Use `create(ReactivateUserResponseSchema)` to create a new message.
  */
 export const ReactivateUserResponseSchema: GenMessage<ReactivateUserResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 29);
+  messageDesc(file_jumpgate_identity_v1_identity, 32);
 
 /**
  * @generated from message jumpgate.identity.v1.DeleteUserRequest
@@ -639,7 +703,7 @@ export type DeleteUserRequest = Message<"jumpgate.identity.v1.DeleteUserRequest"
  * Use `create(DeleteUserRequestSchema)` to create a new message.
  */
 export const DeleteUserRequestSchema: GenMessage<DeleteUserRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 30);
+  messageDesc(file_jumpgate_identity_v1_identity, 33);
 
 /**
  * @generated from message jumpgate.identity.v1.DeleteUserResponse
@@ -652,7 +716,7 @@ export type DeleteUserResponse = Message<"jumpgate.identity.v1.DeleteUserRespons
  * Use `create(DeleteUserResponseSchema)` to create a new message.
  */
 export const DeleteUserResponseSchema: GenMessage<DeleteUserResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 31);
+  messageDesc(file_jumpgate_identity_v1_identity, 34);
 
 /**
  * @generated from message jumpgate.identity.v1.DeleteGroupRequest
@@ -669,7 +733,7 @@ export type DeleteGroupRequest = Message<"jumpgate.identity.v1.DeleteGroupReques
  * Use `create(DeleteGroupRequestSchema)` to create a new message.
  */
 export const DeleteGroupRequestSchema: GenMessage<DeleteGroupRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 32);
+  messageDesc(file_jumpgate_identity_v1_identity, 35);
 
 /**
  * @generated from message jumpgate.identity.v1.DeleteGroupResponse
@@ -682,7 +746,7 @@ export type DeleteGroupResponse = Message<"jumpgate.identity.v1.DeleteGroupRespo
  * Use `create(DeleteGroupResponseSchema)` to create a new message.
  */
 export const DeleteGroupResponseSchema: GenMessage<DeleteGroupResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 33);
+  messageDesc(file_jumpgate_identity_v1_identity, 36);
 
 /**
  * GetGroupAccess returns the caller's management capabilities on one group.
@@ -703,7 +767,7 @@ export type GetGroupAccessRequest = Message<"jumpgate.identity.v1.GetGroupAccess
  * Use `create(GetGroupAccessRequestSchema)` to create a new message.
  */
 export const GetGroupAccessRequestSchema: GenMessage<GetGroupAccessRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 34);
+  messageDesc(file_jumpgate_identity_v1_identity, 37);
 
 /**
  * @generated from message jumpgate.identity.v1.GetGroupAccessResponse
@@ -720,7 +784,7 @@ export type GetGroupAccessResponse = Message<"jumpgate.identity.v1.GetGroupAcces
  * Use `create(GetGroupAccessResponseSchema)` to create a new message.
  */
 export const GetGroupAccessResponseSchema: GenMessage<GetGroupAccessResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_identity_v1_identity, 35);
+  messageDesc(file_jumpgate_identity_v1_identity, 38);
 
 /**
  * IdentityService manages local users, groups, and nested memberships.
@@ -744,6 +808,18 @@ export const IdentityService: GenService<{
     methodKind: "unary";
     input: typeof GetUserRequestSchema;
     output: typeof GetUserResponseSchema;
+  },
+  /**
+   * GetUserDisplay returns minimal display info (name/email) for a user id.
+   * Any authenticated caller may call it — a general directory read for rendering
+   * user names/avatars; it is NOT capability-gated. Full GetUser stays gated.
+   *
+   * @generated from rpc jumpgate.identity.v1.IdentityService.GetUserDisplay
+   */
+  getUserDisplay: {
+    methodKind: "unary";
+    input: typeof GetUserDisplayRequestSchema;
+    output: typeof GetUserDisplayResponseSchema;
   },
   /**
    * @generated from rpc jumpgate.identity.v1.IdentityService.ResolveUser

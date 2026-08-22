@@ -776,6 +776,323 @@ func (x *GetAssetResponse) GetAsset() *Asset {
 	return nil
 }
 
+// GetAssetDisplay returns an asset's decision context for a request party. It
+// mirrors Asset/SSHConfig/SSHLogin but deliberately carries NO secret references
+// (SSHLoginDisplay has no secret_id field) so it can never leak vault material.
+type GetAssetDisplayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAssetDisplayRequest) Reset() {
+	*x = GetAssetDisplayRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAssetDisplayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAssetDisplayRequest) ProtoMessage() {}
+
+func (x *GetAssetDisplayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAssetDisplayRequest.ProtoReflect.Descriptor instead.
+func (*GetAssetDisplayRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetAssetDisplayRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+type GetAssetDisplayResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Asset         *AssetDisplay          `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAssetDisplayResponse) Reset() {
+	*x = GetAssetDisplayResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAssetDisplayResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAssetDisplayResponse) ProtoMessage() {}
+
+func (x *GetAssetDisplayResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAssetDisplayResponse.ProtoReflect.Descriptor instead.
+func (*GetAssetDisplayResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetAssetDisplayResponse) GetAsset() *AssetDisplay {
+	if x != nil {
+		return x.Asset
+	}
+	return nil
+}
+
+type AssetDisplay struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	FolderId string                 `protobuf:"bytes,2,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
+	Name     string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Kind     string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Types that are valid to be assigned to Config:
+	//
+	//	*AssetDisplay_Ssh
+	Config        isAssetDisplay_Config `protobuf_oneof:"config"`
+	Path          string                `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
+	FolderPath    string                `protobuf:"bytes,7,opt,name=folder_path,json=folderPath,proto3" json:"folder_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssetDisplay) Reset() {
+	*x = AssetDisplay{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssetDisplay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssetDisplay) ProtoMessage() {}
+
+func (x *AssetDisplay) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssetDisplay.ProtoReflect.Descriptor instead.
+func (*AssetDisplay) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AssetDisplay) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AssetDisplay) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
+func (x *AssetDisplay) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AssetDisplay) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *AssetDisplay) GetConfig() isAssetDisplay_Config {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+func (x *AssetDisplay) GetSsh() *SSHConfigDisplay {
+	if x != nil {
+		if x, ok := x.Config.(*AssetDisplay_Ssh); ok {
+			return x.Ssh
+		}
+	}
+	return nil
+}
+
+func (x *AssetDisplay) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *AssetDisplay) GetFolderPath() string {
+	if x != nil {
+		return x.FolderPath
+	}
+	return ""
+}
+
+type isAssetDisplay_Config interface {
+	isAssetDisplay_Config()
+}
+
+type AssetDisplay_Ssh struct {
+	Ssh *SSHConfigDisplay `protobuf:"bytes,5,opt,name=ssh,proto3,oneof"`
+}
+
+func (*AssetDisplay_Ssh) isAssetDisplay_Config() {}
+
+type SSHConfigDisplay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Logins        []*SSHLoginDisplay     `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
+	HostPublicKey string                 `protobuf:"bytes,2,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
+	TargetAddress string                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSHConfigDisplay) Reset() {
+	*x = SSHConfigDisplay{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSHConfigDisplay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSHConfigDisplay) ProtoMessage() {}
+
+func (x *SSHConfigDisplay) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSHConfigDisplay.ProtoReflect.Descriptor instead.
+func (*SSHConfigDisplay) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SSHConfigDisplay) GetLogins() []*SSHLoginDisplay {
+	if x != nil {
+		return x.Logins
+	}
+	return nil
+}
+
+func (x *SSHConfigDisplay) GetHostPublicKey() string {
+	if x != nil {
+		return x.HostPublicKey
+	}
+	return ""
+}
+
+func (x *SSHConfigDisplay) GetTargetAddress() string {
+	if x != nil {
+		return x.TargetAddress
+	}
+	return ""
+}
+
+type SSHLoginDisplay struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Login         string                 `protobuf:"bytes,1,opt,name=login,proto3" json:"login,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"` // ca | password | key — secret_id intentionally omitted
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSHLoginDisplay) Reset() {
+	*x = SSHLoginDisplay{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSHLoginDisplay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSHLoginDisplay) ProtoMessage() {}
+
+func (x *SSHLoginDisplay) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSHLoginDisplay.ProtoReflect.Descriptor instead.
+func (*SSHLoginDisplay) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SSHLoginDisplay) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+func (x *SSHLoginDisplay) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
 type UpdateAssetConfigRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	AssetId string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
@@ -789,7 +1106,7 @@ type UpdateAssetConfigRequest struct {
 
 func (x *UpdateAssetConfigRequest) Reset() {
 	*x = UpdateAssetConfigRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[12]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -801,7 +1118,7 @@ func (x *UpdateAssetConfigRequest) String() string {
 func (*UpdateAssetConfigRequest) ProtoMessage() {}
 
 func (x *UpdateAssetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[12]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -814,7 +1131,7 @@ func (x *UpdateAssetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAssetConfigRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAssetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{12}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateAssetConfigRequest) GetAssetId() string {
@@ -858,7 +1175,7 @@ type UpdateAssetConfigResponse struct {
 
 func (x *UpdateAssetConfigResponse) Reset() {
 	*x = UpdateAssetConfigResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[13]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1187,7 @@ func (x *UpdateAssetConfigResponse) String() string {
 func (*UpdateAssetConfigResponse) ProtoMessage() {}
 
 func (x *UpdateAssetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[13]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1200,7 @@ func (x *UpdateAssetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAssetConfigResponse.ProtoReflect.Descriptor instead.
 func (*UpdateAssetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{13}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{18}
 }
 
 type ListAssetsRequest struct {
@@ -900,7 +1217,7 @@ type ListAssetsRequest struct {
 
 func (x *ListAssetsRequest) Reset() {
 	*x = ListAssetsRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[14]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -912,7 +1229,7 @@ func (x *ListAssetsRequest) String() string {
 func (*ListAssetsRequest) ProtoMessage() {}
 
 func (x *ListAssetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[14]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -925,7 +1242,7 @@ func (x *ListAssetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetsRequest.ProtoReflect.Descriptor instead.
 func (*ListAssetsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{14}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListAssetsRequest) GetParent() string {
@@ -966,7 +1283,7 @@ type ListAssetsResponse struct {
 
 func (x *ListAssetsResponse) Reset() {
 	*x = ListAssetsResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[15]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1295,7 @@ func (x *ListAssetsResponse) String() string {
 func (*ListAssetsResponse) ProtoMessage() {}
 
 func (x *ListAssetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[15]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -991,7 +1308,7 @@ func (x *ListAssetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAssetsResponse.ProtoReflect.Descriptor instead.
 func (*ListAssetsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{15}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListAssetsResponse) GetAssets() []*Asset {
@@ -1021,7 +1338,7 @@ type RoleRef struct {
 
 func (x *RoleRef) Reset() {
 	*x = RoleRef{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[16]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1033,7 +1350,7 @@ func (x *RoleRef) String() string {
 func (*RoleRef) ProtoMessage() {}
 
 func (x *RoleRef) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[16]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1046,7 +1363,7 @@ func (x *RoleRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleRef.ProtoReflect.Descriptor instead.
 func (*RoleRef) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{16}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RoleRef) GetId() string {
@@ -1079,7 +1396,7 @@ type GetAssetAccessRequest struct {
 
 func (x *GetAssetAccessRequest) Reset() {
 	*x = GetAssetAccessRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[17]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1091,7 +1408,7 @@ func (x *GetAssetAccessRequest) String() string {
 func (*GetAssetAccessRequest) ProtoMessage() {}
 
 func (x *GetAssetAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[17]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1104,7 +1421,7 @@ func (x *GetAssetAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetAccessRequest.ProtoReflect.Descriptor instead.
 func (*GetAssetAccessRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{17}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetAssetAccessRequest) GetAssetId() string {
@@ -1131,7 +1448,7 @@ type GetAssetAccessResponse struct {
 
 func (x *GetAssetAccessResponse) Reset() {
 	*x = GetAssetAccessResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[18]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1143,7 +1460,7 @@ func (x *GetAssetAccessResponse) String() string {
 func (*GetAssetAccessResponse) ProtoMessage() {}
 
 func (x *GetAssetAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[18]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1156,7 +1473,7 @@ func (x *GetAssetAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetAccessResponse.ProtoReflect.Descriptor instead.
 func (*GetAssetAccessResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{18}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetAssetAccessResponse) GetActiveRoleIds() []string {
@@ -1203,7 +1520,7 @@ type GetFolderAccessRequest struct {
 
 func (x *GetFolderAccessRequest) Reset() {
 	*x = GetFolderAccessRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1532,7 @@ func (x *GetFolderAccessRequest) String() string {
 func (*GetFolderAccessRequest) ProtoMessage() {}
 
 func (x *GetFolderAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[19]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1545,7 @@ func (x *GetFolderAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFolderAccessRequest.ProtoReflect.Descriptor instead.
 func (*GetFolderAccessRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{19}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetFolderAccessRequest) GetFolderId() string {
@@ -1248,7 +1565,7 @@ type GetFolderAccessResponse struct {
 
 func (x *GetFolderAccessResponse) Reset() {
 	*x = GetFolderAccessResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1260,7 +1577,7 @@ func (x *GetFolderAccessResponse) String() string {
 func (*GetFolderAccessResponse) ProtoMessage() {}
 
 func (x *GetFolderAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[20]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1273,7 +1590,7 @@ func (x *GetFolderAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFolderAccessResponse.ProtoReflect.Descriptor instead.
 func (*GetFolderAccessResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{20}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetFolderAccessResponse) GetCapabilities() []string {
@@ -1295,7 +1612,7 @@ type ResolveAssetRequest struct {
 
 func (x *ResolveAssetRequest) Reset() {
 	*x = ResolveAssetRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1624,7 @@ func (x *ResolveAssetRequest) String() string {
 func (*ResolveAssetRequest) ProtoMessage() {}
 
 func (x *ResolveAssetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[21]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1637,7 @@ func (x *ResolveAssetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveAssetRequest.ProtoReflect.Descriptor instead.
 func (*ResolveAssetRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{21}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResolveAssetRequest) GetRef() string {
@@ -1340,7 +1657,7 @@ type ResolveAssetResponse struct {
 
 func (x *ResolveAssetResponse) Reset() {
 	*x = ResolveAssetResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1352,7 +1669,7 @@ func (x *ResolveAssetResponse) String() string {
 func (*ResolveAssetResponse) ProtoMessage() {}
 
 func (x *ResolveAssetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[22]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1365,7 +1682,7 @@ func (x *ResolveAssetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveAssetResponse.ProtoReflect.Descriptor instead.
 func (*ResolveAssetResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{22}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ResolveAssetResponse) GetAssetId() string {
@@ -1394,7 +1711,7 @@ type ResolveFolderRequest struct {
 
 func (x *ResolveFolderRequest) Reset() {
 	*x = ResolveFolderRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1406,7 +1723,7 @@ func (x *ResolveFolderRequest) String() string {
 func (*ResolveFolderRequest) ProtoMessage() {}
 
 func (x *ResolveFolderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[23]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1419,7 +1736,7 @@ func (x *ResolveFolderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveFolderRequest.ProtoReflect.Descriptor instead.
 func (*ResolveFolderRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{23}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ResolveFolderRequest) GetRef() string {
@@ -1439,7 +1756,7 @@ type ResolveFolderResponse struct {
 
 func (x *ResolveFolderResponse) Reset() {
 	*x = ResolveFolderResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1451,7 +1768,7 @@ func (x *ResolveFolderResponse) String() string {
 func (*ResolveFolderResponse) ProtoMessage() {}
 
 func (x *ResolveFolderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[24]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1464,7 +1781,7 @@ func (x *ResolveFolderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveFolderResponse.ProtoReflect.Descriptor instead.
 func (*ResolveFolderResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{24}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResolveFolderResponse) GetFolderId() string {
@@ -1495,7 +1812,7 @@ type ListFolderContentsRequest struct {
 
 func (x *ListFolderContentsRequest) Reset() {
 	*x = ListFolderContentsRequest{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1507,7 +1824,7 @@ func (x *ListFolderContentsRequest) String() string {
 func (*ListFolderContentsRequest) ProtoMessage() {}
 
 func (x *ListFolderContentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[25]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1520,7 +1837,7 @@ func (x *ListFolderContentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFolderContentsRequest.ProtoReflect.Descriptor instead.
 func (*ListFolderContentsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{25}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListFolderContentsRequest) GetParent() string {
@@ -1546,7 +1863,7 @@ type ListFolderContentsResponse struct {
 
 func (x *ListFolderContentsResponse) Reset() {
 	*x = ListFolderContentsResponse{}
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1558,7 +1875,7 @@ func (x *ListFolderContentsResponse) String() string {
 func (*ListFolderContentsResponse) ProtoMessage() {}
 
 func (x *ListFolderContentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[26]
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1571,7 +1888,7 @@ func (x *ListFolderContentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFolderContentsResponse.ProtoReflect.Descriptor instead.
 func (*ListFolderContentsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{26}
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListFolderContentsResponse) GetFolders() []*Folder {
@@ -1681,7 +1998,28 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x0fGetAssetRequest\x12#\n" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"D\n" +
 	"\x10GetAssetResponse\x120\n" +
-	"\x05asset\x18\x01 \x01(\v2\x1a.jumpgate.catalog.v1.AssetR\x05asset\"}\n" +
+	"\x05asset\x18\x01 \x01(\v2\x1a.jumpgate.catalog.v1.AssetR\x05asset\"=\n" +
+	"\x16GetAssetDisplayRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"R\n" +
+	"\x17GetAssetDisplayResponse\x127\n" +
+	"\x05asset\x18\x01 \x01(\v2!.jumpgate.catalog.v1.AssetDisplayR\x05asset\"\xdd\x01\n" +
+	"\fAssetDisplay\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tfolder_id\x18\x02 \x01(\tR\bfolderId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x129\n" +
+	"\x03ssh\x18\x05 \x01(\v2%.jumpgate.catalog.v1.SSHConfigDisplayH\x00R\x03ssh\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\x12\x1f\n" +
+	"\vfolder_path\x18\a \x01(\tR\n" +
+	"folderPathB\b\n" +
+	"\x06config\"\x9f\x01\n" +
+	"\x10SSHConfigDisplay\x12<\n" +
+	"\x06logins\x18\x01 \x03(\v2$.jumpgate.catalog.v1.SSHLoginDisplayR\x06logins\x12&\n" +
+	"\x0fhost_public_key\x18\x02 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\";\n" +
+	"\x0fSSHLoginDisplay\x12\x14\n" +
+	"\x05login\x18\x01 \x01(\tR\x05login\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"}\n" +
 	"\x18UpdateAssetConfigRequest\x12#\n" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x122\n" +
 	"\x03ssh\x18\x02 \x01(\v2\x1e.jumpgate.catalog.v1.SSHConfigH\x00R\x03sshB\b\n" +
@@ -1733,12 +2071,14 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x05roles\x18\x05 \x03(\v2\x18.jumpgate.access.v1.RoleR\x05roles\x12$\n" +
 	"\x0eroles_has_more\x18\x06 \x01(\bR\frolesHasMore\x123\n" +
 	"\x06groups\x18\a \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\x12&\n" +
-	"\x0fgroups_has_more\x18\b \x01(\bR\rgroupsHasMore2\x98\t\n" +
+	"\x0fgroups_has_more\x18\b \x01(\bR\rgroupsHasMore2\x88\n" +
+	"\n" +
 	"\x0eCatalogService\x12e\n" +
 	"\fCreateFolder\x12(.jumpgate.catalog.v1.CreateFolderRequest\x1a).jumpgate.catalog.v1.CreateFolderResponse\"\x00\x12b\n" +
 	"\vListFolders\x12'.jumpgate.catalog.v1.ListFoldersRequest\x1a(.jumpgate.catalog.v1.ListFoldersResponse\"\x00\x12b\n" +
 	"\vCreateAsset\x12'.jumpgate.catalog.v1.CreateAssetRequest\x1a(.jumpgate.catalog.v1.CreateAssetResponse\"\x00\x12Y\n" +
-	"\bGetAsset\x12$.jumpgate.catalog.v1.GetAssetRequest\x1a%.jumpgate.catalog.v1.GetAssetResponse\"\x00\x12t\n" +
+	"\bGetAsset\x12$.jumpgate.catalog.v1.GetAssetRequest\x1a%.jumpgate.catalog.v1.GetAssetResponse\"\x00\x12n\n" +
+	"\x0fGetAssetDisplay\x12+.jumpgate.catalog.v1.GetAssetDisplayRequest\x1a,.jumpgate.catalog.v1.GetAssetDisplayResponse\"\x00\x12t\n" +
 	"\x11UpdateAssetConfig\x12-.jumpgate.catalog.v1.UpdateAssetConfigRequest\x1a..jumpgate.catalog.v1.UpdateAssetConfigResponse\"\x00\x12_\n" +
 	"\n" +
 	"ListAssets\x12&.jumpgate.catalog.v1.ListAssetsRequest\x1a'.jumpgate.catalog.v1.ListAssetsResponse\"\x00\x12k\n" +
@@ -1760,7 +2100,7 @@ func file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP() []byte {
 	return file_jumpgate_catalog_v1_catalog_proto_rawDescData
 }
 
-var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*Folder)(nil),                     // 0: jumpgate.catalog.v1.Folder
 	(*Asset)(nil),                      // 1: jumpgate.catalog.v1.Asset
@@ -1774,23 +2114,28 @@ var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*CreateAssetResponse)(nil),        // 9: jumpgate.catalog.v1.CreateAssetResponse
 	(*GetAssetRequest)(nil),            // 10: jumpgate.catalog.v1.GetAssetRequest
 	(*GetAssetResponse)(nil),           // 11: jumpgate.catalog.v1.GetAssetResponse
-	(*UpdateAssetConfigRequest)(nil),   // 12: jumpgate.catalog.v1.UpdateAssetConfigRequest
-	(*UpdateAssetConfigResponse)(nil),  // 13: jumpgate.catalog.v1.UpdateAssetConfigResponse
-	(*ListAssetsRequest)(nil),          // 14: jumpgate.catalog.v1.ListAssetsRequest
-	(*ListAssetsResponse)(nil),         // 15: jumpgate.catalog.v1.ListAssetsResponse
-	(*RoleRef)(nil),                    // 16: jumpgate.catalog.v1.RoleRef
-	(*GetAssetAccessRequest)(nil),      // 17: jumpgate.catalog.v1.GetAssetAccessRequest
-	(*GetAssetAccessResponse)(nil),     // 18: jumpgate.catalog.v1.GetAssetAccessResponse
-	(*GetFolderAccessRequest)(nil),     // 19: jumpgate.catalog.v1.GetFolderAccessRequest
-	(*GetFolderAccessResponse)(nil),    // 20: jumpgate.catalog.v1.GetFolderAccessResponse
-	(*ResolveAssetRequest)(nil),        // 21: jumpgate.catalog.v1.ResolveAssetRequest
-	(*ResolveAssetResponse)(nil),       // 22: jumpgate.catalog.v1.ResolveAssetResponse
-	(*ResolveFolderRequest)(nil),       // 23: jumpgate.catalog.v1.ResolveFolderRequest
-	(*ResolveFolderResponse)(nil),      // 24: jumpgate.catalog.v1.ResolveFolderResponse
-	(*ListFolderContentsRequest)(nil),  // 25: jumpgate.catalog.v1.ListFolderContentsRequest
-	(*ListFolderContentsResponse)(nil), // 26: jumpgate.catalog.v1.ListFolderContentsResponse
-	(*v1.Role)(nil),                    // 27: jumpgate.access.v1.Role
-	(*v11.Group)(nil),                  // 28: jumpgate.identity.v1.Group
+	(*GetAssetDisplayRequest)(nil),     // 12: jumpgate.catalog.v1.GetAssetDisplayRequest
+	(*GetAssetDisplayResponse)(nil),    // 13: jumpgate.catalog.v1.GetAssetDisplayResponse
+	(*AssetDisplay)(nil),               // 14: jumpgate.catalog.v1.AssetDisplay
+	(*SSHConfigDisplay)(nil),           // 15: jumpgate.catalog.v1.SSHConfigDisplay
+	(*SSHLoginDisplay)(nil),            // 16: jumpgate.catalog.v1.SSHLoginDisplay
+	(*UpdateAssetConfigRequest)(nil),   // 17: jumpgate.catalog.v1.UpdateAssetConfigRequest
+	(*UpdateAssetConfigResponse)(nil),  // 18: jumpgate.catalog.v1.UpdateAssetConfigResponse
+	(*ListAssetsRequest)(nil),          // 19: jumpgate.catalog.v1.ListAssetsRequest
+	(*ListAssetsResponse)(nil),         // 20: jumpgate.catalog.v1.ListAssetsResponse
+	(*RoleRef)(nil),                    // 21: jumpgate.catalog.v1.RoleRef
+	(*GetAssetAccessRequest)(nil),      // 22: jumpgate.catalog.v1.GetAssetAccessRequest
+	(*GetAssetAccessResponse)(nil),     // 23: jumpgate.catalog.v1.GetAssetAccessResponse
+	(*GetFolderAccessRequest)(nil),     // 24: jumpgate.catalog.v1.GetFolderAccessRequest
+	(*GetFolderAccessResponse)(nil),    // 25: jumpgate.catalog.v1.GetFolderAccessResponse
+	(*ResolveAssetRequest)(nil),        // 26: jumpgate.catalog.v1.ResolveAssetRequest
+	(*ResolveAssetResponse)(nil),       // 27: jumpgate.catalog.v1.ResolveAssetResponse
+	(*ResolveFolderRequest)(nil),       // 28: jumpgate.catalog.v1.ResolveFolderRequest
+	(*ResolveFolderResponse)(nil),      // 29: jumpgate.catalog.v1.ResolveFolderResponse
+	(*ListFolderContentsRequest)(nil),  // 30: jumpgate.catalog.v1.ListFolderContentsRequest
+	(*ListFolderContentsResponse)(nil), // 31: jumpgate.catalog.v1.ListFolderContentsResponse
+	(*v1.Role)(nil),                    // 32: jumpgate.access.v1.Role
+	(*v11.Group)(nil),                  // 33: jumpgate.identity.v1.Group
 }
 var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	2,  // 0: jumpgate.catalog.v1.Asset.ssh:type_name -> jumpgate.catalog.v1.SSHConfig
@@ -1800,41 +2145,46 @@ var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	2,  // 4: jumpgate.catalog.v1.CreateAssetRequest.ssh:type_name -> jumpgate.catalog.v1.SSHConfig
 	1,  // 5: jumpgate.catalog.v1.CreateAssetResponse.asset:type_name -> jumpgate.catalog.v1.Asset
 	1,  // 6: jumpgate.catalog.v1.GetAssetResponse.asset:type_name -> jumpgate.catalog.v1.Asset
-	2,  // 7: jumpgate.catalog.v1.UpdateAssetConfigRequest.ssh:type_name -> jumpgate.catalog.v1.SSHConfig
-	1,  // 8: jumpgate.catalog.v1.ListAssetsResponse.assets:type_name -> jumpgate.catalog.v1.Asset
-	16, // 9: jumpgate.catalog.v1.GetAssetAccessResponse.active_roles:type_name -> jumpgate.catalog.v1.RoleRef
-	16, // 10: jumpgate.catalog.v1.GetAssetAccessResponse.requestable_roles:type_name -> jumpgate.catalog.v1.RoleRef
-	0,  // 11: jumpgate.catalog.v1.ListFolderContentsResponse.folders:type_name -> jumpgate.catalog.v1.Folder
-	1,  // 12: jumpgate.catalog.v1.ListFolderContentsResponse.assets:type_name -> jumpgate.catalog.v1.Asset
-	27, // 13: jumpgate.catalog.v1.ListFolderContentsResponse.roles:type_name -> jumpgate.access.v1.Role
-	28, // 14: jumpgate.catalog.v1.ListFolderContentsResponse.groups:type_name -> jumpgate.identity.v1.Group
-	4,  // 15: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
-	6,  // 16: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
-	8,  // 17: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
-	10, // 18: jumpgate.catalog.v1.CatalogService.GetAsset:input_type -> jumpgate.catalog.v1.GetAssetRequest
-	12, // 19: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:input_type -> jumpgate.catalog.v1.UpdateAssetConfigRequest
-	14, // 20: jumpgate.catalog.v1.CatalogService.ListAssets:input_type -> jumpgate.catalog.v1.ListAssetsRequest
-	17, // 21: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
-	19, // 22: jumpgate.catalog.v1.CatalogService.GetFolderAccess:input_type -> jumpgate.catalog.v1.GetFolderAccessRequest
-	21, // 23: jumpgate.catalog.v1.CatalogService.ResolveAsset:input_type -> jumpgate.catalog.v1.ResolveAssetRequest
-	23, // 24: jumpgate.catalog.v1.CatalogService.ResolveFolder:input_type -> jumpgate.catalog.v1.ResolveFolderRequest
-	25, // 25: jumpgate.catalog.v1.CatalogService.ListFolderContents:input_type -> jumpgate.catalog.v1.ListFolderContentsRequest
-	5,  // 26: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
-	7,  // 27: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
-	9,  // 28: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
-	11, // 29: jumpgate.catalog.v1.CatalogService.GetAsset:output_type -> jumpgate.catalog.v1.GetAssetResponse
-	13, // 30: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:output_type -> jumpgate.catalog.v1.UpdateAssetConfigResponse
-	15, // 31: jumpgate.catalog.v1.CatalogService.ListAssets:output_type -> jumpgate.catalog.v1.ListAssetsResponse
-	18, // 32: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
-	20, // 33: jumpgate.catalog.v1.CatalogService.GetFolderAccess:output_type -> jumpgate.catalog.v1.GetFolderAccessResponse
-	22, // 34: jumpgate.catalog.v1.CatalogService.ResolveAsset:output_type -> jumpgate.catalog.v1.ResolveAssetResponse
-	24, // 35: jumpgate.catalog.v1.CatalogService.ResolveFolder:output_type -> jumpgate.catalog.v1.ResolveFolderResponse
-	26, // 36: jumpgate.catalog.v1.CatalogService.ListFolderContents:output_type -> jumpgate.catalog.v1.ListFolderContentsResponse
-	26, // [26:37] is the sub-list for method output_type
-	15, // [15:26] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	14, // 7: jumpgate.catalog.v1.GetAssetDisplayResponse.asset:type_name -> jumpgate.catalog.v1.AssetDisplay
+	15, // 8: jumpgate.catalog.v1.AssetDisplay.ssh:type_name -> jumpgate.catalog.v1.SSHConfigDisplay
+	16, // 9: jumpgate.catalog.v1.SSHConfigDisplay.logins:type_name -> jumpgate.catalog.v1.SSHLoginDisplay
+	2,  // 10: jumpgate.catalog.v1.UpdateAssetConfigRequest.ssh:type_name -> jumpgate.catalog.v1.SSHConfig
+	1,  // 11: jumpgate.catalog.v1.ListAssetsResponse.assets:type_name -> jumpgate.catalog.v1.Asset
+	21, // 12: jumpgate.catalog.v1.GetAssetAccessResponse.active_roles:type_name -> jumpgate.catalog.v1.RoleRef
+	21, // 13: jumpgate.catalog.v1.GetAssetAccessResponse.requestable_roles:type_name -> jumpgate.catalog.v1.RoleRef
+	0,  // 14: jumpgate.catalog.v1.ListFolderContentsResponse.folders:type_name -> jumpgate.catalog.v1.Folder
+	1,  // 15: jumpgate.catalog.v1.ListFolderContentsResponse.assets:type_name -> jumpgate.catalog.v1.Asset
+	32, // 16: jumpgate.catalog.v1.ListFolderContentsResponse.roles:type_name -> jumpgate.access.v1.Role
+	33, // 17: jumpgate.catalog.v1.ListFolderContentsResponse.groups:type_name -> jumpgate.identity.v1.Group
+	4,  // 18: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
+	6,  // 19: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
+	8,  // 20: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
+	10, // 21: jumpgate.catalog.v1.CatalogService.GetAsset:input_type -> jumpgate.catalog.v1.GetAssetRequest
+	12, // 22: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:input_type -> jumpgate.catalog.v1.GetAssetDisplayRequest
+	17, // 23: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:input_type -> jumpgate.catalog.v1.UpdateAssetConfigRequest
+	19, // 24: jumpgate.catalog.v1.CatalogService.ListAssets:input_type -> jumpgate.catalog.v1.ListAssetsRequest
+	22, // 25: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
+	24, // 26: jumpgate.catalog.v1.CatalogService.GetFolderAccess:input_type -> jumpgate.catalog.v1.GetFolderAccessRequest
+	26, // 27: jumpgate.catalog.v1.CatalogService.ResolveAsset:input_type -> jumpgate.catalog.v1.ResolveAssetRequest
+	28, // 28: jumpgate.catalog.v1.CatalogService.ResolveFolder:input_type -> jumpgate.catalog.v1.ResolveFolderRequest
+	30, // 29: jumpgate.catalog.v1.CatalogService.ListFolderContents:input_type -> jumpgate.catalog.v1.ListFolderContentsRequest
+	5,  // 30: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
+	7,  // 31: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
+	9,  // 32: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
+	11, // 33: jumpgate.catalog.v1.CatalogService.GetAsset:output_type -> jumpgate.catalog.v1.GetAssetResponse
+	13, // 34: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:output_type -> jumpgate.catalog.v1.GetAssetDisplayResponse
+	18, // 35: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:output_type -> jumpgate.catalog.v1.UpdateAssetConfigResponse
+	20, // 36: jumpgate.catalog.v1.CatalogService.ListAssets:output_type -> jumpgate.catalog.v1.ListAssetsResponse
+	23, // 37: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
+	25, // 38: jumpgate.catalog.v1.CatalogService.GetFolderAccess:output_type -> jumpgate.catalog.v1.GetFolderAccessResponse
+	27, // 39: jumpgate.catalog.v1.CatalogService.ResolveAsset:output_type -> jumpgate.catalog.v1.ResolveAssetResponse
+	29, // 40: jumpgate.catalog.v1.CatalogService.ResolveFolder:output_type -> jumpgate.catalog.v1.ResolveFolderResponse
+	31, // 41: jumpgate.catalog.v1.CatalogService.ListFolderContents:output_type -> jumpgate.catalog.v1.ListFolderContentsResponse
+	30, // [30:42] is the sub-list for method output_type
+	18, // [18:30] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_catalog_v1_catalog_proto_init() }
@@ -1848,7 +2198,10 @@ func file_jumpgate_catalog_v1_catalog_proto_init() {
 	file_jumpgate_catalog_v1_catalog_proto_msgTypes[8].OneofWrappers = []any{
 		(*CreateAssetRequest_Ssh)(nil),
 	}
-	file_jumpgate_catalog_v1_catalog_proto_msgTypes[12].OneofWrappers = []any{
+	file_jumpgate_catalog_v1_catalog_proto_msgTypes[14].OneofWrappers = []any{
+		(*AssetDisplay_Ssh)(nil),
+	}
+	file_jumpgate_catalog_v1_catalog_proto_msgTypes[17].OneofWrappers = []any{
 		(*UpdateAssetConfigRequest_Ssh)(nil),
 	}
 	type x struct{}
@@ -1857,7 +2210,7 @@ func file_jumpgate_catalog_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_catalog_v1_catalog_proto_rawDesc), len(file_jumpgate_catalog_v1_catalog_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
