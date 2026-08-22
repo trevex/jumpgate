@@ -36,6 +36,9 @@ const (
 	// SessionServiceCreateSessionProcedure is the fully-qualified name of the SessionService's
 	// CreateSession RPC.
 	SessionServiceCreateSessionProcedure = "/jumpgate.session.v1.SessionService/CreateSession"
+	// SessionServiceCreateWebSessionProcedure is the fully-qualified name of the SessionService's
+	// CreateWebSession RPC.
+	SessionServiceCreateWebSessionProcedure = "/jumpgate.session.v1.SessionService/CreateWebSession"
 )
 
 // SessionServiceClient is a client for the jumpgate.session.v1.SessionService service.
@@ -43,6 +46,9 @@ type SessionServiceClient interface {
 	// CreateSession authorizes the caller to reach the asset (held-closure SSH-login
 	// check) and returns a short-lived admission token plus the gateway to dial.
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
+	// CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
+	// a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
+	CreateWebSession(context.Context, *connect.Request[v1.CreateWebSessionRequest]) (*connect.Response[v1.CreateWebSessionResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the jumpgate.session.v1.SessionService service.
@@ -62,12 +68,19 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("CreateSession")),
 			connect.WithClientOptions(opts...),
 		),
+		createWebSession: connect.NewClient[v1.CreateWebSessionRequest, v1.CreateWebSessionResponse](
+			httpClient,
+			baseURL+SessionServiceCreateWebSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateWebSession")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	createSession *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	createSession    *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	createWebSession *connect.Client[v1.CreateWebSessionRequest, v1.CreateWebSessionResponse]
 }
 
 // CreateSession calls jumpgate.session.v1.SessionService.CreateSession.
@@ -75,11 +88,19 @@ func (c *sessionServiceClient) CreateSession(ctx context.Context, req *connect.R
 	return c.createSession.CallUnary(ctx, req)
 }
 
+// CreateWebSession calls jumpgate.session.v1.SessionService.CreateWebSession.
+func (c *sessionServiceClient) CreateWebSession(ctx context.Context, req *connect.Request[v1.CreateWebSessionRequest]) (*connect.Response[v1.CreateWebSessionResponse], error) {
+	return c.createWebSession.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the jumpgate.session.v1.SessionService service.
 type SessionServiceHandler interface {
 	// CreateSession authorizes the caller to reach the asset (held-closure SSH-login
 	// check) and returns a short-lived admission token plus the gateway to dial.
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
+	// CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
+	// a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
+	CreateWebSession(context.Context, *connect.Request[v1.CreateWebSessionRequest]) (*connect.Response[v1.CreateWebSessionResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -95,10 +116,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("CreateSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceCreateWebSessionHandler := connect.NewUnaryHandler(
+		SessionServiceCreateWebSessionProcedure,
+		svc.CreateWebSession,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateWebSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.session.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceCreateSessionProcedure:
 			sessionServiceCreateSessionHandler.ServeHTTP(w, r)
+		case SessionServiceCreateWebSessionProcedure:
+			sessionServiceCreateWebSessionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -110,4 +139,8 @@ type UnimplementedSessionServiceHandler struct{}
 
 func (UnimplementedSessionServiceHandler) CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreateSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CreateWebSession(context.Context, *connect.Request[v1.CreateWebSessionRequest]) (*connect.Response[v1.CreateWebSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreateWebSession is not implemented"))
 }

@@ -22,7 +22,9 @@ type Claims struct {
 	UserID               uuid.UUID // sub
 	AssetID              uuid.UUID // asset
 	Protocol             string    // proto, e.g. "ssh"
-	ClientKeyFingerprint string    // cnf — ssh.FingerprintSHA256 of the client's ephemeral key
+	Mode                 string    // mode — "web" for browser terminals, empty/"ssh" for the CLI
+	Login                string    // login — the target login bound at mint time (web tickets)
+	ClientKeyFingerprint string    // cnf — ssh.FingerprintSHA256 of the client's ephemeral key (empty for web)
 }
 
 // Minter signs session tokens with an Ed25519 secret key.
@@ -64,6 +66,12 @@ func (m *Minter) Mint(c Claims, ttl time.Duration) (string, error) {
 		return "", err
 	}
 	if err := t.Set("proto", c.Protocol); err != nil {
+		return "", err
+	}
+	if err := t.Set("mode", c.Mode); err != nil {
+		return "", err
+	}
+	if err := t.Set("login", c.Login); err != nil {
 		return "", err
 	}
 	if err := t.Set("cnf", c.ClientKeyFingerprint); err != nil {
@@ -110,8 +118,25 @@ func (v *Verifier) Verify(token string) (Claims, error) {
 	if err := t.Get("cnf", &cnf); err != nil {
 		return Claims{}, err
 	}
-	if cnf == "" {
+	// mode and login are optional claims: legacy (CLI/cnf-bearing) tokens minted
+	// before browser terminals omit them, so a missing claim decodes as "".
+	mode := optString(t, "mode")
+	login := optString(t, "login")
+	// A web ticket carries no client key, so it legitimately has an empty cnf; any
+	// other (SSH/CLI) token must be bound to a client key.
+	if mode != "web" && cnf == "" {
 		return Claims{}, errors.New("empty cnf")
 	}
-	return Claims{SessionID: sid, UserID: uid, AssetID: aid, Protocol: proto, ClientKeyFingerprint: cnf}, nil
+	return Claims{
+		SessionID: sid, UserID: uid, AssetID: aid, Protocol: proto,
+		Mode: mode, Login: login, ClientKeyFingerprint: cnf,
+	}, nil
+}
+
+// optString reads a string claim, treating an absent claim as the empty string
+// (older tokens predate the claim) while surfacing nothing on decode errors.
+func optString(t *paseto.Token, key string) string {
+	var v string
+	_ = t.Get(key, &v)
+	return v
 }

@@ -135,6 +135,118 @@ func (x *CreateSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type CreateWebSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWebSessionRequest) Reset() {
+	*x = CreateWebSessionRequest{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWebSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWebSessionRequest) ProtoMessage() {}
+
+func (x *CreateWebSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWebSessionRequest.ProtoReflect.Descriptor instead.
+func (*CreateWebSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CreateWebSessionRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *CreateWebSessionRequest) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+type CreateWebSessionResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ticket          string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreateWebSessionResponse) Reset() {
+	*x = CreateWebSessionResponse{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWebSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWebSessionResponse) ProtoMessage() {}
+
+func (x *CreateWebSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWebSessionResponse.ProtoReflect.Descriptor instead.
+func (*CreateWebSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateWebSessionResponse) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *CreateWebSessionResponse) GetGatewayEndpoint() string {
+	if x != nil {
+		return x.GatewayEndpoint
+	}
+	return ""
+}
+
+func (x *CreateWebSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -147,9 +259,18 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2z\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"]\n" +
+	"\x17CreateWebSessionRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12\x1d\n" +
+	"\x05login\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\x98\x01\n" +
+	"\x18CreateWebSessionResponse\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12)\n" +
+	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\xed\x01\n" +
 	"\x0eSessionService\x12h\n" +
-	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
+	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
+	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
 
 var (
 	file_jumpgate_session_v1_session_proto_rawDescOnce sync.Once
@@ -163,21 +284,26 @@ func file_jumpgate_session_v1_session_proto_rawDescGZIP() []byte {
 	return file_jumpgate_session_v1_session_proto_rawDescData
 }
 
-var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_jumpgate_session_v1_session_proto_goTypes = []any{
-	(*CreateSessionRequest)(nil),  // 0: jumpgate.session.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil), // 1: jumpgate.session.v1.CreateSessionResponse
-	(*timestamppb.Timestamp)(nil), // 2: google.protobuf.Timestamp
+	(*CreateSessionRequest)(nil),     // 0: jumpgate.session.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),    // 1: jumpgate.session.v1.CreateSessionResponse
+	(*CreateWebSessionRequest)(nil),  // 2: jumpgate.session.v1.CreateWebSessionRequest
+	(*CreateWebSessionResponse)(nil), // 3: jumpgate.session.v1.CreateWebSessionResponse
+	(*timestamppb.Timestamp)(nil),    // 4: google.protobuf.Timestamp
 }
 var file_jumpgate_session_v1_session_proto_depIdxs = []int32{
-	2, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 1: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
-	1, // 2: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	0, // 2: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
+	2, // 3: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
+	1, // 4: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
+	3, // 5: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_session_v1_session_proto_init() }
@@ -191,7 +317,7 @@ func file_jumpgate_session_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_session_v1_session_proto_rawDesc), len(file_jumpgate_session_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -13,6 +13,10 @@ service SessionService {
   // CreateSession authorizes the caller to reach the asset (held-closure SSH-login
   // check) and returns a short-lived admission token plus the gateway to dial.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {}
+
+  // CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
+  // a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
+  rpc CreateWebSession(CreateWebSessionRequest) returns (CreateWebSessionResponse) {}
 }
 
 message CreateSessionRequest {
@@ -22,6 +26,17 @@ message CreateSessionRequest {
 
 message CreateSessionResponse {
   string session_token = 1;
+  string gateway_endpoint = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message CreateWebSessionRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  string login = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateWebSessionResponse {
+  string ticket = 1;
   string gateway_endpoint = 2;
   google.protobuf.Timestamp expires_at = 3;
 }

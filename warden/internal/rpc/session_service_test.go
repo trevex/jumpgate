@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"net/http"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -161,6 +162,114 @@ func TestCreateSessionMissingAssetIsNotFound(t *testing.T) {
 	}), tok))
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("missing-asset CreateSession = %v, want NotFound", connect.CodeOf(err))
+	}
+}
+
+func TestCreateWebSession(t *testing.T) {
+	pool, url, signPub := newServerWithSession(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	assetID := seedSSHAsset(t, q, []string{"deploy"})
+
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "web-deployer", Capabilities: []byte(`["ssh:login:deploy"]`),
+	})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	seedUser(t, pool, "webuser@sess", "password123", false)
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "webuser@sess").Scan(&uid); err != nil {
+		t.Fatalf("lookup user: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding: %v", err)
+	}
+
+	tok := authClient(t, url, "webuser@sess", "password123")
+	client := sessionv1connect.NewSessionServiceClient(http.DefaultClient, url)
+
+	resp, err := client.CreateWebSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateWebSessionRequest{
+		AssetId: assetID.String(), Login: "deploy",
+	}), tok))
+	if err != nil {
+		t.Fatalf("CreateWebSession: %v", err)
+	}
+	if resp.Msg.Ticket == "" {
+		t.Fatal("empty ticket")
+	}
+	if resp.Msg.GatewayEndpoint != testGatewayEndpoint {
+		t.Fatalf("gateway_endpoint = %q, want %q", resp.Msg.GatewayEndpoint, testGatewayEndpoint)
+	}
+	if resp.Msg.ExpiresAt == nil {
+		t.Fatal("nil expires_at")
+	}
+	// A web ticket is short-lived (webTTL ≈ 60s).
+	if d := time.Until(resp.Msg.ExpiresAt.AsTime()); d <= 0 || d > 90*time.Second {
+		t.Fatalf("expires_at delta = %v, want a short positive window", d)
+	}
+
+	claims, err := sessiontoken.NewVerifier(signPub).Verify(resp.Msg.Ticket)
+	if err != nil {
+		t.Fatalf("verify ticket: %v", err)
+	}
+	if claims.Mode != "web" {
+		t.Fatalf("token mode = %q, want web", claims.Mode)
+	}
+	if claims.Login != "deploy" {
+		t.Fatalf("token login = %q, want deploy", claims.Login)
+	}
+	if claims.ClientKeyFingerprint != "" {
+		t.Fatalf("token cnf = %q, want empty for web", claims.ClientKeyFingerprint)
+	}
+	if claims.UserID != uid {
+		t.Fatalf("token user = %s, want %s", claims.UserID, uid)
+	}
+	if claims.AssetID != assetID {
+		t.Fatalf("token asset = %s, want %s", claims.AssetID, assetID)
+	}
+	if claims.Protocol != "ssh" {
+		t.Fatalf("token proto = %q, want ssh", claims.Protocol)
+	}
+}
+
+func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
+	pool, url, _ := newServerWithSession(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	// The asset offers "deploy" and "root"; the caller is entitled only to
+	// "deploy", so requesting "root" must be denied.
+	assetID := seedSSHAsset(t, q, []string{"deploy", "root"})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name: "web-deploy-only", Capabilities: []byte(`["ssh:login:deploy"]`),
+	})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	seedUser(t, pool, "webdeny@sess", "password123", false)
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "webdeny@sess").Scan(&uid); err != nil {
+		t.Fatalf("lookup user: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding: %v", err)
+	}
+
+	tok := authClient(t, url, "webdeny@sess", "password123")
+	client := sessionv1connect.NewSessionServiceClient(http.DefaultClient, url)
+
+	_, err = client.CreateWebSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateWebSessionRequest{
+		AssetId: assetID.String(), Login: "root",
+	}), tok))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("unentitled-login CreateWebSession = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 }
 
