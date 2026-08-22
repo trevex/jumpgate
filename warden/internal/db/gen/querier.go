@@ -43,9 +43,25 @@ type Querier interface {
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
+	// Deletes the policies for which the role is the requestable role (meaningless once
+	// the role is gone). Part of the DeleteRole cascade.
+	DeletePoliciesForRole(ctx context.Context, roleID uuid.UUID) error
+	// Removes the subjects of every policy whose requestable role is $1 (those policies
+	// are about to be deleted). Part of the DeleteRole cascade.
+	DeletePolicySubjectsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
+	// Deletes the role row. The role's name uniqueness is enforced by the partial
+	// UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
+	// the name automatically (no separate registry entry). Final step of DeleteRole,
+	// run only after its bindings/edges/policies are removed and its grants revoked.
+	DeleteRole(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
+	// Removes every standing binding of the role. Part of the DeleteRole cascade.
+	DeleteRoleBindingsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
+	// Removes every rewrite edge touching the role, in either direction (the role as
+	// the conferred role_id, or as the source that confers another). Part of DeleteRole.
+	DeleteRoleGrantsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
@@ -151,10 +167,20 @@ type Querier interface {
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
+	// Clears the approver gate on surviving policies that named the role as their
+	// approver role (the policy survives, just loses that gate). Part of DeleteRole.
+	NullApproverRoleForRole(ctx context.Context, approverRoleID pgtype.UUID) error
+	// Clears the requester gate on surviving policies that named the role as their
+	// requester role (the policy survives, just loses that gate). Part of DeleteRole.
+	NullRequesterRoleForRole(ctx context.Context, requesterRoleID pgtype.UUID) error
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
 	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
+	// Revokes a role's still-live grants (not yet revoked, not yet expired) so the
+	// terminator can tear down the sessions they authorized. Used by the DeleteRole
+	// cascade before the role row (and, via FK cascade, these grant rows) is deleted.
+	RevokeActiveGrantsForRole(ctx context.Context, arg RevokeActiveGrantsForRoleParams) ([]AccessGrant, error)
 	RevokeActiveGrantsForUser(ctx context.Context, arg RevokeActiveGrantsForUserParams) ([]AccessGrant, error)
 	// Predicate is revoked_at IS NULL only (NOT the derived "active" filter with
 	// expires_at): a grant past expiry but not yet reaped is still revocable so the

@@ -57,3 +57,24 @@ LIMIT sqlc.arg('lim');
 
 -- name: GetPolicyByNameAndAsset :one
 SELECT * FROM request_policies WHERE name = $1 AND scope_asset_id = $2;
+
+-- name: DeletePolicySubjectsForRole :exec
+-- Removes the subjects of every policy whose requestable role is $1 (those policies
+-- are about to be deleted). Part of the DeleteRole cascade.
+DELETE FROM request_policy_subjects
+WHERE policy_id IN (SELECT id FROM request_policies WHERE role_id = $1);
+
+-- name: DeletePoliciesForRole :exec
+-- Deletes the policies for which the role is the requestable role (meaningless once
+-- the role is gone). Part of the DeleteRole cascade.
+DELETE FROM request_policies WHERE role_id = $1;
+
+-- name: NullRequesterRoleForRole :exec
+-- Clears the requester gate on surviving policies that named the role as their
+-- requester role (the policy survives, just loses that gate). Part of DeleteRole.
+UPDATE request_policies SET requester_role_id = NULL WHERE requester_role_id = $1;
+
+-- name: NullApproverRoleForRole :exec
+-- Clears the approver gate on surviving policies that named the role as their
+-- approver role (the policy survives, just loses that gate). Part of DeleteRole.
+UPDATE request_policies SET approver_role_id = NULL WHERE approver_role_id = $1;

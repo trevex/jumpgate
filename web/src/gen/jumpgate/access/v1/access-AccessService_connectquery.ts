@@ -41,6 +41,17 @@ export const resolveRole = AccessService.method.resolveRole;
 export const getRoleAccess = AccessService.method.getRoleAccess;
 
 /**
+ * DeleteRole removes a role and everything that references it in one transaction:
+ * its standing bindings, role-grant edges (both directions), request policies for
+ * which it is the requestable role (and those policies' subjects), and any active
+ * grants of it (revoked so live sessions are torn down). Policies that reference it
+ * only as a requester/approver role survive with that column cleared.
+ *
+ * @generated from rpc jumpgate.access.v1.AccessService.DeleteRole
+ */
+export const deleteRole = AccessService.method.deleteRole;
+
+/**
  * Role grants (userset rewrites).
  *
  * @generated from rpc jumpgate.access.v1.AccessService.AddRoleGrant

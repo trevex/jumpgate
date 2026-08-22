@@ -701,6 +701,52 @@ func (q *Queries) ListPendingRequestsPaged(ctx context.Context, arg ListPendingR
 	return items, nil
 }
 
+const revokeActiveGrantsForRole = `-- name: RevokeActiveGrantsForRole :many
+UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $3
+WHERE role_id = $1 AND revoked_at IS NULL AND expires_at > now()
+RETURNING id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_by, revoked_reason
+`
+
+type RevokeActiveGrantsForRoleParams struct {
+	RoleID        uuid.UUID   `json:"role_id"`
+	RevokedBy     pgtype.UUID `json:"revoked_by"`
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+}
+
+// Revokes a role's still-live grants (not yet revoked, not yet expired) so the
+// terminator can tear down the sessions they authorized. Used by the DeleteRole
+// cascade before the role row (and, via FK cascade, these grant rows) is deleted.
+func (q *Queries) RevokeActiveGrantsForRole(ctx context.Context, arg RevokeActiveGrantsForRoleParams) ([]AccessGrant, error) {
+	rows, err := q.db.Query(ctx, revokeActiveGrantsForRole, arg.RoleID, arg.RevokedBy, arg.RevokedReason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessGrant
+	for rows.Next() {
+		var i AccessGrant
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestID,
+			&i.RoleID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.GrantedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeActiveGrantsForUser = `-- name: RevokeActiveGrantsForUser :many
 UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $3
 WHERE subject_user_id = $1 AND revoked_at IS NULL

@@ -7,6 +7,11 @@ SELECT * FROM role_grants WHERE id = $1;
 -- name: DeleteRoleGrant :exec
 DELETE FROM role_grants WHERE id = $1;
 
+-- name: DeleteRoleGrantsForRole :exec
+-- Removes every rewrite edge touching the role, in either direction (the role as
+-- the conferred role_id, or as the source that confers another). Part of DeleteRole.
+DELETE FROM role_grants WHERE role_id = $1 OR source_role_id = $1;
+
 -- name: ListRoleGrants :many
 SELECT * FROM role_grants
 WHERE role_id = sqlc.arg('role_id')

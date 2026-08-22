@@ -26,15 +26,25 @@ type AccessServer struct {
 	q        *gen.Queries
 	roles    *authz.RoleResolver
 	reqReads requestReadAuthorizer
+	deleter  roleDeleter
 	capGuard
+}
+
+// roleDeleter runs the transactional DeleteRole cascade (deleting a role plus every
+// binding, grant-edge, and policy that references it, and revoking its active grants
+// so live sessions are torn down). Backed by *accessrequest.Service; a narrow seam so
+// the handler reuses the existing revoke/terminator machinery rather than reinventing
+// live-session teardown. May be nil in tests that don't exercise deletion.
+type roleDeleter interface {
+	DeleteRoleCascade(ctx context.Context, actor, roleID uuid.UUID) error
 }
 
 // NewAccessServer constructs the AccessService implementation. reqReads authorizes
 // request-scoped display reads (GetRoleDisplay) for callers who are party to a
 // pending access request but lack the read capability; a nil reqReads disables that
-// path (only the capability grants the read).
-func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer) *AccessServer {
-	return &AccessServer{q: q, roles: roles, reqReads: reqReads, capGuard: capGuard{authz: a, q: q}}
+// path (only the capability grants the read). deleter runs the DeleteRole cascade.
+func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
+	return &AccessServer{q: q, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toAccessRoleMsg(r gen.Role) *accessv1.Role {
@@ -280,6 +290,38 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 		return nil, err
 	}
 	return connect.NewResponse(&accessv1.GetRoleResponse{Role: m}), nil
+}
+
+// DeleteRole removes a role and everything that references it, transactionally, so
+// that "the role is gone" implies no one holds it and any live sessions it granted
+// end. Gated on access:role:delete at the role's folder scope. The cascade (bindings,
+// role-grant edges in both directions, request policies for which the role is the
+// requestable role, and the active grants it conferred — revoked so their live
+// sessions are torn down) runs in the deleter; policies that reference the role only
+// as a requester/approver survive with that column cleared. A missing role is
+// NotFound.
+func (s *AccessServer) DeleteRole(ctx context.Context, req *connect.Request[accessv1.DeleteRoleRequest]) (*connect.Response[accessv1.DeleteRoleResponse], error) {
+	id, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	// scopeOfRole loads the role, returning NotFound if it is absent (roles are
+	// non-topology, but a delete of a missing role is a plain NotFound).
+	scope, err := s.scopeOfRole(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCap(ctx, "access:role:delete", scope); err != nil {
+		return nil, err
+	}
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if err := s.deleter.DeleteRoleCascade(ctx, caller.ID, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&accessv1.DeleteRoleResponse{}), nil
 }
 
 // GetRoleDisplay returns a role's decision context — id, name, folder path, and the

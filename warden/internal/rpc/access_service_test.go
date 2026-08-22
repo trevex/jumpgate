@@ -2211,8 +2211,8 @@ func TestGetRoleDisplay(t *testing.T) {
 	roles := authz.NewRoleResolver(pool)
 	q := gen.New(pool)
 
-	allowSrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: true})
-	denySrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: false})
+	allowSrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: true}, nil)
+	denySrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: false}, nil)
 
 	assertRole := func(t *testing.T, resp *accessv1.GetRoleDisplayResponse) {
 		t.Helper()

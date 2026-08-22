@@ -84,6 +84,10 @@ LIMIT sqlc.arg('lim');
 -- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1;
 
+-- name: DeleteRoleBindingsForRole :exec
+-- Removes every standing binding of the role. Part of the DeleteRole cascade.
+DELETE FROM role_bindings WHERE role_id = $1;
+
 -- name: GetRoleBinding :one
 SELECT * FROM role_bindings WHERE id = $1;
 

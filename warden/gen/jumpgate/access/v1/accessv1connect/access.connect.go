@@ -49,6 +49,9 @@ const (
 	// AccessServiceGetRoleAccessProcedure is the fully-qualified name of the AccessService's
 	// GetRoleAccess RPC.
 	AccessServiceGetRoleAccessProcedure = "/jumpgate.access.v1.AccessService/GetRoleAccess"
+	// AccessServiceDeleteRoleProcedure is the fully-qualified name of the AccessService's DeleteRole
+	// RPC.
+	AccessServiceDeleteRoleProcedure = "/jumpgate.access.v1.AccessService/DeleteRole"
 	// AccessServiceAddRoleGrantProcedure is the fully-qualified name of the AccessService's
 	// AddRoleGrant RPC.
 	AccessServiceAddRoleGrantProcedure = "/jumpgate.access.v1.AccessService/AddRoleGrant"
@@ -108,6 +111,12 @@ type AccessServiceClient interface {
 	GetRoleDisplay(context.Context, *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
 	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
+	// DeleteRole removes a role and everything that references it in one transaction:
+	// its standing bindings, role-grant edges (both directions), request policies for
+	// which it is the requestable role (and those policies' subjects), and any active
+	// grants of it (revoked so live sessions are torn down). Policies that reference it
+	// only as a requester/approver role survive with that column cleared.
+	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[v1.DeleteRoleResponse], error)
 	// Role grants (userset rewrites).
 	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
 	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
@@ -174,6 +183,12 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+AccessServiceGetRoleAccessProcedure,
 			connect.WithSchema(accessServiceMethods.ByName("GetRoleAccess")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteRole: connect.NewClient[v1.DeleteRoleRequest, v1.DeleteRoleResponse](
+			httpClient,
+			baseURL+AccessServiceDeleteRoleProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("DeleteRole")),
 			connect.WithClientOptions(opts...),
 		),
 		addRoleGrant: connect.NewClient[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse](
@@ -277,6 +292,7 @@ type accessServiceClient struct {
 	getRoleDisplay      *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
 	resolveRole         *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
 	getRoleAccess       *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
+	deleteRole          *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
 	addRoleGrant        *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
 	removeRoleGrant     *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
 	listRoleGrants      *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
@@ -322,6 +338,11 @@ func (c *accessServiceClient) ResolveRole(ctx context.Context, req *connect.Requ
 // GetRoleAccess calls jumpgate.access.v1.AccessService.GetRoleAccess.
 func (c *accessServiceClient) GetRoleAccess(ctx context.Context, req *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error) {
 	return c.getRoleAccess.CallUnary(ctx, req)
+}
+
+// DeleteRole calls jumpgate.access.v1.AccessService.DeleteRole.
+func (c *accessServiceClient) DeleteRole(ctx context.Context, req *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[v1.DeleteRoleResponse], error) {
+	return c.deleteRole.CallUnary(ctx, req)
 }
 
 // AddRoleGrant calls jumpgate.access.v1.AccessService.AddRoleGrant.
@@ -411,6 +432,12 @@ type AccessServiceHandler interface {
 	GetRoleDisplay(context.Context, *connect.Request[v1.GetRoleDisplayRequest]) (*connect.Response[v1.GetRoleDisplayResponse], error)
 	ResolveRole(context.Context, *connect.Request[v1.ResolveRoleRequest]) (*connect.Response[v1.ResolveRoleResponse], error)
 	GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error)
+	// DeleteRole removes a role and everything that references it in one transaction:
+	// its standing bindings, role-grant edges (both directions), request policies for
+	// which it is the requestable role (and those policies' subjects), and any active
+	// grants of it (revoked so live sessions are torn down). Policies that reference it
+	// only as a requester/approver role survive with that column cleared.
+	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[v1.DeleteRoleResponse], error)
 	// Role grants (userset rewrites).
 	AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error)
 	RemoveRoleGrant(context.Context, *connect.Request[v1.RemoveRoleGrantRequest]) (*connect.Response[v1.RemoveRoleGrantResponse], error)
@@ -473,6 +500,12 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		AccessServiceGetRoleAccessProcedure,
 		svc.GetRoleAccess,
 		connect.WithSchema(accessServiceMethods.ByName("GetRoleAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessServiceDeleteRoleHandler := connect.NewUnaryHandler(
+		AccessServiceDeleteRoleProcedure,
+		svc.DeleteRole,
+		connect.WithSchema(accessServiceMethods.ByName("DeleteRole")),
 		connect.WithHandlerOptions(opts...),
 	)
 	accessServiceAddRoleGrantHandler := connect.NewUnaryHandler(
@@ -579,6 +612,8 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceResolveRoleHandler.ServeHTTP(w, r)
 		case AccessServiceGetRoleAccessProcedure:
 			accessServiceGetRoleAccessHandler.ServeHTTP(w, r)
+		case AccessServiceDeleteRoleProcedure:
+			accessServiceDeleteRoleHandler.ServeHTTP(w, r)
 		case AccessServiceAddRoleGrantProcedure:
 			accessServiceAddRoleGrantHandler.ServeHTTP(w, r)
 		case AccessServiceRemoveRoleGrantProcedure:
@@ -640,6 +675,10 @@ func (UnimplementedAccessServiceHandler) ResolveRole(context.Context, *connect.R
 
 func (UnimplementedAccessServiceHandler) GetRoleAccess(context.Context, *connect.Request[v1.GetRoleAccessRequest]) (*connect.Response[v1.GetRoleAccessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.GetRoleAccess is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[v1.DeleteRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.DeleteRole is not implemented"))
 }
 
 func (UnimplementedAccessServiceHandler) AddRoleGrant(context.Context, *connect.Request[v1.AddRoleGrantRequest]) (*connect.Response[v1.AddRoleGrantResponse], error) {
