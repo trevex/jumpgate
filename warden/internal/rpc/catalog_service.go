@@ -1076,6 +1076,15 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	resp.Capabilities = []string(caps)
+	// Management capabilities drive the authoring affordances (rename/move/delete/
+	// edit config). These are the full scope-cascade caps WITHOUT the `**` strip —
+	// mirroring GetFolderAccess — so an admin holding `**` can author the asset even
+	// though `**` confers no connect ability (and so is absent from Capabilities).
+	mgmtCaps, err := s.authorizer.CapabilitiesOnScope(ctx, u.ID, authz.AssetScope(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp.ManagementCapabilities = []string(mgmtCaps)
 	return connect.NewResponse(resp), nil
 }
 

@@ -224,6 +224,13 @@ message GetAssetAccessResponse {
   // access, so it does not appear here. Thus this faithfully mirrors connect
   // ability rather than management authority.
   repeated string capabilities = 5;
+  // management_capabilities is the caller's effective MANAGEMENT capability set on
+  // this asset — resolved via the full scope cascade (global + ancestor folders +
+  // the asset) and, unlike `capabilities`, WITHOUT stripping `**`. It mirrors
+  // GetFolderAccess.capabilities and drives the asset's authoring affordances
+  // (rename / move / delete / edit config), which are management actions and must
+  // not be gated on the connect set.
+  repeated string management_capabilities = 6;
 }
 
 message GetFolderAccessRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }

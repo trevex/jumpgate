@@ -342,8 +342,11 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
 
   const sshLogins = sshLoginsCoveredByCaps(data.capabilities);
   const hasRequestable = data.requestableRoles.length > 0;
-  const canEdit = canUpdateAsset(data.capabilities);
-  const canDelete = canDeleteAsset(data.capabilities);
+  // Authoring is a MANAGEMENT action, gated on the management capability set
+  // (which includes `**`) — not the connect set in `capabilities`, which strips
+  // `**` and so would hide these controls from an admin.
+  const canEdit = canUpdateAsset(data.managementCapabilities);
+  const canDelete = canDeleteAsset(data.managementCapabilities);
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Asset: ${name}`}>

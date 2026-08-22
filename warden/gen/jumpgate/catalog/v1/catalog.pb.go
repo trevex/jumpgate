@@ -2092,9 +2092,16 @@ type GetAssetAccessResponse struct {
 	// `**` confers management everywhere but does NOT by itself grant proxy/connect
 	// access, so it does not appear here. Thus this faithfully mirrors connect
 	// ability rather than management authority.
-	Capabilities  []string `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Capabilities []string `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	// management_capabilities is the caller's effective MANAGEMENT capability set on
+	// this asset — resolved via the full scope cascade (global + ancestor folders +
+	// the asset) and, unlike `capabilities`, WITHOUT stripping `**`. It mirrors
+	// GetFolderAccess.capabilities and drives the asset's authoring affordances
+	// (rename / move / delete / edit config), which are management actions and must
+	// not be gated on the connect set.
+	ManagementCapabilities []string `protobuf:"bytes,6,rep,name=management_capabilities,json=managementCapabilities,proto3" json:"management_capabilities,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *GetAssetAccessResponse) Reset() {
@@ -2158,6 +2165,13 @@ func (x *GetAssetAccessResponse) GetRequestableRoles() []*RoleRef {
 func (x *GetAssetAccessResponse) GetCapabilities() []string {
 	if x != nil {
 		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *GetAssetAccessResponse) GetManagementCapabilities() []string {
+	if x != nil {
+		return x.ManagementCapabilities
 	}
 	return nil
 }
@@ -2897,13 +2911,14 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\vfolder_path\x18\x03 \x01(\tR\n" +
 	"folderPath\"<\n" +
 	"\x15GetAssetAccessRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xa2\x02\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xdb\x02\n" +
 	"\x16GetAssetAccessResponse\x12&\n" +
 	"\x0factive_role_ids\x18\x01 \x03(\tR\ractiveRoleIds\x120\n" +
 	"\x14requestable_role_ids\x18\x02 \x03(\tR\x12requestableRoleIds\x12?\n" +
 	"\factive_roles\x18\x03 \x03(\v2\x1c.jumpgate.catalog.v1.RoleRefR\vactiveRoles\x12I\n" +
 	"\x11requestable_roles\x18\x04 \x03(\v2\x1c.jumpgate.catalog.v1.RoleRefR\x10requestableRoles\x12\"\n" +
-	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\"?\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x127\n" +
+	"\x17management_capabilities\x18\x06 \x03(\tR\x16managementCapabilities\"?\n" +
 	"\x16GetFolderAccessRequest\x12%\n" +
 	"\tfolder_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bfolderId\"=\n" +
 	"\x17GetFolderAccessResponse\x12\"\n" +
