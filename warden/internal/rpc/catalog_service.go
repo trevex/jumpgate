@@ -14,6 +14,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -61,12 +62,15 @@ type CatalogServer struct {
 	q          *gen.Queries
 	pool       *pgxpool.Pool
 	authorizer authz.Authorizer
+	reqReads   requestReadAuthorizer
 }
 
 // NewCatalogServer constructs the CatalogService implementation. pool is used to
-// run CreateAsset + its inline config as one transaction.
-func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer) *CatalogServer {
-	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer}
+// run CreateAsset + its inline config as one transaction. reqReads authorizes the
+// request-party path of GetAssetDisplay; a nil reqReads disables that path (only
+// the capability check can then grant a display read).
+func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer) *CatalogServer {
+	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {
@@ -433,10 +437,71 @@ func (s *CatalogServer) GetAsset(ctx context.Context, req *connect.Request[catal
 	return connect.NewResponse(&catalogv1.GetAssetResponse{Asset: s.assetMsgWithPath(ctx, toAssetMsgWithConfig(a, cfg, logins), a.FolderID, a.Name)}), nil
 }
 
-// GetAssetDisplay returns an asset's decision context without secret references.
-// TEMPORARY stub — real impl in a later task.
-func (s *CatalogServer) GetAssetDisplay(_ context.Context, _ *connect.Request[catalogv1.GetAssetDisplayRequest]) (*connect.Response[catalogv1.GetAssetDisplayResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// GetAssetDisplay returns an asset's decision context — path, kind, and for SSH the
+// target address, host public key, and available logins (login + kind) — for an
+// approver or requester to judge a pending access request, WITHOUT any secret
+// references. Authorized by catalog:asset:read at the asset scope OR by being party
+// to a pending access request that references the asset. Existence-hiding: a caller
+// with neither, and a missing asset, both return NotFound (catalog topology rule).
+func (s *CatalogServer) GetAssetDisplay(ctx context.Context, req *connect.Request[catalogv1.GetAssetDisplayRequest]) (*connect.Response[catalogv1.GetAssetDisplayResponse], error) {
+	id, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	// Authorize: catalog:asset:read, else party to a pending request for this asset.
+	if capErr := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(id)); capErr != nil {
+		u, ok := auth.UserFromContext(ctx)
+		if !ok || s.reqReads == nil {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		}
+		allowed, err := s.reqReads.CanReadForRequest(ctx, u.ID, accessrequest.ReqEntityAsset, id)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if !allowed {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		}
+	}
+	a, err := s.q.GetAsset(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	disp := &catalogv1.AssetDisplay{
+		Id:       a.ID.String(),
+		FolderId: a.FolderID.String(),
+		Name:     a.Name,
+		Kind:     a.Kind,
+	}
+	// Reuse the same folder-path lookup GetAsset uses so the dotted path matches.
+	if fp, ferr := s.q.FolderPath(ctx, a.FolderID); ferr == nil {
+		disp.FolderPath = fp
+		disp.Path = joinPath(fp, a.Name)
+	}
+	// SSH connection config is optional; a config-less asset returns no ssh oneof.
+	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return connect.NewResponse(&catalogv1.GetAssetDisplayResponse{Asset: disp}), nil
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	logins, err := s.q.ListSSHAssetLogins(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	ssh := &catalogv1.SSHConfigDisplay{
+		HostPublicKey: cfg.HostPublicKey,
+		TargetAddress: cfg.TargetAddress,
+	}
+	for _, l := range logins {
+		// Copy ONLY login + kind — never l.SecretID; SSHLoginDisplay has no such field.
+		ssh.Logins = append(ssh.Logins, &catalogv1.SSHLoginDisplay{Login: l.Login, Kind: l.Kind})
+	}
+	disp.Config = &catalogv1.AssetDisplay_Ssh{Ssh: ssh}
+	return connect.NewResponse(&catalogv1.GetAssetDisplayResponse{Asset: disp}), nil
 }
 
 // UpdateAssetConfig upserts an asset's typed config (admin only). The
