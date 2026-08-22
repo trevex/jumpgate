@@ -195,6 +195,14 @@ requires `catalog:asset:read`.
   the audit list of session recordings with an in-browser **asciinema** player
   that streams each cast same-origin from `/api/recordings/<id>/cast` (the session
   cookie rides along).
+- **Terminal** (`/terminal/:assetId?login=…`, a chromeless full-screen xterm.js
+  view opened via "Open terminal" on an asset/grant) — an in-browser SSH session,
+  recorded and governed exactly like `jumpgate connect`. The browser fetches a
+  short-lived `CreateWebSession` ticket, opens a WebSocket to the gateway, which
+  verifies it and relays a byte-accurate opcode protocol over the mesh to the
+  ssh-proxy worker's WebSocket-terminal ingress (which runs the target SSH +
+  records). In production set `GATEWAY_CONSOLE_ORIGIN` to the console origin so the
+  gateway restricts terminal WebSockets to it.
 - **Directory** (`/directory`, shown when the caller holds `identity:user:read` or
   `identity:group:read`) — manage users and groups. **Users:** list with an
   active/deactivated status, create, deactivate/reactivate, delete (destructive
