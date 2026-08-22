@@ -103,7 +103,8 @@ kind-e2e: kind-up ## Bring up the env, run the Go e2e suite, then tear down (KEE
 	cd test/e2e && JUMPGATE_E2E=1 go test -count=1 -timeout 300s ./...
 	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi
 
-ui-e2e: kind-up ## Bring up kind (warden serves the embedded SPA) and run Playwright against it (KEEP=1 to keep it up)
+ui-e2e: kind-up ## Bring up kind (warden serves the embedded SPA), seed Act 0 via the CLI, then run Playwright against it (KEEP=1 to keep it up)
+	cd test/e2e && JUMPGATE_E2E=1 go test -run TestUISeed -count=1 -timeout 180s ./...
 	pnpm --dir web install --frozen-lockfile
 	pnpm --dir web exec playwright test
 	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi
