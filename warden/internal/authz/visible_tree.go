@@ -17,9 +17,12 @@ import (
 //     folds in the folder ancestor chain), so we evaluate it per candidate folder.
 //
 //   - the ACCESS axis: a user may see an asset they can actually reach —
-//     VisibleAssets(user) (active standing role OR requestable). A folder is
-//     access-visible when its subtree contains such an asset (so the browse path
-//     to a reachable asset is never hidden).
+//     VisibleAssets(user) (active standing role OR requestable), OR an asset they
+//     are CONNECT-visible on: the full CapabilitiesOnScope(AssetScope) cascade
+//     (global ∪ ancestor folders ∪ asset, `**` retained) entitles ≥1 of the asset's
+//     own SSH logins, so a folder-scoped ssh:login binding surfaces its asset. A
+//     folder is access-visible when its subtree contains such an asset (so the
+//     browse path to a reachable asset is never hidden).
 //
 // A node is visible iff it is visible on EITHER axis (union). Deactivated users
 // are handled by the underlying closures (heldCTE / globalHeldCTE / VisibleAssets
@@ -107,6 +110,34 @@ SELECT id, folder_id FROM assets WHERE folder_id = ANY($1::uuid[])`, folderIDs)
 			return nil, fmt.Errorf("scan asset folder: %w", err)
 		}
 		out[assetID] = folderID
+	}
+	return out, rows.Err()
+}
+
+// assetLoginsFor returns, for each asset in assetIDs, the set of SSH login names
+// declared on it (ssh_asset_login.login). Assets with no logins are absent from
+// the map. Batched into a single query so the connect-visibility arm never issues
+// a per-asset login lookup.
+func (s *sqlAuthorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+	if len(assetIDs) == 0 {
+		return map[uuid.UUID][]string{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY($1::uuid[]) ORDER BY login`, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("asset logins: %w", err)
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]string{}
+	for rows.Next() {
+		var (
+			assetID uuid.UUID
+			login   string
+		)
+		if err := rows.Scan(&assetID, &login); err != nil {
+			return nil, fmt.Errorf("scan asset login: %w", err)
+		}
+		out[assetID] = append(out[assetID], login)
 	}
 	return out, rows.Err()
 }
@@ -239,7 +270,17 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 	if err != nil {
 		return nil, err
 	}
-	var out []uuid.UUID
+
+	// Connect arm (folder+global data-plane cascade): an asset not visible on the
+	// access or management arm is still visible when the caller entitles ≥1 of its
+	// OWN SSH logins via the full CapabilitiesOnScope(AssetScope) cascade
+	// (ssh:login:<login> held globally / on an ancestor folder / on the asset). This
+	// is the residual work: we only fetch logins and per-asset caps for candidates
+	// that neither arm above already covered — a `**` / catalog:asset:read admin is
+	// fast-pathed via folderManageable and never reaches here. `residual` collects
+	// those, and we batch their login fetch into one query.
+	var residual []uuid.UUID
+	out := make([]uuid.UUID, 0, len(assetIDs))
 	for _, assetID := range assetIDs {
 		if _, ok := accessible[assetID]; ok {
 			out = append(out, assetID)
@@ -251,6 +292,28 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 		}
 		if manage {
 			out = append(out, assetID)
+			continue
+		}
+		residual = append(residual, assetID)
+	}
+
+	if len(residual) > 0 {
+		loginsByAsset, err := s.assetLoginsFor(ctx, residual)
+		if err != nil {
+			return nil, err
+		}
+		for _, assetID := range residual {
+			logins := loginsByAsset[assetID]
+			if len(logins) == 0 {
+				continue // no logins to entitle → not connect-visible
+			}
+			caps, err := s.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
+			if err != nil {
+				return nil, err
+			}
+			if len(caps.EntitledLogins(logins)) > 0 {
+				out = append(out, assetID)
+			}
 		}
 	}
 	return out, nil
@@ -263,8 +326,10 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 // on it. A GLOBAL hold short-circuits to "all level folders" (one query).
 //
 // Access arm: a folder is access-visible iff its subtree (inclusive) contains an
-// asset the user can access (VisibleAssets), so the browse path to a reachable
-// asset is never hidden.
+// asset the user can reach — either VisibleAssets (active/requestable) OR an asset
+// the caller is CONNECT-visible on (folder+global ssh:login cascade entitling ≥1
+// of the asset's own logins). So the browse path down to a connect-visible asset
+// is never hidden.
 func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	levelFolders, err := s.childCandidateFolderIDs(ctx, parent, cascade)
 	if err != nil {
@@ -288,6 +353,32 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 		return nil, err
 	}
 
+	// Memoized connect-visibility for a single asset (fetch logins + AssetScope caps
+	// once per asset). Only consulted for subtree assets not already in `accessible`,
+	// so a `**` / catalog:folder:read caller short-circuits above and never pays this.
+	connectMemo := map[uuid.UUID]bool{}
+	assetConnectVisible := func(assetID uuid.UUID) (bool, error) {
+		if v, ok := connectMemo[assetID]; ok {
+			return v, nil
+		}
+		byID, err := s.assetLoginsFor(ctx, []uuid.UUID{assetID})
+		if err != nil {
+			return false, err
+		}
+		logins := byID[assetID]
+		if len(logins) == 0 {
+			connectMemo[assetID] = false
+			return false, nil
+		}
+		caps, err := s.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
+		if err != nil {
+			return false, err
+		}
+		v := len(caps.EntitledLogins(logins)) > 0
+		connectMemo[assetID] = v
+		return v, nil
+	}
+
 	var out []uuid.UUID
 	for _, folderID := range levelFolders {
 		// Management arm (per folder).
@@ -299,7 +390,7 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 			out = append(out, folderID)
 			continue
 		}
-		// Access arm: does the subtree hold an accessible asset?
+		// Access/connect arm: does the subtree hold a reachable asset?
 		// TODO(perf): in cascade mode this issues O(F) overlapping subtree/asset
 		// queries (one folderSubtreeIDs + one assetIDsInFolders per non-manageable
 		// folder). A single level-wide asset→ancestor map hoisted before the loop
@@ -312,11 +403,23 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 		if err != nil {
 			return nil, err
 		}
+		visible := false
 		for _, assetID := range assetIDs {
 			if _, ok := accessible[assetID]; ok {
-				out = append(out, folderID)
+				visible = true
 				break
 			}
+			cv, err := assetConnectVisible(assetID)
+			if err != nil {
+				return nil, err
+			}
+			if cv {
+				visible = true
+				break
+			}
+		}
+		if visible {
+			out = append(out, folderID)
 		}
 	}
 	return out, nil

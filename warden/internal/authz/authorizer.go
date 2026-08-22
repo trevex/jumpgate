@@ -59,18 +59,24 @@ type Authorizer interface {
 	// (parent == uuid.Nil is the tree root: folders with parent_id IS NULL) that
 	// the user may SEE, unioning the management axis with the access axis. A folder
 	// is visible when the user holds "catalog:folder:read" on it (management) OR its
-	// subtree contains an asset the user can access (VisibleAssets). With cascade,
-	// the whole subtree under `parent` is considered as candidate folders, not just
-	// the immediate children.
+	// subtree contains an asset the user can reach — either in VisibleAssets or
+	// CONNECT-visible (a folder/global ssh:login cascade entitling ≥1 of the asset's
+	// own logins), so the browse path down to a connect-visible asset is not hidden.
+	// With cascade, the whole subtree under `parent` is considered as candidate
+	// folders, not just the immediate children.
 	VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
 
 	// VisibleAssetsUnder returns the ids of the assets under `parent` (a folder;
-	// uuid.Nil is the root) the user may SEE, unioning management with access. An
-	// asset is visible when the user holds "catalog:asset:read" on its folder
-	// (management) OR the asset is in VisibleAssets (active or requestable). Without
-	// cascade only assets in the immediate child folders of `parent` are considered;
-	// with cascade the whole subtree is. Because assets always live in a folder,
-	// parent == uuid.Nil without cascade yields no assets (the root holds none).
+	// uuid.Nil is the root) the user may SEE, unioning management with access and
+	// connect. An asset is visible when the user holds "catalog:asset:read" on its
+	// folder (management) OR the asset is in VisibleAssets (active or requestable) OR
+	// the user is CONNECT-visible on it — the full CapabilitiesOnScope(AssetScope)
+	// cascade (global ∪ ancestor folders ∪ asset, `**` retained) entitles ≥1 of the
+	// asset's own SSH logins, so a folder-scoped ssh:login binding surfaces its
+	// asset. Without cascade only assets in the immediate child folders of `parent`
+	// are considered; with cascade the whole subtree is. Because assets always live
+	// in a folder, parent == uuid.Nil without cascade yields no assets (the root
+	// holds none).
 	VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
 
 	// VisibleRolesUnder returns the ids of the roles homed under `parent` (a folder;
