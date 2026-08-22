@@ -177,9 +177,12 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 |---|---|---|
 | `catalog:folder:create` | create a folder | parent folder (`Global` if top-level) |
 | `catalog:folder:read` | resolve a folder by path/id (`ResolveFolder`) | the folder |
+| `catalog:folder:update` | rename or move a folder | the folder |
+| `catalog:folder:delete` | delete a folder | the folder |
 | `catalog:asset:create` | onboard an asset | target folder |
 | `catalog:asset:read` | get / resolve an asset (`GetAsset`, `ResolveAsset`) | the asset |
 | `catalog:asset:update` | change an asset's config | the asset |
+| `catalog:asset:delete` | delete an asset | the asset |
 | `access:role:create` | create a role | target folder (`Global` if a global role) |
 | `access:role:read` | get / resolve a role; list a role's grants; explain a role | the role's folder |
 | `access:role:update` | add / remove role-rewrite grants (`role_grants`) | the role's folder |
@@ -210,6 +213,10 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | `vault:secret:read` | list an asset's secrets | the asset |
 | `recording:read` | list / fetch / download session recordings | the recording's asset (unfiltered list: `Global`) |
 | `**` | everything (the `admin` role) | any |
+
+> **Moving a folder or asset requires the `…:update` capability on the moved node
+> AND the `…:create` capability on the destination folder.** A rename needs only
+> `…:update` on the node itself.
 
 > **† `access:grant:*` is the cross-user *oversight* surface only.** Every user
 > sees and acts on their **own** just-in-time access with **no capability

@@ -365,6 +365,22 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.catalog.GetFolderAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetFolderAccessRequest{FolderId: f.folderID}), tok))
 			return err
 		}},
+		{"Catalog.DeleteAsset", NF, func() error {
+			_, err := cl.catalog.DeleteAsset(ctx, withToken(connect.NewRequest(&catalogv1.DeleteAssetRequest{AssetId: f.assetID}), tok))
+			return err
+		}},
+		{"Catalog.UpdateAsset", NF, func() error {
+			_, err := cl.catalog.UpdateAsset(ctx, withToken(connect.NewRequest(&catalogv1.UpdateAssetRequest{AssetId: f.assetID, Name: strptr("x")}), tok))
+			return err
+		}},
+		{"Catalog.DeleteFolder", NF, func() error {
+			_, err := cl.catalog.DeleteFolder(ctx, withToken(connect.NewRequest(&catalogv1.DeleteFolderRequest{FolderId: f.folderID}), tok))
+			return err
+		}},
+		{"Catalog.UpdateFolder", NF, func() error {
+			_, err := cl.catalog.UpdateFolder(ctx, withToken(connect.NewRequest(&catalogv1.UpdateFolderRequest{FolderId: f.folderID, Name: strptr("x")}), tok))
+			return err
+		}},
 
 		// ---- AccessService ----
 		{"Access.CreateRole", PD, func() error {
