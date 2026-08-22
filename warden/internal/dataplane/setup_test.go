@@ -220,6 +220,24 @@ func (f *fixture) mintToken(t *testing.T, fp string) string {
 	return tok
 }
 
+// mintWebToken mints a web-mode session token: empty cnf, login bound in the
+// claim (as CreateWebSession does for browser terminals).
+func (f *fixture) mintWebToken(t *testing.T, login string) string {
+	t.Helper()
+	tok, err := f.minter.Mint(sessiontoken.Claims{
+		SessionID: uuid.New(),
+		UserID:    f.user,
+		AssetID:   f.asset,
+		Protocol:  "ssh",
+		Mode:      "web",
+		Login:     login,
+	}, time.Minute)
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	return tok
+}
+
 func (f *fixture) liveSessionCount(t *testing.T) int {
 	t.Helper()
 	var n int
@@ -391,6 +409,70 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	}
 	if res2.RecordingRequired {
 		t.Fatal("RecordingRequired = true, want false (user holds ssh:record:exempt)")
+	}
+}
+
+// TestSetupWebMode drives a web-mode token: no client key (empty cnf), the login
+// comes from the token claim. Setup must skip the cnf/Kc check, re-authorize the
+// ticket-bound login, and issue a credential over Kw exactly as the CLI path.
+func TestSetupWebMode(t *testing.T) {
+	f := setup(t)
+	tok := f.mintWebToken(t, "deploy")
+
+	// Web request: EMPTY client key, valid Kw.
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "", nil, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup(web): %v", err)
+	}
+	if res.TargetAddress != "10.0.0.5:22" {
+		t.Fatalf("TargetAddress = %q, want 10.0.0.5:22", res.TargetAddress)
+	}
+	if len(res.SSHCertificate) == 0 {
+		t.Fatal("expected a non-empty ssh certificate")
+	}
+
+	// The live session records the ticket-bound login as its principal.
+	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, gen.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
+	if err != nil {
+		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("live_sessions rows = %d, want 1", len(rows))
+	}
+	if len(rows[0].Principals) != 1 || rows[0].Principals[0] != "deploy" {
+		t.Fatalf("Principals = %v, want [deploy]", rows[0].Principals)
+	}
+
+	// The cert is over Kw, not Kc — same invariant as the CLI path.
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(res.SSHCertificate)
+	if err != nil {
+		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
+	}
+	cert, ok := pub.(*ssh.Certificate)
+	if !ok {
+		t.Fatalf("parsed key is %T, want *ssh.Certificate", pub)
+	}
+	kwPub, _, _, _, err := ssh.ParseAuthorizedKey(f.workerPub)
+	if err != nil {
+		t.Fatalf("ParseAuthorizedKey(Kw): %v", err)
+	}
+	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
+		t.Fatal("cert.Key != Kw — the web cert must be over the worker key")
+	}
+}
+
+// TestSetupWebModeUnentitled asserts a web token whose bound login is not entitled
+// is denied (re-authorization still runs on the web path).
+func TestSetupWebModeUnentitled(t *testing.T) {
+	f := setup(t)
+	// The user holds ssh:login:deploy; bind the token to a login it lacks.
+	tok := f.mintWebToken(t, "root")
+
+	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "", nil, f.workerPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
+		t.Fatalf("Setup(web, unentitled) err = %v, want ErrNotAuthorized", err)
+	}
+	if n := f.liveSessionCount(t); n != 0 {
+		t.Fatalf("live_sessions rows = %d, want 0", n)
 	}
 }
 

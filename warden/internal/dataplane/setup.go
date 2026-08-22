@@ -87,13 +87,24 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	if err != nil {
 		return SetupResult{}, ErrBadToken
 	}
-	// Kc — the client's ephemeral key — must match the token's cnf binding.
-	pub, err := parseSSHPublicKey(clientPub)
-	if err != nil {
-		return SetupResult{}, ErrBadToken
-	}
-	if ssh.FingerprintSHA256(pub) != claims.ClientKeyFingerprint {
-		return SetupResult{}, ErrKeyMismatch
+	// Web tickets carry no client key: the browser has no SSH key to prove, and the
+	// login is bound in the token (authoritative — the ticket-mint already checked
+	// the login entitlement). So the cnf/Kc proof is skipped and the request's
+	// client key + login are ignored in favor of the claim. cnf-bearing (CLI)
+	// tokens keep the client-key proof and honor the request's login. Everything
+	// after this — re-authorization and target-credential issuance over Kw — is
+	// identical for both paths.
+	if claims.Mode == "web" {
+		login = claims.Login
+	} else {
+		// Kc — the client's ephemeral key — must match the token's cnf binding.
+		pub, err := parseSSHPublicKey(clientPub)
+		if err != nil {
+			return SetupResult{}, ErrBadToken
+		}
+		if ssh.FingerprintSHA256(pub) != claims.ClientKeyFingerprint {
+			return SetupResult{}, ErrKeyMismatch
+		}
 	}
 	// Kw — the worker's per-session key — is what we certify for the target hop.
 	if _, err := parseSSHPublicKey(targetPub); err != nil {
