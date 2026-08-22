@@ -27,14 +27,17 @@ import {
 // ─── SSH connect command derivation ──────────────────────────────────────────
 
 /**
- * Extracts all login names from ssh:login:<login> capabilities. The capability
- * format is "ssh:login:<login>" (exactly 3 segments). Returns [] when no SSH
- * connect capabilities are present.
+ * Extracts concrete login names from ssh:login:<login> capabilities. The
+ * capability format is "ssh:login:<login>" (exactly 3 segments). Glob logins
+ * ("*", "**") are intentionally excluded: a wildcard means "any login" and
+ * is not a runnable command — the CLI/grant flow covers that case.
+ * Returns [] when no concrete SSH connect capabilities are present.
  */
 function sshLoginsCoveredByCaps(caps: string[]): string[] {
   return caps
     .filter((c) => c.startsWith("ssh:login:") && c.split(":").length === 3)
-    .map((c) => c.split(":")[2]);
+    .map((c) => c.split(":")[2])
+    .filter((login) => login !== "*" && login !== "**");
 }
 
 // ─── Copy-to-clipboard button ─────────────────────────────────────────────────
