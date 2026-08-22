@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -689,6 +690,70 @@ func (s *CatalogServer) ResolveFolder(ctx context.Context, req *connect.Request[
 		FolderId: folderID.String(),
 		Path:     fp,
 	}), nil
+}
+
+// DeleteFolder removes a folder only if nothing references it — child folders/assets,
+// folder-scoped roles/groups homed in it, or bindings/policies scoped to it. It lists
+// the blockers rather than cascading (the DB FKs are ON DELETE CASCADE, refused here).
+func (s *CatalogServer) DeleteFolder(ctx context.Context, req *connect.Request[catalogv1.DeleteFolderRequest]) (*connect.Response[catalogv1.DeleteFolderResponse], error) {
+	id, err := uuid.Parse(req.Msg.GetFolderId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid folder_id"))
+	}
+	// Existence-hide: a caller who can't read it sees NotFound; then require delete.
+	if s.requireCap(ctx, "catalog:folder:read", authz.FolderScope(id)) != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
+	}
+	if err := s.requireCap(ctx, "catalog:folder:delete", authz.FolderScope(id)); err != nil {
+		return nil, err
+	}
+
+	// Count every referencing relation. Signatures differ: assets.folder_id is NOT
+	// NULL (uuid.UUID); the rest are nullable (pgtype.UUID) — so call each directly.
+	var blockers []string
+	appendBlocker := func(n int64, label string) {
+		if n > 0 {
+			blockers = append(blockers, fmt.Sprintf("%d %s", n, label))
+		}
+	}
+	nChildFolders, err := s.q.CountChildFolders(ctx, pgUUID(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nChildFolders, "child folders")
+	nAssets, err := s.q.CountAssetsInFolder(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nAssets, "assets")
+	nRoles, err := s.q.CountRolesHomedInFolder(ctx, pgUUID(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nRoles, "roles homed here")
+	nGroups, err := s.q.CountGroupsHomedInFolder(ctx, pgUUID(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nGroups, "groups homed here")
+	nBindings, err := s.q.CountBindingsScopedToFolder(ctx, pgUUID(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nBindings, "bindings scoped here")
+	nPolicies, err := s.q.CountPoliciesScopedToFolder(ctx, pgUUID(id))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	appendBlocker(nPolicies, "policies scoped here")
+
+	if len(blockers) > 0 {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("folder not empty: %s", strings.Join(blockers, ", ")))
+	}
+	if err := s.q.DeleteFolder(ctx, id); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&catalogv1.DeleteFolderResponse{}), nil
 }
 
 // folderNotFoundOrInternal maps pgx.ErrNoRows to NotFound and any other error to Internal.

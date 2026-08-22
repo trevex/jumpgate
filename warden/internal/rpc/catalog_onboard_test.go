@@ -51,6 +51,16 @@ func (e *catalogTestEnv) createFolder(t *testing.T, name string) string {
 	return f.Msg.Folder.Id
 }
 
+// createChildFolder creates a folder under parentID and returns its id.
+func (e *catalogTestEnv) createChildFolder(t *testing.T, name, parentID string) string {
+	t.Helper()
+	f, err := e.catalog.CreateFolder(e.adminCtx, connect.NewRequest(&catalogv1.CreateFolderRequest{Name: name, ParentId: parentID}))
+	if err != nil {
+		t.Fatalf("createChildFolder(%q under %q): %v", name, parentID, err)
+	}
+	return f.Msg.Folder.Id
+}
+
 func TestCreateAssetInlineSecretsAtomic(t *testing.T) {
 	env := newCatalogTestEnv(t)
 	folderID := env.createFolder(t, "prod")
