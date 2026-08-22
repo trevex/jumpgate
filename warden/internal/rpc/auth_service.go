@@ -52,7 +52,10 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 	}
 	resp := connect.NewResponse(&authv1.LoginResponse{UserId: u.ID.String()})
 	if req.Msg.CookieOnly {
-		c := &http.Cookie{
+		// Secure is config-gated: true in production, off only for the plaintext
+		// dev/e2e env (which the browser would otherwise reject). HttpOnly and
+		// SameSite=Strict are always set, so the cookie is not insecure by design.
+		c := &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Strict set; Secure is config-gated.
 			Name:     auth.SessionCookie,
 			Value:    tok,
 			Path:     "/",
@@ -79,7 +82,9 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[authv1.Log
 	}
 	resp := connect.NewResponse(&authv1.LogoutResponse{})
 	if fromCookie {
-		c := &http.Cookie{
+		// Matches the login cookie's attributes so the browser replaces it; Secure
+		// is config-gated (see Login). HttpOnly + SameSite=Strict are always set.
+		c := &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Strict set; Secure is config-gated.
 			Name:     auth.SessionCookie,
 			Value:    "",
 			Path:     "/",
