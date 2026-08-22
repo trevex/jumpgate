@@ -20,8 +20,8 @@ import {
   listRecordings,
   getRecording,
 } from "@/gen/jumpgate/recording/v1/recording-RecordingService_connectquery";
-import { getAsset } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
-import { getUser } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
+import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
+import { getUserDisplay } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import type { Recording } from "@/gen/jumpgate/recording/v1/recording_pb";
 import {
   Table,
@@ -111,15 +111,15 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Per-row enrichment hooks ─────────────────────────────────────────────────
 
 function useAssetDisplay(assetId: string): string {
-  const { data } = useQuery(getAsset, { assetId }, { enabled: Boolean(assetId) });
+  const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: Boolean(assetId) });
   if (!data?.asset) return shortId(assetId);
   return data.asset.path || data.asset.name || shortId(assetId);
 }
 
 function useUserDisplay(userId: string): string {
-  const { data } = useQuery(getUser, { id: userId }, { enabled: Boolean(userId) });
+  const { data } = useQuery(getUserDisplay, { id: userId }, { enabled: Boolean(userId) });
   if (!data?.user) return shortId(userId);
-  return data.user.email || shortId(userId);
+  return data.user.displayName || data.user.email || shortId(userId);
 }
 
 // ─── Skeleton rows ────────────────────────────────────────────────────────────

@@ -2,8 +2,11 @@
  * approvals.tsx — Approver inbox.
  *
  * Lists pending access requests the caller is eligible to approve, with
- * per-row enrichment (requester email, asset path, role name) fetched via
- * getUser / getAsset / getRole.  Approve fires immediately; Deny opens a
+ * per-row enrichment (requester name, asset path, role name) fetched via the
+ * request-scoped display reads getUserDisplay / getAssetDisplay / getRoleDisplay.
+ * Each pending row also surfaces the decision context — the SSH target address
+ * and the capabilities the requested role grants — behind a compact toggle so
+ * the request can be judged in place.  Approve fires immediately; Deny opens a
  * small confirm dialog with an optional reason textarea (reason is UI-only —
  * DenyRequestRequest only carries request_id on the wire).
  *
@@ -23,9 +26,9 @@ import {
   listMyRequests,
   listMyGrants,
 } from "@/gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
-import { getAsset } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
-import { getRole } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
-import { getUser } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
+import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
+import { getRoleDisplay } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
+import { getUserDisplay } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import type { AccessRequest } from "@/gen/jumpgate/accessrequest/v1/accessrequest_pb";
 import {
   Dialog,
@@ -50,6 +53,10 @@ import {
   Server,
   Shield,
   Clock,
+  ChevronDown,
+  ChevronRight,
+  Target,
+  KeyRound,
 } from "lucide-react";
 
 // ─── Short-UUID fallback ──────────────────────────────────────────────────────
@@ -61,36 +68,43 @@ function shortId(id: string): string {
 // ─── Per-row enrichment hooks ─────────────────────────────────────────────────
 
 /**
- * Fetches display name for a user id.
- * Returns email or displayName if available; falls back to short UUID.
+ * Fetches display name for a user id via the universal directory read.
+ * Returns displayName or email if available; falls back to short UUID.
  */
 function useRequesterDisplay(requesterId: string): string {
-  const { data } = useQuery(getUser, { id: requesterId }, { enabled: Boolean(requesterId) });
+  const { data } = useQuery(getUserDisplay, { id: requesterId }, { enabled: Boolean(requesterId) });
   if (!data?.user) return shortId(requesterId);
   const u = data.user;
   return u.displayName || u.email || shortId(requesterId);
 }
 
 /**
- * Fetches asset path/name for an asset id.
- * Returns DNS-style path if available; falls back to short UUID.
+ * Fetches an asset's decision context via the request-scoped display read.
+ * `label` is the DNS-style path (falling back to name/short UUID); `target`
+ * is the SSH target address when the asset is SSH (empty otherwise).
  */
-function useAssetDisplay(assetId: string): string {
-  const { data } = useQuery(getAsset, { assetId }, { enabled: Boolean(assetId) });
-  if (!data?.asset) return shortId(assetId);
-  const a = data.asset;
-  return a.path || a.name || shortId(assetId);
+function useAssetContext(assetId: string): { label: string; target: string } {
+  const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: Boolean(assetId) });
+  const asset = data?.asset;
+  const label = asset ? asset.path || asset.name || shortId(assetId) : shortId(assetId);
+  const target = asset?.config.case === "ssh" ? asset.config.value.targetAddress : "";
+  return { label, target };
 }
 
 /**
- * Fetches role name for a role id.
- * Returns "name.folder" if folder-scoped; otherwise just the name.
+ * Fetches a role's decision context via the request-scoped display read.
+ * `label` is "name.folderPath" when folder-scoped (else the bare name);
+ * `capabilities` are the capabilities the role grants.
  */
-function useRoleDisplay(roleId: string): string {
-  const { data } = useQuery(getRole, { id: roleId }, { enabled: Boolean(roleId) });
-  if (!data?.role) return shortId(roleId);
-  const r = data.role;
-  return r.folderPath ? `${r.name}.${r.folderPath}` : r.name;
+function useRoleContext(roleId: string): { label: string; capabilities: string[] } {
+  const { data } = useQuery(getRoleDisplay, { id: roleId }, { enabled: Boolean(roleId) });
+  const role = data?.role;
+  const label = role
+    ? role.folderPath
+      ? `${role.name}.${role.folderPath}`
+      : role.name
+    : shortId(roleId);
+  return { label, capabilities: role?.capabilities ?? [] };
 }
 
 // ─── Loading skeleton rows ────────────────────────────────────────────────────
@@ -165,7 +179,7 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
   const queryClient = useQueryClient();
 
   const requesterDisplay = useRequesterDisplay(request.requesterId);
-  const assetDisplay = useAssetDisplay(request.assetId);
+  const { label: assetDisplay } = useAssetContext(request.assetId);
 
   const { mutate: doDeny, isPending } = useMutation(denyRequest, {
     onSuccess: () => {
@@ -245,12 +259,15 @@ interface RequestRowProps {
 
 function RequestRow({ req }: RequestRowProps) {
   const [denyOpen, setDenyOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Enrichment — three parallel per-row queries (cheap: cached after first fetch)
   const requesterDisplay = useRequesterDisplay(req.requesterId);
-  const assetDisplay = useAssetDisplay(req.assetId);
-  const roleDisplay = useRoleDisplay(req.roleId);
+  const { label: assetDisplay, target: assetTarget } = useAssetContext(req.assetId);
+  const { label: roleDisplay, capabilities } = useRoleContext(req.roleId);
+
+  const hasContext = Boolean(assetTarget) || capabilities.length > 0;
 
   const { mutate: doApprove, isPending: isApproving } = useMutation(approveRequest, {
     onSuccess: () => {
@@ -344,7 +361,7 @@ function RequestRow({ req }: RequestRowProps) {
             </p>
           )}
 
-          {/* Row 3: Meta — time + approvals */}
+          {/* Row 3: Meta — time + approvals + decision-context toggle */}
           <div className="flex items-center gap-3 flex-wrap">
             <span
               className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"
@@ -360,7 +377,68 @@ function RequestRow({ req }: RequestRowProps) {
                 requiredApprovals={req.requiredApprovals}
               />
             )}
+
+            {hasContext && (
+              <button
+                type="button"
+                onClick={() => setContextOpen((o) => !o)}
+                aria-expanded={contextOpen}
+                aria-label={
+                  contextOpen
+                    ? "Hide decision context"
+                    : "Show decision context"
+                }
+                className="flex items-center gap-0.5 rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              >
+                {contextOpen ? (
+                  <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+                )}
+                Context
+              </button>
+            )}
           </div>
+
+          {/* Row 4: Decision context — SSH target + granted capabilities */}
+          {hasContext && contextOpen && (
+            <div className="mt-1 flex flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+              {assetTarget && (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Target
+                    className="h-3 w-3 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+                    Target
+                  </span>
+                  <code className="truncate font-mono text-[11px] text-foreground" title={assetTarget}>
+                    {assetTarget}
+                  </code>
+                </div>
+              )}
+
+              {capabilities.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <KeyRound className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    Grants {capabilities.length} capabilit{capabilities.length === 1 ? "y" : "ies"}
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {capabilities.map((cap) => (
+                      <Badge
+                        key={cap}
+                        variant="outline"
+                        className="rounded border-border bg-background px-1.5 py-0 font-mono text-[10px] font-normal text-foreground"
+                      >
+                        {cap}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Actions ── */}
