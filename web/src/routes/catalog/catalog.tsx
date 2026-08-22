@@ -7,11 +7,13 @@
  * survives page reload.
  */
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useCapabilities } from "@/lib/capabilities";
 import { Tree } from "./tree";
 import type { SelectedNode } from "./tree";
 import { AssetDetail } from "./detail/asset";
@@ -19,14 +21,18 @@ import { RoleDetail } from "./detail/role";
 import { GroupDetail } from "./detail/group";
 import { FolderDetail } from "./detail/folder";
 import { encodeSelection, decodeSelection } from "./selection";
+import { canCreateFolder } from "./catalog-actions";
+import { NewFolderDialog } from "./new-folder-dialog";
 
 // ─── Detail pane switcher ─────────────────────────────────────────────────────
 
 interface DetailProps {
   selected: SelectedNode | null;
+  /** Clears the `?sel=` selection (e.g. after the selected node is deleted). */
+  onCleared: () => void;
 }
 
-function Detail({ selected }: DetailProps) {
+function Detail({ selected, onCleared }: DetailProps) {
   if (!selected) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
@@ -49,6 +55,7 @@ function Detail({ selected }: DetailProps) {
           name={selected.name}
           path={selected.path}
           assetKind={selected.assetKind}
+          onCleared={onCleared}
         />
       );
     case "role":
@@ -61,6 +68,7 @@ function Detail({ selected }: DetailProps) {
           id={selected.id}
           name={selected.name}
           path={selected.path}
+          onCleared={onCleared}
         />
       );
   }
@@ -70,6 +78,9 @@ function Detail({ selected }: DetailProps) {
 
 export function CatalogPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const caps = useCapabilities();
+  const showRootCreate = canCreateFolder(caps);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   const rawSel = searchParams.get("sel");
   const selected = rawSel ? decodeSelection(rawSel) : null;
@@ -80,6 +91,11 @@ export function CatalogPage() {
     },
     [setSearchParams],
   );
+
+  // Drop the `?sel=` param so the detail pane resets (e.g. after a delete).
+  const clearSelection = useCallback(() => {
+    setSearchParams({}, { replace: true });
+  }, [setSearchParams]);
 
   return (
     <div className="flex h-full">
@@ -92,10 +108,22 @@ export function CatalogPage() {
         aria-label="Catalog tree"
       >
         {/* Pane header */}
-        <div className="flex h-10 shrink-0 items-center border-b border-border px-3">
+        <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
           <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
             Catalog
           </h2>
+          {showRootCreate && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setNewFolderOpen(true)}
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              aria-label="New root folder"
+              title="New folder"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          )}
         </div>
         <div className="min-h-0 flex-1">
           <Tree selected={selected} onSelect={handleSelect} />
@@ -109,9 +137,13 @@ export function CatalogPage() {
         id="catalog-detail"
       >
         <ScrollArea className="h-full">
-          <Detail selected={selected} />
+          <Detail selected={selected} onCleared={clearSelection} />
         </ScrollArea>
       </main>
+
+      {showRootCreate && (
+        <NewFolderDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} />
+      )}
     </div>
   );
 }

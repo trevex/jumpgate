@@ -11,7 +11,7 @@
 import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { createConnectQueryKey } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil } from "lucide-react";
+import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2 } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -30,11 +30,21 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { RequestSheet } from "../request-sheet";
-import { canUpdateAsset } from "../catalog-actions";
+import { canUpdateAsset, canDeleteAsset } from "../catalog-actions";
+import { RenameDialog } from "../rename-dialog";
+import { MoveDialog } from "../move-dialog";
+import { DeleteNode } from "../delete-node";
 import {
   AssetConfigForm,
   buildSSHConfigInput,
@@ -310,11 +320,16 @@ export interface AssetDetailProps {
   name: string;
   path?: string;
   assetKind?: string;
+  /** Fired after this asset is deleted, so the shell can clear the selection. */
+  onCleared?: () => void;
 }
 
-export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
+export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetailProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery(
     getAssetAccess,
@@ -328,6 +343,7 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
   const sshLogins = sshLoginsCoveredByCaps(data.capabilities);
   const hasRequestable = data.requestableRoles.length > 0;
   const canEdit = canUpdateAsset(data.capabilities);
+  const canDelete = canDeleteAsset(data.capabilities);
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Asset: ${name}`}>
@@ -349,6 +365,52 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
               Edit config
             </Button>
+          )}
+          {(canEdit || canDelete) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label={`Actions for asset ${name}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {canEdit && (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() => setRenameOpen(true)}
+                      className="text-[13px]"
+                    >
+                      <Pencil className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => setMoveOpen(true)}
+                      className="text-[13px]"
+                    >
+                      <FolderInput className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                      Move
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canDelete && (
+                  <>
+                    {canEdit && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      onSelect={() => setDeleteOpen(true)}
+                      className="text-[13px] text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         {path && (
@@ -442,6 +504,33 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
           assetName={name}
           open={editOpen}
           onOpenChange={setEditOpen}
+        />
+      )}
+      {canEdit && (
+        <>
+          <RenameDialog
+            open={renameOpen}
+            onOpenChange={setRenameOpen}
+            kind="asset"
+            id={id}
+            currentName={name}
+          />
+          <MoveDialog
+            open={moveOpen}
+            onOpenChange={setMoveOpen}
+            kind="asset"
+            id={id}
+          />
+        </>
+      )}
+      {canDelete && (
+        <DeleteNode
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          kind="asset"
+          id={id}
+          name={name}
+          onDeleted={onCleared}
         />
       )}
     </article>
