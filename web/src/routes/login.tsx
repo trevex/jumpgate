@@ -21,7 +21,7 @@ export function LoginPage() {
     },
   });
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     mutate({ email, password, cookieOnly: true });
   }

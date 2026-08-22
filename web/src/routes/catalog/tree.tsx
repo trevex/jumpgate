@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/states/states";
 import { cn } from "@/lib/utils";
 import { listFolderContents, listAssets, listFolders } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { listRoles } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
@@ -716,18 +716,12 @@ export function Tree({ selected, onSelect }: TreeProps) {
           {isLoading && <TreeSkeleton rows={6} />}
 
           {isError && (
-            <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
-              <AlertCircle className="h-8 w-8 text-destructive/60" aria-hidden="true" />
-              <p className="text-[12px] text-muted-foreground">Failed to load catalog</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => refetch()}
-                className="h-7 text-[11px]"
-              >
-                Retry
-              </Button>
-            </div>
+            <ErrorState
+              icon={AlertCircle}
+              size="sm"
+              message="Failed to load catalog"
+              onRetry={() => refetch()}
+            />
           )}
 
           {contents && (
