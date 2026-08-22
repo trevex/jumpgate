@@ -39,7 +39,11 @@ Run inside the devshell:
 | `make test` | Run Go + Rust tests |
 | `make lint` | gofmt + golangci-lint + rustfmt + clippy |
 | `make fmt` | Auto-format Go + Rust |
-| `make ci` | Full pipeline: gen → build → test → lint (what CI runs) |
+| `make web` | Install, typecheck (`tsc --noEmit`), and build the SPA |
+| `make ci` | Full pipeline: gen → build → test → lint → web (what CI runs) |
+| `make ui-dev` | Start the UI dev stack (process-compose: Postgres + silo + warden + Vite) |
+| `make ui-dev-reset` | Wipe local dev data (`.devdata/`); full re-provision on next `ui-dev` |
+| `make ui-e2e` | Bring up kind (warden serves the embedded SPA) and run Playwright (opt-in) |
 
 CI (`.github/workflows/ci.yml`) simply runs `nix develop -c make ci`, so local and
 CI behavior are identical.
@@ -51,7 +55,7 @@ warden/             Go   — API, identity, authz, vault, JIT/approvals, audit, 
 gateway/            Rust — session router / load balancer (only exposed component)
 workers/            Rust — per-protocol proxies (ssh-proxy; pg/k8s/rdp planned)
 cli/                Go   — `jumpgate` CLI
-web/                     — web SPA embedded in warden                          [planned]
+web/                     — web SPA (Vite + React + TS), embedded in warden under -tags embedui
 proto/              Shared gRPC/protobuf contracts (buf)
 deploy/helm/        Helm chart (kind + cert-manager)
 test/               End-to-end suite (test/e2e) and the kind test environment (test/env)
@@ -97,8 +101,67 @@ Makefile            Task entrypoints
 - Validation via protovalidate (CEL constraints in the `.proto`). Errors use Connect codes; non-visible resources return `CodeNotFound` (never `PermissionDenied`) to avoid leaking existence.
 - Bootstrapping: there is no self-signup — on first startup an initial admin is seeded automatically when `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are set in the environment. Without those vars no admin is pre-created; subsequent admin creation requires a direct DB seed.
 
+## Web UI
+
+The `web/` directory holds the browser SPA: **Vite + React + TypeScript**. It talks
+to warden over ConnectRPC using **[@connectrpc/connect-query](https://connectrpc.com/docs/web/query/)**
+layered on **TanStack Query**, over a **same-origin** Connect transport configured
+with `credentials: "include"` so the browser attaches the session cookie to every
+request. The SPA is served from the same origin as the API (Vite proxies in dev,
+warden's embedded handler in prod), so there is no CORS layer and no cross-origin
+token handling.
+
+### Auth in the browser
+
+The app is cookie-session based and never handles a raw token:
+
+- On sign-in the SPA calls `AuthService.Login` with `cookie_only: true`. Warden
+  sets an **httpOnly** `jumpgate_session` cookie via `Set-Cookie` and returns an
+  empty `token` field — JavaScript cannot read the credential.
+- On load (and after login) the app calls `AuthService.WhoAmI`; the returned
+  `capabilities` drive nav gating and which actions the UI offers.
+- Sign-out calls `AuthService.Logout`, which revokes the token server-side and
+  clears the cookie (`MaxAge=-1`).
+
+CSRF protection, cookie flags (`HttpOnly`, `Secure`, `SameSite`), and the
+`Sec-Fetch-Site: same-origin` gate are covered in
+[security.md](security.md#authn--token-model).
+
+### Codegen
+
+`make gen` (buf) emits **both** Go stubs into `warden/gen/` and **TypeScript**
+stubs into `web/src/gen/`. Both are committed; regenerate with `make gen` and
+commit the result.
+
+### Dev environment
+
+`make ui-dev` starts a full local stack via **process-compose**: a persistent
+Postgres, a silo (S3-compatible) object store, a hot-reloading warden (`air`), and
+the Vite dev server with HMR. Vite proxies API/`/healthz` requests to warden on
+`:8080`, so the browser sees a single same-origin app and cookie auth works over
+plain HTTP (warden runs with `JUMPGATE_COOKIE_INSECURE=true` here). All state lives
+under `.devdata/` (gitignored) and persists across restarts; `make ui-dev-reset`
+wipes it for a clean re-provision on the next `ui-dev`.
+
+Run it inside the Nix devshell (it uses `initdb`/`pg_ctl`, `silo`, `air`, and
+`pnpm` from the shell). The dev admin account is seeded by the bootstrap step:
+`admin@dev.local` / `devpassword123`.
+
+### Production serving
+
+For production, the SPA is built (`web/dist`) and **embedded into the warden
+binary** behind the `embedui` build tag: the Docker image builds `web/dist` and
+compiles warden with `go build -tags embedui`, and warden serves the SPA
+same-origin alongside the API. The default `go build` (no tag) omits the SPA
+entirely, so Go builds and tests need no frontend toolchain — in development Vite
+serves the app instead.
+
 ## Testing
 
+- **Web:** `make web` installs, typechecks (`tsc --noEmit`), and builds the SPA;
+  this runs as part of `make ci`. `make ui-e2e` runs the **Playwright** suite
+  (Nix-provided chromium) against the kind environment where warden serves the
+  embedded SPA — it is opt-in and kept out of `ci` (like `kind-e2e`).
 - **Go:** standard `go test`; tests exercise real behavior (e.g. the warden
   health test drives an `httptest` server and decodes real JSON). Integration tests
   boot an ephemeral Postgres via `internal/testsupport` (initdb/pg_ctl, no Docker).
@@ -119,5 +182,6 @@ SSH access works end to end — the control plane, the Rust gateway, the ssh-pro
 worker, and the `jumpgate` CLI, with JIT request/approval, envelope-encrypted
 secrets, capability-driven credentials, continuous revocation, and session
 recording all live and exercised by the `test/e2e` suite against a kind cluster.
-Postgres/Kubernetes/RDP workers, inline step-up, the web UI, and enterprise SSO are
-not yet built. See [roadmap.md](roadmap.md).
+A browser SPA (`web/`) is served same-origin against the same ConnectRPC API.
+Postgres/Kubernetes/RDP workers, inline step-up, and enterprise SSO are not yet
+built. See [roadmap.md](roadmap.md).

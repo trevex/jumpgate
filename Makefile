@@ -8,8 +8,19 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
-.PHONY: help gen build test lint fmt ci e2e-ssh \
-        kind-images kind-up kind-down kind-demo kind-e2e
+.PHONY: help gen build test lint fmt ci e2e-ssh web \
+        kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
+        ui-dev ui-dev-reset ui-build
+
+ui-dev: ## Start the UI dev stack (process-compose: postgres + silo + warden + vite)
+	process-compose up --port 8088
+
+ui-dev-reset: ## Wipe all local dev data (.devdata); full re-provision on next ui-dev
+	rm -rf .devdata
+
+ui-build: ## Install web deps and build the SPA (production bundle)
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web build
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -39,7 +50,12 @@ fmt: ## Auto-format
 	gofmt -w warden cli 2>/dev/null || true
 	cargo fmt --all
 
-ci: gen build test lint ## Full CI pipeline
+web: ## Install + typecheck + build the SPA
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web typecheck
+	pnpm --dir web build
+
+ci: gen build test lint web ## Full CI pipeline
 
 e2e-ssh: ## Opt-in full-stack SSH connect e2e (real warden+gateway+worker binaries; NOT in ci)
 	cargo build --workspace
@@ -85,4 +101,9 @@ kind-demo: kind-up ## Bring up the env, export the mesh CA, build the CLI, and p
 
 kind-e2e: kind-up ## Bring up the env, run the Go e2e suite, then tear down (KEEP=1 to keep it up)
 	cd test/e2e && JUMPGATE_E2E=1 go test -count=1 -timeout 300s ./...
+	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi
+
+ui-e2e: kind-up ## Bring up kind (warden serves the embedded SPA) and run Playwright against it (KEEP=1 to keep it up)
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web exec playwright test
 	@if [ "$(KEEP)" != "1" ]; then $(MAKE) kind-down; fi

@@ -6,3 +6,11 @@ plugins:
   - local: protoc-gen-connect-go
     out: warden/gen
     opt: paths=source_relative
+  - remote: buf.build/bufbuild/es:v2.14.0
+    out: web/src/gen
+    opt: target=ts
+    include_imports: true
+    include_wkt: true
+  - remote: buf.build/connectrpc/query-es:v2.3.1
+    out: web/src/gen
+    opt: target=ts

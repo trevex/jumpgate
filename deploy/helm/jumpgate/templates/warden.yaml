@@ -52,6 +52,12 @@ spec:
                   key: VAULT_MASTER_KEY
             - name: GATEWAY_ENDPOINT
               value: {{ .Values.warden.gatewayEndpoint | default "localhost:8443" | quote }}
+            {{- if .Values.warden.cookieInsecure }}
+            # Dev/demo only: kind serves warden over plain HTTP, so the browser
+            # rejects Secure cookies. Prod keeps this false so cookies stay Secure.
+            - name: JUMPGATE_COOKIE_INSECURE
+              value: "true"
+            {{- end }}
             - name: BOOTSTRAP_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef:

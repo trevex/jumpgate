@@ -1,0 +1,174 @@
+# process-compose.yaml — jumpgate UI dev stack
+#
+# Run via: make ui-dev          (process-compose up)
+#          make ui-dev-reset    (wipe .devdata)
+#
+# All data lives under .devdata/ (gitignored).  Data persists across restarts;
+# only `make ui-dev-reset` wipes it.
+#
+# Start order:
+#   init-pg → postgres → migrate ─┐
+#                                  ├─→ bootstrap → warden → vite
+#   silo → init-silo-bucket ──────┘
+
+version: "0.5"
+
+# Top-level env is inherited by every process.
+environment:
+  - "VAULT_MASTER_KEY=BXHt1lK7Yt5ysXui0N2cTJlGFpyiJRjwsIPlDccZyn8="
+  - "DATABASE_URL=postgres://postgres@localhost:5433/jumpgate?host=${PWD}/.devdata"
+
+processes:
+
+  # ── init-pg ──────────────────────────────────────────────────────────────
+  # One-shot: initialise the Postgres cluster and create the database.
+  # Idempotent: skips when .devdata/pg already exists.
+  init-pg:
+    command: |
+      set -euo pipefail
+      if [ ! -d "${PWD}/.devdata/pg" ]; then
+        echo "[init-pg] initialising Postgres cluster in .devdata/pg"
+        initdb -D "${PWD}/.devdata/pg" -U postgres --auth=trust -E UTF8
+        echo "[init-pg] starting temporary instance to create database"
+        pg_ctl start -D "${PWD}/.devdata/pg" \
+          -o "-p 5433 -k ${PWD}/.devdata" \
+          -l "${PWD}/.devdata/pg-init.log" \
+          -w
+        createdb -h "${PWD}/.devdata" -p 5433 -U postgres jumpgate
+        pg_ctl stop -D "${PWD}/.devdata/pg" -m fast -w
+        echo "[init-pg] cluster ready"
+      else
+        echo "[init-pg] .devdata/pg already exists — skipping"
+      fi
+    availability:
+      restart: "no"
+
+  # ── postgres ─────────────────────────────────────────────────────────────
+  # Persistent Postgres on port 5433 with a unix socket in .devdata/.
+  postgres:
+    command: postgres -D ${PWD}/.devdata/pg -p 5433 -k ${PWD}/.devdata
+    availability:
+      restart: on_failure
+    readiness_probe:
+      exec:
+        command: pg_isready -h ${PWD}/.devdata -p 5433 -U postgres
+      initial_delay_seconds: 1
+      period_seconds: 2
+      failure_threshold: 15
+    depends_on:
+      init-pg:
+        condition: process_completed_successfully
+
+  # ── migrate ──────────────────────────────────────────────────────────────
+  # One-shot: apply all pending goose migrations.
+  migrate:
+    command: >-
+      goose
+      -dir warden/internal/db/migrate/migrations
+      postgres
+      "postgres://postgres@localhost:5433/jumpgate?host=${PWD}/.devdata"
+      up
+    availability:
+      restart: "no"
+    depends_on:
+      postgres:
+        condition: process_healthy
+
+  # ── silo ─────────────────────────────────────────────────────────────────
+  # S3-compatible object store (MinIO-protocol) for session recordings.
+  silo:
+    command: silo server ${PWD}/.devdata/silo --address 127.0.0.1:9100 --console-address 127.0.0.1:9101
+    environment:
+      - "MINIO_ROOT_USER=minioadmin"
+      - "MINIO_ROOT_PASSWORD=minioadmin-dev-secret"
+    availability:
+      restart: on_failure
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        port: 9100
+        path: "/minio/health/ready"
+      initial_delay_seconds: 1
+      period_seconds: 2
+      failure_threshold: 15
+
+  # ── init-silo-bucket ─────────────────────────────────────────────────────
+  # One-shot: create the recordings bucket (idempotent via --ignore-existing).
+  init-silo-bucket:
+    command: |
+      set -euo pipefail
+      mc alias set dev http://127.0.0.1:9100 minioadmin minioadmin-dev-secret --api S3v4
+      mc mb dev/jumpgate-recordings --ignore-existing
+      echo "[init-silo-bucket] bucket ready"
+    availability:
+      restart: "no"
+    depends_on:
+      silo:
+        condition: process_healthy
+
+  # ── bootstrap ────────────────────────────────────────────────────────────
+  # One-shot: provision CAs, session signing key, and dev admin.
+  # warden-bootstrap is fully idempotent (re-runs are no-ops).
+  bootstrap:
+    command: |
+      set -euo pipefail
+      echo "[bootstrap] building warden-bootstrap..."
+      cd warden && go build -o /tmp/warden-bootstrap-dev ./cmd/warden-bootstrap
+      echo "[bootstrap] provisioning..."
+      /tmp/warden-bootstrap-dev \
+        --out "${PWD}/.devdata" \
+        --skip-mesh-ca \
+        --admin-email admin@dev.local \
+        --admin-password devpassword123
+      echo "[bootstrap] done"
+    environment:
+      - "DATABASE_URL=postgres://postgres@localhost:5433/jumpgate?host=${PWD}/.devdata"
+      - "VAULT_MASTER_KEY=BXHt1lK7Yt5ysXui0N2cTJlGFpyiJRjwsIPlDccZyn8="
+    availability:
+      restart: "no"
+    depends_on:
+      migrate:
+        condition: process_completed_successfully
+      init-silo-bucket:
+        condition: process_completed_successfully
+
+  # ── warden ───────────────────────────────────────────────────────────────
+  # Go hot-reload via air.  Cookie auth over plain HTTP (JUMPGATE_COOKIE_INSECURE=true).
+  # Mesh listener disabled (MESH_LISTEN_ADDR unset) — degraded but fine for UI dev.
+  warden:
+    command: air -c .air.warden.toml
+    environment:
+      - "DATABASE_URL=postgres://postgres@localhost:5433/jumpgate?host=${PWD}/.devdata"
+      - "VAULT_MASTER_KEY=BXHt1lK7Yt5ysXui0N2cTJlGFpyiJRjwsIPlDccZyn8="
+      - "LISTEN_ADDR=:8080"
+      - "LOG_LEVEL=info"
+      - "JUMPGATE_COOKIE_INSECURE=true"
+      - "JUMPGATE_DEV_CORS_ORIGINS=http://localhost:5173"
+      - "RECORDING_BUCKET=jumpgate-recordings"
+      - "RECORDING_S3_ENDPOINT=http://127.0.0.1:9100"
+      - "RECORDING_S3_REGION=us-east-1"
+      - "AWS_ACCESS_KEY_ID=minioadmin"
+      - "AWS_SECRET_ACCESS_KEY=minioadmin-dev-secret"
+    availability:
+      restart: on_failure
+    readiness_probe:
+      http_get:
+        host: "127.0.0.1"
+        port: 8080
+        path: "/healthz"
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 20
+    depends_on:
+      bootstrap:
+        condition: process_completed_successfully
+
+  # ── vite ─────────────────────────────────────────────────────────────────
+  # Vite dev server with HMR; proxies /jumpgate.* and /healthz to warden :8080.
+  vite:
+    command: pnpm --dir web dev
+    availability:
+      restart: on_failure
+    depends_on:
+      warden:
+        condition: process_healthy
