@@ -155,16 +155,13 @@ interface DenyDialogProps {
 }
 
 /**
- * Confirm dialog for denying a request.
- *
- * Note: DenyRequestRequest only accepts `requestId` on the wire — there is no
- * `reason` field in the proto.  The reason textarea is shown for UX clarity
- * (lets approvers articulate their thinking before confirming) but is not
- * transmitted.  A backend enrichment of DenyRequestRequest with an optional
- * `reason` string would allow persisting the approver's rationale.
+ * Confirm-only dialog for denying a request. DenyRequestRequest carries only
+ * `requestId` on the wire — there is no reason field yet, so we don't collect
+ * one (a discarded textarea would mislead the approver). Persisting a denial
+ * rationale is a follow-up: add `reason` to DenyRequestRequest + surface it on
+ * the requester's ListMyRequests view.
  */
 function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) {
-  const [_reason, setReason] = useState("");
   const queryClient = useQueryClient();
 
   const requesterDisplay = useRequesterDisplay(request.requesterId);
@@ -184,7 +181,6 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
       void queryClient.invalidateQueries({
         queryKey: createConnectQueryKey({ schema: listMyGrants, cardinality: undefined }),
       });
-      setReason("");
       onOpenChange(false);
       onDenied();
     },
@@ -198,7 +194,6 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
   }
 
   function handleOpenChange(next: boolean) {
-    if (!next) setReason("");
     onOpenChange(next);
   }
 
@@ -215,30 +210,6 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
             This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Reason textarea — UI only, not sent on wire (DenyRequestRequest has no reason field) */}
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="deny-reason"
-            className="block text-[11px] font-semibold uppercase tracking-widest text-muted-foreground"
-          >
-            Reason <span className="text-[10px] font-normal normal-case tracking-normal">(optional, for your record)</span>
-          </label>
-          <textarea
-            id="deny-reason"
-            rows={3}
-            placeholder="Why are you denying this request?"
-            onChange={(e) => setReason(e.target.value)}
-            className={cn(
-              "w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            )}
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Note: the reason is not persisted — the server does not accept it yet.
-          </p>
-        </div>
 
         <DialogFooter>
           <Button
