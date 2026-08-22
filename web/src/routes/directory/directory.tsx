@@ -3,17 +3,15 @@
  *
  * Manages users and groups, capability-gated. A tab shell (Users / Groups)
  * mirrors the My-Access tab styling. The Users tab lists directory users with
- * a deactivation-state badge; the Groups tab is a placeholder until group
- * management lands. Create + row actions are added in a later task — the tab
- * headers reserve a right-aligned seam for those affordances.
+ * a deactivation-state badge; the Groups tab lists groups with their folder
+ * home. Each tab reserves a right-aligned header seam for its create affordance.
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/states/states";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
-import { UsersRound } from "lucide-react";
 import { UsersTab } from "./users-tab";
+import { GroupsTab } from "./groups-tab";
 
 const TAB_TRIGGER = cn(
   "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
@@ -73,11 +71,7 @@ export function DirectoryPage() {
             value="groups"
             className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
           >
-            <EmptyState
-              icon={UsersRound}
-              title="Groups"
-              message="Group management is coming soon."
-            />
+            <GroupsTab />
           </TabsContent>
         )}
       </Tabs>
