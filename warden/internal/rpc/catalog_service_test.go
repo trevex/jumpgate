@@ -16,7 +16,11 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 // seedAssetSecret inserts an asset_secrets row directly (a dummy sealed blob is
@@ -308,6 +312,120 @@ func TestCatalogGetAsset(t *testing.T) {
 	_, err = c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: "11111111-1111-1111-1111-111111111111"}), tok))
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("GetAsset unknown = %v, want NotFound", connect.CodeOf(err))
+	}
+}
+
+// fakeReqReads is a controllable requestReadAuthorizer for GetAssetDisplay tests.
+type fakeReqReads struct {
+	allow bool
+	err   error
+}
+
+func (f fakeReqReads) CanReadForRequest(_ context.Context, _ uuid.UUID, _ accessrequest.ReqEntityKind, _ uuid.UUID) (bool, error) {
+	return f.allow, f.err
+}
+
+// userID returns the id of a previously seeded user by email.
+func userID(t *testing.T, pool *pgxpool.Pool, email string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(context.Background(), `SELECT id FROM users WHERE email=$1`, email).Scan(&id); err != nil {
+		t.Fatalf("lookup user %q: %v", email, err)
+	}
+	return id
+}
+
+// TestGetAssetDisplay exercises the display handler directly with a controllable
+// request-party authorizer: a request-party (no cap) is served, a cap-holder is
+// served, a caller with neither is NotFound, and a missing id is NotFound. The
+// SSH decision context (target address + logins) is present and carries no secret
+// reference (SSHLoginDisplay has no such field).
+func TestGetAssetDisplay(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true) // holds ** → catalog:asset:read
+	tok := adminToken(t, url)
+
+	// Onboard an SSH asset with a target address + a ca login, over the wire.
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+	folderName := "f-" + uuid.New().String()
+	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: folderName}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: f.Msg.Folder.Id, Name: "pg-primary", Kind: "ssh",
+		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfig{
+			TargetAddress: "10.0.0.5:22",
+			Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
+		}},
+	}), tok))
+	if err != nil {
+		t.Fatalf("create asset: %v", err)
+	}
+	assetID := uuid.MustParse(a.Msg.Asset.Id)
+
+	// Seed a capless user (party candidate) and a cap-holder.
+	seedUser(t, pool, "party@x", "password123", false) // no caps
+	seedUser(t, pool, "capper@x", "password123", true) // holds ** → cap path
+	party := auth.CurrentUser{ID: userID(t, pool, "party@x"), Email: "party@x"}
+	capper := auth.CurrentUser{ID: userID(t, pool, "capper@x"), Email: "capper@x"}
+
+	authorizer := authz.NewSQLAuthorizer(pool)
+	q := gen.New(pool)
+
+	// A server whose fake authorizes the request-party path.
+	allowSrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: true})
+	// A server whose fake denies the request-party path (only the cap path can pass).
+	denySrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: false})
+
+	assertSSH := func(t *testing.T, resp *catalogv1.GetAssetDisplayResponse) {
+		t.Helper()
+		d := resp.GetAsset()
+		if d.GetPath() != "pg-primary."+folderName {
+			t.Fatalf("path = %q, want %q", d.GetPath(), "pg-primary."+folderName)
+		}
+		if d.GetKind() != "ssh" {
+			t.Fatalf("kind = %q, want ssh", d.GetKind())
+		}
+		ssh := d.GetSsh()
+		if ssh == nil {
+			t.Fatalf("expected ssh config, got %+v", d.GetConfig())
+		}
+		if ssh.GetTargetAddress() != "10.0.0.5:22" {
+			t.Fatalf("target_address = %q, want 10.0.0.5:22", ssh.GetTargetAddress())
+		}
+		if len(ssh.GetLogins()) != 1 || ssh.GetLogins()[0].GetLogin() != "root" || ssh.GetLogins()[0].GetKind() != "ca" {
+			t.Fatalf("logins = %+v, want [root/ca]", ssh.GetLogins())
+		}
+	}
+
+	// (1) request-party, NO cap → served.
+	partyCtx := auth.WithUser(ctx, party)
+	got, err := allowSrv.GetAssetDisplay(partyCtx, connect.NewRequest(&catalogv1.GetAssetDisplayRequest{AssetId: assetID.String()}))
+	if err != nil {
+		t.Fatalf("party GetAssetDisplay: %v", err)
+	}
+	assertSSH(t, got.Msg)
+
+	// (2) cap-holder (fake denies) → served via the cap path.
+	capCtx := auth.WithUser(ctx, capper)
+	got, err = denySrv.GetAssetDisplay(capCtx, connect.NewRequest(&catalogv1.GetAssetDisplayRequest{AssetId: assetID.String()}))
+	if err != nil {
+		t.Fatalf("cap GetAssetDisplay: %v", err)
+	}
+	assertSSH(t, got.Msg)
+
+	// (3) neither cap nor request-party → NotFound (topology hiding).
+	_, err = denySrv.GetAssetDisplay(partyCtx, connect.NewRequest(&catalogv1.GetAssetDisplayRequest{AssetId: assetID.String()}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("unauthorized display = %v, want NotFound", connect.CodeOf(err))
+	}
+
+	// (4) missing asset id (well-formed but absent) → NotFound, even for the cap holder.
+	_, err = allowSrv.GetAssetDisplay(capCtx, connect.NewRequest(&catalogv1.GetAssetDisplayRequest{AssetId: "11111111-1111-1111-1111-111111111111"}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("missing display = %v, want NotFound", connect.CodeOf(err))
 	}
 }
 
