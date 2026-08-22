@@ -174,7 +174,17 @@ capabilities (from `WhoAmI`):
   server derives for each grant).
 - **Approvals** (`/approvals`) — the approver inbox of pending requests the caller
   may decide, with inline approve and a confirm-dialog deny. The nav badge shows
-  the pending count.
+  the pending count. Each row resolves the requester, asset, and role — and, behind
+  a compact toggle, the request's **decision context**: the SSH target host and the
+  capabilities the requested role grants, so an approver can judge in place.
+
+The Approvals inbox and My Access resolve those names/paths through dedicated
+**display reads** — a universal `GetUserDisplay` (any authenticated caller, for
+rendering user names/avatars) plus request-scoped `GetAssetDisplay` / `GetRoleDisplay`
+that a caller may read when they hold the entity's read capability *or* are party to
+a pending access request that references it. The display payloads never carry secret
+references (an asset's stored-secret ids are omitted); the full `GetAsset` still
+requires `catalog:asset:read`.
 - **Recordings** (`/recordings`, only when the caller holds `recording:read`) —
   the audit list of session recordings with an in-browser **asciinema** player
   that streams each cast same-origin from `/api/recordings/<id>/cast` (the session
