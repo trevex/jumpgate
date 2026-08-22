@@ -98,6 +98,7 @@ type Querier interface {
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
+	IsUserActive(ctx context.Context, id uuid.UUID) (bool, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
 	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
@@ -129,6 +130,8 @@ type Querier interface {
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
+	ListPendingRequestsByAsset(ctx context.Context, assetID uuid.UUID) ([]ListPendingRequestsByAssetRow, error)
+	ListPendingRequestsByRole(ctx context.Context, roleID uuid.UUID) ([]ListPendingRequestsByRoleRow, error)
 	// Keyset pagination for pending requests (created_at DESC, id ASC).
 	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)

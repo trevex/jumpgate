@@ -40,6 +40,19 @@ WHERE status = 'pending'
 ORDER BY created_at DESC, id
 LIMIT sqlc.arg('lim');
 
+-- name: ListPendingRequestsByAsset :many
+SELECT id, requester_user_id, role_id, asset_id
+FROM access_requests
+WHERE status = 'pending' AND asset_id = $1;
+
+-- name: ListPendingRequestsByRole :many
+SELECT id, requester_user_id, role_id, asset_id
+FROM access_requests
+WHERE status = 'pending' AND role_id = $1;
+
+-- name: IsUserActive :one
+SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND deactivated_at IS NULL);
+
 -- name: GetGrantByRequest :one
 SELECT * FROM access_grants WHERE request_id = $1;
 
