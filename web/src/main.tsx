@@ -1,3 +1,4 @@
+import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
@@ -7,7 +8,11 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { transport } from "./transport";
 import { RequireAuth } from "./auth";
 import { LoginPage } from "./routes/login";
-import { Shell } from "./routes/shell";
+import { AppShell } from "./routes/app";
+import { CatalogPage } from "./routes/catalog/catalog";
+import { MyAccessPage } from "./routes/access/access";
+import { ApprovalsPage } from "./routes/approvals/approvals";
+import { RecordingsPage } from "./routes/recordings/recordings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,9 +40,16 @@ const router = createBrowserRouter([
     path: "/",
     element: (
       <RequireAuth>
-        <Shell />
+        <AppShell />
       </RequireAuth>
     ),
+    children: [
+      { index: true, element: <CatalogPage /> },
+      { path: "access", element: <MyAccessPage /> },
+      { path: "approvals", element: <ApprovalsPage /> },
+      { path: "recordings", element: <RecordingsPage /> },
+      { path: "recordings/:sessionId", element: <RecordingsPage /> },
+    ],
   },
 ]);
 
