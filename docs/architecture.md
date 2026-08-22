@@ -56,7 +56,7 @@ fail-closed CSRF gate), validated by protovalidate, and existence-hiding via
 |---|---|
 | `AuthService` | password login → opaque bearer token (`cookie_only=false`, CLI) or `httpOnly` session cookie (`cookie_only=true`, browser); `WhoAmI` (identity + global capabilities for nav gating); `Logout` (revoke token + clear cookie) |
 | `IdentityService` | users, groups, nested memberships, user lifecycle; path-scoped `ListGroups` (visibility-filtered, keyset-paginated) + `GetGroupAccess` (capabilities on selection) |
-| `CatalogService` | folders & assets (incl. typed SSH config); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `ListFolderContents` (bounded per-kind aggregator) + `Resolve*` |
+| `CatalogService` | folders & assets (incl. typed SSH config): create / rename+move (`UpdateFolder`/`UpdateAsset`) / delete (`DeleteFolder`/`DeleteAsset`); path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated) + `GetAssetAccess`/`GetFolderAccess` (capabilities on selection) + `ListFolderContents` (bounded per-kind aggregator) + `Resolve*` |
 | `AccessService` | all authorization config: roles, role-grants, standing role-bindings, request policies + subjects, `ExplainRole`; path-scoped `ListRoles` (visibility-filtered, keyset-paginated) + `GetRoleAccess` (capabilities on selection) |
 | `AccessRequestService` | the JIT runtime: request / approve / deny / cancel / revoke, grants, approval resolution |
 | `VaultService` | CA init & public material, mesh CA + cert issuance, session-signing-key init, asset secrets (metadata only on read) |
@@ -353,12 +353,36 @@ entitled to — no static host login. See
 `VaultService` is capability-guarded: `InitCA` / `GetCAPublic`, the mesh CA
 (`InitMeshCA` / `IssueMeshCert`), `InitSessionKey`, and asset-secret
 `Set`/`Delete`/`List` (**metadata only — id/name/created_at, never the value**).
-The SSH asset's connection config (per-login `{login, kind, secret_id}` plus target
-address and host key) lives on **`CatalogService`**, which owns the asset:
-`CreateAsset` takes inline typed config, `GetAsset` returns it, `UpdateAssetConfig`
-upserts it, and the `jumpgate assets ssh` CLI drives it. A `password`/`key` login
-seals its secret via `VaultService.SetAssetSecret` and links it by `secret_id`;
-the sealed bytes stay in the vault.
+The SSH asset's connection config lives on **`CatalogService`**, which owns the
+asset: `CreateAsset` takes inline typed config, `GetAsset` returns it,
+`UpdateAssetConfig` replaces it, and the `jumpgate assets ssh` CLI drives it.
+
+The write model is **type-safe** rather than stringly-typed. `CreateAsset` and
+`UpdateAssetConfig` take an `SSHConfigInput` in which the **asset kind is the config
+`oneof` arm** (no free-form `kind` string), each login's **auth kind is the
+`SSHLoginInput.auth` oneof arm** (`ca` / `password` / `key`), and a login's
+credential is a `SecretAuth` that either carries a `new_value` (sealed server-side,
+in the same transaction) or references an `existing_secret_id`. Onboarding is
+therefore **atomic**: one `CreateAsset` call seals the login secrets, creates the
+asset, and wires the logins together. Sealed bytes stay in the vault; a login links
+its secret by `secret_id`.
+
+Folders and assets are also **renamed, moved, and deleted** through `CatalogService`:
+
+- `UpdateFolder` / `UpdateAsset` rename and/or **move** a node to a new parent. A
+  move is refused when it would create a **cycle** (a folder into its own subtree —
+  `FailedPrecondition`), collide with a **sibling name** (`AlreadyExists`), or
+  **break containment** (the moved node carries a binding or policy scoped to it that
+  grants a folder-scoped role whose home folder would no longer contain it —
+  `FailedPrecondition`). An allowed move fires `authz_changed`, so the
+  [continuous-revocation](#continuous-revocation--live-session-teardown) sweeper tears
+  down any live sessions the move disallows. Moving requires `…:update` on the node
+  **and** `…:create` on the destination folder.
+- `DeleteFolder` refuses (`FailedPrecondition`) while the folder is **non-empty** —
+  it still has child folders or assets, homed roles or groups, or bindings/policies
+  scoped to it.
+- `DeleteAsset` **cascades**: it removes the asset's secrets, logins, and
+  asset-scoped bindings and policies, and **terminates the asset's live sessions**.
 
 ## Continuous revocation — live-session teardown
 
