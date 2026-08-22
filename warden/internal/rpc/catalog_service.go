@@ -960,23 +960,25 @@ func (s *CatalogServer) UpdateFolder(ctx context.Context, req *connect.Request[c
 	q := s.q.WithTx(tx)
 
 	if moving {
-		// Cycle guard: the new parent may not be the folder itself or a descendant.
-		subList, err := q.FolderSubtreeIDs(ctx, id)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
+		// Cycle guard applies only to a real destination: the root can never lie
+		// inside the moved subtree, so a root move needs no cycle check.
 		if newParent.Valid {
+			subList, err := q.FolderSubtreeIDs(ctx, id)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
+			}
 			np := uuid.UUID(newParent.Bytes)
 			for _, sid := range subList {
 				if sid == np {
 					return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cannot move a folder into its own subtree"))
 				}
 			}
-			// Containment re-validation only applies for a move under a real folder;
-			// a root move only widens the ancestor set (never breaks containment).
-			if err := s.validateFolderMove(ctx, q, id, np); err != nil {
-				return nil, err
-			}
+		}
+		// Re-validate containment for EVERY move, including a move to the root: a root
+		// move narrows the ancestor set (drops everything above the folder), which can
+		// strand a folder-scoped binding/policy in the subtree.
+		if err := s.validateFolderMove(ctx, q, id, newParent); err != nil {
+			return nil, err
 		}
 		if err := q.UpdateFolderParent(ctx, gen.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
 			return nil, mapWriteErr(err)

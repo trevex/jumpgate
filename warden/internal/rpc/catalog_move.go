@@ -99,7 +99,9 @@ func (s *CatalogServer) validateAssetMove(ctx context.Context, q *gen.Queries, a
 
 // validateFolderMove denies (FailedPrecondition) if reparenting movedFolder under
 // newParent would break the containment invariant for any binding/policy scoped to a
-// folder or asset within the moved subtree.
+// folder or asset within the moved subtree. An invalid newParent means a move to the
+// root (no parent), whose above-portion is the empty set — which NARROWS ancestors
+// and can break containment, so it must be validated like any other move.
 //
 // Only entities in the moved subtree are affected; the subtree's own internal
 // structure is unchanged. So a scope node's post-move ancestor set is computed as:
@@ -107,10 +109,10 @@ func (s *CatalogServer) validateAssetMove(ctx context.Context, q *gen.Queries, a
 //	newAnc(node) = (currentAncestorSet(node) ∩ sub) ∪ ancestors-and-self(newParent)
 //
 // The first term is exactly the in-subtree portion (movedFolder and below); the
-// second is the new above-portion contributed by the destination parent. For every
-// affected binding/policy, every referenced folder-scoped role's home must lie in
-// its scope node's newAnc, else the move is denied.
-func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, movedFolder, newParent uuid.UUID) error {
+// second is the new above-portion contributed by the destination parent (empty for a
+// root move). For every affected binding/policy, every referenced folder-scoped
+// role's home must lie in its scope node's newAnc, else the move is denied.
+func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, movedFolder uuid.UUID, newParent pgtype.UUID) error {
 	subList, err := q.FolderSubtreeIDs(ctx, movedFolder)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -119,9 +121,13 @@ func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, 
 	for _, id := range subList {
 		sub[id] = true
 	}
-	parentAnc, err := ancestorSet(ctx, q, newParent) // ancestors-and-self of the new parent
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+	// ancestors-and-self of the new parent; the empty set for a root move (no parent).
+	parentAnc := map[uuid.UUID]bool{}
+	if newParent.Valid {
+		parentAnc, err = ancestorSet(ctx, q, uuid.UUID(newParent.Bytes))
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, err)
+		}
 	}
 
 	// Assets in the moved subtree: id -> containing folder, so an asset-scoped

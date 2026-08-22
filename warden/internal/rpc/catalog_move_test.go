@@ -125,6 +125,58 @@ func TestMoveFolderDeniedOnCycle(t *testing.T) {
 	}
 }
 
+func TestMoveFolderDeniedOnContainmentBreak(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	a := env.createFolder(t, "a")
+	m := env.createChildFolder(t, "m", a) // root->a->m
+	other := env.createFolder(t, "other") // sibling of a at root
+	assetID := env.createSSHAsset(t, m, "box", "app", []byte("pw"))
+	roleID := env.createFolderScopedRole(t, "reader", a) // homed at a
+	env.bindRoleToAssetScoped(t, roleID, assetID)         // valid: a in ancestors(box)
+
+	// Move m under other: box's ancestors become {box(folder m), other, root}, losing a → break.
+	_, err := env.catalog.UpdateFolder(env.adminCtx, connect.NewRequest(&catalogv1.UpdateFolderRequest{
+		FolderId: m, ParentId: strptr(other),
+	}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("want FailedPrecondition (folder move containment break), got %v", err)
+	}
+}
+
+func TestMoveFolderToRootDeniedOnContainmentBreak(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	a := env.createFolder(t, "a")
+	m := env.createChildFolder(t, "m", a)
+	assetID := env.createSSHAsset(t, m, "box", "app", []byte("pw"))
+	roleID := env.createFolderScopedRole(t, "reader", a) // homed at a
+	env.bindRoleToAssetScoped(t, roleID, assetID)
+
+	// Move m to root: box loses ancestor a → break. THIS is the bug the fix closes.
+	_, err := env.catalog.UpdateFolder(env.adminCtx, connect.NewRequest(&catalogv1.UpdateFolderRequest{
+		FolderId: m, ParentId: strptr(""),
+	}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("want FailedPrecondition (root move containment break), got %v", err)
+	}
+}
+
+func TestMoveFolderAllowedFiresAuthzChanged(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	src := env.createFolder(t, "src")
+	m := env.createChildFolder(t, "m", src)
+	dst := env.createFolder(t, "dst")
+	// No folder-scoped bindings → move is allowed and fires authz_changed.
+	waiter := env.listenAuthzChanged(t)
+	if _, err := env.catalog.UpdateFolder(env.adminCtx, connect.NewRequest(&catalogv1.UpdateFolderRequest{
+		FolderId: m, ParentId: strptr(dst),
+	})); err != nil {
+		t.Fatalf("UpdateFolder move: %v", err)
+	}
+	waiter.expectNotify(t)
+	got, _ := env.catalog.ResolveFolder(env.adminCtx, connect.NewRequest(&catalogv1.ResolveFolderRequest{Ref: m}))
+	_ = got // path assertion optional; the notify + no-error is the key
+}
+
 func TestRenameFolderCollision(t *testing.T) {
 	env := newCatalogTestEnv(t)
 	env.createFolder(t, "a")
