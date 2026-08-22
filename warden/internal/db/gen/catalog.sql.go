@@ -44,6 +44,16 @@ func (q *Queries) DeleteRoleBinding(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteRoleBindingsForRole = `-- name: DeleteRoleBindingsForRole :exec
+DELETE FROM role_bindings WHERE role_id = $1
+`
+
+// Removes every standing binding of the role. Part of the DeleteRole cascade.
+func (q *Queries) DeleteRoleBindingsForRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRoleBindingsForRole, roleID)
+	return err
+}
+
 const deleteSSHAssetLoginsForAsset = `-- name: DeleteSSHAssetLoginsForAsset :exec
 DELETE FROM ssh_asset_login WHERE asset_id = $1
 `

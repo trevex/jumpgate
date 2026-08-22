@@ -44,6 +44,17 @@ func (q *Queries) DeleteRoleGrant(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteRoleGrantsForRole = `-- name: DeleteRoleGrantsForRole :exec
+DELETE FROM role_grants WHERE role_id = $1 OR source_role_id = $1
+`
+
+// Removes every rewrite edge touching the role, in either direction (the role as
+// the conferred role_id, or as the source that confers another). Part of DeleteRole.
+func (q *Queries) DeleteRoleGrantsForRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRoleGrantsForRole, roleID)
+	return err
+}
+
 const getRoleGrant = `-- name: GetRoleGrant :one
 SELECT id, role_id, source_role_id, via, created_at FROM role_grants WHERE id = $1
 `

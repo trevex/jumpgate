@@ -66,6 +66,13 @@ INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3);
 -- name: CreateRole :one
 INSERT INTO roles (name, folder_id, capabilities) VALUES ($1, $2, $3) RETURNING *;
 
+-- name: DeleteRole :exec
+-- Deletes the role row. The role's name uniqueness is enforced by the partial
+-- UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
+-- the name automatically (no separate registry entry). Final step of DeleteRole,
+-- run only after its bindings/edges/policies are removed and its grants revoked.
+DELETE FROM roles WHERE id = $1;
+
 -- name: CreateRoleBinding :one
 INSERT INTO role_bindings
   (role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id)

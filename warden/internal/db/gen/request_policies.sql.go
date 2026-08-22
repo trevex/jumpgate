@@ -88,6 +88,29 @@ func (q *Queries) CreateRequestPolicy(ctx context.Context, arg CreateRequestPoli
 	return i, err
 }
 
+const deletePoliciesForRole = `-- name: DeletePoliciesForRole :exec
+DELETE FROM request_policies WHERE role_id = $1
+`
+
+// Deletes the policies for which the role is the requestable role (meaningless once
+// the role is gone). Part of the DeleteRole cascade.
+func (q *Queries) DeletePoliciesForRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deletePoliciesForRole, roleID)
+	return err
+}
+
+const deletePolicySubjectsForRole = `-- name: DeletePolicySubjectsForRole :exec
+DELETE FROM request_policy_subjects
+WHERE policy_id IN (SELECT id FROM request_policies WHERE role_id = $1)
+`
+
+// Removes the subjects of every policy whose requestable role is $1 (those policies
+// are about to be deleted). Part of the DeleteRole cascade.
+func (q *Queries) DeletePolicySubjectsForRole(ctx context.Context, roleID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deletePolicySubjectsForRole, roleID)
+	return err
+}
+
 const deleteRequestPolicy = `-- name: DeleteRequestPolicy :exec
 DELETE FROM request_policies WHERE id = $1
 `
@@ -294,6 +317,28 @@ func (q *Queries) ListRequestPolicies(ctx context.Context, arg ListRequestPolici
 		return nil, err
 	}
 	return items, nil
+}
+
+const nullApproverRoleForRole = `-- name: NullApproverRoleForRole :exec
+UPDATE request_policies SET approver_role_id = NULL WHERE approver_role_id = $1
+`
+
+// Clears the approver gate on surviving policies that named the role as their
+// approver role (the policy survives, just loses that gate). Part of DeleteRole.
+func (q *Queries) NullApproverRoleForRole(ctx context.Context, approverRoleID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullApproverRoleForRole, approverRoleID)
+	return err
+}
+
+const nullRequesterRoleForRole = `-- name: NullRequesterRoleForRole :exec
+UPDATE request_policies SET requester_role_id = NULL WHERE requester_role_id = $1
+`
+
+// Clears the requester gate on surviving policies that named the role as their
+// requester role (the policy survives, just loses that gate). Part of DeleteRole.
+func (q *Queries) NullRequesterRoleForRole(ctx context.Context, requesterRoleID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullRequesterRoleForRole, requesterRoleID)
+	return err
 }
 
 const removePolicySubject = `-- name: RemovePolicySubject :exec

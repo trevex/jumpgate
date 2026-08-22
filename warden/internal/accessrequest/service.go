@@ -720,6 +720,97 @@ func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UU
 	return len(revoked), nil
 }
 
+// DeleteRoleCascade deletes a role and everything that references it, in one
+// transaction, so that "the role is gone" implies no one holds it and any live
+// sessions it granted are torn down. The blast radius, by table:
+//
+//   - role_bindings (role_id = role): DELETED — the standing grants of the role.
+//   - role_grants (role_id OR source_role_id = role): DELETED — every rewrite edge
+//     touching the role, in either direction.
+//   - request_policies (role_id = role): DELETED, along with their
+//     request_policy_subjects — a requestability rule is meaningless without its
+//     requestable role.
+//   - request_policies referencing the role only as requester_role_id/approver_role_id:
+//     SURVIVE, with that column set NULL (the policy loses only that gate). The FK on
+//     those columns is ON DELETE RESTRICT, so this NULL-out MUST precede the role
+//     delete or Postgres rejects it.
+//   - access_grants (role_id = role, still live): REVOKED (revoked_at stamped) via the
+//     existing revoke query, so the revocation is audited and the terminator is
+//     notified — tearing down the live sessions those grants authorized. (The grant
+//     rows are then removed by the roles FK cascade; the standing-authz-removal sweep,
+//     triggered by the binding/edge deletes above, is the level-triggered backstop.)
+//   - roles (the role): DELETED last. Its name uniqueness is enforced by partial
+//     UNIQUE indexes on the roles table, so deleting the row frees the name; there is
+//     no separate name-registry entry to clean up.
+//
+// Audit events (each revoked grant) are enqueued INSIDE the tx (atomic with the
+// deletion); terminator notification is POST-COMMIT (it must not fire for a change
+// that then rolls back), mirroring RevokeGrant/RevokeGrantsForUser.
+func (s *Service) DeleteRoleCascade(ctx context.Context, actor, roleID uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := gen.New(tx)
+
+	// Revoke the role's still-live grants first (before the FK cascade removes the
+	// rows), auditing each so the terminator can tear down their live sessions.
+	revoked, err := q.RevokeActiveGrantsForRole(ctx, gen.RevokeActiveGrantsForRoleParams{
+		RoleID:        roleID,
+		RevokedBy:     pgtype.UUID{Bytes: actor, Valid: true},
+		RevokedReason: pgtype.Text{String: "role_deleted", Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("revoke grants for role: %w", err)
+	}
+	for _, g := range revoked {
+		if err := s.enqueueRevoked(ctx, q, actor, g); err != nil {
+			return err
+		}
+	}
+
+	// Standing references: bindings and rewrite edges (both directions).
+	if err := q.DeleteRoleBindingsForRole(ctx, roleID); err != nil {
+		return fmt.Errorf("delete role bindings: %w", err)
+	}
+	if err := q.DeleteRoleGrantsForRole(ctx, roleID); err != nil {
+		return fmt.Errorf("delete role grants: %w", err)
+	}
+
+	// Request policies: delete those FOR the role (and their subjects); clear the
+	// requester/approver gate on policies that only reference it (RESTRICT FKs, so
+	// this must happen before the role delete).
+	if err := q.DeletePolicySubjectsForRole(ctx, roleID); err != nil {
+		return fmt.Errorf("delete policy subjects: %w", err)
+	}
+	if err := q.DeletePoliciesForRole(ctx, roleID); err != nil {
+		return fmt.Errorf("delete policies: %w", err)
+	}
+	if err := q.NullRequesterRoleForRole(ctx, pgtype.UUID{Bytes: roleID, Valid: true}); err != nil {
+		return fmt.Errorf("null requester role: %w", err)
+	}
+	if err := q.NullApproverRoleForRole(ctx, pgtype.UUID{Bytes: roleID, Valid: true}); err != nil {
+		return fmt.Errorf("null approver role: %w", err)
+	}
+
+	// Finally the role itself (frees the name; FK-cascades the revoked grant rows
+	// and any access_requests).
+	if err := q.DeleteRole(ctx, roleID); err != nil {
+		return fmt.Errorf("delete role: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	// Post-commit teardown of the sessions the revoked grants authorized.
+	for _, g := range revoked {
+		s.terminate(ctx, g.ID)
+	}
+	return nil
+}
+
 // ListMyGrants returns the caller's own grants (active + past), newest first.
 func (s *Service) ListMyGrants(ctx context.Context, subject uuid.UUID) ([]Grant, error) {
 	rows, err := gen.New(s.pool).ListGrantsBySubject(ctx, subject)

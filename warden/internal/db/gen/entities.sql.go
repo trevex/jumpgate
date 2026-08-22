@@ -235,6 +235,19 @@ func (q *Queries) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1
+`
+
+// Deletes the role row. The role's name uniqueness is enforced by the partial
+// UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
+// the name automatically (no separate registry entry). Final step of DeleteRole,
+// run only after its bindings/edges/policies are removed and its grants revoked.
+func (q *Queries) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRole, id)
+	return err
+}
+
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1
 `

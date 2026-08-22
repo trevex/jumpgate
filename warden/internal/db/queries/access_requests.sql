@@ -124,6 +124,14 @@ UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $
 WHERE subject_user_id = $1 AND revoked_at IS NULL
 RETURNING *;
 
+-- name: RevokeActiveGrantsForRole :many
+-- Revokes a role's still-live grants (not yet revoked, not yet expired) so the
+-- terminator can tear down the sessions they authorized. Used by the DeleteRole
+-- cascade before the role row (and, via FK cascade, these grant rows) is deleted.
+UPDATE access_grants SET revoked_at = now(), revoked_by = $2, revoked_reason = $3
+WHERE role_id = $1 AND revoked_at IS NULL AND expires_at > now()
+RETURNING *;
+
 -- name: ExpireGrants :many
 UPDATE access_grants SET revoked_at = now(), revoked_reason = 'expired'
 WHERE revoked_at IS NULL AND expires_at <= now()
