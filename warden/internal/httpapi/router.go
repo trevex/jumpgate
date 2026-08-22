@@ -47,7 +47,12 @@ func NewRouter(db Pinger, deps ...RouterDeps) http.Handler {
 		d := deps[0]
 		if d.Validate != nil && d.Load != nil {
 			authMw := CookieAuth(d.Validate, d.Load)
-			r.With(authMw).Get("/api/recordings/{sessionId}/cast", castHandler(d.Queries, d.Authorizer, d.Getter))
+			r.With(authMw).Get("/api/recordings/{sessionId}/cast", castHandler(d))
+			// HEAD probe: the frontend player HEAD-probes this route to detect
+			// load errors before mounting. It must run the same auth prelude and
+			// return the same status codes as GET (minus the body) so a 200 is a
+			// faithful predictor of a streamable recording.
+			r.With(authMw).Head("/api/recordings/{sessionId}/cast", castHeadHandler(d))
 		}
 	}
 

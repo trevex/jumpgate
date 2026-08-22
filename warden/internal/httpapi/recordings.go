@@ -21,60 +21,80 @@ type ObjectGetter interface {
 	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
+// authorizeCast runs the shared prelude for both the GET and HEAD cast
+// handlers: it authenticates the caller, parses and loads the recording row,
+// and checks the recording:read capability on the recording's asset scope. It
+// applies existence-hiding: any auth or not-found condition returns 404 so that
+// denied callers cannot enumerate recording IDs. On any failure it writes the
+// error response and returns ok=false; on success it returns the row and ok=true.
+func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.SessionRecording, bool) {
+	// 0. Defense-in-depth: required deps must be wired. Don't rely on the
+	//    Recoverer catching a nil-deref → 500; fail closed with 503.
+	if d.Queries == nil || d.Authorizer == nil {
+		http.Error(w, "recording retrieval not configured", http.StatusServiceUnavailable)
+		return gen.SessionRecording{}, false
+	}
+
+	// 1. Authentication: user must be present (attached by CookieAuth middleware).
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return gen.SessionRecording{}, false
+	}
+
+	// 2. Parse session ID.
+	rawID := chi.URLParam(r, "sessionId")
+	sessionID, err := uuid.Parse(rawID)
+	if err != nil {
+		http.NotFound(w, r)
+		return gen.SessionRecording{}, false
+	}
+
+	// 3. Load the recording row — existence-hiding: treat DB not-found as 404.
+	row, err := d.Queries.GetSessionRecording(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.NotFound(w, r)
+			return gen.SessionRecording{}, false
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return gen.SessionRecording{}, false
+	}
+
+	// 4. Authorization: mirror GetRecordingDownload — require recording:read on
+	//    the recording's asset scope. Deny → 404 (existence-hiding, same as
+	//    catalog topology).
+	caps, err := d.Authorizer.CapabilitiesOnScope(r.Context(), caller.ID, authz.AssetScope(row.AssetID))
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return gen.SessionRecording{}, false
+	}
+	if !caps.Allows("recording:read") {
+		http.NotFound(w, r)
+		return gen.SessionRecording{}, false
+	}
+
+	return row, true
+}
+
 // castHandler returns a chi handler that cookie-authenticates, authorizes
 // recording:read on the recording's asset scope, and streams the asciicast
-// object body to the caller. It applies existence-hiding: any auth or
-// not-found condition returns 404 so that denied callers cannot enumerate
-// recording IDs.
-func castHandler(q *gen.Queries, a authz.Authorizer, getter ObjectGetter) http.HandlerFunc {
+// object body to the caller.
+func castHandler(d RouterDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Authentication: user must be present (attached by CookieAuth middleware).
-		caller, ok := auth.UserFromContext(r.Context())
+		row, ok := d.authorizeCast(w, r)
 		if !ok {
-			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
 		}
 
-		// 2. Parse session ID.
-		rawID := chi.URLParam(r, "sessionId")
-		sessionID, err := uuid.Parse(rawID)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-
-		// 3. Load the recording row — existence-hiding: treat DB not-found as 404.
-		row, err := q.GetSessionRecording(r.Context(), sessionID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				http.NotFound(w, r)
-				return
-			}
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-
-		// 4. Authorization: mirror GetRecordingDownload — require recording:read on
-		//    the recording's asset scope. Deny → 404 (existence-hiding, same as
-		//    catalog topology).
-		caps, err := a.CapabilitiesOnScope(r.Context(), caller.ID, authz.AssetScope(row.AssetID))
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if !caps.Allows("recording:read") {
-			http.NotFound(w, r)
-			return
-		}
-
-		// 5. Object getter must be configured; if not, the route is unavailable.
-		if getter == nil {
+		// Object getter must be configured; if not, the route is unavailable.
+		if d.Getter == nil {
 			http.Error(w, "recording retrieval not configured", http.StatusServiceUnavailable)
 			return
 		}
 
-		// 6. Stream the object.
-		body, err := getter.GetObject(r.Context(), row.ObjectKey)
+		// Stream the object.
+		body, err := d.Getter.GetObject(r.Context(), row.ObjectKey)
 		if err != nil {
 			// Object missing or unreachable → 404 (existence-hiding).
 			http.NotFound(w, r)
@@ -85,6 +105,22 @@ func castHandler(q *gen.Queries, a authz.Authorizer, getter ObjectGetter) http.H
 		w.Header().Set("Content-Type", "application/x-asciicast")
 		w.Header().Set("Cache-Control", "private, no-store")
 		_, _ = io.Copy(w, body)
+	}
+}
+
+// castHeadHandler returns a chi handler for HEAD probes against the cast route.
+// It runs the same authorization prelude as the GET handler (same 401/404
+// status codes) so the frontend player's HEAD probe is a faithful predictor of
+// the GET outcome, but writes no body — on success it sets the asciicast
+// Content-Type and returns 200.
+func castHeadHandler(d RouterDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := d.authorizeCast(w, r); !ok {
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-asciicast")
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
