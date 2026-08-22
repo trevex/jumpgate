@@ -68,6 +68,9 @@ const (
 	// CatalogServiceListFolderContentsProcedure is the fully-qualified name of the CatalogService's
 	// ListFolderContents RPC.
 	CatalogServiceListFolderContentsProcedure = "/jumpgate.catalog.v1.CatalogService/ListFolderContents"
+	// CatalogServiceSearchCatalogProcedure is the fully-qualified name of the CatalogService's
+	// SearchCatalog RPC.
+	CatalogServiceSearchCatalogProcedure = "/jumpgate.catalog.v1.CatalogService/SearchCatalog"
 )
 
 // CatalogServiceClient is a client for the jumpgate.catalog.v1.CatalogService service.
@@ -92,6 +95,9 @@ type CatalogServiceClient interface {
 	// parent="" or omitted = root. has_more=true means additional items exist
 	// beyond the 50-item first slice.
 	ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error)
+	// SearchCatalog finds catalog entities (folders/assets/roles/groups) whose name
+	// matches the query, filtered to what the caller may see. Any authenticated caller.
+	SearchCatalog(context.Context, *connect.Request[v1.SearchCatalogRequest]) (*connect.Response[v1.SearchCatalogResponse], error)
 }
 
 // NewCatalogServiceClient constructs a client for the jumpgate.catalog.v1.CatalogService service.
@@ -177,6 +183,12 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("ListFolderContents")),
 			connect.WithClientOptions(opts...),
 		),
+		searchCatalog: connect.NewClient[v1.SearchCatalogRequest, v1.SearchCatalogResponse](
+			httpClient,
+			baseURL+CatalogServiceSearchCatalogProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("SearchCatalog")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -194,6 +206,7 @@ type catalogServiceClient struct {
 	resolveAsset       *connect.Client[v1.ResolveAssetRequest, v1.ResolveAssetResponse]
 	resolveFolder      *connect.Client[v1.ResolveFolderRequest, v1.ResolveFolderResponse]
 	listFolderContents *connect.Client[v1.ListFolderContentsRequest, v1.ListFolderContentsResponse]
+	searchCatalog      *connect.Client[v1.SearchCatalogRequest, v1.SearchCatalogResponse]
 }
 
 // CreateFolder calls jumpgate.catalog.v1.CatalogService.CreateFolder.
@@ -256,6 +269,11 @@ func (c *catalogServiceClient) ListFolderContents(ctx context.Context, req *conn
 	return c.listFolderContents.CallUnary(ctx, req)
 }
 
+// SearchCatalog calls jumpgate.catalog.v1.CatalogService.SearchCatalog.
+func (c *catalogServiceClient) SearchCatalog(ctx context.Context, req *connect.Request[v1.SearchCatalogRequest]) (*connect.Response[v1.SearchCatalogResponse], error) {
+	return c.searchCatalog.CallUnary(ctx, req)
+}
+
 // CatalogServiceHandler is an implementation of the jumpgate.catalog.v1.CatalogService service.
 type CatalogServiceHandler interface {
 	CreateFolder(context.Context, *connect.Request[v1.CreateFolderRequest]) (*connect.Response[v1.CreateFolderResponse], error)
@@ -278,6 +296,9 @@ type CatalogServiceHandler interface {
 	// parent="" or omitted = root. has_more=true means additional items exist
 	// beyond the 50-item first slice.
 	ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error)
+	// SearchCatalog finds catalog entities (folders/assets/roles/groups) whose name
+	// matches the query, filtered to what the caller may see. Any authenticated caller.
+	SearchCatalog(context.Context, *connect.Request[v1.SearchCatalogRequest]) (*connect.Response[v1.SearchCatalogResponse], error)
 }
 
 // NewCatalogServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -359,6 +380,12 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("ListFolderContents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	catalogServiceSearchCatalogHandler := connect.NewUnaryHandler(
+		CatalogServiceSearchCatalogProcedure,
+		svc.SearchCatalog,
+		connect.WithSchema(catalogServiceMethods.ByName("SearchCatalog")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.catalog.v1.CatalogService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CatalogServiceCreateFolderProcedure:
@@ -385,6 +412,8 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceResolveFolderHandler.ServeHTTP(w, r)
 		case CatalogServiceListFolderContentsProcedure:
 			catalogServiceListFolderContentsHandler.ServeHTTP(w, r)
+		case CatalogServiceSearchCatalogProcedure:
+			catalogServiceSearchCatalogHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -440,4 +469,8 @@ func (UnimplementedCatalogServiceHandler) ResolveFolder(context.Context, *connec
 
 func (UnimplementedCatalogServiceHandler) ListFolderContents(context.Context, *connect.Request[v1.ListFolderContentsRequest]) (*connect.Response[v1.ListFolderContentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.ListFolderContents is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) SearchCatalog(context.Context, *connect.Request[v1.SearchCatalogRequest]) (*connect.Response[v1.SearchCatalogResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.catalog.v1.CatalogService.SearchCatalog is not implemented"))
 }

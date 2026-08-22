@@ -922,6 +922,188 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 	return connect.NewResponse(out), nil
 }
 
+// searchDefaultLimit / searchMaxLimit bound the number of hits SearchCatalog
+// returns when the request omits or over-specifies a limit.
+const (
+	searchDefaultLimit = 20
+	searchMaxLimit     = 50
+)
+
+// SearchCatalog finds catalog entities (folders, assets, roles, groups) whose name
+// contains the query (case-insensitive substring), restricted to what the caller may
+// see. Visibility is enforced by reusing the same Visible*Under predicates that back
+// the browse RPCs (with parent=root, cascade=true → every id of that kind the caller
+// may see across the whole tree), so an entity the caller cannot see is never
+// returned — existence is hidden by construction. Any authenticated caller.
+//
+// Hits are filled kind by kind in the order folders → assets → roles → groups, each
+// kind's entities loaded name-ordered, and the whole result is capped at the clamped
+// limit (a best-effort search; truncation is acceptable). An empty query returns no
+// hits rather than dumping the whole visible catalog.
+func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[catalogv1.SearchCatalogRequest]) (*connect.Response[catalogv1.SearchCatalogResponse], error) {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+
+	limit := req.Msg.Limit
+	if limit <= 0 {
+		limit = searchDefaultLimit
+	}
+	if limit > searchMaxLimit {
+		limit = searchMaxLimit
+	}
+
+	q := strings.ToLower(strings.TrimSpace(req.Msg.Query))
+	out := &catalogv1.SearchCatalogResponse{}
+	if q == "" {
+		return connect.NewResponse(out), nil
+	}
+
+	matches := func(name string) bool { return strings.Contains(strings.ToLower(name), q) }
+	full := func() bool { return len(out.Hits) >= int(limit) }
+
+	// Home-folder path lookup, memoized across kinds (roles/groups reuse it).
+	pathByFolder := map[uuid.UUID]string{}
+	folderPath := func(fid uuid.UUID) (string, error) {
+		if p, ok := pathByFolder[fid]; ok {
+			return p, nil
+		}
+		p, err := s.q.FolderPath(ctx, fid)
+		if err != nil {
+			return "", err
+		}
+		pathByFolder[fid] = p
+		return p, nil
+	}
+
+	// ── folders ────────────────────────────────────────────────────────────────
+	folderIDs, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, uuid.Nil, true)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(folderIDs) > 0 && !full() {
+		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{Ids: folderIDs, Lim: int32Len(folderIDs)})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		allPaths, err := s.q.FolderPaths(ctx)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		pathByID := make(map[string]string, len(allPaths))
+		for _, p := range allPaths {
+			pathByID[p.ID.String()] = p.Path
+		}
+		for i := range rows {
+			if full() {
+				break
+			}
+			if !matches(rows[i].Name) {
+				continue
+			}
+			out.Hits = append(out.Hits, &catalogv1.SearchHit{
+				Kind: "folder", Id: rows[i].ID.String(), Name: rows[i].Name, Path: pathByID[rows[i].ID.String()],
+			})
+		}
+	}
+
+	// ── assets ─────────────────────────────────────────────────────────────────
+	assetIDs, err := s.authorizer.VisibleAssetsUnder(ctx, u.ID, uuid.Nil, true)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(assetIDs) > 0 && !full() {
+		rows, err := s.q.ListAssetsByIDsPaged(ctx, gen.ListAssetsByIDsPagedParams{Ids: assetIDs, Lim: int32Len(assetIDs)})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		for i := range rows {
+			if full() {
+				break
+			}
+			if !matches(rows[i].Name) {
+				continue
+			}
+			fp, err := folderPath(rows[i].FolderID)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
+			}
+			out.Hits = append(out.Hits, &catalogv1.SearchHit{
+				Kind: "asset", Id: rows[i].ID.String(), Name: rows[i].Name, Path: joinPath(fp, rows[i].Name),
+			})
+		}
+	}
+
+	// ── roles ──────────────────────────────────────────────────────────────────
+	roleIDs, err := s.authorizer.VisibleRolesUnder(ctx, u.ID, uuid.Nil, true)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(roleIDs) > 0 && !full() {
+		rows, err := s.q.ListRolesByIDsPaged(ctx, gen.ListRolesByIDsPagedParams{Column1: roleIDs, Lim: int32Len(roleIDs)})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		for i := range rows {
+			if full() {
+				break
+			}
+			if !matches(rows[i].Name) {
+				continue
+			}
+			// A folder-scoped role is addressed "<role>.<folder-path>"; a global role is
+			// just its name.
+			path := rows[i].Name
+			if rows[i].FolderID.Valid {
+				fp, err := folderPath(uuidFromPg(rows[i].FolderID))
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				path = joinPath(fp, rows[i].Name)
+			}
+			out.Hits = append(out.Hits, &catalogv1.SearchHit{
+				Kind: "role", Id: rows[i].ID.String(), Name: rows[i].Name, Path: path,
+			})
+		}
+	}
+
+	// ── groups ─────────────────────────────────────────────────────────────────
+	groupIDs, err := s.authorizer.VisibleGroupsUnder(ctx, u.ID, uuid.Nil, true)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if len(groupIDs) > 0 && !full() {
+		rows, err := s.q.ListGroupsByIDsPaged(ctx, gen.ListGroupsByIDsPagedParams{Column1: groupIDs, Lim: int32Len(groupIDs)})
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		for i := range rows {
+			if full() {
+				break
+			}
+			if !matches(rows[i].Name) {
+				continue
+			}
+			// A folder-homed group is addressed "<group>@<folder-path>"; a global group
+			// is just its name.
+			path := rows[i].Name
+			if rows[i].FolderID.Valid {
+				fp, err := folderPath(uuidFromPg(rows[i].FolderID))
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, err)
+				}
+				path = rows[i].Name + "@" + fp
+			}
+			out.Hits = append(out.Hits, &catalogv1.SearchHit{
+				Kind: "group", Id: rows[i].ID.String(), Name: rows[i].Name, Path: path,
+			})
+		}
+	}
+
+	return connect.NewResponse(out), nil
+}
+
 // GetFolderAccess returns the caller's management capabilities on one folder;
 // NotFound (existence hiding) if the caller has no relationship to it — neither
 // a capability on its scope nor a visible asset in its subtree.

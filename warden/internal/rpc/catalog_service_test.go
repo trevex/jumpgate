@@ -754,6 +754,159 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	}
 }
 
+// TestSearchCatalog covers the visibility-filtered catalog search: a substring
+// query returns only the caller's VISIBLE matching entities across multiple kinds,
+// an entity the caller cannot see never appears (existence hiding), the limit is
+// respected, and the match is case-insensitive.
+func TestSearchCatalog(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	q := gen.New(pool)
+
+	// Two sibling top-level folders. The caller will hold management read on `vis`
+	// (which cascades down the tree) and NOTHING on `hidden`.
+	visF, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "pgvis"}), tok))
+	if err != nil {
+		t.Fatalf("create vis folder: %v", err)
+	}
+	hiddenF, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: "hidden"}), tok))
+	if err != nil {
+		t.Fatalf("create hidden folder: %v", err)
+	}
+	visFID := uuid.MustParse(visF.Msg.Folder.Id)
+	hiddenFID := uuid.MustParse(hiddenF.Msg.Folder.Id)
+
+	// Under vis: an asset, a role, and a group whose names all share "pg". Plus a
+	// child folder named with "pg" so folder hits are covered too.
+	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: visF.Msg.Folder.Id, Name: "pg-primary", Kind: "ssh",
+	}), tok)); err != nil {
+		t.Fatalf("create vis asset: %v", err)
+	}
+	if _, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{
+		Name: "pg-child", ParentId: visF.Msg.Folder.Id,
+	}), tok)); err != nil {
+		t.Fatalf("create vis child folder: %v", err)
+	}
+	if _, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "pg-operator",
+		FolderID:     pgtype.UUID{Bytes: visFID, Valid: true},
+		Capabilities: []byte(`[]`),
+	}); err != nil {
+		t.Fatalf("create vis role: %v", err)
+	}
+	if _, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+		Name:     "pg-team",
+		FolderID: pgtype.UUID{Bytes: visFID, Valid: true},
+	}); err != nil {
+		t.Fatalf("create vis group: %v", err)
+	}
+
+	// Under hidden: an asset the caller must NEVER see, whose name also matches "pg".
+	if _, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: hiddenF.Msg.Folder.Id, Name: "pg-secret", Kind: "ssh",
+	}), tok)); err != nil {
+		t.Fatalf("create hidden asset: %v", err)
+	}
+	if _, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "pg-secret-role",
+		FolderID:     pgtype.UUID{Bytes: hiddenFID, Valid: true},
+		Capabilities: []byte(`[]`),
+	}); err != nil {
+		t.Fatalf("create hidden role: %v", err)
+	}
+
+	// A non-admin caller who holds management read on the vis folder only. Those
+	// caps cascade down the vis subtree, making its folders/assets/roles/groups
+	// visible while leaving the hidden sibling invisible.
+	seedUser(t, pool, "searcher@x", "password123", false)
+	su, err := q.GetUserByEmail(ctx, "searcher@x")
+	if err != nil {
+		t.Fatalf("get searcher: %v", err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		Name:         "vis-reader",
+		Capabilities: []byte(`["catalog:folder:read","catalog:asset:read","access:role:read","identity:group:read"]`),
+	})
+	if err != nil {
+		t.Fatalf("create reader role: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID:        role.ID,
+		ScopeFolderID: pgtype.UUID{Bytes: visFID, Valid: true},
+		SubjectUserID: pgtype.UUID{Bytes: su.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("bind reader role: %v", err)
+	}
+
+	authorizer := authz.NewSQLAuthorizer(pool)
+	srv := rpc.NewCatalogServer(q, pool, authorizer, nil)
+	searcherCtx := auth.WithUser(ctx, auth.CurrentUser{ID: su.ID, Email: "searcher@x"})
+
+	// (a) substring "pg" returns the caller's visible matches across multiple kinds.
+	resp, err := srv.SearchCatalog(searcherCtx, connect.NewRequest(&catalogv1.SearchCatalogRequest{Query: "pg"}))
+	if err != nil {
+		t.Fatalf("SearchCatalog: %v", err)
+	}
+	byKind := map[string]map[string]bool{}
+	for _, h := range resp.Msg.GetHits() {
+		if byKind[h.GetKind()] == nil {
+			byKind[h.GetKind()] = map[string]bool{}
+		}
+		byKind[h.GetKind()][h.GetName()] = true
+	}
+	if !byKind["asset"]["pg-primary"] {
+		t.Fatalf("missing visible asset pg-primary: %+v", resp.Msg.GetHits())
+	}
+	if !byKind["folder"]["pg-child"] {
+		t.Fatalf("missing visible folder pg-child: %+v", resp.Msg.GetHits())
+	}
+	if !byKind["role"]["pg-operator"] {
+		t.Fatalf("missing visible role pg-operator: %+v", resp.Msg.GetHits())
+	}
+	if !byKind["group"]["pg-team"] {
+		t.Fatalf("missing visible group pg-team: %+v", resp.Msg.GetHits())
+	}
+
+	// (b) hidden entities never appear (existence hiding).
+	for _, h := range resp.Msg.GetHits() {
+		if h.GetName() == "pg-secret" || h.GetName() == "pg-secret-role" {
+			t.Fatalf("hidden entity leaked: %+v", h)
+		}
+	}
+
+	// (c) limit is respected: 4+ visible matches, cap at 2.
+	limited, err := srv.SearchCatalog(searcherCtx, connect.NewRequest(&catalogv1.SearchCatalogRequest{Query: "pg", Limit: 2}))
+	if err != nil {
+		t.Fatalf("SearchCatalog limited: %v", err)
+	}
+	if len(limited.Msg.GetHits()) > 2 {
+		t.Fatalf("limit not respected: got %d hits", len(limited.Msg.GetHits()))
+	}
+
+	// (d) case-insensitive: "PG" matches "pg-*".
+	upper, err := srv.SearchCatalog(searcherCtx, connect.NewRequest(&catalogv1.SearchCatalogRequest{Query: "PG"}))
+	if err != nil {
+		t.Fatalf("SearchCatalog upper: %v", err)
+	}
+	var sawPrimary bool
+	for _, h := range upper.Msg.GetHits() {
+		if h.GetName() == "pg-primary" {
+			sawPrimary = true
+		}
+		if h.GetName() == "pg-secret" {
+			t.Fatalf("hidden entity leaked (upper): %+v", h)
+		}
+	}
+	if !sawPrimary {
+		t.Fatalf("case-insensitive match failed: %+v", upper.Msg.GetHits())
+	}
+}
+
 func TestResolveFolder(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)

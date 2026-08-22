@@ -1947,6 +1947,173 @@ func (x *ListFolderContentsResponse) GetGroupsHasMore() bool {
 	return false
 }
 
+// SearchCatalog finds catalog entities whose name matches the query (case-insensitive
+// substring), filtered to what the caller may see (visibility-filtered, so existence
+// is hidden by construction), capped at limit. Any authenticated caller.
+type SearchCatalogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchCatalogRequest) Reset() {
+	*x = SearchCatalogRequest{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchCatalogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchCatalogRequest) ProtoMessage() {}
+
+func (x *SearchCatalogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchCatalogRequest.ProtoReflect.Descriptor instead.
+func (*SearchCatalogRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SearchCatalogRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *SearchCatalogRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type SearchCatalogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hits          []*SearchHit           `protobuf:"bytes,1,rep,name=hits,proto3" json:"hits,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchCatalogResponse) Reset() {
+	*x = SearchCatalogResponse{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchCatalogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchCatalogResponse) ProtoMessage() {}
+
+func (x *SearchCatalogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchCatalogResponse.ProtoReflect.Descriptor instead.
+func (*SearchCatalogResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SearchCatalogResponse) GetHits() []*SearchHit {
+	if x != nil {
+		return x.Hits
+	}
+	return nil
+}
+
+type SearchHit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"` // folder | asset | role | group
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"` // dotted path (assets/folders/roles); group @-path where applicable
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchHit) Reset() {
+	*x = SearchHit{}
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchHit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchHit) ProtoMessage() {}
+
+func (x *SearchHit) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_catalog_v1_catalog_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchHit.ProtoReflect.Descriptor instead.
+func (*SearchHit) Descriptor() ([]byte, []int) {
+	return file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SearchHit) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SearchHit) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SearchHit) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SearchHit) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
 var File_jumpgate_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
@@ -2071,7 +2238,17 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x05roles\x18\x05 \x03(\v2\x18.jumpgate.access.v1.RoleR\x05roles\x12$\n" +
 	"\x0eroles_has_more\x18\x06 \x01(\bR\frolesHasMore\x123\n" +
 	"\x06groups\x18\a \x03(\v2\x1b.jumpgate.identity.v1.GroupR\x06groups\x12&\n" +
-	"\x0fgroups_has_more\x18\b \x01(\bR\rgroupsHasMore2\x88\n" +
+	"\x0fgroups_has_more\x18\b \x01(\bR\rgroupsHasMore\"M\n" +
+	"\x14SearchCatalogRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1f\n" +
+	"\x05limit\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x182(\x00R\x05limit\"K\n" +
+	"\x15SearchCatalogResponse\x122\n" +
+	"\x04hits\x18\x01 \x03(\v2\x1e.jumpgate.catalog.v1.SearchHitR\x04hits\"W\n" +
+	"\tSearchHit\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path2\xf2\n" +
 	"\n" +
 	"\x0eCatalogService\x12e\n" +
 	"\fCreateFolder\x12(.jumpgate.catalog.v1.CreateFolderRequest\x1a).jumpgate.catalog.v1.CreateFolderResponse\"\x00\x12b\n" +
@@ -2086,7 +2263,8 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x0fGetFolderAccess\x12+.jumpgate.catalog.v1.GetFolderAccessRequest\x1a,.jumpgate.catalog.v1.GetFolderAccessResponse\"\x00\x12e\n" +
 	"\fResolveAsset\x12(.jumpgate.catalog.v1.ResolveAssetRequest\x1a).jumpgate.catalog.v1.ResolveAssetResponse\"\x00\x12h\n" +
 	"\rResolveFolder\x12).jumpgate.catalog.v1.ResolveFolderRequest\x1a*.jumpgate.catalog.v1.ResolveFolderResponse\"\x00\x12w\n" +
-	"\x12ListFolderContents\x12..jumpgate.catalog.v1.ListFolderContentsRequest\x1a/.jumpgate.catalog.v1.ListFolderContentsResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1;catalogv1b\x06proto3"
+	"\x12ListFolderContents\x12..jumpgate.catalog.v1.ListFolderContentsRequest\x1a/.jumpgate.catalog.v1.ListFolderContentsResponse\"\x00\x12h\n" +
+	"\rSearchCatalog\x12).jumpgate.catalog.v1.SearchCatalogRequest\x1a*.jumpgate.catalog.v1.SearchCatalogResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1;catalogv1b\x06proto3"
 
 var (
 	file_jumpgate_catalog_v1_catalog_proto_rawDescOnce sync.Once
@@ -2100,7 +2278,7 @@ func file_jumpgate_catalog_v1_catalog_proto_rawDescGZIP() []byte {
 	return file_jumpgate_catalog_v1_catalog_proto_rawDescData
 }
 
-var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_jumpgate_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*Folder)(nil),                     // 0: jumpgate.catalog.v1.Folder
 	(*Asset)(nil),                      // 1: jumpgate.catalog.v1.Asset
@@ -2134,8 +2312,11 @@ var file_jumpgate_catalog_v1_catalog_proto_goTypes = []any{
 	(*ResolveFolderResponse)(nil),      // 29: jumpgate.catalog.v1.ResolveFolderResponse
 	(*ListFolderContentsRequest)(nil),  // 30: jumpgate.catalog.v1.ListFolderContentsRequest
 	(*ListFolderContentsResponse)(nil), // 31: jumpgate.catalog.v1.ListFolderContentsResponse
-	(*v1.Role)(nil),                    // 32: jumpgate.access.v1.Role
-	(*v11.Group)(nil),                  // 33: jumpgate.identity.v1.Group
+	(*SearchCatalogRequest)(nil),       // 32: jumpgate.catalog.v1.SearchCatalogRequest
+	(*SearchCatalogResponse)(nil),      // 33: jumpgate.catalog.v1.SearchCatalogResponse
+	(*SearchHit)(nil),                  // 34: jumpgate.catalog.v1.SearchHit
+	(*v1.Role)(nil),                    // 35: jumpgate.access.v1.Role
+	(*v11.Group)(nil),                  // 36: jumpgate.identity.v1.Group
 }
 var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	2,  // 0: jumpgate.catalog.v1.Asset.ssh:type_name -> jumpgate.catalog.v1.SSHConfig
@@ -2154,37 +2335,40 @@ var file_jumpgate_catalog_v1_catalog_proto_depIdxs = []int32{
 	21, // 13: jumpgate.catalog.v1.GetAssetAccessResponse.requestable_roles:type_name -> jumpgate.catalog.v1.RoleRef
 	0,  // 14: jumpgate.catalog.v1.ListFolderContentsResponse.folders:type_name -> jumpgate.catalog.v1.Folder
 	1,  // 15: jumpgate.catalog.v1.ListFolderContentsResponse.assets:type_name -> jumpgate.catalog.v1.Asset
-	32, // 16: jumpgate.catalog.v1.ListFolderContentsResponse.roles:type_name -> jumpgate.access.v1.Role
-	33, // 17: jumpgate.catalog.v1.ListFolderContentsResponse.groups:type_name -> jumpgate.identity.v1.Group
-	4,  // 18: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
-	6,  // 19: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
-	8,  // 20: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
-	10, // 21: jumpgate.catalog.v1.CatalogService.GetAsset:input_type -> jumpgate.catalog.v1.GetAssetRequest
-	12, // 22: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:input_type -> jumpgate.catalog.v1.GetAssetDisplayRequest
-	17, // 23: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:input_type -> jumpgate.catalog.v1.UpdateAssetConfigRequest
-	19, // 24: jumpgate.catalog.v1.CatalogService.ListAssets:input_type -> jumpgate.catalog.v1.ListAssetsRequest
-	22, // 25: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
-	24, // 26: jumpgate.catalog.v1.CatalogService.GetFolderAccess:input_type -> jumpgate.catalog.v1.GetFolderAccessRequest
-	26, // 27: jumpgate.catalog.v1.CatalogService.ResolveAsset:input_type -> jumpgate.catalog.v1.ResolveAssetRequest
-	28, // 28: jumpgate.catalog.v1.CatalogService.ResolveFolder:input_type -> jumpgate.catalog.v1.ResolveFolderRequest
-	30, // 29: jumpgate.catalog.v1.CatalogService.ListFolderContents:input_type -> jumpgate.catalog.v1.ListFolderContentsRequest
-	5,  // 30: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
-	7,  // 31: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
-	9,  // 32: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
-	11, // 33: jumpgate.catalog.v1.CatalogService.GetAsset:output_type -> jumpgate.catalog.v1.GetAssetResponse
-	13, // 34: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:output_type -> jumpgate.catalog.v1.GetAssetDisplayResponse
-	18, // 35: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:output_type -> jumpgate.catalog.v1.UpdateAssetConfigResponse
-	20, // 36: jumpgate.catalog.v1.CatalogService.ListAssets:output_type -> jumpgate.catalog.v1.ListAssetsResponse
-	23, // 37: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
-	25, // 38: jumpgate.catalog.v1.CatalogService.GetFolderAccess:output_type -> jumpgate.catalog.v1.GetFolderAccessResponse
-	27, // 39: jumpgate.catalog.v1.CatalogService.ResolveAsset:output_type -> jumpgate.catalog.v1.ResolveAssetResponse
-	29, // 40: jumpgate.catalog.v1.CatalogService.ResolveFolder:output_type -> jumpgate.catalog.v1.ResolveFolderResponse
-	31, // 41: jumpgate.catalog.v1.CatalogService.ListFolderContents:output_type -> jumpgate.catalog.v1.ListFolderContentsResponse
-	30, // [30:42] is the sub-list for method output_type
-	18, // [18:30] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	35, // 16: jumpgate.catalog.v1.ListFolderContentsResponse.roles:type_name -> jumpgate.access.v1.Role
+	36, // 17: jumpgate.catalog.v1.ListFolderContentsResponse.groups:type_name -> jumpgate.identity.v1.Group
+	34, // 18: jumpgate.catalog.v1.SearchCatalogResponse.hits:type_name -> jumpgate.catalog.v1.SearchHit
+	4,  // 19: jumpgate.catalog.v1.CatalogService.CreateFolder:input_type -> jumpgate.catalog.v1.CreateFolderRequest
+	6,  // 20: jumpgate.catalog.v1.CatalogService.ListFolders:input_type -> jumpgate.catalog.v1.ListFoldersRequest
+	8,  // 21: jumpgate.catalog.v1.CatalogService.CreateAsset:input_type -> jumpgate.catalog.v1.CreateAssetRequest
+	10, // 22: jumpgate.catalog.v1.CatalogService.GetAsset:input_type -> jumpgate.catalog.v1.GetAssetRequest
+	12, // 23: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:input_type -> jumpgate.catalog.v1.GetAssetDisplayRequest
+	17, // 24: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:input_type -> jumpgate.catalog.v1.UpdateAssetConfigRequest
+	19, // 25: jumpgate.catalog.v1.CatalogService.ListAssets:input_type -> jumpgate.catalog.v1.ListAssetsRequest
+	22, // 26: jumpgate.catalog.v1.CatalogService.GetAssetAccess:input_type -> jumpgate.catalog.v1.GetAssetAccessRequest
+	24, // 27: jumpgate.catalog.v1.CatalogService.GetFolderAccess:input_type -> jumpgate.catalog.v1.GetFolderAccessRequest
+	26, // 28: jumpgate.catalog.v1.CatalogService.ResolveAsset:input_type -> jumpgate.catalog.v1.ResolveAssetRequest
+	28, // 29: jumpgate.catalog.v1.CatalogService.ResolveFolder:input_type -> jumpgate.catalog.v1.ResolveFolderRequest
+	30, // 30: jumpgate.catalog.v1.CatalogService.ListFolderContents:input_type -> jumpgate.catalog.v1.ListFolderContentsRequest
+	32, // 31: jumpgate.catalog.v1.CatalogService.SearchCatalog:input_type -> jumpgate.catalog.v1.SearchCatalogRequest
+	5,  // 32: jumpgate.catalog.v1.CatalogService.CreateFolder:output_type -> jumpgate.catalog.v1.CreateFolderResponse
+	7,  // 33: jumpgate.catalog.v1.CatalogService.ListFolders:output_type -> jumpgate.catalog.v1.ListFoldersResponse
+	9,  // 34: jumpgate.catalog.v1.CatalogService.CreateAsset:output_type -> jumpgate.catalog.v1.CreateAssetResponse
+	11, // 35: jumpgate.catalog.v1.CatalogService.GetAsset:output_type -> jumpgate.catalog.v1.GetAssetResponse
+	13, // 36: jumpgate.catalog.v1.CatalogService.GetAssetDisplay:output_type -> jumpgate.catalog.v1.GetAssetDisplayResponse
+	18, // 37: jumpgate.catalog.v1.CatalogService.UpdateAssetConfig:output_type -> jumpgate.catalog.v1.UpdateAssetConfigResponse
+	20, // 38: jumpgate.catalog.v1.CatalogService.ListAssets:output_type -> jumpgate.catalog.v1.ListAssetsResponse
+	23, // 39: jumpgate.catalog.v1.CatalogService.GetAssetAccess:output_type -> jumpgate.catalog.v1.GetAssetAccessResponse
+	25, // 40: jumpgate.catalog.v1.CatalogService.GetFolderAccess:output_type -> jumpgate.catalog.v1.GetFolderAccessResponse
+	27, // 41: jumpgate.catalog.v1.CatalogService.ResolveAsset:output_type -> jumpgate.catalog.v1.ResolveAssetResponse
+	29, // 42: jumpgate.catalog.v1.CatalogService.ResolveFolder:output_type -> jumpgate.catalog.v1.ResolveFolderResponse
+	31, // 43: jumpgate.catalog.v1.CatalogService.ListFolderContents:output_type -> jumpgate.catalog.v1.ListFolderContentsResponse
+	33, // 44: jumpgate.catalog.v1.CatalogService.SearchCatalog:output_type -> jumpgate.catalog.v1.SearchCatalogResponse
+	32, // [32:45] is the sub-list for method output_type
+	19, // [19:32] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_catalog_v1_catalog_proto_init() }
@@ -2210,7 +2394,7 @@ func file_jumpgate_catalog_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_catalog_v1_catalog_proto_rawDesc), len(file_jumpgate_catalog_v1_catalog_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
