@@ -236,6 +236,17 @@ func (q *Queries) GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (A
 	return i, err
 }
 
+const isUserActive = `-- name: IsUserActive :one
+SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND deactivated_at IS NULL)
+`
+
+func (q *Queries) IsUserActive(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isUserActive, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listAccessRequestsByRequester = `-- name: ListAccessRequestsByRequester :many
 SELECT id, requester_user_id, role_id, asset_id, reason, requested_duration, required_approvals, granted_duration, status, created_at, resolved_at FROM access_requests WHERE requester_user_id = $1 ORDER BY created_at DESC
 `
@@ -552,6 +563,82 @@ func (q *Queries) ListPendingRequests(ctx context.Context) ([]AccessRequest, err
 			&i.Status,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingRequestsByAsset = `-- name: ListPendingRequestsByAsset :many
+SELECT id, requester_user_id, role_id, asset_id
+FROM access_requests
+WHERE status = 'pending' AND asset_id = $1
+`
+
+type ListPendingRequestsByAssetRow struct {
+	ID              uuid.UUID `json:"id"`
+	RequesterUserID uuid.UUID `json:"requester_user_id"`
+	RoleID          uuid.UUID `json:"role_id"`
+	AssetID         uuid.UUID `json:"asset_id"`
+}
+
+func (q *Queries) ListPendingRequestsByAsset(ctx context.Context, assetID uuid.UUID) ([]ListPendingRequestsByAssetRow, error) {
+	rows, err := q.db.Query(ctx, listPendingRequestsByAsset, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingRequestsByAssetRow
+	for rows.Next() {
+		var i ListPendingRequestsByAssetRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingRequestsByRole = `-- name: ListPendingRequestsByRole :many
+SELECT id, requester_user_id, role_id, asset_id
+FROM access_requests
+WHERE status = 'pending' AND role_id = $1
+`
+
+type ListPendingRequestsByRoleRow struct {
+	ID              uuid.UUID `json:"id"`
+	RequesterUserID uuid.UUID `json:"requester_user_id"`
+	RoleID          uuid.UUID `json:"role_id"`
+	AssetID         uuid.UUID `json:"asset_id"`
+}
+
+func (q *Queries) ListPendingRequestsByRole(ctx context.Context, roleID uuid.UUID) ([]ListPendingRequestsByRoleRow, error) {
+	rows, err := q.db.Query(ctx, listPendingRequestsByRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingRequestsByRoleRow
+	for rows.Next() {
+		var i ListPendingRequestsByRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
 		); err != nil {
 			return nil, err
 		}

@@ -494,6 +494,79 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 	return out, nil
 }
 
+// ReqEntityKind selects which entity a request-party read is about.
+type ReqEntityKind int
+
+// The entity kinds a request-party read may target.
+const (
+	ReqEntityAsset ReqEntityKind = iota // an asset referenced by a pending request
+	ReqEntityRole                       // a role referenced by a pending request
+)
+
+// party is the normalised shape of a pending request row: the two generated
+// by-entity row types carry identical fields, folded here into one.
+type party struct {
+	requester uuid.UUID
+	role      uuid.UUID
+	asset     uuid.UUID
+}
+
+// CanReadForRequest reports whether caller may read the given entity because they
+// are party to a PENDING access request that references it: the requester, or a
+// standing approver (governance is standing-only; a JIT grant never confers it).
+// Additive to capability checks — callers consult it only after a cap check
+// denies. A deactivated caller is never party (IsApprover already excludes them;
+// the requester branch checks activity explicitly).
+func (s *Service) CanReadForRequest(ctx context.Context, caller uuid.UUID, kind ReqEntityKind, id uuid.UUID) (bool, error) {
+	q := gen.New(s.pool)
+
+	var parties []party
+	switch kind {
+	case ReqEntityAsset:
+		rows, err := q.ListPendingRequestsByAsset(ctx, id)
+		if err != nil {
+			return false, fmt.Errorf("pending by asset: %w", err)
+		}
+		for _, r := range rows {
+			parties = append(parties, party{requester: r.RequesterUserID, role: r.RoleID, asset: r.AssetID})
+		}
+	case ReqEntityRole:
+		rows, err := q.ListPendingRequestsByRole(ctx, id)
+		if err != nil {
+			return false, fmt.Errorf("pending by role: %w", err)
+		}
+		for _, r := range rows {
+			parties = append(parties, party{requester: r.RequesterUserID, role: r.RoleID, asset: r.AssetID})
+		}
+	default:
+		return false, nil
+	}
+
+	for _, p := range parties {
+		if p.requester == caller {
+			// The requester is party — but a deactivated user is party to nothing.
+			active, err := q.IsUserActive(ctx, caller)
+			if err != nil {
+				return false, fmt.Errorf("is user active: %w", err)
+			}
+			if active {
+				return true, nil
+			}
+			continue
+		}
+		// Standing approver of this request's (role, asset). IsApprover is
+		// standing-only and already excludes deactivated users.
+		ok, err := s.resolver.IsApprover(ctx, caller, p.role, p.asset)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // grantIDFor returns the grant id for a granted request, or uuid.Nil.
 func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRequest) uuid.UUID {
 	if r.Status != "granted" {
