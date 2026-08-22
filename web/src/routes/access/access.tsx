@@ -1,10 +1,633 @@
+/**
+ * access.tsx — "My Access" page.
+ *
+ * Two tabs:
+ *   Requests — the caller's own JIT requests, paginated, with colour-coded
+ *              status badges and a "Load more" button.
+ *   Grants   — the caller's access grants (active + past), with a live
+ *              expiry countdown and a copy-able connect command.
+ *
+ * The Grant DTO carries only role_id and asset_id (UUIDs), not names or
+ * paths. The connect command uses the role_id and asset_id as identifiers
+ * until richer data is returned by a future enriched endpoint; the UI shows
+ * whichever label fields are available and falls back gracefully.
+ *
+ * Note: Grant does NOT carry the asset path or login, so we derive the
+ * connect command as `jumpgate connect <asset_id>` (the CLI accepts a UUID
+ * as well as a path). A future enhancement would enrich grants with path+login.
+ */
+
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useQuery, useMutation } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  listMyRequests,
+  listMyGrants,
+  revokeGrant,
+} from "@/gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
+import type {
+  AccessRequest,
+  Grant,
+} from "@/gen/jumpgate/accessrequest/v1/accessrequest_pb";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { relativeTime, timeRemaining, isExpired, connectErrorMessage } from "@/lib/format";
+import {
+  Copy,
+  Check,
+  Terminal,
+  ClipboardList,
+  KeyRound,
+  RefreshCw,
+} from "lucide-react";
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+const STATUS_STYLES: Record<string, string> = {
+  pending:   "border-amber-300 bg-amber-50 text-amber-700",
+  granted:   "border-green-300 bg-green-50 text-green-700",
+  denied:    "border-red-300 bg-red-50 text-red-700",
+  cancelled: "border-slate-200 bg-slate-50 text-slate-500",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLES[status] ?? "border-border bg-muted text-muted-foreground";
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return (
+    <Badge
+      variant="outline"
+      className={cn("rounded px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide border", style)}
+    >
+      {label}
+    </Badge>
+  );
+}
+
+// ─── Copy button (inline) ─────────────────────────────────────────────────────
+
+function InlineCopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard not available — silently ignore
+    }
+  }, [text]);
+
+  return (
+    <button
+      onClick={copy}
+      className={cn(
+        "flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        copied
+          ? "text-green-600"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+      aria-label={copied ? "Copied" : (label ?? "Copy")}
+    >
+      {copied ? (
+        <Check className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <Copy className="h-3 w-3" aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+// ─── Expiry countdown (ticking) ───────────────────────────────────────────────
+
+function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState(() => timeRemaining(expiresAt));
+  const expired = isExpired(expiresAt);
+
+  useEffect(() => {
+    if (expired) return;
+    // Update every 30 s — granularity matches the human-readable output
+    const id = setInterval(() => setRemaining(timeRemaining(expiresAt)), 30_000);
+    return () => clearInterval(id);
+  }, [expiresAt, expired]);
+
+  return (
+    <span
+      className={cn(
+        "font-mono text-[11px] tabular-nums",
+        expired ? "text-muted-foreground line-through" : "text-foreground",
+      )}
+      title={expiresAt}
+      aria-label={expired ? "Expired" : `Expires in ${remaining}`}
+    >
+      {expired ? "expired" : remaining}
+    </span>
+  );
+}
+
+// ─── Loading skeleton rows ────────────────────────────────────────────────────
+
+function RowSkeletons({ count = 4 }: { count?: number }) {
+  return (
+    <div className="flex flex-col divide-y divide-border" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3">
+          <Skeleton className="h-4 w-28 rounded" />
+          <Skeleton className="h-4 w-20 rounded" />
+          <Skeleton className="h-4 w-12 rounded" />
+          <Skeleton className="h-4 flex-1 rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState({
+  icon: Icon,
+  message,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  message: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+      <Icon className="h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
+      <p className="text-[13px] text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+// ─── Requests table ───────────────────────────────────────────────────────────
+
+// Truncates a UUID to its first segment for display (e.g. "a3f2b1c0-…")
+function shortId(id: string): string {
+  return id.split("-")[0] ?? id;
+}
+
+function RequestRow({ req }: { req: AccessRequest }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto] items-start gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-muted/40 transition-colors">
+      {/* Asset / Role */}
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span
+          className="font-mono text-[11px] text-muted-foreground truncate"
+          title={req.assetId}
+          aria-label={`Asset ${req.assetId}`}
+        >
+          {shortId(req.assetId)}
+        </span>
+        <span
+          className="text-[11px] text-muted-foreground truncate"
+          title={req.roleId}
+          aria-label={`Role ${req.roleId}`}
+        >
+          role: {shortId(req.roleId)}
+        </span>
+        {req.reason && (
+          <span
+            className="text-[12px] text-foreground line-clamp-2"
+            title={req.reason}
+          >
+            {req.reason}
+          </span>
+        )}
+      </div>
+
+      {/* Status */}
+      <div className="pt-0.5">
+        <StatusBadge status={req.status} />
+      </div>
+
+      {/* Time */}
+      <div className="flex flex-col items-end gap-0.5 pt-0.5 shrink-0">
+        <span
+          className="text-[11px] text-muted-foreground whitespace-nowrap"
+          title={req.createdAt}
+        >
+          {relativeTime(req.createdAt)}
+        </span>
+        {req.resolvedAt && (
+          <span
+            className="text-[10px] text-muted-foreground/70 whitespace-nowrap"
+            title={req.resolvedAt}
+          >
+            resolved {relativeTime(req.resolvedAt)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RequestsTab() {
+  const [pages, setPages] = useState<AccessRequest[]>([]);
+  const [nextToken, setNextToken] = useState<string>("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const initialised = useRef(false);
+
+  const { data, isLoading, isError, error, refetch } = useQuery(
+    listMyRequests,
+    { pageSize: 25, pageToken: "" },
+  );
+
+  // Seed the first page
+  useEffect(() => {
+    if (data && !initialised.current) {
+      initialised.current = true;
+      setPages(data.requests);
+      setNextToken(data.nextPageToken);
+    }
+  }, [data]);
+
+  // On refetch (after submit), reset pages
+  useEffect(() => {
+    if (data && initialised.current) {
+      setPages(data.requests);
+      setNextToken(data.nextPageToken);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.requests]);
+
+  const { data: moreData, refetch: fetchMore } = useQuery(
+    listMyRequests,
+    { pageSize: 25, pageToken: nextToken },
+    { enabled: false },
+  );
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const result = await fetchMore();
+      if (result.data) {
+        setPages((prev) => [...prev, ...result.data!.requests]);
+        setNextToken(result.data.nextPageToken);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (isLoading) return <RowSkeletons />;
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-center">
+        <p className="text-[13px] text-muted-foreground">
+          {connectErrorMessage(error)}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => { initialised.current = false; refetch(); }}
+          className="h-7 gap-1.5 text-[12px]"
+        >
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (pages.length === 0) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        message="You have no access requests."
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {/* Column header */}
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-border px-4 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Asset / Role / Reason
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Status
+        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground text-right">
+          Time
+        </span>
+      </div>
+
+      <div className="divide-y divide-border" role="list" aria-label="Access requests">
+        {pages.map((req) => (
+          <div key={req.id} role="listitem">
+            <RequestRow req={req} />
+          </div>
+        ))}
+      </div>
+
+      {nextToken && (
+        <div className="flex justify-center border-t border-border px-4 py-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="h-7 text-[12px]"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Grants tab ───────────────────────────────────────────────────────────────
+
+/**
+ * Grant does not carry asset path or SSH login. We derive the connect command
+ * from what we have: `jumpgate connect <asset_id>` — the CLI resolves UUIDs.
+ * A future RPC enrichment would add path+login here.
+ */
+function grantConnectCmd(grant: Grant): string {
+  return `jumpgate connect ${grant.assetId}`;
+}
+
+function GrantCard({ grant }: { grant: Grant }) {
+  const queryClient = useQueryClient();
+  const expired = isExpired(grant.expiresAt);
+  const revoked = Boolean(grant.revokedAt);
+  const active = grant.active;
+
+  const { mutate: doRevoke, isPending: isRevoking } = useMutation(revokeGrant, {
+    onSuccess: () => {
+      toast.success("Grant revoked");
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => {
+      toast.error("Failed to revoke", { description: connectErrorMessage(err) });
+    },
+  });
+
+  const connectCmd = grantConnectCmd(grant);
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-lg border border-border bg-background p-4 transition-colors",
+        !active && "opacity-60",
+      )}
+      aria-label={`Grant for asset ${shortId(grant.assetId)}`}
+    >
+      {/* Top row: role + expiry */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <span
+            className="font-mono text-[11px] text-muted-foreground truncate"
+            title={grant.assetId}
+          >
+            {shortId(grant.assetId)}
+          </span>
+          <span
+            className="text-[11px] text-muted-foreground truncate"
+            title={grant.roleId}
+          >
+            role: {shortId(grant.roleId)}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {revoked ? (
+            <Badge
+              variant="outline"
+              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-red-600 tracking-wide"
+            >
+              Revoked
+            </Badge>
+          ) : expired ? (
+            <Badge
+              variant="outline"
+              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide"
+            >
+              Expired
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-green-700 tracking-wide"
+            >
+              Active
+            </Badge>
+          )}
+          {grant.expiresAt && (
+            <ExpiryBadge expiresAt={grant.expiresAt} />
+          )}
+        </div>
+      </div>
+
+      {/* Connect command */}
+      {active && (
+        <div className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2">
+          <Terminal
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
+            {connectCmd}
+          </code>
+          <InlineCopyButton
+            text={connectCmd}
+            label="Copy connect command"
+          />
+        </div>
+      )}
+
+      {/* Revoke button — active grants only */}
+      {active && (
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              doRevoke({ grantId: grant.id, reason: "Self-revoked" })
+            }
+            disabled={isRevoking}
+            className="h-6 border-red-200 text-[11px] text-red-600 hover:bg-red-50 hover:text-red-700"
+            aria-label="Revoke this grant"
+          >
+            {isRevoking ? "Revoking…" : "Revoke"}
+          </Button>
+        </div>
+      )}
+
+      {/* Revoked reason */}
+      {revoked && grant.revokedReason && (
+        <p className="text-[11px] text-muted-foreground italic">
+          Reason: {grant.revokedReason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GrantsTab() {
+  const [pages, setPages] = useState<Grant[]>([]);
+  const [nextToken, setNextToken] = useState<string>("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const initialised = useRef(false);
+
+  const { data, isLoading, isError, error, refetch } = useQuery(
+    listMyGrants,
+    { pageSize: 25, pageToken: "" },
+  );
+
+  // Seed first page
+  useEffect(() => {
+    if (data && !initialised.current) {
+      initialised.current = true;
+      setPages(data.grants);
+      setNextToken(data.nextPageToken);
+    }
+  }, [data]);
+
+  // Refresh on query invalidation
+  useEffect(() => {
+    if (data && initialised.current) {
+      setPages(data.grants);
+      setNextToken(data.nextPageToken);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.grants]);
+
+  const { refetch: fetchMore } = useQuery(
+    listMyGrants,
+    { pageSize: 25, pageToken: nextToken },
+    { enabled: false },
+  );
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const result = await fetchMore();
+      if (result.data) {
+        setPages((prev) => [...prev, ...result.data!.grants]);
+        setNextToken(result.data.nextPageToken);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (isLoading) return <RowSkeletons />;
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-center">
+        <p className="text-[13px] text-muted-foreground">
+          {connectErrorMessage(error)}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => { initialised.current = false; refetch(); }}
+          className="h-7 gap-1.5 text-[12px]"
+        >
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (pages.length === 0) {
+    return <EmptyState icon={KeyRound} message="You have no active grants." />;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        role="list"
+        aria-label="Access grants"
+      >
+        {pages.map((g) => (
+          <div key={g.id} role="listitem">
+            <GrantCard grant={g} />
+          </div>
+        ))}
+      </div>
+
+      {nextToken && (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="h-7 text-[12px]"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── My Access page ───────────────────────────────────────────────────────────
+
 export function MyAccessPage() {
   return (
-    <div className="p-6">
-      <h1 className="text-lg font-semibold text-foreground">My Access</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Your active grants and pending requests.
-      </p>
+    <div className="flex flex-col gap-0 h-full">
+      {/* Page header */}
+      <header className="border-b border-border px-6 py-5">
+        <h1 className="text-[15px] font-semibold text-foreground">My Access</h1>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">
+          Your pending requests and active access grants.
+        </p>
+      </header>
+
+      {/* Tabs */}
+      <Tabs defaultValue="requests" className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b border-border px-6 pt-4">
+          <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
+            <TabsTrigger
+              value="requests"
+              className={cn(
+                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+                "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
+              )}
+            >
+              Requests
+            </TabsTrigger>
+            <TabsTrigger
+              value="grants"
+              className={cn(
+                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+                "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
+              )}
+            >
+              Grants
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent
+          value="requests"
+          className="flex-1 overflow-y-auto mt-0 data-[state=inactive]:hidden"
+        >
+          <RequestsTab />
+        </TabsContent>
+
+        <TabsContent
+          value="grants"
+          className="flex-1 overflow-y-auto mt-0 data-[state=inactive]:hidden p-4"
+        >
+          <GrantsTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
