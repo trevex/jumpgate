@@ -503,12 +503,12 @@ type manageFn func(folderPtr *uuid.UUID) (bool, error)
 // otherwise it evaluates CapabilitiesOnScope(FolderScope(folder)) once per folder
 // (which already folds global ∪ the folder ancestor chain). A folder-less node
 // (nil folder) is manageable iff the global cap holds — never via a folder scope.
-func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UUID, cap string) (manageFn, error) {
+func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UUID, capability string) (manageFn, error) {
 	global, err := s.globalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	globalManage := global.Allows(cap)
+	globalManage := global.Allows(capability)
 	memo := map[uuid.UUID]bool{}
 	return func(folderPtr *uuid.UUID) (bool, error) {
 		if globalManage {
@@ -526,7 +526,7 @@ func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UU
 		if err != nil {
 			return false, err
 		}
-		v := caps.Allows(cap)
+		v := caps.Allows(capability)
 		memo[*folderPtr] = v
 		return v, nil
 	}, nil

@@ -212,7 +212,7 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	if err != nil {
 		return nil, err
 	}
-	ids, err := s.capGuard.authz.VisibleRolesUnder(ctx, u.ID, parent, req.Msg.Cascade)
+	ids, err := s.authz.VisibleRolesUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

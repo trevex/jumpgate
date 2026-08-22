@@ -100,7 +100,7 @@ func castHandler(d RouterDeps) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		defer body.Close()
+		defer func() { _ = body.Close() }()
 
 		w.Header().Set("Content-Type", "application/x-asciicast")
 		w.Header().Set("Cache-Control", "private, no-store")

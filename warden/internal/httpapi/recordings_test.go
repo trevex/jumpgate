@@ -209,7 +209,7 @@ func TestCastNoAuth(t *testing.T) {
 	_, srvURL, _ := castServer(t, getter)
 	sessID := uuid.New()
 	resp := doGet(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", "", "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("want 401 without token, got %d", resp.StatusCode)
 	}
@@ -226,7 +226,7 @@ func TestCastValidTokenWithCap(t *testing.T) {
 	sessID := seedRecording(t, pool, userID, assetID)
 
 	resp := doGet(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("want 200, got %d: %s", resp.StatusCode, body)
@@ -250,14 +250,14 @@ func TestCastNoCapOrMissingRecording(t *testing.T) {
 
 	// (a) valid token, no recording:read, random session ID → 404
 	resp := doGet(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", noCap, "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("(no cap) want 404, got %d", resp.StatusCode)
 	}
 
 	// (b) totally unknown session ID, no token → 401 (auth before existence check)
 	resp2 := doGet(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", "", "")
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("(no token, unknown id) want 401, got %d", resp2.StatusCode)
 	}
@@ -275,7 +275,7 @@ func TestCastHeadAuthorized(t *testing.T) {
 	sessID := seedRecording(t, pool, userID, assetID)
 
 	resp := doHead(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200 for authorized HEAD, got %d", resp.StatusCode)
 	}
@@ -298,14 +298,14 @@ func TestCastHeadUnauthorizedOrMissing(t *testing.T) {
 
 	// (a) valid token, no recording:read, random session ID → 404
 	resp := doHead(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", noCap, "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("(no cap) want 404 for HEAD, got %d", resp.StatusCode)
 	}
 
 	// (b) no token → 401 (auth before existence check), same as GET.
 	resp2 := doHead(t, srvURL+"/api/recordings/"+uuid.New().String()+"/cast", "", "")
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("(no token) want 401 for HEAD, got %d", resp2.StatusCode)
 	}
@@ -324,7 +324,7 @@ func TestCastCookieSameOrigin(t *testing.T) {
 	sessID := seedRecording(t, pool, userID, assetID)
 
 	resp := doGetCookie(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "same-origin")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("want 200 for same-origin cookie GET, got %d: %s", resp.StatusCode, body)
@@ -347,7 +347,7 @@ func TestCastCookieMissingSecFetch(t *testing.T) {
 	sessID := seedRecording(t, pool, userID, assetID)
 
 	resp := doGetCookie(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("want 401 for cookie without Sec-Fetch-Site (CSRF gate), got %d", resp.StatusCode)
 	}
