@@ -77,6 +77,44 @@ pub async fn connect_worker(
     Ok(stream)
 }
 
+/// mTLS-dial the chosen worker exactly like [`connect_worker`], but forward the
+/// **terminal** CONNECT preamble (`X-Jumpgate-Terminal: 1` +
+/// `X-Jumpgate-Login: <login>`) so the worker branches to its framed-terminal
+/// ingress instead of the russh SSH server. On `200` the established mesh TLS
+/// stream is returned, ready for the gateway's frame relay.
+pub async fn connect_worker_terminal(
+    entry: &WorkerEntry,
+    certs: &MeshClientCerts,
+    token: &str,
+    authority: &str,
+    login: &str,
+) -> Result<TlsStream<TcpStream>, ProxyError> {
+    let expected = format!("spiffe://jumpgate/worker/{}", entry.worker_id);
+    let client_config = certs.client_config(&expected)?;
+
+    let tcp = TcpStream::connect(&entry.address)
+        .await
+        .map_err(ProxyError::Connect)?;
+
+    let sni = rustls::pki_types::ServerName::try_from(PLACEHOLDER_SNI)
+        .map_err(|_| ProxyError::Address("invalid placeholder SNI".into()))?;
+
+    let connector = TlsConnector::from(client_config);
+    let mut stream = connector.connect(sni, tcp).await.map_err(ProxyError::Tls)?;
+
+    stream
+        .write_all(&connect::write_terminal_connect_request(
+            authority, token, login,
+        ))
+        .await
+        .map_err(ConnectError::Io)?;
+    stream.flush().await.map_err(ConnectError::Io)?;
+
+    connect::read_worker_response(&mut stream).await?;
+
+    Ok(stream)
+}
+
 /// Blind-pipe bytes between the external client stream and the worker stream
 /// until either side closes. Returns `(client→worker, worker→client)` byte
 /// counts. The caller holds the `lb::Guard`, which is dropped once this returns.
