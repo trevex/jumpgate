@@ -136,6 +136,16 @@ const NAV_ITEMS: NavItem[] = [
     requiresAnyCap: ["identity:user:read", "identity:group:read"],
   },
   {
+    label: "Access control",
+    to: "/access-control",
+    icon: ShieldCheck,
+    requiresAnyCap: [
+      "access:role:read",
+      "access:binding:read",
+      "access:policy:read",
+    ],
+  },
+  {
     label: "Recordings",
     to: "/recordings",
     icon: Film,
