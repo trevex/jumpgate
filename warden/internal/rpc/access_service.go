@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -22,14 +23,18 @@ import (
 // configuration (roles, grants, standing bindings, request policies) plus the
 // admin-or-self ExplainRole introspection.
 type AccessServer struct {
-	q     *gen.Queries
-	roles *authz.RoleResolver
+	q        *gen.Queries
+	roles    *authz.RoleResolver
+	reqReads requestReadAuthorizer
 	capGuard
 }
 
-// NewAccessServer constructs the AccessService implementation.
-func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer) *AccessServer {
-	return &AccessServer{q: q, roles: roles, capGuard: capGuard{authz: a, q: q}}
+// NewAccessServer constructs the AccessService implementation. reqReads authorizes
+// request-scoped display reads (GetRoleDisplay) for callers who are party to a
+// pending access request but lack the read capability; a nil reqReads disables that
+// path (only the capability grants the read).
+func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer) *AccessServer {
+	return &AccessServer{q: q, roles: roles, reqReads: reqReads, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toAccessRoleMsg(r gen.Role) *accessv1.Role {
@@ -277,10 +282,52 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	return connect.NewResponse(&accessv1.GetRoleResponse{Role: m}), nil
 }
 
-// GetRoleDisplay returns a role's decision context including granted capabilities.
-// TEMPORARY stub — real impl in a later task.
-func (s *AccessServer) GetRoleDisplay(_ context.Context, _ *connect.Request[accessv1.GetRoleDisplayRequest]) (*connect.Response[accessv1.GetRoleDisplayResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+// GetRoleDisplay returns a role's decision context — id, name, folder path, and the
+// capabilities it grants (the capabilities are what an approval confers, so they are
+// included) — for rendering an approval/request row. Authorized by access:role:read
+// at the role's folder scope OR the caller being party to a pending access request
+// that references the role (requester or standing approver). Denial codes match
+// GetRole: a missing role is NotFound; an existing-but-unauthorized role is
+// PermissionDenied (roles are non-topology).
+func (s *AccessServer) GetRoleDisplay(ctx context.Context, req *connect.Request[accessv1.GetRoleDisplayRequest]) (*connect.Response[accessv1.GetRoleDisplayResponse], error) {
+	id, err := uuid.Parse(req.Msg.Id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
+	}
+	r, err := s.q.GetRole(ctx, id)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
+	}
+	// Authorize: access:role:read at the role's folder scope OR party to a pending
+	// access request referencing this role. On cap-deny, preserve the original
+	// PermissionDenied unless the request-party path grants the read.
+	if capErr := s.requireCap(ctx, "access:role:read", scopeOfFolderID(r.FolderID)); capErr != nil {
+		caller, ok := auth.UserFromContext(ctx)
+		if !ok || s.reqReads == nil {
+			return nil, capErr
+		}
+		allowed, aerr := s.reqReads.CanReadForRequest(ctx, caller.ID, accessrequest.ReqEntityRole, id)
+		if aerr != nil {
+			return nil, connect.NewError(connect.CodeInternal, aerr)
+		}
+		if !allowed {
+			return nil, capErr
+		}
+	}
+	m, err := s.roleMsgWithPath(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := s.roleCaps(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&accessv1.GetRoleDisplayResponse{Role: &accessv1.RoleDisplay{
+		Id:           r.ID.String(),
+		Name:         r.Name,
+		FolderPath:   m.FolderPath,
+		Capabilities: caps,
+	}}), nil
 }
 
 // AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"

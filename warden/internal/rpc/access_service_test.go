@@ -14,6 +14,10 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 func TestAccessRoleCRUD(t *testing.T) {
@@ -2161,5 +2165,97 @@ func TestListRolesParentScoped(t *testing.T) {
 		if seenRole[r.Id] {
 			t.Fatalf("duplicate role id %s across pages", r.Id)
 		}
+	}
+}
+
+// TestGetRoleDisplay exercises the role display handler directly with a
+// controllable request-party authorizer. A request-party (no cap) is served the
+// role's decision context INCLUDING its granted capabilities; a cap-holder is
+// served via the capability path; a caller with neither is PermissionDenied (roles
+// are non-topology, matching GetRole); a missing role id is NotFound.
+func TestGetRoleDisplay(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	tok := adminToken(t, url)
+	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
+	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	// A folder-scoped role so folder_path is populated and the cap can be scoped.
+	folderName := "prod"
+	f, err := cat.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: folderName}), tok))
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	folderID := uuid.MustParse(f.Msg.Folder.Id)
+
+	wantCaps := []string{"ssh:login:deploy"}
+	r, err := acc.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{
+		Name:         "readonly",
+		FolderId:     f.Msg.Folder.Id,
+		Capabilities: wantCaps,
+	}), tok))
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	roleID := uuid.MustParse(r.Msg.Role.Id)
+
+	// A capless party candidate.
+	seedUser(t, pool, "party@x", "password123", false)
+	party := auth.CurrentUser{ID: userID(t, pool, "party@x"), Email: "party@x"}
+	// A cap-holder: access:role:read scoped to the role's folder.
+	capperID := seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
+	capper := auth.CurrentUser{ID: capperID, Email: "roleadmin@x"}
+
+	authorizer := authz.NewSQLAuthorizer(pool)
+	roles := authz.NewRoleResolver(pool)
+	q := gen.New(pool)
+
+	allowSrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: true})
+	denySrv := rpc.NewAccessServer(q, roles, authorizer, fakeReqReads{allow: false})
+
+	assertRole := func(t *testing.T, resp *accessv1.GetRoleDisplayResponse) {
+		t.Helper()
+		d := resp.GetRole()
+		if d.GetId() != roleID.String() {
+			t.Fatalf("id = %q, want %q", d.GetId(), roleID.String())
+		}
+		if d.GetName() != "readonly" {
+			t.Fatalf("name = %q, want readonly", d.GetName())
+		}
+		if d.GetFolderPath() != folderName {
+			t.Fatalf("folder_path = %q, want %q", d.GetFolderPath(), folderName)
+		}
+		if len(d.GetCapabilities()) != 1 || d.GetCapabilities()[0] != wantCaps[0] {
+			t.Fatalf("capabilities = %v, want %v", d.GetCapabilities(), wantCaps)
+		}
+	}
+
+	// (1) request-party, NO cap → served, with capabilities populated.
+	partyCtx := auth.WithUser(ctx, party)
+	got, err := allowSrv.GetRoleDisplay(partyCtx, connect.NewRequest(&accessv1.GetRoleDisplayRequest{Id: roleID.String()}))
+	if err != nil {
+		t.Fatalf("party GetRoleDisplay: %v", err)
+	}
+	assertRole(t, got.Msg)
+
+	// (2) cap-holder (fake denies) → served via the cap path.
+	capCtx := auth.WithUser(ctx, capper)
+	got, err = denySrv.GetRoleDisplay(capCtx, connect.NewRequest(&accessv1.GetRoleDisplayRequest{Id: roleID.String()}))
+	if err != nil {
+		t.Fatalf("cap GetRoleDisplay: %v", err)
+	}
+	assertRole(t, got.Msg)
+
+	// (3) neither cap nor request-party → PermissionDenied (non-topology, matches GetRole).
+	_, err = denySrv.GetRoleDisplay(partyCtx, connect.NewRequest(&accessv1.GetRoleDisplayRequest{Id: roleID.String()}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("unauthorized display = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+
+	// (4) missing role id (well-formed but absent) → NotFound, even for the cap holder.
+	_, err = allowSrv.GetRoleDisplay(capCtx, connect.NewRequest(&accessv1.GetRoleDisplayRequest{Id: "11111111-1111-1111-1111-111111111111"}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("missing display = %v, want NotFound", connect.CodeOf(err))
 	}
 }
