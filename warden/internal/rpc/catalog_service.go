@@ -641,7 +641,10 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 	// Access + existence hiding. The management read cap bypasses the data-plane
 	// visibility gate (admins hold ** so this stays a no-op for them). Callers
 	// without it are gated by a targeted single-asset RolesOnAsset lookup — same
-	// visibility as VisibleAssets (active OR requestable) without enumerating a list.
+	// visibility as VisibleAssets (active OR requestable) without enumerating a list —
+	// OR the CONNECT arm: a folder/global ssh:login cascade entitling ≥1 of the
+	// asset's own logins (authz.AssetVisible), so a folder-scoped ssh:login binding
+	// surfaces its asset without any asset-scoped role or catalog:asset:read.
 	mgmtOK := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(assetID)) == nil
 	if !mgmtOK {
 		roles, err := s.authorizer.RolesOnAsset(ctx, u.ID, assetID)
@@ -649,7 +652,13 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		if len(roles.Active) == 0 && len(roles.Requestable) == 0 {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+			visible, err := authz.AssetVisible(ctx, s.authorizer, u.ID, assetID)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
+			}
+			if !visible {
+				return nil, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
+			}
 		}
 	}
 
@@ -734,11 +743,19 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	// The management read cap bypasses the data-plane visibility gate (admins
-	// hold ** so this stays a no-op for them). Callers without it get the
-	// existence-hiding NotFound when they have no roles on the asset.
+	// hold ** so this stays a no-op for them). Callers without it and without any
+	// role on the asset are still visible via the CONNECT arm — a folder/global
+	// ssh:login cascade entitling ≥1 of the asset's own logins (authz.AssetVisible).
+	// Only a caller matching none of these gets the existence-hiding NotFound.
 	mgmtOK := s.requireCap(ctx, "catalog:asset:read", authz.AssetScope(id)) == nil
 	if !mgmtOK && len(roles.Active) == 0 && len(roles.Requestable) == 0 {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		visible, err := authz.AssetVisible(ctx, s.authorizer, u.ID, id)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if !visible {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
+		}
 	}
 	resp := &catalogv1.GetAssetAccessResponse{}
 	for _, r := range roles.Active {
