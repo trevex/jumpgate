@@ -687,6 +687,8 @@ export function Tree({ selected, onSelect }: TreeProps) {
   const [filter, setFilter] = useState<Set<NodeKind>>(
     new Set(["folder", "asset", "role", "group"] as NodeKind[]),
   );
+  // Track which root-level kinds have been expanded to their paginated show-all view.
+  const [expandedKinds, setExpandedKinds] = useState<ExpandedKinds>(new Set());
 
   const { data, isLoading, isError, refetch } = useQuery(
     listFolderContents,
@@ -694,6 +696,14 @@ export function Tree({ selected, onSelect }: TreeProps) {
   );
 
   const contents = data ? folderContentsToNodes(data) : null;
+
+  const expandKind = (kind: "assets" | "roles" | "groups" | "folders") => {
+    setExpandedKinds((prev) => {
+      const next = new Set(prev);
+      next.add(kind);
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -723,30 +733,57 @@ export function Tree({ selected, onSelect }: TreeProps) {
           {contents && (
             <ul role="tree" aria-label="Catalog" className="flex flex-col">
               {/* Root-level folders */}
-              {filter.has("folder") && contents.folders.map((f) => (
-                <FolderNode_
-                  key={f.id}
-                  folder={f}
-                  depth={1}
-                  selected={selected}
-                  onSelect={onSelect}
-                  filter={filter}
-                />
-              ))}
+              {filter.has("folder") && (
+                <>
+                  {expandedKinds.has("folders") ? (
+                    <ShowAllFolders
+                      folderId=""
+                      onSelect={onSelect}
+                      selected={selected}
+                      filter={filter}
+                    />
+                  ) : (
+                    <>
+                      {contents.folders.map((f) => (
+                        <FolderNode_
+                          key={f.id}
+                          folder={f}
+                          depth={1}
+                          selected={selected}
+                          onSelect={onSelect}
+                          filter={filter}
+                        />
+                      ))}
+                      {contents.hasMore.folders && (
+                        <ShowAllRow label="folders" depth={1} onExpand={() => expandKind("folders")} />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
 
               {/* Root-level assets (rare but possible) */}
               {filter.has("asset") && contents.assets.length > 0 && (
                 <>
                   <SectionHeader label="Assets" depth={1} />
-                  {contents.assets.map((a) => (
-                    <AssetLeaf
-                      key={a.id}
-                      asset={a}
-                      depth={1}
-                      selected={selected}
-                      onSelect={onSelect}
-                    />
-                  ))}
+                  {expandedKinds.has("assets") ? (
+                    <ShowAllAssets folderId="" onSelect={onSelect} selected={selected} />
+                  ) : (
+                    <>
+                      {contents.assets.map((a) => (
+                        <AssetLeaf
+                          key={a.id}
+                          asset={a}
+                          depth={1}
+                          selected={selected}
+                          onSelect={onSelect}
+                        />
+                      ))}
+                      {contents.hasMore.assets && (
+                        <ShowAllRow label="assets" depth={1} onExpand={() => expandKind("assets")} />
+                      )}
+                    </>
+                  )}
                 </>
               )}
 
@@ -754,15 +791,24 @@ export function Tree({ selected, onSelect }: TreeProps) {
               {filter.has("role") && contents.roles.length > 0 && (
                 <>
                   <SectionHeader label="Roles" depth={1} />
-                  {contents.roles.map((r) => (
-                    <RoleLeaf
-                      key={r.id}
-                      role={r}
-                      depth={1}
-                      selected={selected}
-                      onSelect={onSelect}
-                    />
-                  ))}
+                  {expandedKinds.has("roles") ? (
+                    <ShowAllRoles folderId="" onSelect={onSelect} selected={selected} />
+                  ) : (
+                    <>
+                      {contents.roles.map((r) => (
+                        <RoleLeaf
+                          key={r.id}
+                          role={r}
+                          depth={1}
+                          selected={selected}
+                          onSelect={onSelect}
+                        />
+                      ))}
+                      {contents.hasMore.roles && (
+                        <ShowAllRow label="roles" depth={1} onExpand={() => expandKind("roles")} />
+                      )}
+                    </>
+                  )}
                 </>
               )}
 
@@ -770,15 +816,24 @@ export function Tree({ selected, onSelect }: TreeProps) {
               {filter.has("group") && contents.groups.length > 0 && (
                 <>
                   <SectionHeader label="Groups" depth={1} />
-                  {contents.groups.map((g) => (
-                    <GroupLeaf
-                      key={g.id}
-                      group={g}
-                      depth={1}
-                      selected={selected}
-                      onSelect={onSelect}
-                    />
-                  ))}
+                  {expandedKinds.has("groups") ? (
+                    <ShowAllGroups folderId="" onSelect={onSelect} selected={selected} />
+                  ) : (
+                    <>
+                      {contents.groups.map((g) => (
+                        <GroupLeaf
+                          key={g.id}
+                          group={g}
+                          depth={1}
+                          selected={selected}
+                          onSelect={onSelect}
+                        />
+                      ))}
+                      {contents.hasMore.groups && (
+                        <ShowAllRow label="groups" depth={1} onExpand={() => expandKind("groups")} />
+                      )}
+                    </>
+                  )}
                 </>
               )}
 
