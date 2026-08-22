@@ -76,3 +76,16 @@ func TestEntitledLoginsEmpty(t *testing.T) {
 		t.Fatalf("want (nil,nil), got (%v,%v)", got, err)
 	}
 }
+
+// TestEntitledLoginsDropsDoubleStar pins the connect carve-out through the
+// EntitledLogins seam: a user holding ONLY the literal `**` super-capability (via
+// the scope cascade CapabilitiesOnScope returns) gets no login entitlement, even
+// though `**` matches ssh:login:<x> under CapMatch. Only proxy access is denied;
+// management is unaffected.
+func TestEntitledLoginsDropsDoubleStar(t *testing.T) {
+	a := stubAuthorizer{allow: map[string]bool{"**": true}}
+	got, err := authz.EntitledLogins(context.Background(), a, uuid.New(), uuid.New(), []string{"deploy"})
+	if err != nil || got != nil {
+		t.Fatalf("** alone must confer no login; want (nil,nil), got (%v,%v)", got, err)
+	}
+}

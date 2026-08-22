@@ -12,11 +12,12 @@ import (
 // session") and the exact set the CredentialBroker certifies as cert principals.
 // Order-preserving; returns nil (not empty slice) when the intersection is empty.
 //
-// It fetches the held capability set ONCE (one closure query) and intersects in
-// Go, rather than a Check per login — the result is identical (each Check ran the
-// same closure + CapMatch("ssh:login:<login>")).
+// It uses ConnectCapabilities, so the same scope cascade as management applies —
+// an ssh:login:<login> binding held globally, on any ancestor folder, or on the
+// asset itself all confer connect — with the sole carve-out that the literal `**`
+// super-capability does NOT grant proxy access on its own.
 func EntitledLogins(ctx context.Context, a Authorizer, userID, assetID uuid.UUID, allowedLogins []string) ([]string, error) {
-	caps, err := a.CapabilitiesOnAsset(ctx, userID, assetID)
+	caps, err := ConnectCapabilities(ctx, a, userID, assetID)
 	if err != nil {
 		return nil, err
 	}

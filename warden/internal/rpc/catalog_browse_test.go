@@ -188,12 +188,12 @@ func TestListAssetsUnified(t *testing.T) {
 	}
 }
 
-// TestGetAssetAccessCapabilities: GetAssetAccess surfaces the caller's management
-// capabilities on the asset. CapabilitiesOnAsset reads the object-scoped held
-// closure (caps bound at/above the asset object), so a user holding a
-// catalog:asset:read capability bound to the asset sees exactly that entry, while
-// the admin's GLOBAL ** wildcard (a scopeless binding, not bound to the object)
-// does NOT appear — the response reflects object-directed authority, not global.
+// TestGetAssetAccessCapabilities: GetAssetAccess surfaces the caller's data-plane
+// (connect) capabilities on the asset. ConnectCapabilities reads the full scope
+// cascade (global + ancestor folders + asset) minus the literal ** super-cap, so a
+// user holding a catalog:asset:read capability bound to the asset sees exactly that
+// entry. (An admin's GLOBAL ** would be stripped by the carve-out and so still does
+// not appear — the response mirrors connect ability, not management authority.)
 func TestGetAssetAccessCapabilities(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
