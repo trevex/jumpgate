@@ -126,11 +126,14 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	for _, r := range loginRows {
 		allowed = append(allowed, r.Login)
 	}
-	// Fetch the user's held capability set on the asset ONCE (one closure query)
-	// and derive BOTH the login entitlement and the record-exemption from it. This
-	// re-checks the requested login against the live held-closure (defense in depth
-	// over the admission token). The broker independently re-enforces this too.
-	caps, err := s.authz.CapabilitiesOnAsset(ctx, claims.UserID, claims.AssetID)
+	// Fetch the user's data-plane capability set for the asset ONCE (one closure
+	// query) and derive BOTH the login entitlement and the record-exemption from it.
+	// This re-checks the requested login against the live held-closure (defense in
+	// depth over the admission token). ConnectCapabilities uses the full scope
+	// cascade (global + ancestor folders + asset) minus the literal `**` carve-out,
+	// exactly matching the CreateSession mint — otherwise a folder-cascade session
+	// would mint then be denied here. The broker independently re-enforces this too.
+	caps, err := authz.ConnectCapabilities(ctx, s.authz, claims.UserID, claims.AssetID)
 	if err != nil {
 		return SetupResult{}, err
 	}

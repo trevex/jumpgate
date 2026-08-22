@@ -753,7 +753,7 @@ func (s *CatalogServer) GetAssetAccess(ctx context.Context, req *connect.Request
 	if resp.RequestableRoles, err = roleRefs(ctx, s.q, roles.Requestable); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	caps, err := s.authorizer.CapabilitiesOnAsset(ctx, u.ID, id)
+	caps, err := authz.ConnectCapabilities(ctx, s.authorizer, u.ID, id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

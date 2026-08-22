@@ -1437,10 +1437,14 @@ type GetAssetAccessResponse struct {
 	RequestableRoleIds []string               `protobuf:"bytes,2,rep,name=requestable_role_ids,json=requestableRoleIds,proto3" json:"requestable_role_ids,omitempty"`
 	ActiveRoles        []*RoleRef             `protobuf:"bytes,3,rep,name=active_roles,json=activeRoles,proto3" json:"active_roles,omitempty"`
 	RequestableRoles   []*RoleRef             `protobuf:"bytes,4,rep,name=requestable_roles,json=requestableRoles,proto3" json:"requestable_roles,omitempty"`
-	// capabilities is the caller's effective HELD capability closure ON THIS ASSET
-	// (object/folder-scoped) — the same set the worker enforces connect against. It
-	// deliberately EXCLUDES global scopeless caps (an admin's ** does not appear
-	// here) so it faithfully mirrors connect ability rather than management authority.
+	// capabilities is the caller's effective data-plane (connect) capability set for
+	// this asset — the same set the worker enforces connect against. It is resolved
+	// via the full scope cascade (global + ancestor folders + the asset), so a
+	// folder-scoped or explicit global data-plane grant appears here. The single
+	// carve-out is the literal `**` super-capability, which is stripped: an admin's
+	// `**` confers management everywhere but does NOT by itself grant proxy/connect
+	// access, so it does not appear here. Thus this faithfully mirrors connect
+	// ability rather than management authority.
 	Capabilities  []string `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

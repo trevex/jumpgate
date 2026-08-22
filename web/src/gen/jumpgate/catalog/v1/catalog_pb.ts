@@ -674,10 +674,14 @@ export type GetAssetAccessResponse = Message<"jumpgate.catalog.v1.GetAssetAccess
   requestableRoles: RoleRef[];
 
   /**
-   * capabilities is the caller's effective HELD capability closure ON THIS ASSET
-   * (object/folder-scoped) — the same set the worker enforces connect against. It
-   * deliberately EXCLUDES global scopeless caps (an admin's ** does not appear
-   * here) so it faithfully mirrors connect ability rather than management authority.
+   * capabilities is the caller's effective data-plane (connect) capability set for
+   * this asset — the same set the worker enforces connect against. It is resolved
+   * via the full scope cascade (global + ancestor folders + the asset), so a
+   * folder-scoped or explicit global data-plane grant appears here. The single
+   * carve-out is the literal `**` super-capability, which is stripped: an admin's
+   * `**` confers management everywhere but does NOT by itself grant proxy/connect
+   * access, so it does not appear here. Thus this faithfully mirrors connect
+   * ability rather than management authority.
    *
    * @generated from field: repeated string capabilities = 5;
    */
