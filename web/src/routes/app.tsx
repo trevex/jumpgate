@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,6 +9,7 @@ import {
   Film,
   LogOut,
   ShieldCheck,
+  Search,
 } from "lucide-react";
 import { logout } from "../gen/jumpgate/auth/v1/auth-AuthService_connectquery";
 import { listPendingApprovals } from "../gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
@@ -17,6 +19,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { ThemeToggle } from "../components/theme-toggle";
+import { SearchPalette, useCommandK } from "../components/search-palette";
 import { cn } from "../lib/utils";
 
 // ─── Pending-approvals badge count ──────────────────────────────────────────
@@ -126,6 +129,8 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const { data: whoAmI } = useWhoAmI();
   const caps = useCapabilities();
+  const [searchOpen, setSearchOpen] = useState(false);
+  useCommandK(() => setSearchOpen(true));
 
   const { mutate: doLogout, isPending: isLoggingOut } = useMutation(logout, {
     onSuccess: () => {
@@ -217,8 +222,27 @@ export function AppShell() {
             <span className="text-sm text-muted-foreground">
               Privileged access management
             </span>
-            {/* Right cluster — search affordance (added later) sits alongside the theme toggle */}
+            {/* Right cluster — catalog search + theme toggle */}
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Search catalog"
+                className={cn(
+                  "group inline-flex h-8 items-center gap-2 rounded-md border border-border bg-muted/40 pl-2.5 pr-1.5 text-sm text-muted-foreground transition-colors",
+                  "hover:bg-accent hover:text-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                )}
+              >
+                <Search className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Search…</span>
+                <kbd
+                  aria-hidden="true"
+                  className="ml-1 hidden items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex"
+                >
+                  ⌘K
+                </kbd>
+              </button>
               <ThemeToggle />
             </div>
           </header>
@@ -233,6 +257,9 @@ export function AppShell() {
           </main>
         </div>
       </div>
+
+      {/* Global ⌘K command palette — available on every route */}
+      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </TooltipProvider>
   );
 }
