@@ -13,6 +13,7 @@ import { CatalogPage } from "./routes/catalog/catalog";
 import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
 import { RecordingsPage } from "./routes/recordings/recordings";
+import { RequireCap } from "./lib/capabilities";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,8 +48,22 @@ const router = createBrowserRouter([
       { index: true, element: <CatalogPage /> },
       { path: "access", element: <MyAccessPage /> },
       { path: "approvals", element: <ApprovalsPage /> },
-      { path: "recordings", element: <RecordingsPage /> },
-      { path: "recordings/:sessionId", element: <RecordingsPage /> },
+      {
+        path: "recordings",
+        element: (
+          <RequireCap cap="recording:read">
+            <RecordingsPage />
+          </RequireCap>
+        ),
+      },
+      {
+        path: "recordings/:sessionId",
+        element: (
+          <RequireCap cap="recording:read">
+            <RecordingsPage />
+          </RequireCap>
+        ),
+      },
     ],
   },
 ]);
