@@ -8,14 +8,40 @@
  * The "Request access" button opens RequestSheet (Task 3).
  */
 
-import { useQuery } from "@connectrpc/connect-query";
-import { Server, Copy, Check, Terminal, SquareArrowOutUpRight } from "lucide-react";
-import { useState, useCallback } from "react";
-import { getAssetAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
+import { useQuery, useMutation } from "@connectrpc/connect-query";
+import { createConnectQueryKey } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
+import {
+  getAssetAccess,
+  getAsset,
+  updateAssetConfig,
+  listFolderContents,
+} from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { RequestSheet } from "../request-sheet";
+import { canUpdateAsset } from "../catalog-actions";
+import {
+  AssetConfigForm,
+  buildSSHConfigInput,
+  draftFromAsset,
+  emptyDraft,
+  type ConfigDraft,
+} from "../asset-config-form";
 import {
   CapList,
   DetailSection,
@@ -123,6 +149,160 @@ function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
   );
 }
 
+// ─── Edit config dialog ───────────────────────────────────────────────────────
+
+interface EditConfigDialogProps {
+  assetId: string;
+  assetName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * Loads the asset's current SSH config (lazily — only while open) and edits it
+ * through the shared AssetConfigForm. An empty secret on a pre-existing
+ * password/key login keeps the sealed value; a typed one rotates it. On success
+ * we invalidate the asset's own getAsset/getAssetAccess queries plus the folder
+ * listing so the pane and tree re-seed.
+ */
+function EditConfigDialog({
+  assetId,
+  assetName,
+  open,
+  onOpenChange,
+}: EditConfigDialogProps) {
+  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
+
+  const { data, isLoading, isError, error } = useQuery(
+    getAsset,
+    { assetId },
+    { enabled: open },
+  );
+
+  const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  const ssh =
+    data?.asset?.config.case === "ssh" ? data.asset.config.value : undefined;
+
+  // Seed the draft once the config loads (or when re-opening a fresh asset).
+  useEffect(() => {
+    if (ssh) setDraft(draftFromAsset(ssh));
+  }, [ssh]);
+
+  const { mutate: doUpdate, isPending } = useMutation(updateAssetConfig, {
+    onSuccess: () => {
+      toast.success("Config updated");
+      void queryClient.invalidateQueries({
+        queryKey: createConnectQueryKey({
+          schema: getAsset,
+          input: { assetId },
+          cardinality: "finite",
+        }),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: createConnectQueryKey({
+          schema: getAssetAccess,
+          input: { assetId },
+          cardinality: "finite",
+        }),
+      });
+      void invalidateList(listFolderContents);
+      setConfigError(null);
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error("Update failed", { description: connectErrorMessage(err) });
+    },
+  });
+
+  function handleOpenChange(next: boolean) {
+    if (isPending) return;
+    if (!next) setConfigError(null);
+    onOpenChange(next);
+  }
+
+  function handleSubmit(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    if (isPending) return;
+    const { config, error: buildError } = buildSSHConfigInput(draft, "edit");
+    if (buildError) {
+      setConfigError(buildError);
+      return;
+    }
+    setConfigError(null);
+    doUpdate({ assetId, config: { case: "ssh", value: config } });
+  }
+
+  const hasLogin = draft.logins.length >= 1;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">Edit config</DialogTitle>
+          <DialogDescription className="text-[13px]">
+            Update the SSH connection and per-login auth for{" "}
+            <span className="font-mono text-[12px]">{assetName}</span>. Leave a
+            secret blank to keep the current one.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <p className="py-6 text-center text-[13px] text-muted-foreground">
+            Loading config…
+          </p>
+        ) : isError ? (
+          <p className="py-6 text-center text-[13px] text-destructive">
+            {connectErrorMessage(error)}
+          </p>
+        ) : ssh ? (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <AssetConfigForm
+              mode="edit"
+              value={draft}
+              onChange={(next) => {
+                setDraft(next);
+                if (configError) setConfigError(null);
+              }}
+            />
+
+            {configError && (
+              <p className="text-[11px] text-destructive">{configError}</p>
+            )}
+
+            <DialogFooter className="mt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenChange(false)}
+                disabled={isPending}
+                className="h-8 text-[13px]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isPending || !hasLogin}
+                className="h-8 text-[13px]"
+              >
+                {isPending ? "Saving…" : "Save config"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <p className="py-6 text-center text-[13px] text-muted-foreground">
+            This asset has no editable SSH config.
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Asset detail pane ────────────────────────────────────────────────────────
 
 export interface AssetDetailProps {
@@ -134,6 +314,7 @@ export interface AssetDetailProps {
 
 export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery(
     getAssetAccess,
@@ -146,6 +327,7 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
 
   const sshLogins = sshLoginsCoveredByCaps(data.capabilities);
   const hasRequestable = data.requestableRoles.length > 0;
+  const canEdit = canUpdateAsset(data.capabilities);
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Asset: ${name}`}>
@@ -153,9 +335,21 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
       <header className="flex flex-col gap-1">
         <div className="flex items-start gap-2">
           <Server className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h2 className="text-[15px] font-semibold leading-tight text-foreground">
+          <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-tight text-foreground">
             {name}
           </h2>
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditOpen(true)}
+              className="h-7 shrink-0 gap-1.5 text-[12px]"
+              aria-label="Edit asset config"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              Edit config
+            </Button>
+          )}
         </div>
         {path && (
           <p className="pl-6 font-mono text-[11px] text-muted-foreground" aria-label="Asset path">
@@ -241,6 +435,15 @@ export function AssetDetail({ id, name, path, assetKind }: AssetDetailProps) {
             You have no access or pending requestable roles for this asset.
           </p>
         )}
+
+      {canEdit && (
+        <EditConfigDialog
+          assetId={id}
+          assetName={name}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      )}
     </article>
   );
 }
