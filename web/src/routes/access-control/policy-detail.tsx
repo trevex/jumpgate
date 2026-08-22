@@ -65,7 +65,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
+import { ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
