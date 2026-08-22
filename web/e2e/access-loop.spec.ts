@@ -91,17 +91,27 @@ test("request → approve → connect-command → audit across four actors", asy
     await expect(bob.getByRole("link", { name: "Recordings" })).toHaveCount(0);
 
     await bob.getByRole("link", { name: "Approvals" }).click();
-    // The approver inbox enriches each row with the requester/asset display
-    // names via getUser/getAsset — but those reads are capability-gated, and a
-    // plain sre approver holds no identity:user:read / catalog:asset:read, so the
-    // row degrades to short UUIDs. Match on the request reason (always visible)
-    // rather than the enriched name, which a non-privileged approver never sees.
+    // The inbox resolves the requester and asset via the display reads — the
+    // requester's name comes from the universal GetUserDisplay, the asset path
+    // from GetAssetDisplay authorized because bob is an eligible approver of this
+    // pending request. So a plain sre approver (no identity:user:read /
+    // catalog:asset:read) sees the real "Alice" / "demo-box.demo", not UUIDs.
     const bobRow = bob
       .getByRole("list", { name: "Pending approval requests" })
       .getByRole("listitem")
       .filter({ hasText: "e2e: need the demo box" });
     await expect(bobRow).toBeVisible();
-    await bobRow.getByRole("button", { name: /Approve/ }).click();
+    // Enriched identity: the row's accessible label carries the resolved names.
+    await expect(
+      bob.getByRole("listitem", { name: /Access request from Alice for demo-box\.demo/ }),
+    ).toBeVisible();
+    // Decision context: the requested login's target host is reachable from the
+    // GetAssetDisplay payload (expand the row's context panel), proving the
+    // secret-free connection detail flows to the approver.
+    await bobRow.getByRole("button", { name: /show decision context/i }).click();
+    await expect(bobRow.getByText("ssh-target.default.svc.cluster.local:22")).toBeVisible();
+    // Approve by the resolved requester name (button label is built from it).
+    await bob.getByRole("button", { name: "Approve Alice's request" }).click();
     // Approval invalidates the inbox; the row drops out.
     await expect(bobRow).toHaveCount(0);
 
