@@ -203,6 +203,14 @@ requires `catalog:asset:read`.
   ssh-proxy worker's WebSocket-terminal ingress (which runs the target SSH +
   records). In production set `GATEWAY_CONSOLE_ORIGIN` to the console origin so the
   gateway restricts terminal WebSockets to it.
+- **Access control** (`/access-control`, shown when the caller holds an `access:*`
+  read cap) — manage the governance rules across **Roles** (create with a validated
+  capability set + optional folder scope; manage role-grant edges; **cascade delete**
+  that also removes the role's bindings, policies, and grants and ends the live
+  sessions it grants), **Bindings** (bind a role to a user/group at a folder/asset/
+  global scope), and **Policies** (request policies: requestable role, scope,
+  min-approvals, requester/approver roles + subjects, max duration). Roles have no
+  update RPC, so capabilities are fixed at creation.
 - **Directory** (`/directory`, shown when the caller holds `identity:user:read` or
   `identity:group:read`) — manage users and groups. **Users:** list with an
   active/deactivated status, create, deactivate/reactivate, delete (destructive
