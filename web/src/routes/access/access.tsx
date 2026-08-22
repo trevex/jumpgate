@@ -21,6 +21,8 @@ import {
   listMyGrants,
   revokeGrant,
 } from "@/gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
+import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
+import { getRoleDisplay } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import type {
   AccessRequest,
   Grant,
@@ -170,7 +172,27 @@ function shortId(id: string): string {
   return id.split("-")[0] ?? id;
 }
 
+// ─── Per-row enrichment hooks ─────────────────────────────────────────────────
+// The caller is party to their own requests, so the request-scoped display
+// reads resolve for them; fall back to the short UUID on error/missing.
+
+function useAssetDisplay(assetId: string): string {
+  const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: Boolean(assetId) });
+  if (!data?.asset) return shortId(assetId);
+  return data.asset.path || data.asset.name || shortId(assetId);
+}
+
+function useRoleDisplay(roleId: string): string {
+  const { data } = useQuery(getRoleDisplay, { id: roleId }, { enabled: Boolean(roleId) });
+  if (!data?.role) return shortId(roleId);
+  const r = data.role;
+  return r.folderPath ? `${r.name}.${r.folderPath}` : r.name;
+}
+
 function RequestRow({ req }: { req: AccessRequest }) {
+  const assetDisplay = useAssetDisplay(req.assetId);
+  const roleDisplay = useRoleDisplay(req.roleId);
+
   return (
     <div className="grid grid-cols-[1fr_auto_auto] items-start gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-muted/40 transition-colors">
       {/* Asset / Role */}
@@ -178,16 +200,16 @@ function RequestRow({ req }: { req: AccessRequest }) {
         <span
           className="font-mono text-[11px] text-muted-foreground truncate"
           title={req.assetId}
-          aria-label={`Asset ${req.assetId}`}
+          aria-label={`Asset ${assetDisplay}`}
         >
-          {shortId(req.assetId)}
+          {assetDisplay}
         </span>
         <span
           className="text-[11px] text-muted-foreground truncate"
           title={req.roleId}
-          aria-label={`Role ${req.roleId}`}
+          aria-label={`Role ${roleDisplay}`}
         >
-          role: {shortId(req.roleId)}
+          role: {roleDisplay}
         </span>
         {req.reason && (
           <span
