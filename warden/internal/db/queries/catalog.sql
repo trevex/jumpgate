@@ -156,3 +156,42 @@ WITH RECURSIVE up AS (
     SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
 )
 SELECT up.id FROM up;
+
+-- name: DeleteAssetSecretsForAsset :exec
+DELETE FROM asset_secrets WHERE asset_id = $1;
+
+-- name: DeleteRoleBindingsForAsset :exec
+DELETE FROM role_bindings WHERE scope_asset_id = $1;
+
+-- name: DeletePolicySubjectsForAsset :exec
+DELETE FROM request_policy_subjects
+WHERE policy_id IN (SELECT id FROM request_policies WHERE scope_asset_id = $1);
+
+-- name: DeleteRequestPoliciesForAsset :exec
+DELETE FROM request_policies WHERE scope_asset_id = $1;
+
+-- name: DeleteAsset :exec
+DELETE FROM assets WHERE id = $1;
+
+-- name: ListRequestPoliciesByAsset :many
+SELECT * FROM request_policies WHERE scope_asset_id = $1 ORDER BY id;
+
+-- name: FolderSubtreeIDs :many
+-- All folder ids in the subtree rooted at $1 (including $1 itself).
+WITH RECURSIVE sub AS (
+    SELECT f.id FROM folders f WHERE f.id = $1
+    UNION ALL
+    SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
+)
+SELECT sub.id FROM sub;
+
+-- name: AssetIDsInFolders :many
+SELECT id, folder_id FROM assets WHERE folder_id = ANY($1::uuid[]);
+
+-- name: BindingsScopedToFoldersOrAssets :many
+SELECT * FROM role_bindings
+WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);
+
+-- name: PoliciesScopedToFoldersOrAssets :many
+SELECT * FROM request_policies
+WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);

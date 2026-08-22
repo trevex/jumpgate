@@ -187,6 +187,41 @@ func (q *Queries) ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 
 	return items, nil
 }
 
+const listLiveSessionsByAsset = `-- name: ListLiveSessionsByAsset :many
+SELECT id, user_id, asset_id, worker_id, grant_id, protocol, principals, client_key_fp, started_at, terminate_requested_at FROM live_sessions WHERE asset_id = $1
+`
+
+func (q *Queries) ListLiveSessionsByAsset(ctx context.Context, assetID uuid.UUID) ([]LiveSession, error) {
+	rows, err := q.db.Query(ctx, listLiveSessionsByAsset, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiveSession
+	for rows.Next() {
+		var i LiveSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AssetID,
+			&i.WorkerID,
+			&i.GrantID,
+			&i.Protocol,
+			&i.Principals,
+			&i.ClientKeyFp,
+			&i.StartedAt,
+			&i.TerminateRequestedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveSessionsByUser = `-- name: ListLiveSessionsByUser :many
 SELECT id FROM live_sessions WHERE user_id = $1
 `

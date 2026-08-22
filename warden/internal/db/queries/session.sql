@@ -50,3 +50,6 @@ WHERE terminate_requested_at IS NOT NULL AND terminate_requested_at < $1;
 DELETE FROM worker_presence wp
 WHERE wp.last_seen_at < $1
   AND NOT EXISTS (SELECT 1 FROM live_sessions ls WHERE ls.worker_id = wp.worker_id);
+
+-- name: ListLiveSessionsByAsset :many
+SELECT * FROM live_sessions WHERE asset_id = $1;

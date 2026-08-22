@@ -40,6 +40,72 @@ func (q *Queries) AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) 
 	return err
 }
 
+const countAssetsInFolder = `-- name: CountAssetsInFolder :one
+SELECT count(*) FROM assets WHERE folder_id = $1
+`
+
+func (q *Queries) CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssetsInFolder, folderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countBindingsScopedToFolder = `-- name: CountBindingsScopedToFolder :one
+SELECT count(*) FROM role_bindings WHERE scope_folder_id = $1
+`
+
+func (q *Queries) CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countBindingsScopedToFolder, scopeFolderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countChildFolders = `-- name: CountChildFolders :one
+SELECT count(*) FROM folders WHERE parent_id = $1
+`
+
+func (q *Queries) CountChildFolders(ctx context.Context, parentID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countChildFolders, parentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGroupsHomedInFolder = `-- name: CountGroupsHomedInFolder :one
+SELECT count(*) FROM groups WHERE folder_id = $1
+`
+
+func (q *Queries) CountGroupsHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupsHomedInFolder, folderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPoliciesScopedToFolder = `-- name: CountPoliciesScopedToFolder :one
+SELECT count(*) FROM request_policies WHERE scope_folder_id = $1
+`
+
+func (q *Queries) CountPoliciesScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPoliciesScopedToFolder, scopeFolderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countRolesHomedInFolder = `-- name: CountRolesHomedInFolder :one
+SELECT count(*) FROM roles WHERE folder_id = $1
+`
+
+func (q *Queries) CountRolesHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRolesHomedInFolder, folderID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAsset = `-- name: CreateAsset :one
 INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING id, folder_id, name, labels, created_at, kind
 `
@@ -223,6 +289,15 @@ UPDATE users SET deactivated_at = now() WHERE id = $1 AND deactivated_at IS NULL
 
 func (q *Queries) DeactivateUser(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deactivateUser, id)
+	return err
+}
+
+const deleteFolder = `-- name: DeleteFolder :exec
+DELETE FROM folders WHERE id = $1
+`
+
+func (q *Queries) DeleteFolder(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFolder, id)
 	return err
 }
 
@@ -543,6 +618,15 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	return items, nil
 }
 
+const notifyAuthzChanged = `-- name: NotifyAuthzChanged :exec
+SELECT pg_notify('authz_changed', '')
+`
+
+func (q *Queries) NotifyAuthzChanged(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, notifyAuthzChanged)
+	return err
+}
+
 const reactivateUser = `-- name: ReactivateUser :exec
 UPDATE users SET deactivated_at = NULL WHERE id = $1
 `
@@ -577,5 +661,91 @@ type RemoveUserFromGroupParams struct {
 
 func (q *Queries) RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error {
 	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.GroupID, arg.MemberUserID)
+	return err
+}
+
+const updateAssetCatalogName = `-- name: UpdateAssetCatalogName :exec
+UPDATE catalog_names SET parent_id = $2, name = $3 WHERE asset_id = $1
+`
+
+type UpdateAssetCatalogNameParams struct {
+	AssetID  pgtype.UUID `json:"asset_id"`
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+}
+
+func (q *Queries) UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error {
+	_, err := q.db.Exec(ctx, updateAssetCatalogName, arg.AssetID, arg.ParentID, arg.Name)
+	return err
+}
+
+const updateAssetFolder = `-- name: UpdateAssetFolder :exec
+UPDATE assets SET folder_id = $2 WHERE id = $1
+`
+
+type UpdateAssetFolderParams struct {
+	ID       uuid.UUID `json:"id"`
+	FolderID uuid.UUID `json:"folder_id"`
+}
+
+func (q *Queries) UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error {
+	_, err := q.db.Exec(ctx, updateAssetFolder, arg.ID, arg.FolderID)
+	return err
+}
+
+const updateAssetName = `-- name: UpdateAssetName :exec
+UPDATE assets SET name = $2 WHERE id = $1
+`
+
+type UpdateAssetNameParams struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error {
+	_, err := q.db.Exec(ctx, updateAssetName, arg.ID, arg.Name)
+	return err
+}
+
+const updateFolderCatalogName = `-- name: UpdateFolderCatalogName :exec
+UPDATE catalog_names SET parent_id = $2, name = $3 WHERE folder_id = $1
+`
+
+type UpdateFolderCatalogNameParams struct {
+	FolderID pgtype.UUID `json:"folder_id"`
+	ParentID pgtype.UUID `json:"parent_id"`
+	Name     string      `json:"name"`
+}
+
+func (q *Queries) UpdateFolderCatalogName(ctx context.Context, arg UpdateFolderCatalogNameParams) error {
+	_, err := q.db.Exec(ctx, updateFolderCatalogName, arg.FolderID, arg.ParentID, arg.Name)
+	return err
+}
+
+const updateFolderName = `-- name: UpdateFolderName :exec
+UPDATE folders SET name = $2 WHERE id = $1
+`
+
+type UpdateFolderNameParams struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) UpdateFolderName(ctx context.Context, arg UpdateFolderNameParams) error {
+	_, err := q.db.Exec(ctx, updateFolderName, arg.ID, arg.Name)
+	return err
+}
+
+const updateFolderParent = `-- name: UpdateFolderParent :exec
+UPDATE folders SET parent_id = $2 WHERE id = $1
+`
+
+type UpdateFolderParentParams struct {
+	ID       uuid.UUID   `json:"id"`
+	ParentID pgtype.UUID `json:"parent_id"`
+}
+
+func (q *Queries) UpdateFolderParent(ctx context.Context, arg UpdateFolderParentParams) error {
+	_, err := q.db.Exec(ctx, updateFolderParent, arg.ID, arg.ParentID)
 	return err
 }

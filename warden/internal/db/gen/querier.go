@@ -19,8 +19,16 @@ type Querier interface {
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
+	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
+	BindingsScopedToFoldersOrAssets(ctx context.Context, arg BindingsScopedToFoldersOrAssetsParams) ([]RoleBinding, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
+	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
+	CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
+	CountChildFolders(ctx context.Context, parentID pgtype.UUID) (int64, error)
+	CountGroupsHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountOutbox(ctx context.Context) (int64, error)
+	CountPoliciesScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
+	CountRolesHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error)
 	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
@@ -37,18 +45,23 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
 	DeactivateUser(ctx context.Context, id uuid.UUID) error
+	DeleteAsset(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
+	DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
+	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	// Deletes the policies for which the role is the requestable role (meaningless once
 	// the role is gone). Part of the DeleteRole cascade.
 	DeletePoliciesForRole(ctx context.Context, roleID uuid.UUID) error
+	DeletePolicySubjectsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	// Removes the subjects of every policy whose requestable role is $1 (those policies
 	// are about to be deleted). Part of the DeleteRole cascade.
 	DeletePolicySubjectsForRole(ctx context.Context, roleID uuid.UUID) error
+	DeleteRequestPoliciesForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	// Deletes the role row. The role's name uniqueness is enforced by the partial
 	// UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
@@ -56,6 +69,7 @@ type Querier interface {
 	// run only after its bindings/edges/policies are removed and its grants revoked.
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
+	DeleteRoleBindingsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	// Removes every standing binding of the role. Part of the DeleteRole cascade.
 	DeleteRoleBindingsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error
@@ -77,6 +91,8 @@ type Querier interface {
 	FolderPath(ctx context.Context, id uuid.UUID) (string, error)
 	// Every folder's full leaf->root dotted path in one query (for list responses).
 	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
+	// All folder ids in the subtree rooted at $1 (including $1 itself).
+	FolderSubtreeIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
 	GetActiveSessionSigningKey(ctx context.Context) (SessionSigningKey, error)
@@ -142,6 +158,7 @@ type Querier interface {
 	ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error)
 	ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListLiveSessionsByAsset(ctx context.Context, assetID uuid.UUID) ([]LiveSession, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
@@ -152,6 +169,7 @@ type Querier interface {
 	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
+	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
@@ -167,12 +185,14 @@ type Querier interface {
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
+	NotifyAuthzChanged(ctx context.Context) error
 	// Clears the approver gate on surviving policies that named the role as their
 	// approver role (the policy survives, just loses that gate). Part of DeleteRole.
 	NullApproverRoleForRole(ctx context.Context, approverRoleID pgtype.UUID) error
 	// Clears the requester gate on surviving policies that named the role as their
 	// requester role (the policy survives, just loses that gate). Part of DeleteRole.
 	NullRequesterRoleForRole(ctx context.Context, requesterRoleID pgtype.UUID) error
+	PoliciesScopedToFoldersOrAssets(ctx context.Context, arg PoliciesScopedToFoldersOrAssetsParams) ([]RequestPolicy, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
@@ -190,6 +210,12 @@ type Querier interface {
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error
+	UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error
+	UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error
+	UpdateFolderCatalogName(ctx context.Context, arg UpdateFolderCatalogNameParams) error
+	UpdateFolderName(ctx context.Context, arg UpdateFolderNameParams) error
+	UpdateFolderParent(ctx context.Context, arg UpdateFolderParentParams) error
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
 	UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error)

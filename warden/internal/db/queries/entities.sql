@@ -112,3 +112,45 @@ WHERE id = ANY($1::uuid[])
   )
 ORDER BY name, id
 LIMIT sqlc.arg('lim');
+
+-- name: CountChildFolders :one
+SELECT count(*) FROM folders WHERE parent_id = $1;
+
+-- name: CountAssetsInFolder :one
+SELECT count(*) FROM assets WHERE folder_id = $1;
+
+-- name: CountRolesHomedInFolder :one
+SELECT count(*) FROM roles WHERE folder_id = $1;
+
+-- name: CountGroupsHomedInFolder :one
+SELECT count(*) FROM groups WHERE folder_id = $1;
+
+-- name: CountBindingsScopedToFolder :one
+SELECT count(*) FROM role_bindings WHERE scope_folder_id = $1;
+
+-- name: CountPoliciesScopedToFolder :one
+SELECT count(*) FROM request_policies WHERE scope_folder_id = $1;
+
+-- name: DeleteFolder :exec
+DELETE FROM folders WHERE id = $1;
+
+-- name: UpdateFolderName :exec
+UPDATE folders SET name = $2 WHERE id = $1;
+
+-- name: UpdateFolderParent :exec
+UPDATE folders SET parent_id = $2 WHERE id = $1;
+
+-- name: UpdateAssetName :exec
+UPDATE assets SET name = $2 WHERE id = $1;
+
+-- name: UpdateAssetFolder :exec
+UPDATE assets SET folder_id = $2 WHERE id = $1;
+
+-- name: UpdateFolderCatalogName :exec
+UPDATE catalog_names SET parent_id = $2, name = $3 WHERE folder_id = $1;
+
+-- name: UpdateAssetCatalogName :exec
+UPDATE catalog_names SET parent_id = $2, name = $3 WHERE asset_id = $1;
+
+-- name: NotifyAuthzChanged :exec
+SELECT pg_notify('authz_changed', '');

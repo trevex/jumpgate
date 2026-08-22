@@ -35,12 +35,125 @@ func (q *Queries) AssetByFolderName(ctx context.Context, arg AssetByFolderNamePa
 	return i, err
 }
 
+const assetIDsInFolders = `-- name: AssetIDsInFolders :many
+SELECT id, folder_id FROM assets WHERE folder_id = ANY($1::uuid[])
+`
+
+type AssetIDsInFoldersRow struct {
+	ID       uuid.UUID `json:"id"`
+	FolderID uuid.UUID `json:"folder_id"`
+}
+
+func (q *Queries) AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error) {
+	rows, err := q.db.Query(ctx, assetIDsInFolders, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetIDsInFoldersRow
+	for rows.Next() {
+		var i AssetIDsInFoldersRow
+		if err := rows.Scan(&i.ID, &i.FolderID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const bindingsScopedToFoldersOrAssets = `-- name: BindingsScopedToFoldersOrAssets :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings
+WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[])
+`
+
+type BindingsScopedToFoldersOrAssetsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Column2 []uuid.UUID `json:"column_2"`
+}
+
+func (q *Queries) BindingsScopedToFoldersOrAssets(ctx context.Context, arg BindingsScopedToFoldersOrAssetsParams) ([]RoleBinding, error) {
+	rows, err := q.db.Query(ctx, bindingsScopedToFoldersOrAssets, arg.Column1, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleBinding
+	for rows.Next() {
+		var i RoleBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteAsset = `-- name: DeleteAsset :exec
+DELETE FROM assets WHERE id = $1
+`
+
+func (q *Queries) DeleteAsset(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAsset, id)
+	return err
+}
+
+const deleteAssetSecretsForAsset = `-- name: DeleteAssetSecretsForAsset :exec
+DELETE FROM asset_secrets WHERE asset_id = $1
+`
+
+func (q *Queries) DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAssetSecretsForAsset, assetID)
+	return err
+}
+
+const deletePolicySubjectsForAsset = `-- name: DeletePolicySubjectsForAsset :exec
+DELETE FROM request_policy_subjects
+WHERE policy_id IN (SELECT id FROM request_policies WHERE scope_asset_id = $1)
+`
+
+func (q *Queries) DeletePolicySubjectsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePolicySubjectsForAsset, scopeAssetID)
+	return err
+}
+
+const deleteRequestPoliciesForAsset = `-- name: DeleteRequestPoliciesForAsset :exec
+DELETE FROM request_policies WHERE scope_asset_id = $1
+`
+
+func (q *Queries) DeleteRequestPoliciesForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRequestPoliciesForAsset, scopeAssetID)
+	return err
+}
+
 const deleteRoleBinding = `-- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1
 `
 
 func (q *Queries) DeleteRoleBinding(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRoleBinding, id)
+	return err
+}
+
+const deleteRoleBindingsForAsset = `-- name: DeleteRoleBindingsForAsset :exec
+DELETE FROM role_bindings WHERE scope_asset_id = $1
+`
+
+func (q *Queries) DeleteRoleBindingsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRoleBindingsForAsset, scopeAssetID)
 	return err
 }
 
@@ -164,6 +277,36 @@ func (q *Queries) FolderPaths(ctx context.Context) ([]FolderPathsRow, error) {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const folderSubtreeIDs = `-- name: FolderSubtreeIDs :many
+WITH RECURSIVE sub AS (
+    SELECT f.id FROM folders f WHERE f.id = $1
+    UNION ALL
+    SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
+)
+SELECT sub.id FROM sub
+`
+
+// All folder ids in the subtree rooted at $1 (including $1 itself).
+func (q *Queries) FolderSubtreeIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, folderSubtreeIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -457,6 +600,41 @@ func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByID
 	return items, nil
 }
 
+const listRequestPoliciesByAsset = `-- name: ListRequestPoliciesByAsset :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies WHERE scope_asset_id = $1 ORDER BY id
+`
+
+func (q *Queries) ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error) {
+	rows, err := q.db.Query(ctx, listRequestPoliciesByAsset, scopeAssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequestPolicy
+	for rows.Next() {
+		var i RequestPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoleBindings = `-- name: ListRoleBindings :many
 SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings
 WHERE ($1::uuid IS NULL OR role_id = $1)
@@ -697,6 +875,47 @@ func (q *Queries) ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]
 			&i.Login,
 			&i.Kind,
 			&i.SecretID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const policiesScopedToFoldersOrAssets = `-- name: PoliciesScopedToFoldersOrAssets :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies
+WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[])
+`
+
+type PoliciesScopedToFoldersOrAssetsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Column2 []uuid.UUID `json:"column_2"`
+}
+
+func (q *Queries) PoliciesScopedToFoldersOrAssets(ctx context.Context, arg PoliciesScopedToFoldersOrAssetsParams) ([]RequestPolicy, error) {
+	rows, err := q.db.Query(ctx, policiesScopedToFoldersOrAssets, arg.Column1, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequestPolicy
+	for rows.Next() {
+		var i RequestPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}
