@@ -21,10 +21,6 @@ export function LoginPage() {
     },
   });
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
-    e.preventDefault();
-    mutate({ email, password, cookieOnly: true });
-  };
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
@@ -61,7 +57,15 @@ export function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              // Event type inferred from the prop — React 19's types deprecate the
+              // named FormEvent/FormEventHandler aliases.
+              e.preventDefault();
+              mutate({ email, password, cookieOnly: true });
+            }}
+            className="space-y-4"
+          >
             <div className="space-y-1.5">
               <label
                 htmlFor="login-email"
