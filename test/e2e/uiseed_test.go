@@ -111,6 +111,22 @@ func TestUISeed(t *testing.T) {
 	e.asActor(t, "admin", "bindings", "create",
 		"--role", "ssh-demo.demo", "--group", "sre", "--asset", pwPath)
 
+	// ── Folder-cascade fixture: an asset reachable ONLY via a FOLDER-scoped
+	// binding (no asset-scoped binding), proving connect authz cascades
+	// folder→asset. A GLOBAL ssh:login role is bound at the `cascade` folder to
+	// the sre group; cascade-box lives in that folder with no binding of its own,
+	// so alice (in sre) can connect to it only through the folder cascade. ──
+	e.asActor(t, "admin", "roles", "create", "folderssh", "--capability", "ssh:login:demo")
+	e.asActor(t, "admin", "folders", "create", "cascade")
+	e.asActor(t, "admin", "assets", "ssh", "create", "cascade-box",
+		"--folder", "cascade",
+		"--target", "ssh-target-password.default.svc.cluster.local:22")
+	e.asActorStdin(t, "admin", "demo-password-123\n",
+		"assets", "ssh", "login", "set", "cascade-box.cascade",
+		"--login", "demo", "--kind", "password", "--password-stdin")
+	e.asActor(t, "admin", "bindings", "create",
+		"--role", "folderssh", "--group", "sre", "--folder", "cascade")
+
 	// ── Produce a recorded session so the browser audit view has content ──
 	e.login(t, "alice", uiAliceEmail, alicePass)
 	script := "echo " + marker + "; whoami; exit\n"

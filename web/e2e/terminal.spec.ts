@@ -38,34 +38,43 @@ async function terminalContains(page: Page, needle: string): Promise<void> {
   );
 }
 
-test("in-browser terminal opens a session and echoes a command", async ({ page }) => {
-  test.setTimeout(120_000);
+// Browses the catalog to `asset` under `folder`, opens its browser terminal, runs
+// `echo <marker>`, and asserts the marker comes back — proving the full
+// browser → gateway → worker → target round-trip for that asset.
+async function openTerminalAndEcho(page: Page, folder: string, asset: string): Promise<void> {
   const marker = "JG_WEBTTY_" + Date.now().toString(36).toUpperCase();
 
-  await login(page, ALICE_EMAIL, ALICE_PASSWORD);
-
-  // Browse to the seeded connectable asset (password-box, demo login) and read the
-  // "Open terminal" target off its detail pane (gets the real asset id via the UI).
-  await page.getByRole("button", { name: "Expand folder demo" }).click();
+  await page.getByRole("button", { name: `Expand folder ${folder}` }).click();
   const tree = page.locator('nav[aria-label="Catalog tree"]');
-  await tree.getByRole("button", { name: "password-box" }).click();
+  await tree.getByRole("button", { name: asset }).click();
 
+  // Read the "Open terminal" target off the detail pane (gets the real asset id).
   const openTerminal = page.getByRole("link", { name: /Open browser terminal/ }).first();
   await expect(openTerminal).toBeVisible();
   const href = await openTerminal.getAttribute("href");
   expect(href).toContain("/terminal/");
 
-  // Navigate straight to the chromeless terminal route (same tab).
-  await page.goto(href!);
+  await page.goto(href!); // chromeless terminal route, same tab
   await expect(page.locator(".xterm")).toBeVisible();
-
-  // The session connects (status pill), then we drive a command and read it back.
   await expect(page.getByRole("status")).toContainText(/connected/i, { timeout: 30_000 });
+
   await page.locator(".xterm").click();
   await page.keyboard.type(`echo ${marker}`);
   await page.keyboard.press("Enter"); // xterm sends CR — required to run the command
-
-  // The echoed marker appears in the terminal — proving browser → gateway → worker
-  // → target round-trip.
   await terminalContains(page, marker);
+}
+
+// alice reaches password-box via a concrete asset-scoped ssh:login:demo binding.
+test("in-browser terminal opens a session and echoes a command", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page, ALICE_EMAIL, ALICE_PASSWORD);
+  await openTerminalAndEcho(page, "demo", "password-box");
+});
+
+// alice reaches cascade-box ONLY via a FOLDER-scoped binding (no asset binding) —
+// proving connect authz cascades folder→asset (the merged ConnectCapabilities rule).
+test("in-browser terminal connects via a folder-scoped binding (cascade)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await login(page, ALICE_EMAIL, ALICE_PASSWORD);
+  await openTerminalAndEcho(page, "cascade", "cascade-box");
 });
