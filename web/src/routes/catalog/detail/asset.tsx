@@ -41,6 +41,7 @@ import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { CopyButton } from "@/components/copy-button";
+import { InfoHint } from "@/components/info-hint";
 import { RequestSheet } from "../request-sheet";
 import { canUpdateAsset, canDeleteAsset } from "../catalog-actions";
 import { canCreateBinding } from "../../access-control/binding-actions";
@@ -306,6 +307,15 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
 
   const sshLogins = sshLoginsCoveredByCaps(data.capabilities);
   const hasRequestable = data.requestableRoles.length > 0;
+  // Connect-vs-`**` hint: connect affordances derive from the CONNECT capability
+  // set (`data.capabilities`), which STRIPS `**`. A bare-`**` admin therefore
+  // sees no connect block despite being "all-powerful" for management. Detect
+  // that specific case — no ssh:login entry in the connect set AND the caller's
+  // GLOBAL caps include the literal `**` — and explain it, rather than showing
+  // the same "no access" copy a normal user sees.
+  const hasSshConnect = data.capabilities.some((c) => c.startsWith("ssh:login"));
+  const isBroadAdmin = globalCaps.includes("**");
+  const showConnectVsAdminHint = !hasSshConnect && isBroadAdmin;
   // Authoring is a MANAGEMENT action, gated on the management capability set
   // (which includes `**`) — not the connect set in `capabilities`, which strips
   // `**` and so would hide these controls from an admin.
@@ -410,6 +420,20 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       {sshLogins.length > 0 && (
         <>
           <ConnectBlock assetId={id} logins={sshLogins} assetPath={path ?? ""} />
+          <div className="h-px bg-border" role="separator" />
+        </>
+      )}
+
+      {/* Connect-vs-`**` hint: broad admin without a concrete ssh:login role */}
+      {showConnectVsAdminHint && (
+        <>
+          <p className="flex items-start gap-1.5 text-compact text-muted-foreground">
+            <InfoHint label="Why can't I connect?">
+              Your admin role (**) doesn't grant SSH connect. Bind a concrete
+              ssh:login role to this asset (or yourself) to connect.
+            </InfoHint>
+            <span>Your admin role doesn't grant SSH connect to this asset.</span>
+          </p>
           <div className="h-px bg-border" role="separator" />
         </>
       )}
@@ -533,6 +557,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
             onOpenChange={setSheetOpen}
           />
         </>
+      )}
+
+      {/* No requestable roles yet — guide policy authors toward "Make requestable" */}
+      {!hasRequestable && mayMakeRequestable && (
+        <p className="text-compact text-muted-foreground">
+          No roles are requestable here yet. Use "Make requestable" to let users
+          request time-boxed access.
+        </p>
       )}
 
       {/* No access state */}

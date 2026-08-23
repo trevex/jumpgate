@@ -152,8 +152,14 @@ function RequestRow({ req }: { req: AccessRequest }) {
       </div>
 
       {/* Status */}
-      <div className="pt-0.5">
+      <div className="flex items-center gap-1 pt-0.5">
         <StatusBadge status={req.status} />
+        {req.status === "pending" && (
+          <InfoHint label="Why is this still pending?">
+            Awaiting an approver's decision. You can't approve your own request —
+            separation of duties means a different eligible approver must act.
+          </InfoHint>
+        )}
       </div>
 
       {/* Time */}

@@ -535,7 +535,7 @@ function PendingTab({ onCount }: { onCount?: (n: number) => void }) {
         icon={ClipboardCheck}
         size="lg"
         title="All clear"
-        message="Nothing awaiting your approval."
+        message="Nothing awaiting your approval. Your own requests never appear here — separation of duties means another approver must act on them."
       />
     );
   }
