@@ -41,6 +41,9 @@ CREATE TRIGGER trg_folders_path_ins BEFORE INSERT ON folders
 -- AFTER UPDATE OF parent_id: re-root the moved subtree. Swaps the old prefix
 -- (OLD.path_ids) for the node's new path across itself + all descendants. This
 -- writes path_ids only (never parent_id) so it does not re-fire this trigger.
+-- The self-node (path_ids = OLD.path_ids) is handled by the CASE arm that
+-- returns new_self directly; subpath would raise "invalid positions" for it
+-- because subpath(path, nlevel(path)) is out-of-bounds.
 -- +goose StatementBegin
 CREATE FUNCTION folders_move_path_ids() RETURNS trigger AS $$
 DECLARE new_self ltree; parent_path ltree;
@@ -52,7 +55,10 @@ BEGIN
         new_self := parent_path || replace(NEW.id::text, '-', '');
     END IF;
     UPDATE folders
-       SET path_ids = new_self || subpath(path_ids, nlevel(OLD.path_ids))
+       SET path_ids = CASE
+           WHEN path_ids = OLD.path_ids THEN new_self
+           ELSE new_self || subpath(path_ids, nlevel(OLD.path_ids))
+       END
      WHERE path_ids <@ OLD.path_ids;
     RETURN NEW;
 END;

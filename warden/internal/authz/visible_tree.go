@@ -46,9 +46,11 @@ SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 ORDER BY name, id
 	return scanUUIDs(rows)
 }
 
-// folderSubtreeIDs returns every folder id in the subtrees rooted at `roots`
-// (inclusive), via a single recursive down-walk (parent_id = ancestor.id).
-func (s *sqlAuthorizer) folderSubtreeIDs(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
+// folderSubtreeIDsRecursive returns every folder id in the subtrees rooted at
+// `roots` (inclusive), via a single recursive down-walk (parent_id =
+// ancestor.id). Kept as the differential-test reference implementation; hot
+// paths use folderSubtreeIDs (ltree-backed) instead.
+func (s *sqlAuthorizer) folderSubtreeIDsRecursive(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
 	if len(roots) == 0 {
 		return nil, nil
 	}

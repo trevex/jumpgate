@@ -278,11 +278,12 @@ WHERE h.object_kind = 'folder' AND h.object_id = ANY($2::uuid[])`, userID, folde
 	return scanCapabilities(rows)
 }
 
-// folderAncestorsAndSelf returns every ancestor-or-self folder id of id, walking
-// parent links up to the root. Copied from the generated FolderAncestorsAndSelf
-// query (db/queries/catalog.sql) to run over s.pool, keeping this file's raw-SQL
-// style (the production authorizer holds a *pgxpool.Pool, not a *gen.Queries).
-func (s *sqlAuthorizer) folderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+// folderAncestorsAndSelfRecursive returns every ancestor-or-self folder id of
+// id, walking parent links up to the root via a recursive CTE. Copied from the
+// generated FolderAncestorsAndSelf query (db/queries/catalog.sql) to run over
+// s.pool. Kept as the differential-test reference; hot paths use
+// folderAncestorsAndSelf (ltree-backed) instead.
+func (s *sqlAuthorizer) folderAncestorsAndSelfRecursive(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE up AS (
     SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
