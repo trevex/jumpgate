@@ -21,6 +21,33 @@ func (q *Queries) AcquireAuditLock(ctx context.Context) error {
 	return err
 }
 
+const auditChainTip = `-- name: AuditChainTip :one
+SELECT seq, entry_hash FROM audit_log ORDER BY seq DESC LIMIT 1
+`
+
+type AuditChainTipRow struct {
+	Seq       pgtype.Int8 `json:"seq"`
+	EntryHash []byte      `json:"entry_hash"`
+}
+
+func (q *Queries) AuditChainTip(ctx context.Context) (AuditChainTipRow, error) {
+	row := q.db.QueryRow(ctx, auditChainTip)
+	var i AuditChainTipRow
+	err := row.Scan(&i.Seq, &i.EntryHash)
+	return i, err
+}
+
+const auditEntryHashAtSeq = `-- name: AuditEntryHashAtSeq :one
+SELECT entry_hash FROM audit_log WHERE seq = $1
+`
+
+func (q *Queries) AuditEntryHashAtSeq(ctx context.Context, seq pgtype.Int8) ([]byte, error) {
+	row := q.db.QueryRow(ctx, auditEntryHashAtSeq, seq)
+	var entry_hash []byte
+	err := row.Scan(&entry_hash)
+	return entry_hash, err
+}
+
 const countOutbox = `-- name: CountOutbox :one
 SELECT count(*) FROM audit_outbox
 `

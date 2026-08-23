@@ -195,6 +195,11 @@ func run() error {
 		}
 		recordingPresign = presign
 		castGetter = presign // *S3Presigner implements ObjectGetter (GetObject)
+		// Anchor the audit hash-chain tip to the same object store so tail truncation
+		// of the in-DB chain is detectable. *S3Presigner.Put satisfies audit.AnchorStore.
+		// Best-effort: errors are logged inside RunAnchorer and never block. Exits on
+		// ctx.Done() (graceful shutdown).
+		go auditLog.RunAnchorer(ctx, presign, cfg.AuditAnchorInterval)
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}

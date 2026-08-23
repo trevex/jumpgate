@@ -32,6 +32,14 @@ type Config struct {
 	// hash-chained audit_log. A short interval keeps the chain close to real time.
 	AuditDrainInterval time.Duration `env:"AUDIT_DRAIN_INTERVAL" envDefault:"1s"`
 
+	// AuditAnchorInterval is how often the anchorer externalizes the audit hash-chain
+	// tip (max seq + its entry_hash) to the object store under a distinct append-only
+	// key, so tail truncation of the in-DB chain becomes detectable by cross-checking
+	// against the last anchor. Best-effort defense-in-depth: it only runs when an
+	// object store is configured (RECORDING_BUCKET), and any error is logged, never
+	// blocking. It skips writing when the tip has not advanced since the last anchor.
+	AuditAnchorInterval time.Duration `env:"AUDIT_ANCHOR_INTERVAL" envDefault:"1h"`
+
 	// VaultMasterKey is the base64-encoded 32-byte master KEK that seals CA private
 	// keys and stored secrets at rest. Empty means the vault is disabled.
 	VaultMasterKey string `env:"VAULT_MASTER_KEY"`

@@ -18,6 +18,12 @@ RETURNING *;
 -- name: ListAuditEntries :many
 SELECT * FROM audit_log ORDER BY seq ASC;
 
+-- name: AuditChainTip :one
+SELECT seq, entry_hash FROM audit_log ORDER BY seq DESC LIMIT 1;
+
+-- name: AuditEntryHashAtSeq :one
+SELECT entry_hash FROM audit_log WHERE seq = $1;
+
 -- name: EnqueueAuditEvent :one
 INSERT INTO audit_outbox (event_type, actor_user_id, subject, details)
 VALUES ($1, $2, $3, $4)

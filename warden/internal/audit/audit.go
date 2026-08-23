@@ -231,8 +231,9 @@ func (l *Logger) RunDrainer(ctx context.Context, interval time.Duration) {
 // Verify recomputes the whole chain and returns an error at the first mismatch.
 // It detects mutation, reordering, and middle-row deletion of committed entries,
 // but cannot detect truncation of the most-recent entries (a shorter valid chain
-// is indistinguishable from the full chain). Detecting tail truncation requires
-// anchoring the chain tip in an external store — a later milestone.
+// is indistinguishable from the full chain). Detecting tail truncation is handled
+// separately by anchoring the chain tip to the object store (RunAnchorer) and
+// cross-checking the live chain against the last anchor (VerifyTipAtLeast).
 func (l *Logger) Verify(ctx context.Context) error {
 	rows, err := gen.New(l.pool).ListAuditEntries(ctx)
 	if err != nil {

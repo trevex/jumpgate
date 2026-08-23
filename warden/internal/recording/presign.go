@@ -4,6 +4,7 @@
 package recording
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -62,3 +63,21 @@ func (p *S3Presigner) GetObject(ctx context.Context, key string) (io.ReadCloser,
 	}
 	return out.Body, nil
 }
+
+// Put writes body to key in the bucket. It exists so warden can anchor the audit
+// hash-chain tip to the object store (audit.AnchorStore); recordings themselves
+// are uploaded by the worker, so this is the only write path warden needs.
+func (p *S3Presigner) Put(ctx context.Context, key string, body []byte) error {
+	_, err := p.raw.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      &p.bucket,
+		Key:         &key,
+		Body:        bytes.NewReader(body),
+		ContentType: awsString("application/json"),
+	})
+	if err != nil {
+		return fmt.Errorf("put object: %w", err)
+	}
+	return nil
+}
+
+func awsString(s string) *string { return &s }
