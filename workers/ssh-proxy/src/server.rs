@@ -61,17 +61,20 @@ use jumpgate_mesh::tls::MeshClientCerts;
 /// the target identically. On error the caller aborts the hop (never bridges).
 pub(crate) async fn dial_target_by_auth(
     target_address: &str,
+    host_key_pin: &str,
     login: &str,
     target_auth: &TargetAuth,
 ) -> anyhow::Result<russh::client::Handle<target::TargetHandler>> {
     match target_auth {
         TargetAuth::Cert { certificate, kw } => {
-            target::dial_target(target_address, login, kw, certificate).await
+            target::dial_target(target_address, host_key_pin, login, kw, certificate).await
         }
         TargetAuth::Password(password) => {
-            target::authenticate_password(target_address, login, password).await
+            target::authenticate_password(target_address, host_key_pin, login, password).await
         }
-        TargetAuth::Key(pem) => target::authenticate_publickey(target_address, login, pem).await,
+        TargetAuth::Key(pem) => {
+            target::authenticate_publickey(target_address, host_key_pin, login, pem).await
+        }
     }
 }
 
@@ -149,6 +152,9 @@ pub enum TargetAuth {
 pub struct SessionState {
     pub session_id: String,
     pub target_address: String,
+    /// The asset's configured target host-key pin (OpenSSH authorized_keys line),
+    /// or empty for no pin. Enforced on the target hop (fail closed on mismatch).
+    pub target_host_key: String,
     /// How the worker authenticates the target hop for this session.
     pub target_auth: TargetAuth,
     /// warden requires this session to be recorded; if a recording cannot be
@@ -342,6 +348,7 @@ pub async fn authorize(
     Ok(SessionState {
         session_id: outcome.session_id,
         target_address: outcome.target_address,
+        target_host_key: outcome.target_host_key,
         target_auth,
         recording_required: outcome.recording_required,
         recording_object_key: outcome.recording_object_key,
@@ -648,7 +655,13 @@ impl SshHandler {
     )> {
         // Authenticate the target hop by the login's configured kind. On error,
         // the caller aborts the hop (never bridges).
-        let handle = dial_target_by_auth(&state.target_address, login, &state.target_auth).await?;
+        let handle = dial_target_by_auth(
+            &state.target_address,
+            &state.target_host_key,
+            login,
+            &state.target_auth,
+        )
+        .await?;
 
         let target_channel = handle.channel_open_session().await?;
 
@@ -1029,6 +1042,7 @@ mod tests {
                 Ok(SetupOutcome {
                     session_id: "sess-1".into(),
                     target_address: "10.0.0.5:22".into(),
+                    target_host_key: String::new(),
                     credential: TargetCredential::Cert(cert),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1046,6 +1060,7 @@ mod tests {
                 Ok(SetupOutcome {
                     session_id: "sess-pw".into(),
                     target_address: "10.0.0.6:22".into(),
+                    target_host_key: String::new(),
                     credential: TargetCredential::Password(password),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1063,6 +1078,7 @@ mod tests {
                 Ok(SetupOutcome {
                     session_id: "sess-key".into(),
                     target_address: "10.0.0.7:22".into(),
+                    target_host_key: String::new(),
                     credential: TargetCredential::Key(pem),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1219,6 +1235,7 @@ mod tests {
                 Ok(SetupOutcome {
                     session_id: "sess-x".into(),
                     target_address: "t:22".into(),
+                    target_host_key: String::new(),
                     credential: TargetCredential::Cert(cert),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1240,6 +1257,7 @@ mod tests {
                 Ok(SetupOutcome {
                     session_id: "s".into(),
                     target_address: "t:22".into(),
+                    target_host_key: String::new(),
                     credential: TargetCredential::Cert(b"not a real cert".to_vec()),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1268,6 +1286,7 @@ mod tests {
         let state = SessionState {
             session_id: "sess-rec".into(),
             target_address: "t:22".into(),
+            target_host_key: String::new(),
             target_auth: TargetAuth::Cert {
                 certificate: Box::new(cert),
                 kw: Box::new(kw),

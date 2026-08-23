@@ -455,7 +455,13 @@ async fn open_target_shell(
     russh::client::Handle<crate::target::TargetHandler>,
     russh::Channel<russh::client::Msg>,
 )> {
-    let handle = dial_target_by_auth(&state.target_address, login, &state.target_auth).await?;
+    let handle = dial_target_by_auth(
+        &state.target_address,
+        &state.target_host_key,
+        login,
+        &state.target_auth,
+    )
+    .await?;
     let target_channel = handle.channel_open_session().await?;
     // xterm-256color matches the terminal the browser xterm.js emulates; no pty
     // modes are negotiated (the browser has no local termios to mirror).

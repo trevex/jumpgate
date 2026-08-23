@@ -52,6 +52,10 @@ pub struct SetupOutcome {
     pub session_id: String,
     /// The target host:port the worker dials for the second hop.
     pub target_address: String,
+    /// The asset's configured target host-key pin (an OpenSSH authorized_keys
+    /// line), or empty for no pin. When non-empty the worker rejects a target
+    /// whose presented host key does not match (fail closed / MITM protection).
+    pub target_host_key: String,
     /// The credential the worker uses to authenticate to the target as the login.
     pub credential: TargetCredential,
     /// Whether warden requires this session to be recorded (else refuse it).
@@ -114,6 +118,7 @@ pub async fn setup_session(
     Ok(SetupOutcome {
         session_id: resp.session_id,
         target_address: resp.target_address,
+        target_host_key: resp.target_host_key,
         credential,
         recording_required: resp.recording_required,
         recording_object_key: resp.recording_object_key,

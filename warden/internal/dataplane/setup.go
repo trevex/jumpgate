@@ -66,6 +66,10 @@ type SetupResult struct {
 	SessionID          string
 	RecordingRequired  bool
 	RecordingObjectKey string
+	// TargetHostKey is the asset's configured host-key pin (an OpenSSH
+	// authorized_keys-style public-key line), or empty when unset. The worker
+	// fails closed on a mismatch when it is non-empty; empty = accept-and-log.
+	TargetHostKey string
 }
 
 // capRecordExempt, when held on the asset, permits an unrecorded SSH session.
@@ -208,6 +212,9 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		SessionID:          claims.SessionID.String(),
 		RecordingRequired:  recordingRequired,
 		RecordingObjectKey: recordingKey,
+		// The host-key pin travels to the worker, which enforces it on the target
+		// hop (fail closed on mismatch). Empty when the asset has no pin configured.
+		TargetHostKey: cfg.HostPublicKey,
 	}
 	switch cred.Kind {
 	case "ssh-cert":

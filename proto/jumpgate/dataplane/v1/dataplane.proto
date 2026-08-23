@@ -71,6 +71,11 @@ message SetupSessionResponse {
   string session_id = 3; // token jti / live_sessions PK
   bool recording_required = 4; // worker MUST record or refuse the session
   string recording_object_key = 5; // object key warden assigns for this session's recording
+  // The asset's configured target host-key pin (an OpenSSH authorized_keys-style
+  // public-key line). When non-empty the worker MUST reject a target whose
+  // presented host key does not match (fail closed / MITM protection). Empty =
+  // no pin: the worker accepts and logs the presented key (TOFU-off).
+  string target_host_key = 8;
   // The credential the worker uses to authenticate to the target as the login.
   oneof credential {
     bytes ssh_certificate = 2; // ca: OpenSSH cert over Kw

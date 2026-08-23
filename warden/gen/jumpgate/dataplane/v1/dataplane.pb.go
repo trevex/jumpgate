@@ -629,6 +629,11 @@ type SetupSessionResponse struct {
 	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                              // token jti / live_sessions PK
 	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`     // worker MUST record or refuse the session
 	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"` // object key warden assigns for this session's recording
+	// The asset's configured target host-key pin (an OpenSSH authorized_keys-style
+	// public-key line). When non-empty the worker MUST reject a target whose
+	// presented host key does not match (fail closed / MITM protection). Empty =
+	// no pin: the worker accepts and logs the presented key (TOFU-off).
+	TargetHostKey string `protobuf:"bytes,8,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`
 	// The credential the worker uses to authenticate to the target as the login.
 	//
 	// Types that are valid to be assigned to Credential:
@@ -695,6 +700,13 @@ func (x *SetupSessionResponse) GetRecordingRequired() bool {
 func (x *SetupSessionResponse) GetRecordingObjectKey() string {
 	if x != nil {
 		return x.RecordingObjectKey
+	}
+	return ""
+}
+
+func (x *SetupSessionResponse) GetTargetHostKey() string {
+	if x != nil {
+		return x.TargetHostKey
 	}
 	return ""
 }
@@ -800,13 +812,14 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x123\n" +
 	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\x12\x1d\n" +
-	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xb7\x02\n" +
+	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xdf\x02\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
 	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
-	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12)\n" +
+	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
+	"\x0ftarget_host_key\x18\b \x01(\tR\rtargetHostKey\x12)\n" +
 	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
 	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
 	"\vprivate_key\x18\a \x01(\fH\x00R\n" +
