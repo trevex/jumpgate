@@ -312,7 +312,7 @@ function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
       onClick={() =>
         onSelect({ kind: "asset", id: asset.id, name: asset.name, path: asset.path, assetKind: asset.kind })
       }
-      aria-selected={isSelected}
+      aria-current={isSelected ? "true" : undefined}
       className={cn(
         "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
@@ -351,7 +351,7 @@ function RoleLeaf({ role, depth, selected, onSelect }: RoleLeafProps) {
     <button
       style={leafIndent(depth)}
       onClick={() => onSelect({ kind: "role", id: role.id, name: role.name })}
-      aria-selected={isSelected}
+      aria-current={isSelected ? "true" : undefined}
       className={cn(
         "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
@@ -385,7 +385,7 @@ function GroupLeaf({ group, depth, selected, onSelect }: GroupLeafProps) {
     <button
       style={leafIndent(depth)}
       onClick={() => onSelect({ kind: "group", id: group.id, name: group.name })}
-      aria-selected={isSelected}
+      aria-current={isSelected ? "true" : undefined}
       className={cn(
         "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
@@ -503,11 +503,12 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
   };
 
   return (
-    <li role="treeitem" aria-expanded={expanded} aria-selected={isSelf}>
+    <li aria-current={isSelf ? "true" : undefined}>
       {/* Folder toggle row */}
       <button
         style={{ paddingLeft: `${depth * 16}px` }}
         onClick={handleFolderClick}
+        aria-expanded={expanded}
         className={cn(
           "group flex w-full items-center gap-1.5 py-1 pr-3 text-left text-compact font-medium transition-colors duration-100",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
@@ -534,7 +535,7 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
 
       {/* Children */}
       {expanded && (
-        <ul role="group" className="relative">
+        <ul className="relative">
           {/* Left indent guide */}
           <span
             className="absolute top-0 bottom-0 border-l border-border"
@@ -724,7 +725,7 @@ export function Tree({ selected, onSelect }: TreeProps) {
           )}
 
           {contents && (
-            <ul role="tree" aria-label="Catalog" className="flex flex-col">
+            <ul aria-label="Catalog" className="flex flex-col">
               {/* Root-level folders */}
               {filter.has("folder") && (
                 <>

@@ -118,14 +118,17 @@ export function NewFolderDialog({
               placeholder="production"
               className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
+              aria-describedby="new-folder-name-error"
             />
             {nameTouched && !nameValid ? (
-              <p className={FIELD_ERROR}>
+              <p id="new-folder-name-error" role="alert" className={FIELD_ERROR}>
                 Use lowercase letters, digits, dashes or underscores (1–200
                 characters).
               </p>
             ) : (
-              <p className={FIELD_HINT}>Lowercase letters, digits, - and _.</p>
+              <p id="new-folder-name-error" className={FIELD_HINT}>
+                Lowercase letters, digits, - and _.
+              </p>
             )}
           </div>
 

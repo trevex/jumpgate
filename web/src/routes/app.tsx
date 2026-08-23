@@ -193,7 +193,7 @@ export function AppShell() {
           </div>
 
           {/* Nav */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3" role="navigation">
+          <nav className="flex-1 overflow-y-auto px-2 py-3">
             <ul className="flex flex-col gap-0.5" role="list">
               {NAV_ITEMS.map((item) => (
                 <li key={item.to}>

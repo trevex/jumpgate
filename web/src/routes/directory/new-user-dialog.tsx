@@ -130,9 +130,12 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               placeholder="user@example.com"
               className="h-9 text-body"
               aria-invalid={touched.email && !emailValid}
+              aria-describedby="new-user-email-error"
             />
             {touched.email && !emailValid && (
-              <p className={FIELD_ERROR}>Enter a valid email address.</p>
+              <p id="new-user-email-error" role="alert" className={FIELD_ERROR}>
+                Enter a valid email address.
+              </p>
             )}
           </div>
 
@@ -151,9 +154,10 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               placeholder="Ada Lovelace"
               className="h-9 text-body"
               aria-invalid={touched.displayName && !nameValid}
+              aria-describedby="new-user-name-error"
             />
             {touched.displayName && !nameValid && (
-              <p className={FIELD_ERROR}>
+              <p id="new-user-name-error" role="alert" className={FIELD_ERROR}>
                 Display name must be 1–200 characters.
               </p>
             )}
@@ -174,11 +178,16 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               placeholder="At least 8 characters"
               className="h-9 text-body"
               aria-invalid={touched.password && !passwordValid}
+              aria-describedby="new-user-password-error"
             />
             {touched.password && !passwordValid ? (
-              <p className={FIELD_ERROR}>Password must be at least 8 characters.</p>
+              <p id="new-user-password-error" role="alert" className={FIELD_ERROR}>
+                Password must be at least 8 characters.
+              </p>
             ) : (
-              <p className={FIELD_HINT}>Minimum 8 characters.</p>
+              <p id="new-user-password-error" className={FIELD_HINT}>
+                Minimum 8 characters.
+              </p>
             )}
           </div>
 

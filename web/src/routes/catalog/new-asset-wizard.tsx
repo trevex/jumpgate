@@ -148,14 +148,17 @@ export function NewAssetWizard({
               placeholder="pg-primary"
               className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
+              aria-describedby="new-asset-name-error"
             />
             {nameTouched && !nameValid ? (
-              <p className={FIELD_ERROR}>
+              <p id="new-asset-name-error" role="alert" className={FIELD_ERROR}>
                 Use lowercase letters, digits, dashes or underscores (1–200
                 characters).
               </p>
             ) : (
-              <p className={FIELD_HINT}>Lowercase letters, digits, - and _.</p>
+              <p id="new-asset-name-error" className={FIELD_HINT}>
+                Lowercase letters, digits, - and _.
+              </p>
             )}
           </div>
 
@@ -170,7 +173,11 @@ export function NewAssetWizard({
             }}
           />
 
-          {configError && <p className={FIELD_ERROR}>{configError}</p>}
+          {configError && (
+            <p role="alert" className={FIELD_ERROR}>
+              {configError}
+            </p>
+          )}
 
           <DialogFooter className="mt-1">
             <Button

@@ -186,13 +186,16 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               placeholder="Optional"
               className="h-9 text-body"
               aria-invalid={!nameValid}
+              aria-describedby="new-policy-name-error"
             />
             {!nameValid ? (
-              <p className={FIELD_ERROR}>
+              <p id="new-policy-name-error" role="alert" className={FIELD_ERROR}>
                 Use letters, digits, dashes or underscores.
               </p>
             ) : (
-              <p className={FIELD_HINT}>Optional. Letters, digits, - and _.</p>
+              <p id="new-policy-name-error" className={FIELD_HINT}>
+                Optional. Letters, digits, - and _.
+              </p>
             )}
           </div>
 
@@ -260,11 +263,14 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               onChange={(e) => setApprovals(e.target.value)}
               className="h-9 w-28 text-body"
               aria-invalid={!approvalsValid}
+              aria-describedby="new-policy-approvals-error"
             />
             {!approvalsValid ? (
-              <p className={FIELD_ERROR}>Enter a whole number from 0 to 20.</p>
+              <p id="new-policy-approvals-error" role="alert" className={FIELD_ERROR}>
+                Enter a whole number from 0 to 20.
+              </p>
             ) : (
-              <p className={FIELD_HINT}>
+              <p id="new-policy-approvals-error" className={FIELD_HINT}>
                 Approvals needed before a request is granted (0–20).
               </p>
             )}
@@ -341,11 +347,14 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               placeholder="No cap"
               className="h-9 w-28 text-body"
               aria-invalid={!hoursValid}
+              aria-describedby="new-policy-hours-error"
             />
             {!hoursValid ? (
-              <p className={FIELD_ERROR}>Enter a non-negative number of hours.</p>
+              <p id="new-policy-hours-error" role="alert" className={FIELD_ERROR}>
+                Enter a non-negative number of hours.
+              </p>
             ) : (
-              <p className={FIELD_HINT}>
+              <p id="new-policy-hours-error" className={FIELD_HINT}>
                 Optional. Caps each grant's lifetime; empty means no cap.
               </p>
             )}

@@ -128,14 +128,17 @@ export function RenameDialog({
               onBlur={() => setNameTouched(true)}
               className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
+              aria-describedby="rename-name-error"
             />
             {nameTouched && !nameValid ? (
-              <p className={FIELD_ERROR}>
+              <p id="rename-name-error" role="alert" className={FIELD_ERROR}>
                 Use lowercase letters, digits, dashes or underscores (1–200
                 characters).
               </p>
             ) : (
-              <p className={FIELD_HINT}>Lowercase letters, digits, - and _.</p>
+              <p id="rename-name-error" className={FIELD_HINT}>
+                Lowercase letters, digits, - and _.
+              </p>
             )}
           </div>
 

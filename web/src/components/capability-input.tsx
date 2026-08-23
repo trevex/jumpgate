@@ -125,12 +125,15 @@ export function CapabilityInput({ value, onChange, id }: CapabilityInputProps) {
         placeholder="ssh:login:deploy — press Enter to add"
         className={cn("h-9 font-mono text-body", error && "border-destructive")}
         aria-invalid={error != null}
+        aria-describedby="cap-input-error"
       />
 
       {error ? (
-        <p className={FIELD_ERROR}>{error}</p>
+        <p id="cap-input-error" role="alert" className={FIELD_ERROR}>
+          {error}
+        </p>
       ) : (
-        <p className={FIELD_HINT}>
+        <p id="cap-input-error" className={FIELD_HINT}>
           Press Enter or comma to add. Type a scoped capability like{" "}
           <span className="font-mono">scope:action:qualifier</span>.
         </p>
