@@ -12,14 +12,15 @@
  * Any enrichment miss falls back to a short id so a row is never blank.
  *
  * Loading / empty / error use the shared state components; "Load more" appends
- * the next page. Creating or deleting a binding invalidates `listRoleBindings`,
- * which refetches the first query and re-seeds the accumulated pages.
+ * the next page. The list is a `useInfiniteQuery`; creating or deleting a
+ * binding invalidates `listRoleBindings`, which refetches the infinite query
+ * and TanStack merges the pages, so accumulated pages survive.
  *
  * Mutations are capability-gated and server-enforced.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useState } from "react";
+import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
 import {
   listRoleBindings,
   getRoleDisplay,
@@ -175,15 +176,26 @@ export function BindingsTab() {
   const canDelete = canDeleteBinding(caps);
 
   const [newBindingOpen, setNewBindingOpen] = useState(false);
-  const [pages, setPages] = useState<RoleBinding[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
 
-  const { data, isLoading, isError, error, refetch } = useQuery(listRoleBindings, {
-    pageSize: PAGE_SIZE,
-    pageToken: "",
-  });
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
+    listRoleBindings,
+    { pageSize: PAGE_SIZE, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
+  );
+
+  const bindings = data?.pages.flatMap((p) => p.bindings) ?? [];
 
   // Group id→name map for subject enrichment (no group-display-by-id RPC).
   const { data: groupsData } = useQuery(listGroups, {
@@ -192,43 +204,6 @@ export function BindingsTab() {
   });
   const groupNames = new Map<string, string>();
   for (const g of groupsData?.groups ?? []) groupNames.set(g.id, g.name);
-
-  // Seed the first page.
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.bindings);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // Refresh on query invalidation — re-seed from page one.
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.bindings);
-      setNextToken(data.nextPageToken);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.bindings]);
-
-  const { refetch: fetchMore } = useQuery(
-    listRoleBindings,
-    { pageSize: PAGE_SIZE, pageToken: nextToken },
-    { enabled: false },
-  );
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.bindings]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   return (
     <div className="flex flex-col">
@@ -252,12 +227,9 @@ export function BindingsTab() {
         <ErrorState
           size="sm"
           message={connectErrorMessage(error)}
-          onRetry={() => {
-            initialised.current = false;
-            refetch();
-          }}
+          onRetry={() => refetch()}
         />
-      ) : pages.length === 0 ? (
+      ) : bindings.length === 0 ? (
         <EmptyState icon={Link2} message="No bindings." />
       ) : (
         <>
@@ -277,7 +249,7 @@ export function BindingsTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pages.map((binding) => (
+              {bindings.map((binding) => (
                 <TableRow key={binding.id} className="hover:bg-muted/40">
                   <TableCell className="px-4 py-2.5 text-foreground">
                     <RoleCell roleId={binding.roleId} />
@@ -296,16 +268,16 @@ export function BindingsTab() {
             </TableBody>
           </Table>
 
-          {nextToken && (
+          {hasNextPage && (
             <div className="flex justify-center border-t border-border px-4 py-3">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadMore}
-                disabled={loadingMore}
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="h-7 text-[12px]"
               >
-                {loadingMore ? "Loading…" : "Load more"}
+                {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </div>
           )}

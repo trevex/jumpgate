@@ -11,14 +11,14 @@
  * the role's capabilities as chips and manages its grant edges, and offers the
  * cascade delete.
  *
- * Mutations are capability-gated and server-enforced. The list accumulates
- * pages in local state; a `listRoles` invalidation (fired by create/delete
- * onSuccess) refetches the first query, which re-seeds the accumulated pages so
- * the change is reflected immediately.
+ * Mutations are capability-gated and server-enforced. The list is a
+ * `useInfiniteQuery`; "Load more" appends the next page. A `listRoles`
+ * invalidation (fired by create/delete onSuccess) refetches the infinite query
+ * and TanStack merges the pages, so accumulated pages survive.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useState } from "react";
+import { useInfiniteQuery } from "@connectrpc/connect-query";
 import { listRoles } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import type { Role } from "@/gen/jumpgate/access/v1/access_pb";
 import {
@@ -63,53 +63,26 @@ export function RolesTab() {
 
   const [newRoleOpen, setNewRoleOpen] = useState(false);
   const [selected, setSelected] = useState<Role | null>(null);
-  const [pages, setPages] = useState<Role[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
 
-  const { data, isLoading, isError, error, refetch } = useQuery(listRoles, {
-    pageSize: PAGE_SIZE,
-    pageToken: "",
-  });
-
-  // Seed the first page.
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.roles);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // Refresh on query invalidation — a mutation's onSuccess invalidates listRoles,
-  // which refetches this query; re-seed the accumulated pages from page one.
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.roles);
-      setNextToken(data.nextPageToken);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.roles]);
-
-  const { refetch: fetchMore } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listRoles,
-    { pageSize: PAGE_SIZE, pageToken: nextToken },
-    { enabled: false },
+    { pageSize: PAGE_SIZE, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.roles]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const roles = data?.pages.flatMap((p) => p.roles) ?? [];
 
   return (
     <div className="flex flex-col">
@@ -133,12 +106,9 @@ export function RolesTab() {
         <ErrorState
           size="sm"
           message={connectErrorMessage(error)}
-          onRetry={() => {
-            initialised.current = false;
-            refetch();
-          }}
+          onRetry={() => refetch()}
         />
-      ) : pages.length === 0 ? (
+      ) : roles.length === 0 ? (
         <EmptyState icon={ShieldCheck} message="No roles." />
       ) : (
         <>
@@ -157,7 +127,7 @@ export function RolesTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pages.map((role) => (
+              {roles.map((role) => (
                 <TableRow
                   key={role.id}
                   className="cursor-pointer"
@@ -184,16 +154,16 @@ export function RolesTab() {
             </TableBody>
           </Table>
 
-          {nextToken && (
+          {hasNextPage && (
             <div className="flex justify-center border-t border-border px-4 py-3">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadMore}
-                disabled={loadingMore}
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="h-7 text-[12px]"
               >
-                {loadingMore ? "Loading…" : "Load more"}
+                {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </div>
           )}

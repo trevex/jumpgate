@@ -14,13 +14,13 @@
  *   - Per-row menu offers Delete — gated by `identity:group:delete`, confirmed
  *     via a modal.
  *
- * The list accumulates pages in local state; a `listGroups` invalidation (fired
- * by every mutation's onSuccess) refetches the first query, which re-seeds the
- * accumulated pages so the change is reflected immediately.
+ * The list is a `useInfiniteQuery`; "Load more" appends the next page. A
+ * `listGroups` invalidation (fired by every mutation's onSuccess) refetches the
+ * infinite query and TanStack merges the pages, so accumulated pages survive.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@connectrpc/connect-query";
+import { useState } from "react";
+import { useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
 import { createConnectQueryKey } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -168,53 +168,26 @@ export function GroupsTab() {
 
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [selected, setSelected] = useState<Group | null>(null);
-  const [pages, setPages] = useState<Group[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
 
-  const { data, isLoading, isError, error, refetch } = useQuery(listGroups, {
-    pageSize: PAGE_SIZE,
-    pageToken: "",
-  });
-
-  // Seed the first page
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.groups);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // Refresh on query invalidation — a mutation's onSuccess invalidates listGroups,
-  // which refetches this query; re-seed the accumulated pages from page one.
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.groups);
-      setNextToken(data.nextPageToken);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.groups]);
-
-  const { refetch: fetchMore } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listGroups,
-    { pageSize: PAGE_SIZE, pageToken: nextToken },
-    { enabled: false },
+    { pageSize: PAGE_SIZE, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.groups]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const groups = data?.pages.flatMap((p) => p.groups) ?? [];
 
   return (
     <div className="flex flex-col">
@@ -238,12 +211,9 @@ export function GroupsTab() {
         <ErrorState
           size="sm"
           message={connectErrorMessage(error)}
-          onRetry={() => {
-            initialised.current = false;
-            refetch();
-          }}
+          onRetry={() => refetch()}
         />
-      ) : pages.length === 0 ? (
+      ) : groups.length === 0 ? (
         <EmptyState icon={UsersRound} message="No groups." />
       ) : (
         <>
@@ -262,7 +232,7 @@ export function GroupsTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pages.map((group) => (
+              {groups.map((group) => (
                 <TableRow
                   key={group.id}
                   className="cursor-pointer"
@@ -284,16 +254,16 @@ export function GroupsTab() {
             </TableBody>
           </Table>
 
-          {nextToken && (
+          {hasNextPage && (
             <div className="flex justify-center border-t border-border px-4 py-3">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadMore}
-                disabled={loadingMore}
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="h-7 text-[12px]"
               >
-                {loadingMore ? "Loading…" : "Load more"}
+                {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </div>
           )}

@@ -14,15 +14,15 @@
  * policy's fields, manages its requester/approver subjects, and offers edit and
  * cascade-free delete.
  *
- * The list accumulates pages in local state; a `listRequestPolicies`
- * invalidation (fired by create / update / delete onSuccess) refetches the first
- * query, which re-seeds the accumulated pages so the change shows immediately.
+ * The list is a `useInfiniteQuery`; a `listRequestPolicies` invalidation (fired
+ * by create / update / delete onSuccess) refetches the infinite query and
+ * TanStack merges the pages, so accumulated pages survive.
  *
  * Mutations are capability-gated and server-enforced.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useState } from "react";
+import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
 import {
   listRequestPolicies,
   getRoleDisplay,
@@ -122,52 +122,26 @@ export function PoliciesTab() {
 
   const [newPolicyOpen, setNewPolicyOpen] = useState(false);
   const [selected, setSelected] = useState<RequestPolicy | null>(null);
-  const [pages, setPages] = useState<RequestPolicy[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
 
-  const { data, isLoading, isError, error, refetch } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listRequestPolicies,
     { roleId: "", pageSize: PAGE_SIZE, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  // Seed the first page.
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.policies);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // Refresh on query invalidation — re-seed from page one.
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.policies);
-      setNextToken(data.nextPageToken);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.policies]);
-
-  const { refetch: fetchMore } = useQuery(
-    listRequestPolicies,
-    { roleId: "", pageSize: PAGE_SIZE, pageToken: nextToken },
-    { enabled: false },
-  );
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.policies]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const policies = data?.pages.flatMap((p) => p.policies) ?? [];
 
   return (
     <div className="flex flex-col">
@@ -191,12 +165,9 @@ export function PoliciesTab() {
         <ErrorState
           size="sm"
           message={connectErrorMessage(error)}
-          onRetry={() => {
-            initialised.current = false;
-            refetch();
-          }}
+          onRetry={() => refetch()}
         />
-      ) : pages.length === 0 ? (
+      ) : policies.length === 0 ? (
         <EmptyState icon={ScrollText} message="No request policies." />
       ) : (
         <>
@@ -218,7 +189,7 @@ export function PoliciesTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pages.map((policy) => (
+              {policies.map((policy) => (
                 <TableRow
                   key={policy.id}
                   className="cursor-pointer"
@@ -252,16 +223,16 @@ export function PoliciesTab() {
             </TableBody>
           </Table>
 
-          {nextToken && (
+          {hasNextPage && (
             <div className="flex justify-center border-t border-border px-4 py-3">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadMore}
-                disabled={loadingMore}
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="h-7 text-[12px]"
               >
-                {loadingMore ? "Loading…" : "Load more"}
+                {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </div>
           )}

@@ -13,7 +13,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@connectrpc/connect-query";
+import { useQuery, useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -214,52 +214,25 @@ function RequestRow({ req }: { req: AccessRequest }) {
 }
 
 function RequestsTab() {
-  const [pages, setPages] = useState<AccessRequest[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
-
-  const { data, isLoading, isError, error, refetch } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listMyRequests,
     { pageSize: 25, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  // Seed the first page
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.requests);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // On refetch (after submit), reset pages
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.requests);
-      setNextToken(data.nextPageToken);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.requests]);
-
-  const { refetch: fetchMore } = useQuery(
-    listMyRequests,
-    { pageSize: 25, pageToken: nextToken },
-    { enabled: false },
-  );
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.requests]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const requests = data?.pages.flatMap((p) => p.requests) ?? [];
 
   if (isLoading) return <LoadingRows />;
 
@@ -268,12 +241,12 @@ function RequestsTab() {
       <ErrorState
         size="sm"
         message={connectErrorMessage(error)}
-        onRetry={() => { initialised.current = false; refetch(); }}
+        onRetry={() => refetch()}
       />
     );
   }
 
-  if (pages.length === 0) {
+  if (requests.length === 0) {
     return (
       <EmptyState
         icon={ClipboardList}
@@ -298,23 +271,23 @@ function RequestsTab() {
       </div>
 
       <div className="divide-y divide-border" role="list" aria-label="Access requests">
-        {pages.map((req) => (
+        {requests.map((req) => (
           <div key={req.id} role="listitem">
             <RequestRow req={req} />
           </div>
         ))}
       </div>
 
-      {nextToken && (
+      {hasNextPage && (
         <div className="flex justify-center border-t border-border px-4 py-3">
           <Button
             variant="outline"
             size="sm"
-            onClick={loadMore}
-            disabled={loadingMore}
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
             className="h-7 text-[12px]"
           >
-            {loadingMore ? "Loading…" : "Load more"}
+            {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}
@@ -539,52 +512,25 @@ function GrantCard({ grant }: { grant: Grant }) {
 }
 
 function GrantsTab() {
-  const [pages, setPages] = useState<Grant[]>([]);
-  const [nextToken, setNextToken] = useState<string>("");
-  const [loadingMore, setLoadingMore] = useState(false);
-  const initialised = useRef(false);
-
-  const { data, isLoading, isError, error, refetch } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listMyGrants,
     { pageSize: 25, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  // Seed first page
-  useEffect(() => {
-    if (data && !initialised.current) {
-      initialised.current = true;
-      setPages(data.grants);
-      setNextToken(data.nextPageToken);
-    }
-  }, [data]);
-
-  // Refresh on query invalidation
-  useEffect(() => {
-    if (data && initialised.current) {
-      setPages(data.grants);
-      setNextToken(data.nextPageToken);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.grants]);
-
-  const { refetch: fetchMore } = useQuery(
-    listMyGrants,
-    { pageSize: 25, pageToken: nextToken },
-    { enabled: false },
-  );
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const result = await fetchMore();
-      if (result.data) {
-        setPages((prev) => [...prev, ...result.data!.grants]);
-        setNextToken(result.data.nextPageToken);
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const grants = data?.pages.flatMap((p) => p.grants) ?? [];
 
   if (isLoading) return <LoadingRows />;
 
@@ -593,12 +539,12 @@ function GrantsTab() {
       <ErrorState
         size="sm"
         message={connectErrorMessage(error)}
-        onRetry={() => { initialised.current = false; refetch(); }}
+        onRetry={() => refetch()}
       />
     );
   }
 
-  if (pages.length === 0) {
+  if (grants.length === 0) {
     return <EmptyState icon={KeyRound} message="You have no active grants." />;
   }
 
@@ -609,23 +555,23 @@ function GrantsTab() {
         role="list"
         aria-label="Access grants"
       >
-        {pages.map((g) => (
+        {grants.map((g) => (
           <div key={g.id} role="listitem">
             <GrantCard grant={g} />
           </div>
         ))}
       </div>
 
-      {nextToken && (
+      {hasNextPage && (
         <div className="flex justify-center pt-1">
           <Button
             variant="outline"
             size="sm"
-            onClick={loadMore}
-            disabled={loadingMore}
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
             className="h-7 text-[12px]"
           >
-            {loadingMore ? "Loading…" : "Load more"}
+            {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}
