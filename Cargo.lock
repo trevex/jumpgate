@@ -1557,6 +1557,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "httparse",
+ "hyper",
+ "hyper-util",
  "prost",
  "prost-types",
  "rcgen",
@@ -1568,6 +1570,7 @@ dependencies = [
  "tokio-rustls",
  "tonic",
  "tonic-build",
+ "tower 0.5.3",
  "tracing",
  "x509-parser",
 ]

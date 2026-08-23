@@ -87,7 +87,7 @@ pub async fn setup_session(
     let mesh_client_config = certs
         .client_config(warden_spiffe)
         .context("build warden mesh client config")?;
-    let channel = crate::control::mesh_channel(warden_addr, mesh_client_config).await?;
+    let channel = jumpgate_mesh::channel::mesh_channel(warden_addr, mesh_client_config).await?;
     let mut client = DataplaneServiceClient::new(channel);
 
     let resp = client

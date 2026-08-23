@@ -18,8 +18,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use tonic::transport::{Endpoint, Uri};
-
 use crate::tls::MeshClientCerts;
 
 use crate::pb::jumpgate::gateway::v1::{
@@ -105,7 +103,7 @@ async fn connect_and_stream(
     mesh_client_config: Arc<rustls::ClientConfig>,
     on_key: &(impl Fn(Vec<u8>) + Send + Sync + 'static),
 ) -> anyhow::Result<()> {
-    let channel = mesh_channel(warden_addr, mesh_client_config).await?;
+    let channel = jumpgate_mesh::channel::mesh_channel(warden_addr, mesh_client_config).await?;
     let mut client = GatewayServiceClient::new(channel);
 
     // Fetch the session-token verification key on (re)connect.
@@ -140,113 +138,6 @@ async fn connect_and_stream(
     }
 
     Ok(())
-}
-
-/// Build a tonic `Channel` to `warden_addr` (e.g. `https://warden-mesh:8444`)
-/// that dials over mesh mTLS using the supplied rustls `ClientConfig`.
-///
-/// We can't use tonic's `ClientTlsConfig` because warden's mesh cert has no DNS
-/// SAN (URI-only). Instead we drive the rustls handshake ourselves inside a
-/// custom connector and hand the resulting stream to tonic.
-async fn mesh_channel(
-    warden_addr: &str,
-    mesh_client_config: Arc<rustls::ClientConfig>,
-) -> anyhow::Result<tonic::transport::Channel> {
-    use hyper_util::client::legacy::connect::HttpConnector;
-    use hyper_util::rt::TokioIo;
-    use tokio_rustls::TlsConnector;
-
-    let uri: Uri = warden_addr.parse()?;
-    // The rustls handshake needs *some* server name; it is only used for SNI and
-    // is not name-checked by our verifier. Use the URI host or a fixed label.
-    let sni: rustls::pki_types::ServerName<'static> = uri
-        .host()
-        .and_then(|h| rustls::pki_types::ServerName::try_from(h.to_string()).ok())
-        .unwrap_or_else(|| rustls::pki_types::ServerName::try_from("warden").unwrap());
-
-    let tls = TlsConnector::from(mesh_client_config);
-
-    let mut http = HttpConnector::new();
-    http.enforce_http(false);
-
-    // A connector: Service<Uri> -> TLS-wrapped, HTTP/2-capable IO for tonic.
-    let connector = tower::service_fn(move |dst: Uri| {
-        let mut http = http.clone();
-        let tls = tls.clone();
-        let sni = sni.clone();
-        async move {
-            let tcp = tower::Service::call(&mut http, dst).await?;
-            let tls_stream = tls.connect(sni, TokioIo::new(tcp)).await?;
-            // The mesh RPCs are gRPC over HTTP/2. tonic decides h1-vs-h2 from the
-            // connector's reported ALPN; a plain TokioIo loses that, so tonic
-            // would fall back to HTTP/1.1 and the handshake never completes.
-            // Report h2 explicitly.
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(H2Stream(TokioIo::new(tls_stream)))
-        }
-    });
-
-    // tonic refuses an `https://` origin unless its own ClientTlsConfig is set;
-    // TLS is handled entirely by the custom connector above, so present the
-    // endpoint (and the `dst` URI it hands the connector) with an `http` scheme.
-    // The connector still dials the same host:port and wraps it in mesh TLS.
-    let endpoint = Endpoint::from_shared(http_scheme(warden_addr))?;
-    let channel = endpoint.connect_with_connector(connector).await?;
-    Ok(channel)
-}
-
-/// Rewrite an `https://…` address to `http://…` (leaving other schemes intact).
-/// Used to build the tonic endpoint origin when TLS is handled by a custom
-/// connector rather than tonic's own ClientTlsConfig.
-fn http_scheme(addr: &str) -> String {
-    match addr.strip_prefix("https://") {
-        Some(rest) => format!("http://{rest}"),
-        None => addr.to_string(),
-    }
-}
-
-/// An IO wrapper whose `Connection::connected()` reports negotiated HTTP/2, so
-/// tonic drives the mesh gRPC channel over h2 (see the connector above). It
-/// delegates all IO to the inner hyper-compatible stream.
-struct H2Stream<T>(T);
-
-impl<T> hyper_util::client::legacy::connect::Connection for H2Stream<T> {
-    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
-        hyper_util::client::legacy::connect::Connected::new().negotiated_h2()
-    }
-}
-
-impl<T: hyper::rt::Read + Unpin> hyper::rt::Read for H2Stream<T> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
-    }
-}
-
-impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for H2Stream<T> {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
-    }
 }
 
 #[cfg(test)]

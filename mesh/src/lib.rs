@@ -4,9 +4,12 @@
 //! It owns the reviewed, security-critical mesh mTLS code ([`tls`] — the
 //! SPIFFE-pinning [`tls::MeshServerCertVerifier`] + [`tls::MeshClientCerts`] +
 //! config builders), the HTTP/1.1 CONNECT framing ([`connect`]), and the
-//! generated tonic dataplane/gateway/session clients ([`pb`]). Extracting these
-//! keeps ONE copy of the reviewed verifier.
+//! generated tonic dataplane/gateway/session clients ([`pb`]), and the shared
+//! mesh tonic-`Channel` construction ([`channel`] — the h2-over-custom-connector
+//! dial used by every mesh client). Extracting these keeps ONE copy of the
+//! reviewed verifier and the mesh channel plumbing.
 
+pub mod channel;
 pub mod connect;
 pub mod tls;
 

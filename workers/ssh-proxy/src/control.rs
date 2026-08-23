@@ -23,7 +23,6 @@ use anyhow::Context;
 use tokio::sync::mpsc;
 use tokio::sync::Notify;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::{Endpoint, Uri};
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
@@ -129,7 +128,8 @@ async fn connect_and_run(
     let mesh_client_config = certs
         .client_config(&config.warden_spiffe)
         .context("build warden mesh client config")?;
-    let channel = mesh_channel(&config.warden_mesh_addr, mesh_client_config).await?;
+    let channel =
+        jumpgate_mesh::channel::mesh_channel(&config.warden_mesh_addr, mesh_client_config).await?;
     let mut client = DataplaneServiceClient::new(channel);
 
     // Outbound frames flow through this channel into the bidi request stream.
@@ -234,120 +234,6 @@ async fn connect_and_run(
                 }
             }
         }
-    }
-}
-
-/// Build a tonic `Channel` to `warden_addr` (e.g. `https://warden-mesh:8444`)
-/// that dials over mesh mTLS using the supplied rustls `ClientConfig`.
-///
-/// warden's mesh cert carries a URI (SPIFFE) SAN only, so tonic's built-in
-/// `ClientTlsConfig` (which always webpki-name-checks) can't be used. We drive
-/// the rustls handshake inside a custom connector — mirroring the gateway's
-/// roster dial — and hand the resulting stream to tonic.
-///
-/// Shared with [`crate::setup`] (the SetupSession client dials warden the same
-/// way).
-pub(crate) async fn mesh_channel(
-    warden_addr: &str,
-    mesh_client_config: Arc<rustls::ClientConfig>,
-) -> anyhow::Result<tonic::transport::Channel> {
-    use hyper_util::client::legacy::connect::HttpConnector;
-    use hyper_util::rt::TokioIo;
-    use tokio_rustls::TlsConnector;
-
-    let uri: Uri = warden_addr.parse().context("parse warden mesh addr")?;
-    // rustls needs *some* server name for SNI; our verifier does not name-check
-    // it (identity is pinned via the URI SAN instead).
-    let sni: rustls::pki_types::ServerName<'static> = uri
-        .host()
-        .and_then(|h| rustls::pki_types::ServerName::try_from(h.to_string()).ok())
-        .unwrap_or_else(|| rustls::pki_types::ServerName::try_from("warden").unwrap());
-
-    let tls = TlsConnector::from(mesh_client_config);
-
-    let mut http = HttpConnector::new();
-    http.enforce_http(false);
-
-    let connector = tower::service_fn(move |dst: Uri| {
-        let mut http = http.clone();
-        let tls = tls.clone();
-        let sni = sni.clone();
-        async move {
-            let tcp = tower::Service::call(&mut http, dst).await?;
-            let tls_stream = tls.connect(sni, TokioIo::new(tcp)).await?;
-            // The mesh RPCs are gRPC over HTTP/2. tonic decides h1-vs-h2 from the
-            // connector's reported ALPN; wrapping the TLS stream in a plain
-            // TokioIo loses that, so tonic falls back to HTTP/1.1 and the
-            // handshake never completes. Report h2 explicitly.
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(H2Stream(TokioIo::new(tls_stream)))
-        }
-    });
-
-    // tonic refuses an `https://` origin unless its own ClientTlsConfig is set;
-    // TLS is handled entirely by the custom connector above, so present the
-    // endpoint (and the `dst` URI it hands the connector) with an `http` scheme.
-    // The connector still dials the same host:port and wraps it in mesh TLS.
-    let endpoint_uri = http_scheme(warden_addr);
-    let endpoint = Endpoint::from_shared(endpoint_uri).context("build warden endpoint")?;
-    let channel = endpoint
-        .connect_with_connector(connector)
-        .await
-        .context("connect to warden mesh")?;
-    Ok(channel)
-}
-
-/// Rewrite an `https://…` address to `http://…` (leaving other schemes intact).
-/// Used to build the tonic endpoint origin when TLS is handled by a custom
-/// connector rather than tonic's own ClientTlsConfig.
-fn http_scheme(addr: &str) -> String {
-    match addr.strip_prefix("https://") {
-        Some(rest) => format!("http://{rest}"),
-        None => addr.to_string(),
-    }
-}
-
-/// An IO wrapper whose `Connection::connected()` reports negotiated HTTP/2, so
-/// tonic drives the mesh gRPC channel over h2 (see the connector above). It
-/// delegates all IO to the inner hyper-compatible stream.
-pub(crate) struct H2Stream<T>(pub(crate) T);
-
-impl<T> hyper_util::client::legacy::connect::Connection for H2Stream<T> {
-    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
-        hyper_util::client::legacy::connect::Connected::new().negotiated_h2()
-    }
-}
-
-impl<T: hyper::rt::Read + Unpin> hyper::rt::Read for H2Stream<T> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
-    }
-}
-
-impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for H2Stream<T> {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().0).poll_shutdown(cx)
     }
 }
 
