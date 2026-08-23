@@ -49,7 +49,6 @@ import { NewUserDialog } from "./new-user-dialog";
 import { userRowActions, canCreateUser } from "./user-actions";
 import { useCapabilities } from "@/lib/capabilities";
 import { useWhoAmI } from "@/auth";
-import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { Users, MoreHorizontal, Plus, UserMinus, UserCheck, Trash2 } from "lucide-react";
@@ -61,13 +60,8 @@ const PAGE_SIZE = 50;
 function UserStatusBadge({ active }: { active: boolean }) {
   return (
     <Badge
-      variant="outline"
-      className={cn(
-        "rounded px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide border",
-        active
-          ? "border-green-300 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
-          : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
-      )}
+      variant={active ? "success" : "neutral"}
+      className="px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide"
     >
       {active ? "Active" : "Deactivated"}
     </Badge>

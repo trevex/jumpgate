@@ -10,15 +10,9 @@
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
-import { cn } from "@/lib/utils";
 import { RolesTab } from "./roles-tab";
 import { BindingsTab } from "./bindings-tab";
 import { PoliciesTab } from "./policies-tab";
-
-const TAB_TRIGGER = cn(
-  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
-  "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
-);
 
 export function AccessControlPage() {
   const caps = useCapabilities();
@@ -51,17 +45,17 @@ export function AccessControlPage() {
         <div className="border-b border-border px-6 pt-4">
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
             {canReadRoles && (
-              <TabsTrigger value="roles" className={TAB_TRIGGER}>
+              <TabsTrigger value="roles" variant="underline">
                 Roles
               </TabsTrigger>
             )}
             {canReadBindings && (
-              <TabsTrigger value="bindings" className={TAB_TRIGGER}>
+              <TabsTrigger value="bindings" variant="underline">
                 Bindings
               </TabsTrigger>
             )}
             {canReadPolicies && (
-              <TabsTrigger value="policies" className={TAB_TRIGGER}>
+              <TabsTrigger value="policies" variant="underline">
                 Policies
               </TabsTrigger>
             )}

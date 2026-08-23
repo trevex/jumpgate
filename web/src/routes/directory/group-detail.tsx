@@ -197,7 +197,7 @@ function MemberRow({
           {primary}
         </div>
         {secondaryGlobal ? (
-          <div className="flex items-center gap-1 text-micro text-muted-foreground/70">
+          <div className="flex items-center gap-1 text-micro text-muted-foreground">
             <Globe className="h-3 w-3" aria-hidden="true" />
             global
           </div>

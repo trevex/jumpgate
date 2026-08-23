@@ -45,7 +45,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
-import { cn } from "@/lib/utils";
 import { relativeTime, connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import {
@@ -155,8 +154,8 @@ function ApprovalProgress({
   if (requiredApprovals <= 0) return null;
   return (
     <Badge
-      variant="outline"
-      className="rounded border-amber-200 bg-amber-50 px-1.5 py-0 text-eyebrow font-semibold tabular-nums text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+      variant="warning"
+      className="px-1.5 py-0 text-eyebrow font-semibold tabular-nums"
       aria-label={`${approvalsSoFar} of ${requiredApprovals} approvals received`}
     >
       {approvalsSoFar}/{requiredApprovals}
@@ -434,11 +433,12 @@ function RequestRow({ req }: RequestRowProps) {
         <div className="flex items-center gap-2 shrink-0 pt-0.5">
           {/* Approve */}
           <Button
+            variant="success"
             size="sm"
             onClick={() => doApprove({ requestId: req.id })}
             disabled={isApproving}
             aria-label={`Approve ${requesterDisplay}'s request`}
-            className="h-7 gap-1 px-3 text-compact bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600"
+            className="h-7 gap-1 px-3 text-compact"
           >
             {isApproving ? (
               <span className="flex items-center gap-1">
@@ -455,12 +455,12 @@ function RequestRow({ req }: RequestRowProps) {
 
           {/* Deny */}
           <Button
-            variant="outline"
+            variant="danger-outline"
             size="sm"
             onClick={() => setDenyOpen(true)}
             disabled={isApproving}
             aria-label={`Deny ${requesterDisplay}'s request`}
-            className="h-7 gap-1 px-3 text-compact border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/50"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             Deny
@@ -717,11 +717,6 @@ function ReviewableTab() {
 
 // ─── Approvals page ───────────────────────────────────────────────────────────
 
-const TAB_TRIGGER = cn(
-  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
-  "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
-);
-
 export function ApprovalsPage() {
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -739,7 +734,7 @@ export function ApprovalsPage() {
       <Tabs defaultValue="pending" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border px-6 pt-4">
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
-            <TabsTrigger value="pending" className={TAB_TRIGGER}>
+            <TabsTrigger value="pending" variant="underline">
               <span className="flex items-center gap-1.5">
                 Pending
                 {pendingCount > 0 && (
@@ -753,7 +748,7 @@ export function ApprovalsPage() {
                 )}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="reviewable" className={TAB_TRIGGER}>
+            <TabsTrigger value="reviewable" variant="underline">
               Reviewable
             </TabsTrigger>
           </TabsList>

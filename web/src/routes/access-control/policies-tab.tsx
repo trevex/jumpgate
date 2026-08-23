@@ -107,7 +107,7 @@ function ScopeCell({ policy }: { policy: RequestPolicy }) {
   if (policy.scopeFolderId) return <FolderScope folderId={policy.scopeFolderId} />;
   if (policy.scopeAssetId) return <AssetScope assetId={policy.scopeAssetId} />;
   return (
-    <span className="inline-flex items-center gap-1.5 text-muted-foreground/70">
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
       <Layers className="h-3.5 w-3.5" aria-hidden="true" />
       role-default
     </span>

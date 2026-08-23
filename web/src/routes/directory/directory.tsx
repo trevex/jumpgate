@@ -9,14 +9,8 @@
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
-import { cn } from "@/lib/utils";
 import { UsersTab } from "./users-tab";
 import { GroupsTab } from "./groups-tab";
-
-const TAB_TRIGGER = cn(
-  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
-  "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
-);
 
 export function DirectoryPage() {
   const caps = useCapabilities();
@@ -44,12 +38,12 @@ export function DirectoryPage() {
         <div className="border-b border-border px-6 pt-4">
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
             {canReadUsers && (
-              <TabsTrigger value="users" className={TAB_TRIGGER}>
+              <TabsTrigger value="users" variant="underline">
                 Users
               </TabsTrigger>
             )}
             {canReadGroups && (
-              <TabsTrigger value="groups" className={TAB_TRIGGER}>
+              <TabsTrigger value="groups" variant="underline">
                 Groups
               </TabsTrigger>
             )}

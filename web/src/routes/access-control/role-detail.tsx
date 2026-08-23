@@ -151,7 +151,7 @@ function GrantEdgeRow({
         <div className="text-micro text-muted-foreground">
           via <span className="font-medium text-foreground">{via}</span>
           {source?.folderPath && (
-            <span className="ml-1 font-mono text-muted-foreground/70">
+            <span className="ml-1 font-mono text-muted-foreground">
               · {source.folderPath}
             </span>
           )}

@@ -192,14 +192,14 @@ function ConfigurationSection({ policy }: { policy: RequestPolicy }) {
           {policy.requesterRoleId ? (
             <RoleName roleId={policy.requesterRoleId} />
           ) : (
-            <span className="text-muted-foreground/70">Anyone</span>
+            <span className="text-muted-foreground">Anyone</span>
           )}
         </FieldRow>
         <FieldRow label="Approver role">
           {policy.approverRoleId ? (
             <RoleName roleId={policy.approverRoleId} />
           ) : (
-            <span className="text-muted-foreground/70">None</span>
+            <span className="text-muted-foreground">None</span>
           )}
         </FieldRow>
       </div>
@@ -328,7 +328,7 @@ function SubjectGroup({
     <div className="flex flex-col gap-0.5">
       <h4 className="px-1 text-micro font-medium text-foreground">{heading}</h4>
       {subjects.length === 0 ? (
-        <p className="px-1 py-1.5 text-compact text-muted-foreground/70">
+        <p className="px-1 py-1.5 text-compact text-muted-foreground">
           {kind === "requester"
             ? "No requester subjects."
             : "No approver subjects."}

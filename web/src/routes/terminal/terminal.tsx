@@ -46,28 +46,28 @@ const STATUS_META: Record<
 > = {
   connecting: {
     label: "Connecting",
-    dot: "bg-amber-500 animate-pulse",
-    text: "text-amber-700 dark:text-amber-300",
+    dot: "bg-warning-fg animate-pulse",
+    text: "text-warning-fg",
   },
   connected: {
     label: "Connected",
-    dot: "bg-green-500",
-    text: "text-green-700 dark:text-green-300",
+    dot: "bg-success-fg",
+    text: "text-success-fg",
   },
   exited: {
     label: "Session ended",
-    dot: "bg-slate-400",
-    text: "text-muted-foreground",
+    dot: "bg-neutral-fg",
+    text: "text-neutral-fg",
   },
   closed: {
     label: "Disconnected",
-    dot: "bg-slate-400",
-    text: "text-muted-foreground",
+    dot: "bg-neutral-fg",
+    text: "text-neutral-fg",
   },
   error: {
     label: "Error",
-    dot: "bg-red-500",
-    text: "text-red-700 dark:text-red-300",
+    dot: "bg-danger-fg",
+    text: "text-danger-fg",
   },
 };
 

@@ -161,7 +161,7 @@ function ScopeCell({ binding }: { binding: RoleBinding }) {
   if (binding.scopeFolderId) return <FolderScope folderId={binding.scopeFolderId} />;
   if (binding.scopeAssetId) return <AssetScope assetId={binding.scopeAssetId} />;
   return (
-    <span className="inline-flex items-center gap-1.5 text-muted-foreground/70">
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
       <Globe className="h-3.5 w-3.5" aria-hidden="true" />
       global
     </span>

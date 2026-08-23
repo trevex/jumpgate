@@ -92,18 +92,18 @@ function relativeTimeMs(unixMs: bigint): string {
 
 // ─── Recording status badge ───────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<string, string> = {
-  completed: "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300",
-  recording: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
-  failed:    "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+const STATUS_VARIANTS: Record<string, "success" | "info" | "danger" | "neutral"> = {
+  completed: "success",
+  recording: "info",
+  failed: "danger",
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? "border-muted bg-muted/50 text-muted-foreground";
+  const variant = STATUS_VARIANTS[status] ?? "neutral";
   return (
     <Badge
-      variant="outline"
-      className={cn("rounded px-1.5 py-0 text-eyebrow font-semibold capitalize tabular-nums", style)}
+      variant={variant}
+      className="px-1.5 py-0 text-eyebrow font-semibold capitalize tabular-nums"
     >
       {status}
     </Badge>
@@ -321,7 +321,7 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
       <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
         {playerError ? (
           <div className="flex flex-col items-center gap-3 text-center">
-            <AlertTriangle className="h-8 w-8 text-amber-400/80" aria-hidden="true" />
+            <AlertTriangle className="h-8 w-8 text-warning-fg" aria-hidden="true" />
             <p className="text-body text-white/60 max-w-xs">{playerError}</p>
           </div>
         ) : (

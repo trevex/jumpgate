@@ -142,7 +142,7 @@ function GroupRowActionsCell({ group }: GroupRowActionsProps) {
 function GroupHome({ group }: { group: Group }) {
   if (!group.folderPath) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground/70">
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
         <Globe className="h-3.5 w-3.5" aria-hidden="true" />
         global
       </span>

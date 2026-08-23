@@ -47,20 +47,23 @@ import {
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<string, string> = {
-  pending:   "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
-  granted:   "border-green-300 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300",
-  denied:    "border-red-300 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
-  cancelled: "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
+const STATUS_VARIANTS: Record<
+  string,
+  "warning" | "success" | "danger" | "neutral"
+> = {
+  pending: "warning",
+  granted: "success",
+  denied: "danger",
+  cancelled: "neutral",
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? "border-border bg-muted text-muted-foreground";
+  const variant = STATUS_VARIANTS[status] ?? "neutral";
   const label = status.charAt(0).toUpperCase() + status.slice(1);
   return (
     <Badge
-      variant="outline"
-      className={cn("rounded px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide border", style)}
+      variant={variant}
+      className="px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide"
     >
       {label}
     </Badge>
@@ -89,7 +92,7 @@ function InlineCopyButton({ text, label }: { text: string; label?: string }) {
         "flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         copied
-          ? "text-green-600 dark:text-green-400"
+          ? "text-success-fg"
           : "text-muted-foreground hover:text-foreground",
       )}
       aria-label={copied ? "Copied" : (label ?? "Copy")}
@@ -204,7 +207,7 @@ function RequestRow({ req }: { req: AccessRequest }) {
         </span>
         {req.resolvedAt && (
           <span
-            className="text-eyebrow text-muted-foreground/70 whitespace-nowrap"
+            className="text-eyebrow text-muted-foreground whitespace-nowrap"
             title={req.resolvedAt}
           >
             resolved {relativeTime(req.resolvedAt)}
@@ -351,16 +354,11 @@ function RevokeButton({
 
   return (
     <Button
-      variant="outline"
+      variant="danger-outline"
       size="sm"
       onClick={handleClick}
       disabled={isRevoking}
-      className={cn(
-        "h-6 text-micro transition-colors",
-        confirming
-          ? "border-red-400 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/50 dark:bg-red-500/15 dark:text-red-300 dark:hover:bg-red-500/25"
-          : "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300",
-      )}
+      className="h-6 text-micro transition-colors"
       aria-label={confirming ? "Click again to confirm revoke" : "Revoke this grant"}
     >
       {isRevoking ? (
@@ -425,22 +423,22 @@ function GrantCard({ grant }: { grant: Grant }) {
         <div className="flex flex-col items-end gap-1 shrink-0">
           {revoked ? (
             <Badge
-              variant="outline"
-              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-red-600 tracking-wide dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+              variant="danger"
+              className="px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide"
             >
               Revoked
             </Badge>
           ) : grant.active ? (
             <Badge
-              variant="outline"
-              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-green-700 tracking-wide dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
+              variant="success"
+              className="px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide"
             >
               Active
             </Badge>
           ) : (
             <Badge
-              variant="outline"
-              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-slate-500 tracking-wide dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300"
+              variant="neutral"
+              className="px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide"
             >
               Expired
             </Badge>
@@ -611,22 +609,10 @@ export function MyAccessPage() {
       <Tabs defaultValue="requests" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border px-6 pt-4">
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
-            <TabsTrigger
-              value="requests"
-              className={cn(
-                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
-                "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
-              )}
-            >
+            <TabsTrigger value="requests" variant="underline">
               Requests
             </TabsTrigger>
-            <TabsTrigger
-              value="grants"
-              className={cn(
-                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
-                "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
-              )}
-            >
+            <TabsTrigger value="grants" variant="underline">
               Grants
             </TabsTrigger>
           </TabsList>

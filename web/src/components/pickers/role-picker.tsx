@@ -104,7 +104,7 @@ export function RolePicker({
                     {role.folderPath}
                   </span>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground/70">
+                  <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground">
                     <Globe className="h-3 w-3" aria-hidden="true" />
                     global
                   </span>
