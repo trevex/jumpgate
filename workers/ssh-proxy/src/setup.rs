@@ -56,6 +56,9 @@ pub struct SetupOutcome {
     /// line), or empty for no pin. When non-empty the worker rejects a target
     /// whose presented host key does not match (fail closed / MITM protection).
     pub target_host_key: String,
+    /// The access grant that authorized this session (empty for standing-only
+    /// access). Carried through to the recording report for session attribution.
+    pub grant_id: String,
     /// The credential the worker uses to authenticate to the target as the login.
     pub credential: TargetCredential,
     /// Whether warden requires this session to be recorded (else refuse it).
@@ -119,6 +122,7 @@ pub async fn setup_session(
         session_id: resp.session_id,
         target_address: resp.target_address,
         target_host_key: resp.target_host_key,
+        grant_id: resp.grant_id.clone(),
         credential,
         recording_required: resp.recording_required,
         recording_object_key: resp.recording_object_key,

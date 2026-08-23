@@ -219,6 +219,7 @@ async fn connect_and_run(
                                     started_at_unix_ms: r.started_at_unix_ms,
                                     ended_at_unix_ms: r.ended_at_unix_ms,
                                     status: r.status,
+                                    grant_id: r.grant_id,
                                 }),
                             })),
                         };

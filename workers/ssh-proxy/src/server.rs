@@ -155,6 +155,9 @@ pub struct SessionState {
     /// The asset's configured target host-key pin (OpenSSH authorized_keys line),
     /// or empty for no pin. Enforced on the target hop (fail closed on mismatch).
     pub target_host_key: String,
+    /// The access grant that authorized this session (empty for standing-only
+    /// access). Echoed back in the recording report for session attribution.
+    pub grant_id: String,
     /// How the worker authenticates the target hop for this session.
     pub target_auth: TargetAuth,
     /// warden requires this session to be recorded; if a recording cannot be
@@ -202,6 +205,9 @@ pub struct RecordingOutcome {
     pub started_at_unix_ms: i64,
     pub ended_at_unix_ms: i64,
     pub status: String, // "completed" | "failed"
+    /// The access grant that authorized the session (empty for standing-only
+    /// access), for warden to attribute the recording.
+    pub grant_id: String,
 }
 
 /// Pseudo-terminal parameters remembered from the client's `pty_request`, so the
@@ -349,6 +355,7 @@ pub async fn authorize(
         session_id: outcome.session_id,
         target_address: outcome.target_address,
         target_host_key: outcome.target_host_key,
+        grant_id: outcome.grant_id,
         target_auth,
         recording_required: outcome.recording_required,
         recording_object_key: outcome.recording_object_key,
@@ -478,6 +485,7 @@ impl SshHandler {
                             started_at_unix_ms: 0,
                             ended_at_unix_ms: 0,
                             status: "failed".into(),
+                            grant_id: state.grant_id.clone(),
                         }),
                     });
                     return;
@@ -517,6 +525,7 @@ impl SshHandler {
                         started_at_unix_ms: started_ms,
                         ended_at_unix_ms: unix_millis_now(),
                         status: "failed".into(),
+                        grant_id: state.grant_id.clone(),
                     })
                 } else {
                     // Unrecorded session: keep the prior behavior — no report.
@@ -536,6 +545,7 @@ impl SshHandler {
         // Register the live session so a Teardown can force-close it, then bridge.
         let session_id = state.session_id.clone();
         let object_key = state.recording_object_key.clone();
+        let grant_id = state.grant_id.clone();
         let handle = self.registry.insert(&session_id);
         let registry = self.registry.clone();
         let ended_tx = self.session_ended_tx.clone();
@@ -596,6 +606,7 @@ impl SshHandler {
                     started_at_unix_ms: started_ms,
                     ended_at_unix_ms: ended_ms,
                     status: status.into(),
+                    grant_id,
                 })
             } else {
                 None
@@ -1043,6 +1054,7 @@ mod tests {
                     session_id: "sess-1".into(),
                     target_address: "10.0.0.5:22".into(),
                     target_host_key: String::new(),
+                    grant_id: String::new(),
                     credential: TargetCredential::Cert(cert),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1061,6 +1073,7 @@ mod tests {
                     session_id: "sess-pw".into(),
                     target_address: "10.0.0.6:22".into(),
                     target_host_key: String::new(),
+                    grant_id: String::new(),
                     credential: TargetCredential::Password(password),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1079,6 +1092,7 @@ mod tests {
                     session_id: "sess-key".into(),
                     target_address: "10.0.0.7:22".into(),
                     target_host_key: String::new(),
+                    grant_id: String::new(),
                     credential: TargetCredential::Key(pem),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1236,6 +1250,7 @@ mod tests {
                     session_id: "sess-x".into(),
                     target_address: "t:22".into(),
                     target_host_key: String::new(),
+                    grant_id: String::new(),
                     credential: TargetCredential::Cert(cert),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1258,6 +1273,7 @@ mod tests {
                     session_id: "s".into(),
                     target_address: "t:22".into(),
                     target_host_key: String::new(),
+                    grant_id: String::new(),
                     credential: TargetCredential::Cert(b"not a real cert".to_vec()),
                     recording_required: false,
                     recording_object_key: String::new(),
@@ -1287,6 +1303,7 @@ mod tests {
             session_id: "sess-rec".into(),
             target_address: "t:22".into(),
             target_host_key: String::new(),
+            grant_id: String::new(),
             target_auth: TargetAuth::Cert {
                 certificate: Box::new(cert),
                 kw: Box::new(kw),

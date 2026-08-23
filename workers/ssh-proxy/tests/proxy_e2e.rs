@@ -97,6 +97,7 @@ fn stub_setup(
                 // Empty pin: the test target's host key is ephemeral, so the hop
                 // uses accept-and-log (host-key pinning is unit-tested in target.rs).
                 target_host_key: String::new(),
+                grant_id: String::new(),
                 credential: TargetCredential::Cert(cert.to_openssh().unwrap().into_bytes()),
                 recording_required: false,
                 recording_object_key: String::new(),

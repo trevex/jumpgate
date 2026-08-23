@@ -308,6 +308,7 @@ where
                         started_at_unix_ms: 0,
                         ended_at_unix_ms: 0,
                         status: "failed".into(),
+                        grant_id: state.grant_id.clone(),
                     }),
                 });
                 send_error(&mut writer, "recording unavailable").await;
@@ -347,6 +348,7 @@ where
                         started_at_unix_ms: started_ms,
                         ended_at_unix_ms: unix_millis_now(),
                         status: "failed".into(),
+                        grant_id: state.grant_id.clone(),
                     }),
                 });
             }
@@ -358,6 +360,7 @@ where
     // 5. Register the live session (so a Teardown force-closes it) and pump.
     let session_id = state.session_id.clone();
     let object_key = state.recording_object_key.clone();
+    let grant_id = state.grant_id.clone();
     let handle = deps.registry.insert(&session_id);
     let registry = deps.registry.clone();
     let ended_tx = deps.session_ended_tx.clone();
@@ -406,6 +409,7 @@ where
             started_at_unix_ms: started_ms,
             ended_at_unix_ms: unix_millis_now(),
             status: status.into(),
+            grant_id,
         })
     } else {
         None
