@@ -604,16 +604,25 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
 export function RecordingsPage() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const selectedId = sessionId ?? null;
 
+  // Preserve the active filter (?grantId=/?assetId=/?userId=) across selecting
+  // and closing a recording. This keeps the list scoped, and — critically for
+  // the grant-scoped review path — keeps ?grantId= on the URL so a subject or
+  // approver without recording:read stays inside the route guard when they open
+  // a recording (the guard admits grant-scoped entry).
+  const query = searchParams.toString();
+  const suffix = query ? `?${query}` : "";
+
   const handleSelect = useCallback((id: string) => {
-    navigate(`/recordings/${id}`, { replace: true });
-  }, [navigate]);
+    navigate(`/recordings/${id}${suffix}`, { replace: true });
+  }, [navigate, suffix]);
 
   const handleClose = useCallback(() => {
-    navigate("/recordings", { replace: true });
-  }, [navigate]);
+    navigate(`/recordings${suffix}`, { replace: true });
+  }, [navigate, suffix]);
 
   return (
     <div className="flex flex-col h-full">

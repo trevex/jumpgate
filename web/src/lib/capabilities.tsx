@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useWhoAmI } from "../auth";
 
 /**
@@ -39,6 +39,24 @@ export function useCapabilities(): string[] {
  */
 export function RequireCap({ cap, children }: { cap: string; children: ReactNode }) {
   if (!capsCover(useCapabilities(), cap)) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/**
+ * RequireRecordingAccess guards the recordings route. Holders of `recording:read`
+ * always enter. A caller WITHOUT it may still enter when the route is scoped to a
+ * single grant (`?grantId=`): the grant-scoped review path lets a grant's subject
+ * or a potential approver list and play that grant's recordings, and the server
+ * enforces that rule per request (an unauthorized query simply returns nothing).
+ * Without the cap and without a grant scope, redirect home.
+ */
+export function RequireRecordingAccess({ children }: { children: ReactNode }) {
+  const held = useCapabilities();
+  const [params] = useSearchParams();
+  const grantScoped = Boolean(params.get("grantId"));
+  if (!capsCover(held, "recording:read") && !grantScoped) {
+    return <Navigate to="/" replace />;
+  }
   return <>{children}</>;
 }
 

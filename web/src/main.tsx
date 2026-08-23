@@ -17,7 +17,7 @@ import { RecordingsPage } from "./routes/recordings/recordings";
 import { DirectoryPage } from "./routes/directory/directory";
 import { AccessControlPage } from "./routes/access-control/access-control";
 import { TerminalPage } from "./routes/terminal/terminal";
-import { RequireCap, RequireAnyCap } from "./lib/capabilities";
+import { RequireAnyCap, RequireRecordingAccess } from "./lib/capabilities";
 import { Toaster } from "./components/ui/sonner";
 
 const queryClient = new QueryClient({
@@ -88,17 +88,17 @@ const router = createBrowserRouter([
       {
         path: "recordings",
         element: (
-          <RequireCap cap="recording:read">
+          <RequireRecordingAccess>
             <RecordingsPage />
-          </RequireCap>
+          </RequireRecordingAccess>
         ),
       },
       {
         path: "recordings/:sessionId",
         element: (
-          <RequireCap cap="recording:read">
+          <RequireRecordingAccess>
             <RecordingsPage />
-          </RequireCap>
+          </RequireRecordingAccess>
         ),
       },
     ],
