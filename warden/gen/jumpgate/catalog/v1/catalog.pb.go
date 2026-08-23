@@ -30,6 +30,7 @@ type Folder struct {
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	ParentId      string                 `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
+	Governed      bool                   `protobuf:"varint,5,opt,name=governed,proto3" json:"governed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -90,6 +91,13 @@ func (x *Folder) GetPath() string {
 		return x.Path
 	}
 	return ""
+}
+
+func (x *Folder) GetGoverned() bool {
+	if x != nil {
+		return x.Governed
+	}
+	return false
 }
 
 // Asset is a target in the catalog. The typed per-kind connection config (config)
@@ -2789,12 +2797,13 @@ var File_jumpgate_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\n" +
-	"!jumpgate/catalog/v1/catalog.proto\x12\x13jumpgate.catalog.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fjumpgate/access/v1/access.proto\x1a#jumpgate/identity/v1/identity.proto\"]\n" +
+	"!jumpgate/catalog/v1/catalog.proto\x12\x13jumpgate.catalog.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fjumpgate/access/v1/access.proto\x1a#jumpgate/identity/v1/identity.proto\"y\n" +
 	"\x06Folder\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
 	"\tparent_id\x18\x03 \x01(\tR\bparentId\x12\x12\n" +
-	"\x04path\x18\x04 \x01(\tR\x04path\"\xae\x01\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\x12\x1a\n" +
+	"\bgoverned\x18\x05 \x01(\bR\bgoverned\"\xae\x01\n" +
 	"\x05Asset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tfolder_id\x18\x02 \x01(\tR\bfolderId\x12\x12\n" +

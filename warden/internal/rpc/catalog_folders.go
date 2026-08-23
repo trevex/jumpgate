@@ -128,8 +128,10 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	// Slice B ignores the per-folder Governed intent; a proto field surfaces it in a
-	// later slice. Here we keep the existing behavior and consume only the id set.
+	govByID := make(map[uuid.UUID]bool, len(visible))
+	for _, vf := range visible {
+		govByID[vf.ID] = vf.Governed
+	}
 	ids := authz.FolderIDsOf(visible)
 	out := &catalogv1.ListFoldersResponse{}
 	if len(ids) == 0 {
@@ -160,6 +162,7 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	for i := range rows {
 		m := toFolderMsg(rows[i])
 		m.Path = pathByID[rows[i].ID.String()]
+		m.Governed = govByID[rows[i].ID]
 		out.Folders = append(out.Folders, m)
 	}
 	if len(rows) == int(limit) {

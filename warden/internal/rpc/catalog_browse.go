@@ -171,6 +171,10 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	folderGovByID := make(map[uuid.UUID]bool, len(visibleFolders))
+	for _, vf := range visibleFolders {
+		folderGovByID[vf.ID] = vf.Governed
+	}
 	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 {
 		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{
@@ -195,6 +199,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		for i := range rows {
 			m := toFolderMsg(rows[i])
 			m.Path = pathByID[rows[i].ID.String()]
+			m.Governed = folderGovByID[rows[i].ID]
 			out.Folders = append(out.Folders, m)
 		}
 	}

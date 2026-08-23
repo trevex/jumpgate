@@ -48,7 +48,7 @@ service CatalogService {
   rpc SearchCatalog(SearchCatalogRequest) returns (SearchCatalogResponse) {}
 }
 
-message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; }
+message Folder { string id = 1; string name = 2; string parent_id = 3; string path = 4; bool governed = 5; }
 
 // Asset is a target in the catalog. The typed per-kind connection config (config)
 // is populated only by single-asset reads (GetAsset); list responses leave it empty
