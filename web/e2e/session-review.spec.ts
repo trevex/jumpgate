@@ -103,6 +103,7 @@ test("session-review discovery: subject, approver, and per-asset playback", asyn
     // ─────────────────────────────────────────────────────────────────────────
     await login(admin, ADMIN_EMAIL, ADMIN_PASSWORD);
 
+    await admin.getByRole("link", { name: "Catalog" }).click();
     await admin.getByRole("button", { name: "Expand folder demo" }).click();
     const tree = admin.locator('nav[aria-label="Catalog tree"]');
     await tree.getByRole("button", { name: "review-box" }).click();

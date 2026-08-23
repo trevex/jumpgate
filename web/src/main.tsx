@@ -10,6 +10,7 @@ import { transport } from "./transport";
 import { RequireAuth } from "./auth";
 import { LoginPage } from "./routes/login";
 import { AppShell } from "./routes/app";
+import { OverviewPage } from "./routes/home/home";
 import { CatalogPage } from "./routes/catalog/catalog";
 import { MyAccessPage } from "./routes/access/access";
 import { ApprovalsPage } from "./routes/approvals/approvals";
@@ -60,7 +61,8 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <CatalogPage /> },
+      { index: true, element: <OverviewPage /> },
+      { path: "catalog", element: <CatalogPage /> },
       { path: "access", element: <MyAccessPage /> },
       { path: "approvals", element: <ApprovalsPage /> },
       {

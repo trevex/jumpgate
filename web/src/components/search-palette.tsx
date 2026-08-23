@@ -126,7 +126,7 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
     const node = hitToSelectedNode(hit);
     onOpenChange(false);
     if (node) {
-      navigate(`/?sel=${encodeSelection(node)}`);
+      navigate(`/catalog?sel=${encodeSelection(node)}`);
     }
   };
 

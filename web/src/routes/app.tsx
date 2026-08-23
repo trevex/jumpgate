@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  LayoutDashboard,
   LayoutGrid,
   KeyRound,
   ClipboardCheck,
@@ -116,8 +117,13 @@ function UserInitials({ email }: { email: string }) {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: "Catalog",
+    label: "Home",
     to: "/",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Catalog",
+    to: "/catalog",
     icon: LayoutGrid,
   },
   {

@@ -42,6 +42,9 @@ test("request → approve → connect-command → audit across four actors", asy
     // ─────────────────────────────────────────────────────────────────────────
     await login(alice, ALICE_EMAIL, ALICE_PASSWORD);
 
+    // The landing route is the Overview dashboard; open the Catalog to browse.
+    await alice.getByRole("link", { name: "Catalog" }).click();
+
     // Expand the demo folder and select the demo-box asset in the governance tree.
     await alice.getByRole("button", { name: "Expand folder demo" }).click();
     const tree = alice.locator('nav[aria-label="Catalog tree"]');
