@@ -112,10 +112,7 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	// Mirror bootstrap.EnsureAdmin: an admin also holds `**` globally via a scopeless
 	// standing binding so the capability-gated management handlers admit it.
 	if admin {
-		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
-		if err != nil {
-			t.Fatal(err)
-		}
+		role := createRoleWithCaps(t, ctx, q, "admin-"+uuid.NewString(), pgtype.UUID{}, `["**"]`)
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 			RoleID:        role.ID,
 			SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},

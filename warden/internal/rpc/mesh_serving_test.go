@@ -124,12 +124,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-deploy-mesh-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-mesh-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
 		RequesterUserID:   subject.ID,
 		RoleID:            role.ID,

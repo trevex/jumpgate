@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -51,10 +52,7 @@ func seedPathReveal(t *testing.T, pool *pgxpool.Pool, roleName string, capabilit
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: roleName, Capabilities: caps(capabilities...)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, roleName, pgtype.UUID{}, caps(capabilities...))
 	// Bind the management role at team ONLY (folder scope), not globally.
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeFolderID: pgUUID(teamF.ID), SubjectUserID: pgUUID(u.ID),
@@ -206,10 +204,7 @@ func TestGovernedFalseForBreadcrumb(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connectRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "bc-connect", Capabilities: caps("ssh:connect")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	connectRole := createRoleWithCaps(t, ctx, q, "bc-connect", pgtype.UUID{}, caps("ssh:connect"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: connectRole.ID, ScopeAssetID: pgUUID(deep.ID), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
@@ -360,10 +355,7 @@ func TestCascadeUnderParentExcludesSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cep-role", Capabilities: caps("catalog:folder:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "cep-role", pgtype.UUID{}, caps("catalog:folder:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeFolderID: pgUUID(pF.ID), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {

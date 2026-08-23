@@ -44,8 +44,12 @@ func TestBootstrapSeedsAdminOnEmptyDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin role not seeded: %v", err)
 	}
-	if string(role.Capabilities) != `["**"]` {
-		t.Fatalf("admin role caps = %s, want [\"**\"]", role.Capabilities)
+	rcaps, err := q.RoleCapabilityRows(ctx, role.ID)
+	if err != nil {
+		t.Fatalf("admin role capabilities: %v", err)
+	}
+	if len(rcaps) != 1 || rcaps[0].Scope != "*" || rcaps[0].Action != "*" || rcaps[0].Qualifier != "*" {
+		t.Fatalf("admin role must carry exactly one '**' capability; got %+v", rcaps)
 	}
 	bindings, err := q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},

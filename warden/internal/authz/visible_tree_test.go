@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -91,12 +92,7 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 	}
 
 	// admin: scopeless (global) role carrying the two catalog read caps.
-	adminRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "tree-admin", Capabilities: caps("catalog:asset:read", "catalog:folder:read"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	adminRole := createRoleWithCaps(t, ctx, q, "tree-admin", pgtype.UUID{}, caps("catalog:asset:read", "catalog:folder:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU.ID), // no scope → global
 	}); err != nil {
@@ -104,10 +100,7 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 	}
 
 	// alice: standing connect role bound directly on a1 (active access, no mgmt cap).
-	connect, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "tree-connect", Capabilities: caps("ssh:connect")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	connect := createRoleWithCaps(t, ctx, q, "tree-connect", pgtype.UUID{}, caps("ssh:connect"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: connect.ID, ScopeAssetID: pgUUID(a1A.ID), SubjectUserID: pgUUID(aliceU.ID),
 	}); err != nil {
@@ -122,10 +115,7 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: bobs.ID, MemberUserID: pgUUID(bobU.ID)}); err != nil {
 		t.Fatal(err)
 	}
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "tree-dba", Capabilities: caps("db:admin")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dba := createRoleWithCaps(t, ctx, q, "tree-dba", pgtype.UUID{}, caps("db:admin"))
 	pol, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID: dba.ID, ScopeAssetID: pgUUID(a2A.ID), RequiredApprovals: 1,
 	})
@@ -169,16 +159,8 @@ func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, s
 	}
 
 	// A global role (folder NULL) and a folder-homed role (@f1).
-	groleGRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rg-role-global", Capabilities: caps("ssh:connect")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	froleRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "rg-frole", FolderID: pgUUID(f1F.ID), Capabilities: caps("ssh:connect"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	groleGRole := createRoleWithCaps(t, ctx, q, "rg-role-global", pgtype.UUID{}, caps("ssh:connect"))
+	froleRole := createRoleWithCaps(t, ctx, q, "rg-frole", pgUUID(f1F.ID), caps("ssh:connect"))
 
 	// A global group (folder NULL) and a folder-homed group (@f1).
 	ggroupGGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "rg-group-global"})
@@ -208,12 +190,7 @@ func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, s
 	}
 
 	// admin: global role carrying the two read caps (management arm, everywhere).
-	adminRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "rg-admin-role", Capabilities: caps("access:role:read", "identity:group:read"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	adminRole := createRoleWithCaps(t, ctx, q, "rg-admin-role", pgtype.UUID{}, caps("access:role:read", "identity:group:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU.ID), // no scope → global
 	}); err != nil {
@@ -456,12 +433,7 @@ func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scopedRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "vt-scoped-admin", Capabilities: caps("catalog:asset:read", "catalog:folder:read"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	scopedRole := createRoleWithCaps(t, ctx, q, "vt-scoped-admin", pgtype.UUID{}, caps("catalog:asset:read", "catalog:folder:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: scopedRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdminU.ID),
 	}); err != nil {
@@ -711,12 +683,7 @@ func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	fOther := fOtherF.ID
-	fOtherRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "rg-other-role", FolderID: pgUUID(fOther), Capabilities: caps("ssh:connect"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fOtherRole := createRoleWithCaps(t, ctx, q, "rg-other-role", pgUUID(fOther), caps("ssh:connect"))
 	fOtherGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
 		Name: "rg-other-group", FolderID: pgUUID(fOther),
 	})
@@ -732,13 +699,7 @@ func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgmtRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "rg-scoped-mgmt", FolderID: pgUUID(f1),
-		Capabilities: caps("access:role:read", "identity:group:read"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	mgmtRole := createRoleWithCaps(t, ctx, q, "rg-scoped-mgmt", pgUUID(f1), caps("access:role:read", "identity:group:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: mgmtRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdmin.ID),
 	}); err != nil {
@@ -872,12 +833,7 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connectRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "vt-deact-connect", Capabilities: caps("ssh:connect"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	connectRole := createRoleWithCaps(t, ctx, q, "vt-deact-connect", pgtype.UUID{}, caps("ssh:connect"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: connectRole.ID, ScopeAssetID: pgUUID(a1), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {

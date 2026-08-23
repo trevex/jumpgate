@@ -137,7 +137,7 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 }
 
 const createFolder = `-- name: CreateFolder :one
-INSERT INTO folders (name, parent_id) VALUES ($1, $2) RETURNING id, name, parent_id, created_at
+INSERT INTO folders (name, parent_id) VALUES ($1, $2) RETURNING id, name, parent_id, created_at, path_ids
 `
 
 type CreateFolderParams struct {
@@ -153,6 +153,7 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Fol
 		&i.Name,
 		&i.ParentID,
 		&i.CreatedAt,
+		&i.PathIds,
 	)
 	return i, err
 }
@@ -179,23 +180,21 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 }
 
 const createRole = `-- name: CreateRole :one
-INSERT INTO roles (name, folder_id, capabilities) VALUES ($1, $2, $3) RETURNING id, name, folder_id, capabilities, created_at
+INSERT INTO roles (name, folder_id) VALUES ($1, $2) RETURNING id, name, folder_id, created_at
 `
 
 type CreateRoleParams struct {
-	Name         string      `json:"name"`
-	FolderID     pgtype.UUID `json:"folder_id"`
-	Capabilities []byte      `json:"capabilities"`
+	Name     string      `json:"name"`
+	FolderID pgtype.UUID `json:"folder_id"`
 }
 
 func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
-	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.FolderID, arg.Capabilities)
+	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.FolderID)
 	var i Role
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.FolderID,
-		&i.Capabilities,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -433,6 +432,27 @@ func (q *Queries) InsertFolderName(ctx context.Context, arg InsertFolderNamePara
 	return err
 }
 
+const insertRoleCapability = `-- name: InsertRoleCapability :exec
+INSERT INTO role_capabilities (role_id, scope, action, qualifier) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING
+`
+
+type InsertRoleCapabilityParams struct {
+	RoleID    uuid.UUID `json:"role_id"`
+	Scope     string    `json:"scope"`
+	Action    string    `json:"action"`
+	Qualifier string    `json:"qualifier"`
+}
+
+func (q *Queries) InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error {
+	_, err := q.db.Exec(ctx, insertRoleCapability,
+		arg.RoleID,
+		arg.Scope,
+		arg.Action,
+		arg.Qualifier,
+	)
+	return err
+}
+
 const listGroupMembersPaged = `-- name: ListGroupMembersPaged :many
 SELECT gm.id, gm.group_id, gm.member_user_id, gm.member_group_id, gm.created_at FROM group_memberships gm
 WHERE gm.group_id = $1
@@ -662,6 +682,36 @@ type RemoveUserFromGroupParams struct {
 func (q *Queries) RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error {
 	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.GroupID, arg.MemberUserID)
 	return err
+}
+
+const roleCapabilityRows = `-- name: RoleCapabilityRows :many
+SELECT scope, action, qualifier FROM role_capabilities WHERE role_id = $1
+`
+
+type RoleCapabilityRowsRow struct {
+	Scope     string `json:"scope"`
+	Action    string `json:"action"`
+	Qualifier string `json:"qualifier"`
+}
+
+func (q *Queries) RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error) {
+	rows, err := q.db.Query(ctx, roleCapabilityRows, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleCapabilityRowsRow
+	for rows.Next() {
+		var i RoleCapabilityRowsRow
+		if err := rows.Scan(&i.Scope, &i.Action, &i.Qualifier); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateAssetCatalogName = `-- name: UpdateAssetCatalogName :exec

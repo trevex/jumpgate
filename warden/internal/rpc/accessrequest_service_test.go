@@ -29,11 +29,7 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole: %v", err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	target := mkRole("db-admin-flow")
 	requesterRole := mkRole("requester-flow")
@@ -167,11 +163,7 @@ func TestListReviewableGrants(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	targetRole := mkRole("lrg-target")
 	requesterRole := mkRole("lrg-requester")
@@ -378,11 +370,7 @@ func TestListMyRequestsKeysetPagination(t *testing.T) {
 
 	// Roles: one target role, one requester role.
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	targetRole := mkRole("myr-target")
 	requesterRole := mkRole("myr-requester")
@@ -504,11 +492,7 @@ func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	targetRole := mkRole("lpa-target")
 	requesterRole := mkRole("lpa-requester")
@@ -627,11 +611,7 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	targetRole := mkRole("lmg-target")
 	requesterRole := mkRole("lmg-requester")
@@ -767,13 +747,7 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 	}
 
 	// Create a role with ssh:login caps and verify logins are extracted.
-	sshRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "lmg-ssh-role",
-		Capabilities: []byte(`["ssh:login:root","ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole ssh: %v", err)
-	}
+	sshRole := createRoleWithCaps(t, ctx, q, "lmg-ssh-role", pgtype.UUID{}, `["ssh:login:root","ssh:login:deploy"]`)
 	sshAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "lmg-ssh", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset ssh: %v", err)
@@ -842,11 +816,7 @@ func TestListGrantsKeysetPagination(t *testing.T) {
 	atok := adminToken(t, url)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 	targetRole := mkRole("lg-target")
 	requesterRole := mkRole("lg-requester")
@@ -1019,11 +989,7 @@ func TestListPendingApprovalsPaginationAdvancesPastFilteredRows(t *testing.T) {
 	q := gen.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole %s: %v", name, err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
 	}
 
 	// Two independent target roles, two independent approver roles.

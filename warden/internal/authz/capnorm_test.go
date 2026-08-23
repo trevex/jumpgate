@@ -36,3 +36,22 @@ func TestReconstructCanonical(t *testing.T) {
 		}
 	}
 }
+
+// TestReconstructMatchPreserving verifies that Normalize→Reconstruct is a
+// semantics-preserving round-trip: CapMatch(original, req) must equal
+// CapMatch(reconstructed, req) for every (pattern, request) pair in the
+// cross-product used by the SQL CapMatch differential test.
+func TestReconstructMatchPreserving(t *testing.T) {
+	for _, p := range diffPatterns {
+		s, a, q := NormalizeCap(p)
+		reconstructed := ReconstructCap(s, a, q)
+		for _, r := range diffRequests {
+			want := CapMatch(p, r)
+			got := CapMatch(reconstructed, r)
+			if got != want {
+				t.Errorf("round-trip mismatch: pattern=%q reconstructed=%q req=%q: CapMatch(orig)=%v CapMatch(recon)=%v",
+					p, reconstructed, r, want, got)
+			}
+		}
+	}
+}

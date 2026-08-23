@@ -248,11 +248,7 @@ func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) 
 	aID := uuid.MustParse(asset.Id)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString(), Capabilities: []byte("[]")})
-		if err != nil {
-			t.Fatalf("CreateRole: %v", err)
-		}
-		return r.ID
+		return createRoleWithCaps(t, ctx, q, name+"-"+uuid.NewString(), pgtype.UUID{}, "[]").ID
 	}
 	target := mkRole("gr-target")
 	requesterRole := mkRole("gr-requester")

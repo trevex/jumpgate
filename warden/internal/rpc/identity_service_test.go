@@ -129,10 +129,7 @@ func seedCapUser(t *testing.T, pool *pgxpool.Pool, email, pw string, capsJSON st
 	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "role-" + uuid.NewString(), Capabilities: []byte(capsJSON)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "role-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},

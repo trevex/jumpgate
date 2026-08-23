@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -110,14 +109,13 @@ func (g capGuard) scopeOfPolicy(ctx context.Context, policyID uuid.UUID) (authz.
 	return scopeOfObject(p.ScopeFolderID, p.ScopeAssetID), nil
 }
 
-// roleCaps loads a role by id and returns its capability patterns. NotFound on missing.
+// roleCaps loads a role's capability patterns from role_capabilities. NotFound on missing role.
 func (g capGuard) roleCaps(ctx context.Context, roleID uuid.UUID) ([]string, error) {
-	r, err := g.q.GetRole(ctx, roleID)
-	if err != nil {
+	if _, err := g.q.GetRole(ctx, roleID); err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	var caps []string
-	if err := json.Unmarshal(r.Capabilities, &caps); err != nil {
+	caps, err := roleCapsStrings(ctx, g.q, roleID)
+	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return caps, nil

@@ -2,7 +2,6 @@ package authz
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -973,8 +972,8 @@ func isManagementCap(pat string) bool {
 // Capabilities ([]string) set (it has no pgx codec for a direct scan).
 func (s *sqlAuthorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT h.object_id, r.capabilities
-FROM held h JOIN roles r ON r.id = h.role_id
+SELECT DISTINCT h.object_id, rc.scope, rc.action, rc.qualifier
+FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
 WHERE h.object_kind = 'folder'`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("mgmt scope folders: %w", err)
@@ -983,21 +982,14 @@ WHERE h.object_kind = 'folder'`, userID)
 	out := map[uuid.UUID]struct{}{}
 	for rows.Next() {
 		var (
-			fid uuid.UUID
-			raw []byte
+			fid        uuid.UUID
+			sc, ac, qu string
 		)
-		if err := rows.Scan(&fid, &raw); err != nil {
+		if err := rows.Scan(&fid, &sc, &ac, &qu); err != nil {
 			return nil, fmt.Errorf("scan mgmt scope: %w", err)
 		}
-		var patterns Capabilities
-		if err := json.Unmarshal(raw, &patterns); err != nil {
-			return nil, fmt.Errorf("mgmt scope unmarshal: %w", err)
-		}
-		for _, c := range patterns {
-			if isManagementCap(c) {
-				out[fid] = struct{}{}
-				break
-			}
+		if isManagementCap(ReconstructCap(sc, ac, qu)) {
+			out[fid] = struct{}{}
 		}
 	}
 	return out, rows.Err()

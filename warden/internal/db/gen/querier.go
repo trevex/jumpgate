@@ -137,6 +137,7 @@ type Querier interface {
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
+	InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error
 	IsUserActive(ctx context.Context, id uuid.UUID) (bool, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
@@ -217,6 +218,7 @@ type Querier interface {
 	// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
+	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error

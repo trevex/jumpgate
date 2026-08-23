@@ -2,12 +2,12 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
@@ -19,6 +19,7 @@ import (
 // admin-or-self ExplainRole introspection.
 type AccessServer struct {
 	q        *gen.Queries
+	pool     *pgxpool.Pool
 	roles    *authz.RoleResolver
 	reqReads requestReadAuthorizer
 	deleter  roleDeleter
@@ -38,13 +39,26 @@ type roleDeleter interface {
 // request-scoped display reads (GetRoleDisplay) for callers who are party to a
 // pending access request but lack the read capability; a nil reqReads disables that
 // path (only the capability grants the read). deleter runs the DeleteRole cascade.
-func NewAccessServer(q *gen.Queries, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
-	return &AccessServer{q: q, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{authz: a, q: q}}
+func NewAccessServer(q *gen.Queries, pool *pgxpool.Pool, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
+	return &AccessServer{q: q, pool: pool, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{authz: a, q: q}}
 }
 
-func toAccessRoleMsg(r gen.Role) *accessv1.Role {
-	var caps []string
-	_ = json.Unmarshal(r.Capabilities, &caps)
+// roleCapsStrings queries role_capabilities for the given role and returns the
+// reconstructed capability pattern strings. Used wherever a role's capability list
+// is needed for display or no-escalation checks.
+func roleCapsStrings(ctx context.Context, q *gen.Queries, roleID uuid.UUID) ([]string, error) {
+	rows, err := q.RoleCapabilityRows(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	caps := make([]string, 0, len(rows))
+	for _, row := range rows {
+		caps = append(caps, authz.ReconstructCap(row.Scope, row.Action, row.Qualifier))
+	}
+	return caps, nil
+}
+
+func toAccessRoleMsg(r gen.Role, caps []string) *accessv1.Role {
 	return &accessv1.Role{
 		Id:           r.ID.String(),
 		Name:         r.Name,
@@ -53,9 +67,13 @@ func toAccessRoleMsg(r gen.Role) *accessv1.Role {
 	}
 }
 
-// roleMsgWithPath returns the role message with folder_path populated (empty for global).
+// roleMsgWithPath returns the role message with folder_path and capabilities populated.
 func (s *AccessServer) roleMsgWithPath(ctx context.Context, r gen.Role) (*accessv1.Role, error) {
-	m := toAccessRoleMsg(r)
+	caps, err := roleCapsStrings(ctx, s.q, r.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	m := toAccessRoleMsg(r, caps)
 	if r.FolderID.Valid {
 		fp, err := s.q.FolderPath(ctx, uuidFromPg(r.FolderID))
 		if err != nil {

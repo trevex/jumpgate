@@ -36,10 +36,7 @@ func seedCapUserScoped(t *testing.T, pool *pgxpool.Pool, email, pw, capsJSON str
 	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "role-" + uuid.NewString(), Capabilities: []byte(capsJSON)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "role-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
 	params := gen.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true}}
 	if scopeFolder != uuid.Nil {
 		params.ScopeFolderID = pgtype.UUID{Bytes: scopeFolder, Valid: true}
@@ -150,10 +147,7 @@ func TestAuthzObjectDerivedScope(t *testing.T) {
 
 	// A deletable role-binding in each folder (a global role bound at each folder).
 	q := gen.New(pool)
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "r-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "r-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "g-" + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)

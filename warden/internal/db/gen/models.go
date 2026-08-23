@@ -114,6 +114,7 @@ type Folder struct {
 	Name      string      `json:"name"`
 	ParentID  pgtype.UUID `json:"parent_id"`
 	CreatedAt time.Time   `json:"created_at"`
+	PathIds   string      `json:"path_ids"`
 }
 
 type Group struct {
@@ -167,11 +168,10 @@ type RequestPolicySubject struct {
 }
 
 type Role struct {
-	ID           uuid.UUID   `json:"id"`
-	Name         string      `json:"name"`
-	FolderID     pgtype.UUID `json:"folder_id"`
-	Capabilities []byte      `json:"capabilities"`
-	CreatedAt    time.Time   `json:"created_at"`
+	ID        uuid.UUID   `json:"id"`
+	Name      string      `json:"name"`
+	FolderID  pgtype.UUID `json:"folder_id"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type RoleBinding struct {
@@ -182,6 +182,13 @@ type RoleBinding struct {
 	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
 	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
 	CreatedAt      time.Time   `json:"created_at"`
+}
+
+type RoleCapability struct {
+	RoleID    uuid.UUID `json:"role_id"`
+	Scope     string    `json:"scope"`
+	Action    string    `json:"action"`
+	Qualifier string    `json:"qualifier"`
 }
 
 type RoleGrant struct {

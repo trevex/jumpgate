@@ -42,10 +42,7 @@ func seedFolderCascade(t *testing.T, pool *pgxpool.Pool) (aliceEmail, alicePass,
 		t.Fatal(err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "fc-demo", Capabilities: []byte(`["ssh:login:demo"]`)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "fc-demo", pgtype.UUID{}, `["ssh:login:demo"]`)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: fc.ID, Valid: true},

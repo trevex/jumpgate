@@ -281,10 +281,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-rec-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`)})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-rec-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgtype.UUID{Bytes: asset.ID, Valid: true}, SubjectUserID: pgtype.UUID{Bytes: user.ID, Valid: true},
 	}); err != nil {
@@ -385,10 +382,7 @@ func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`)})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 
 	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
 		RequesterUserID:   user.ID,

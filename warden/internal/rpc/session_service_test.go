@@ -70,12 +70,7 @@ func TestCreateSessionEntitled(t *testing.T) {
 
 	// A role that confers the ssh:login:deploy capability, bound to the caller on
 	// the asset via a standing role_binding.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "deployer", Capabilities: []byte(`["ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "deployer", pgtype.UUID{}, `["ssh:login:deploy"]`)
 
 	seedUser(t, pool, "user@sess", "password123", false)
 	var uid uuid.UUID
@@ -172,12 +167,7 @@ func TestCreateWebSession(t *testing.T) {
 
 	assetID := seedSSHAsset(t, q, []string{"deploy"})
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "web-deployer", Capabilities: []byte(`["ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "web-deployer", pgtype.UUID{}, `["ssh:login:deploy"]`)
 
 	seedUser(t, pool, "webuser@sess", "password123", false)
 	var uid uuid.UUID
@@ -245,12 +235,7 @@ func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
 	// The asset offers "deploy" and "root"; the caller is entitled only to
 	// "deploy", so requesting "root" must be denied.
 	assetID := seedSSHAsset(t, q, []string{"deploy", "root"})
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "web-deploy-only", Capabilities: []byte(`["ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "web-deploy-only", pgtype.UUID{}, `["ssh:login:deploy"]`)
 	seedUser(t, pool, "webdeny@sess", "password123", false)
 	var uid uuid.UUID
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "webdeny@sess").Scan(&uid); err != nil {
@@ -265,7 +250,7 @@ func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
 	tok := authClient(t, url, "webdeny@sess", "password123")
 	client := sessionv1connect.NewSessionServiceClient(http.DefaultClient, url)
 
-	_, err = client.CreateWebSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateWebSessionRequest{
+	_, err := client.CreateWebSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateWebSessionRequest{
 		AssetId: assetID.String(), Login: "root",
 	}), tok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {

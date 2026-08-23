@@ -2,7 +2,6 @@ package authz
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -153,8 +152,8 @@ func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID
 // Capabilities set (glob matching stays in Go via CapMatch/Allows).
 func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT r.capabilities
-FROM held h JOIN roles r ON r.id = h.role_id
+SELECT DISTINCT rc.scope, rc.action, rc.qualifier
+FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
 WHERE h.object_kind = $3 AND h.object_id = $2`, userID, objectID, kind)
 	if err != nil {
 		return nil, fmt.Errorf("capabilities on object: %w", err)
@@ -163,21 +162,18 @@ WHERE h.object_kind = $3 AND h.object_id = $2`, userID, objectID, kind)
 	return scanCapabilities(rows)
 }
 
-// scanCapabilities flattens every row's jsonb capability-pattern array (a single
-// `capabilities` column) into one Capabilities set. Shared by CapabilitiesOnObject
-// and the scopeless globalHeldCapabilities query.
+// scanCapabilities collects every (scope, action, qualifier) row from
+// role_capabilities into a Capabilities set, reconstructing the canonical
+// pattern string via ReconstructCap. Shared by CapabilitiesOnObject,
+// capsOnFolders, and globalHeldCapabilities.
 func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 	var caps Capabilities
 	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
+		var s, a, q string
+		if err := rows.Scan(&s, &a, &q); err != nil {
 			return nil, fmt.Errorf("capabilities scan: %w", err)
 		}
-		var patterns []string
-		if err := json.Unmarshal(raw, &patterns); err != nil {
-			return nil, fmt.Errorf("capabilities unmarshal: %w", err)
-		}
-		caps = append(caps, patterns...)
+		caps = append(caps, ReconstructCap(s, a, q))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("capabilities rows: %w", err)
@@ -269,7 +265,7 @@ func (s *sqlAuthorizer) capsOnFolders(ctx context.Context, userID uuid.UUID, fol
 		return nil, nil
 	}
 	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT r.capabilities FROM held h JOIN roles r ON r.id = h.role_id
+SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
 WHERE h.object_kind = 'folder' AND h.object_id = ANY($2::uuid[])`, userID, folderIDs)
 	if err != nil {
 		return nil, fmt.Errorf("caps on folders: %w", err)

@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
@@ -34,19 +35,9 @@ func TestGetAssetAccessRoleNames(t *testing.T) {
 	assetID := asset.ID.String()
 
 	// The target role is folder-scoped to prod so folder_path resolves to "prod".
-	target, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "prod-shell",
-		FolderID:     pgU(folder.ID),
-		Capabilities: []byte("[]"),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole target: %v", err)
-	}
+	target := createRoleWithCaps(t, ctx, q, "prod-shell", pgU(folder.ID), "[]")
 	// A global requester role the user standingly holds; it gates requestability of target.
-	requesterRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester", Capabilities: []byte("[]")})
-	if err != nil {
-		t.Fatalf("CreateRole requester: %v", err)
-	}
+	requesterRole := createRoleWithCaps(t, ctx, q, "requester", pgtype.UUID{}, "[]")
 
 	// Request policy: target is requestable by holders of requesterRole.
 	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{

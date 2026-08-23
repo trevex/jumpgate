@@ -2,11 +2,13 @@ package authz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -142,4 +144,31 @@ func mustNoErr(t testing.TB, err error) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+// createRoleWithCaps creates a role and populates its capabilities from a
+// caps() []byte value (JSON capability array). The folderID may be the zero
+// pgtype.UUID for a global (scopeless) role. Returns the new role.
+func createRoleWithCaps(t testing.TB, ctx context.Context, q *gen.Queries, name string, folderID pgtype.UUID, capsBytes []byte) gen.Role { //nolint:revive
+	t.Helper()
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, FolderID: folderID})
+	if err != nil {
+		t.Fatalf("createRoleWithCaps: create role %q: %v", name, err)
+	}
+	var patterns []string
+	if err := json.Unmarshal(capsBytes, &patterns); err != nil {
+		t.Fatalf("createRoleWithCaps: unmarshal caps: %v", err)
+	}
+	for _, pat := range patterns {
+		sc, ac, qu := NormalizeCap(pat)
+		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+			RoleID:    role.ID,
+			Scope:     sc,
+			Action:    ac,
+			Qualifier: qu,
+		}); err != nil {
+			t.Fatalf("createRoleWithCaps: insert cap %q for role %q: %v", pat, name, err)
+		}
+	}
+	return role
 }

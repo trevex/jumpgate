@@ -22,7 +22,7 @@ func (e *catalogTestEnv) createFolderScopedRole(t *testing.T, name, folderID str
 	t.Helper()
 	var roleID string
 	if err := e.pool.QueryRow(context.Background(),
-		`INSERT INTO roles(name, capabilities, folder_id) VALUES($1, '[]', $2) RETURNING id`,
+		`INSERT INTO roles(name, folder_id) VALUES($1, $2) RETURNING id`,
 		name, folderID,
 	).Scan(&roleID); err != nil {
 		t.Fatalf("insert folder-scoped role: %v", err)

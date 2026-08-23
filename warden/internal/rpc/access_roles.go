@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -18,10 +17,6 @@ import (
 
 // CreateRole creates a custom role (admin only).
 func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[accessv1.CreateRoleRequest]) (*connect.Response[accessv1.CreateRoleResponse], error) {
-	capsJSON, err := json.Marshal(req.Msg.Capabilities)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
 	folderID, _, err := optUUID(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
@@ -29,9 +24,24 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	if err := s.requireCap(ctx, "access:role:create", scopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
-	r, err := s.q.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID, Capabilities: capsJSON})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	qtx := s.q.WithTx(tx)
+	r, err := qtx.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
 		return nil, mapWriteErr(err)
+	}
+	for _, cap := range req.Msg.Capabilities {
+		sc, ac, qu := authz.NormalizeCap(cap)
+		if err := qtx.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{RoleID: r.ID, Scope: sc, Action: ac, Qualifier: qu}); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	m, err := s.roleMsgWithPath(ctx, r)
 	if err != nil {
@@ -119,7 +129,11 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	}
 	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
-		m := toAccessRoleMsg(rows[i])
+		caps, err := roleCapsStrings(ctx, s.q, rows[i].ID)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		m := toAccessRoleMsg(rows[i], caps)
 		if rows[i].FolderID.Valid {
 			fid := uuidFromPg(rows[i].FolderID)
 			p, ok := pathByFolder[fid]

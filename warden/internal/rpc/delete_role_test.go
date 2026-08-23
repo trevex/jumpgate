@@ -35,14 +35,8 @@ func TestDeleteRoleCascade(t *testing.T) {
 	_ = bindingID
 
 	// A source role S and a second role O, seeded directly.
-	src, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "src-role", Capabilities: []byte("[]")})
-	if err != nil {
-		t.Fatalf("CreateRole src: %v", err)
-	}
-	other, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "other-role", Capabilities: []byte("[]")})
-	if err != nil {
-		t.Fatalf("CreateRole other: %v", err)
-	}
+	src := createRoleWithCaps(t, ctx, q, "src-role", pgtype.UUID{}, "[]")
+	other := createRoleWithCaps(t, ctx, q, "other-role", pgtype.UUID{}, "[]")
 
 	// Two role-grant edges: R as the conferred role_id (S confers R), and R as the
 	// source that confers O. Both directions must vanish.

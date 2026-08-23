@@ -161,12 +161,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name: "ssh-deploy-e2e-" + uuid.NewString(), Capabilities: []byte(`["ssh:login:deploy"]`),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-e2e-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 
 	// Sole login source: an ACTIVE JIT access_grant of the role on the asset (NO
 	// standing role_binding). Revoking this grant must strip the login entirely.

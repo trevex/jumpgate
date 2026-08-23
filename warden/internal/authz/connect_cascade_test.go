@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
@@ -21,14 +22,8 @@ func TestConnCascade(t *testing.T) {
 	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
 
 	// Roles: a concrete ssh:login:deploy role and the `**` super-role.
-	deployRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cc-deploy", Capabilities: caps("ssh:login:deploy")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	starRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cc-star", Capabilities: caps("**")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	deployRole := createRoleWithCaps(t, ctx, q, "cc-deploy", pgtype.UUID{}, caps("ssh:login:deploy"))
+	starRole := createRoleWithCaps(t, ctx, q, "cc-star", pgtype.UUID{}, caps("**"))
 
 	// Tree: folder F ⊃ asset A ; sibling folder G.
 	folderF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cc-f"})

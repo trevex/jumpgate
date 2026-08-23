@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
@@ -71,10 +72,7 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	ctx := context.Background()
 	q := gen.New(pool)
 
-	mgr, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "mgr", Capabilities: caps("catalog:asset:create")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	mgr := createRoleWithCaps(t, ctx, q, "mgr", pgtype.UUID{}, caps("catalog:asset:create"))
 
 	folderF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "scope-f"})
 	if err != nil {

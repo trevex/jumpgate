@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
@@ -44,10 +45,7 @@ func TestDeactivatedUserStandingBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-role", Capabilities: caps("ssh:login:deploy")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "deact-role", pgtype.UUID{}, caps("ssh:login:deploy"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
@@ -120,10 +118,7 @@ func TestDeactivatedUserGroupBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-grp-role", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "deact-grp-role", pgtype.UUID{}, caps("db:read"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
@@ -186,10 +181,7 @@ func TestDeactivatedUserExplicitRequesterSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "deact-req-role", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "deact-req-role", pgtype.UUID{}, caps("db:read"))
 	// Role-default request policy for the role, with NO requester_role — the only
 	// path to eligibility is the explicit requester subject below.
 	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{

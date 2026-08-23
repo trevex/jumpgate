@@ -668,13 +668,7 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 	if err != nil {
 		t.Fatalf("giveAssetAccess: parse assetID %s: %v", assetID, err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "resolve-test-" + uuid.NewString(),
-		Capabilities: []byte(`["ssh:login:*"]`),
-	})
-	if err != nil {
-		t.Fatalf("giveAssetAccess: CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "resolve-test-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:*"]`)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeAssetID:  pgtype.UUID{Bytes: aid, Valid: true},
@@ -715,13 +709,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse team id: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "folder-editor",
-		Capabilities: []byte(`["catalog:asset:create","catalog:asset:read"]`),
-	})
-	if err != nil {
-		t.Fatalf("create role: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "folder-editor", pgtype.UUID{}, `["catalog:asset:create","catalog:asset:read"]`)
 	// A folder-scoped binding on `team` confers management authority that CASCADES
 	// structurally down the folder tree (CapabilitiesOnScope walks the folder
 	// ancestor chain), so dana can read (AssetScope) the child assets she creates
@@ -808,13 +796,7 @@ func TestSearchCatalog(t *testing.T) {
 	}), tok)); err != nil {
 		t.Fatalf("create vis child folder: %v", err)
 	}
-	if _, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "pg-operator",
-		FolderID:     pgtype.UUID{Bytes: visFID, Valid: true},
-		Capabilities: []byte(`[]`),
-	}); err != nil {
-		t.Fatalf("create vis role: %v", err)
-	}
+	createRoleWithCaps(t, ctx, q, "pg-operator", pgtype.UUID{Bytes: visFID, Valid: true}, "[]")
 	if _, err := q.CreateGroup(ctx, gen.CreateGroupParams{
 		Name:     "pg-team",
 		FolderID: pgtype.UUID{Bytes: visFID, Valid: true},
@@ -828,13 +810,7 @@ func TestSearchCatalog(t *testing.T) {
 	}), tok)); err != nil {
 		t.Fatalf("create hidden asset: %v", err)
 	}
-	if _, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "pg-secret-role",
-		FolderID:     pgtype.UUID{Bytes: hiddenFID, Valid: true},
-		Capabilities: []byte(`[]`),
-	}); err != nil {
-		t.Fatalf("create hidden role: %v", err)
-	}
+	createRoleWithCaps(t, ctx, q, "pg-secret-role", pgtype.UUID{Bytes: hiddenFID, Valid: true}, "[]")
 
 	// A non-admin caller who holds management read on the vis folder only. Those
 	// caps cascade down the vis subtree, making its folders/assets/roles/groups
@@ -844,13 +820,7 @@ func TestSearchCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get searcher: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-		Name:         "vis-reader",
-		Capabilities: []byte(`["catalog:folder:read","catalog:asset:read","access:role:read","identity:group:read"]`),
-	})
-	if err != nil {
-		t.Fatalf("create reader role: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "vis-reader", pgtype.UUID{}, `["catalog:folder:read","catalog:asset:read","access:role:read","identity:group:read"]`)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: visFID, Valid: true},

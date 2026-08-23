@@ -347,10 +347,7 @@ func bindScopedCap(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, capsJSON 
 	t.Helper()
 	ctx := context.Background()
 	q := gen.New(pool)
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cap-" + uuid.NewString(), Capabilities: []byte(capsJSON)})
-	if err != nil {
-		t.Fatalf("bindScopedCap CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "cap-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
 	params := gen.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: userID, Valid: true}}
 	if assetID != uuid.Nil {
 		params.ScopeAssetID = pgtype.UUID{Bytes: assetID, Valid: true}

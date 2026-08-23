@@ -255,7 +255,11 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		}
 		pathByFolder := map[uuid.UUID]string{}
 		for i := range rows {
-			m := toAccessRoleMsg(rows[i])
+			caps, err := roleCapsStrings(ctx, s.q, rows[i].ID)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
+			}
+			m := toAccessRoleMsg(rows[i], caps)
 			if rows[i].FolderID.Valid {
 				fid := uuidFromPg(rows[i].FolderID)
 				p, ok := pathByFolder[fid]

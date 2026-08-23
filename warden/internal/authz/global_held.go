@@ -55,7 +55,7 @@ global_held(role_id) AS (
 // via scopeless standing bindings closed over role_grants (see globalHeldCTE).
 func (s *sqlAuthorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, globalHeldCTE+`
-SELECT DISTINCT r.capabilities FROM global_held gh JOIN roles r ON r.id = gh.role_id`, userID)
+SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("global held: %w", err)
 	}

@@ -110,18 +110,9 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	pgstaging = mkAsset(staging.ID, "pg-staging")
 	topsecret = mkAsset(secret.ID, "top-secret")
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "operator", Capabilities: caps("ssh:connect", "db:read", "db:write")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	vw, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "viewer", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba", Capabilities: caps("db:admin")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	op := createRoleWithCaps(t, ctx, q, "operator", pgtype.UUID{}, caps("ssh:connect", "db:read", "db:write"))
+	vw := createRoleWithCaps(t, ctx, q, "viewer", pgtype.UUID{}, caps("db:read"))
+	dba := createRoleWithCaps(t, ctx, q, "dba", pgtype.UUID{}, caps("db:admin"))
 
 	// operator + viewer cascade down folders via explicit parent self-rules.
 	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
@@ -240,14 +231,8 @@ func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-owner", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	editor, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "gf-editor", Capabilities: caps("db:write")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := createRoleWithCaps(t, ctx, q, "gf-owner", pgtype.UUID{}, caps("db:read"))
+	editor := createRoleWithCaps(t, ctx, q, "gf-editor", pgtype.UUID{}, caps("db:write"))
 	// editor ⊇ owner via same_object: goal editor reduces to source owner, so
 	// holding owner confers editor on the same object.
 	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: editor.ID, SourceRoleID: owner.ID, Via: "same_object"}); err != nil {
@@ -472,10 +457,7 @@ func TestRequestableViaExplicitSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	breakglass, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "breakglass", Capabilities: caps("db:admin")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	breakglass := createRoleWithCaps(t, ctx, q, "breakglass", pgtype.UUID{}, caps("db:admin"))
 	// Policy with NO requester_role — eligibility is ONLY via explicit subjects.
 	pol, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID: breakglass.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1,
@@ -678,10 +660,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "op3", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "op3", pgtype.UUID{}, caps("db:read"))
 	// op3 cascades down folders via an explicit parent self-rule.
 	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
@@ -751,10 +730,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	op, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cascade-op", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	op := createRoleWithCaps(t, ctx, q, "cascade-op", pgtype.UUID{}, caps("db:read"))
 	// STANDING binding of op to the group on the PARENT folder. No role_grant yet.
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: op.ID, ScopeFolderID: pgUUID(parent.ID), SubjectGroupID: pgUUID(grp.ID),
@@ -849,14 +825,8 @@ func TestCheckSameObjectComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	base, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-base", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	super, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "compose-super", Capabilities: caps("db:write")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	base := createRoleWithCaps(t, ctx, q, "compose-base", pgtype.UUID{}, caps("db:read"))
+	super := createRoleWithCaps(t, ctx, q, "compose-super", pgtype.UUID{}, caps("db:write"))
 	// Rule: holding super on O confers base on O. In role_grants terms the goal
 	// `base` reduces to source `super` (role_id=base, source_role_id=super), so the
 	// forward closure adds base whenever super is held. (This is the (base ⊇ super)
@@ -914,10 +884,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: caps(patterns...)})
-		if err != nil {
-			t.Fatal(err)
-		}
+		role := createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, caps(patterns...))
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 			RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 		}); err != nil {
@@ -1055,14 +1022,8 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prereq, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-prereq", Capabilities: caps("db:read")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "casc-target", Capabilities: caps("db:admin")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	prereq := createRoleWithCaps(t, ctx, q, "casc-prereq", pgtype.UUID{}, caps("db:read"))
+	target := createRoleWithCaps(t, ctx, q, "casc-target", pgtype.UUID{}, caps("db:admin"))
 	// prereq cascades down folders → dave holds prereq on `deep`.
 	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: prereq.ID, SourceRoleID: prereq.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
@@ -1115,10 +1076,7 @@ func TestCapabilitiesOnAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cap-deploy", Capabilities: caps("ssh:login:deploy")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "cap-deploy", pgtype.UUID{}, caps("ssh:login:deploy"))
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
@@ -1178,14 +1136,8 @@ func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	granted, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-granted", Capabilities: caps()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	standing, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "hrs-standing", Capabilities: caps()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	granted := createRoleWithCaps(t, ctx, q, "hrs-granted", pgtype.UUID{}, caps())
+	standing := createRoleWithCaps(t, ctx, q, "hrs-standing", pgtype.UUID{}, caps())
 
 	// granted: held ONLY via an active JIT grant.
 	fabricateGrant(t, pool, user.ID, granted.ID, asset.ID, grantOpts{expiresIn: time.Hour})
@@ -1235,14 +1187,8 @@ func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-requester", Capabilities: caps()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "grr-target", Capabilities: caps("db:admin")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	requester := createRoleWithCaps(t, ctx, q, "grr-requester", pgtype.UUID{}, caps())
+	target := createRoleWithCaps(t, ctx, q, "grr-target", pgtype.UUID{}, caps("db:admin"))
 	// Policy: target requestable on asset, requester_role = requester.
 	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
 		RoleID: target.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1, RequesterRoleID: pgUUID(requester.ID),

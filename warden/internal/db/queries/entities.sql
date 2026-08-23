@@ -64,7 +64,13 @@ INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, $2, $3);
 INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3);
 
 -- name: CreateRole :one
-INSERT INTO roles (name, folder_id, capabilities) VALUES ($1, $2, $3) RETURNING *;
+INSERT INTO roles (name, folder_id) VALUES ($1, $2) RETURNING *;
+
+-- name: InsertRoleCapability :exec
+INSERT INTO role_capabilities (role_id, scope, action, qualifier) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;
+
+-- name: RoleCapabilityRows :many
+SELECT scope, action, qualifier FROM role_capabilities WHERE role_id = $1;
 
 -- name: DeleteRole :exec
 -- Deletes the role row. The role's name uniqueness is enforced by the partial

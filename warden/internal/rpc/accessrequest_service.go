@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -118,15 +117,11 @@ func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.U
 	return joinPath(fp, a.Name)
 }
 
-// grantLoginsFromRole extracts the ssh:login:<x> capability values from a
-// role's JSON capability array. Wildcard values ("*", "**") are skipped.
+// grantLoginsFromRole extracts the ssh:login:<x> capability values from
+// role_capabilities. Wildcard values ("*", "**") are skipped.
 func (s *AccessRequestServer) grantLoginsFromRole(ctx context.Context, roleID uuid.UUID) []string {
-	r, err := s.q.GetRole(ctx, roleID)
+	caps, err := roleCapsStrings(ctx, s.q, roleID)
 	if err != nil {
-		return nil
-	}
-	var caps []string
-	if err := json.Unmarshal(r.Capabilities, &caps); err != nil {
 		return nil
 	}
 	var logins []string

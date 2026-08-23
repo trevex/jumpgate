@@ -92,7 +92,7 @@ func (e *catalogTestEnv) bindRoleToAsset(t *testing.T, assetID string) {
 	t.Helper()
 	var roleID string
 	if err := e.pool.QueryRow(context.Background(),
-		`INSERT INTO roles(name, capabilities) VALUES('r-'||substr(md5(random()::text),1,8), '[]') RETURNING id`,
+		`INSERT INTO roles(name) VALUES('r-'||substr(md5(random()::text),1,8)) RETURNING id`,
 	).Scan(&roleID); err != nil {
 		t.Fatalf("insert role: %v", err)
 	}

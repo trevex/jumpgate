@@ -220,7 +220,7 @@ func (q *Queries) FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]u
 }
 
 const folderByParentName = `-- name: FolderByParentName :one
-SELECT id, name, parent_id, created_at FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
+SELECT id, name, parent_id, created_at, path_ids FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 AND name = $2
 `
 
 type FolderByParentNameParams struct {
@@ -238,6 +238,7 @@ func (q *Queries) FolderByParentName(ctx context.Context, arg FolderByParentName
 		&i.Name,
 		&i.ParentID,
 		&i.CreatedAt,
+		&i.PathIds,
 	)
 	return i, err
 }
@@ -327,7 +328,7 @@ func (q *Queries) FolderSubtreeIDs(ctx context.Context, id uuid.UUID) ([]uuid.UU
 }
 
 const getFolder = `-- name: GetFolder :one
-SELECT id, name, parent_id, created_at FROM folders WHERE id = $1
+SELECT id, name, parent_id, created_at, path_ids FROM folders WHERE id = $1
 `
 
 func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
@@ -338,12 +339,13 @@ func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
 		&i.Name,
 		&i.ParentID,
 		&i.CreatedAt,
+		&i.PathIds,
 	)
 	return i, err
 }
 
 const getRole = `-- name: GetRole :one
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE id = $1
+SELECT id, name, folder_id, created_at FROM roles WHERE id = $1
 `
 
 func (q *Queries) GetRole(ctx context.Context, id uuid.UUID) (Role, error) {
@@ -353,7 +355,6 @@ func (q *Queries) GetRole(ctx context.Context, id uuid.UUID) (Role, error) {
 		&i.ID,
 		&i.Name,
 		&i.FolderID,
-		&i.Capabilities,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -379,7 +380,7 @@ func (q *Queries) GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding
 }
 
 const getRoleByFolderAndName = `-- name: GetRoleByFolderAndName :one
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE folder_id = $1 AND name = $2
+SELECT id, name, folder_id, created_at FROM roles WHERE folder_id = $1 AND name = $2
 `
 
 type GetRoleByFolderAndNameParams struct {
@@ -394,14 +395,13 @@ func (q *Queries) GetRoleByFolderAndName(ctx context.Context, arg GetRoleByFolde
 		&i.ID,
 		&i.Name,
 		&i.FolderID,
-		&i.Capabilities,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getRoleByNameGlobal = `-- name: GetRoleByNameGlobal :one
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE name = $1 AND folder_id IS NULL
+SELECT id, name, folder_id, created_at FROM roles WHERE name = $1 AND folder_id IS NULL
 `
 
 func (q *Queries) GetRoleByNameGlobal(ctx context.Context, name string) (Role, error) {
@@ -411,7 +411,6 @@ func (q *Queries) GetRoleByNameGlobal(ctx context.Context, name string) (Role, e
 		&i.ID,
 		&i.Name,
 		&i.FolderID,
-		&i.Capabilities,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -531,7 +530,7 @@ func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsP
 }
 
 const listFolders = `-- name: ListFolders :many
-SELECT id, name, parent_id, created_at FROM folders WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
+SELECT id, name, parent_id, created_at, path_ids FROM folders WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2
 `
 
 type ListFoldersParams struct {
@@ -553,6 +552,7 @@ func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Fol
 			&i.Name,
 			&i.ParentID,
 			&i.CreatedAt,
+			&i.PathIds,
 		); err != nil {
 			return nil, err
 		}
@@ -565,7 +565,7 @@ func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Fol
 }
 
 const listFoldersByIDsPaged = `-- name: ListFoldersByIDsPaged :many
-SELECT id, name, parent_id, created_at FROM folders
+SELECT id, name, parent_id, created_at, path_ids FROM folders
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -601,6 +601,7 @@ func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByID
 			&i.Name,
 			&i.ParentID,
 			&i.CreatedAt,
+			&i.PathIds,
 		); err != nil {
 			return nil, err
 		}
@@ -747,7 +748,7 @@ func (q *Queries) ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgty
 }
 
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, folder_id, capabilities, created_at FROM roles
+SELECT id, name, folder_id, created_at FROM roles
 WHERE (
   -- keyset for ORDER BY name ASC, id ASC: row-comparison is correct for
   -- same-direction sort (both ascending). A NULL after_name means first page.
@@ -777,7 +778,6 @@ func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, e
 			&i.ID,
 			&i.Name,
 			&i.FolderID,
-			&i.Capabilities,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -791,7 +791,7 @@ func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, e
 }
 
 const listRolesByIDs = `-- name: ListRolesByIDs :many
-SELECT id, name, folder_id, capabilities, created_at FROM roles WHERE id = ANY($1::uuid[])
+SELECT id, name, folder_id, created_at FROM roles WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error) {
@@ -807,7 +807,6 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 			&i.ID,
 			&i.Name,
 			&i.FolderID,
-			&i.Capabilities,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -821,7 +820,7 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 }
 
 const listRolesByIDsPaged = `-- name: ListRolesByIDsPaged :many
-SELECT id, name, folder_id, capabilities, created_at FROM roles
+SELECT id, name, folder_id, created_at FROM roles
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -856,7 +855,6 @@ func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPag
 			&i.ID,
 			&i.Name,
 			&i.FolderID,
-			&i.Capabilities,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

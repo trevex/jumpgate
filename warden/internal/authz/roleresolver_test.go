@@ -47,9 +47,8 @@ func TestHoldsRole(t *testing.T) {
 	q := gen.New(pool)
 
 	// ── roles ────────────────────────────────────────────────────────────────
-	caps := []byte("[]")
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: caps})
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
 		if err != nil {
 			t.Fatalf("CreateRole(%s): %v", name, err)
 		}
