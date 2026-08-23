@@ -9,6 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Lock } from "lucide-react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { cn } from "@/lib/utils";
+import { glossCapability } from "@/lib/capability-glossary";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ─── Capability badge list ────────────────────────────────────────────────────
 
@@ -27,9 +33,16 @@ export function CapList({ caps, className }: CapListProps) {
     <ul className={cn("flex flex-wrap gap-1.5", className)} aria-label="Capabilities">
       {caps.map((cap) => (
         <li key={cap}>
-          <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-eyebrow text-foreground">
-            {cap}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-default items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-eyebrow text-foreground">
+                {cap}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {glossCapability(cap)}
+            </TooltipContent>
+          </Tooltip>
         </li>
       ))}
     </ul>

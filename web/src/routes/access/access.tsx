@@ -28,6 +28,7 @@ import type {
   Grant,
 } from "@/gen/jumpgate/accessrequest/v1/accessrequest_pb";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { InfoHint } from "@/components/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
@@ -380,6 +381,7 @@ function RevokeButton({
 function GrantCard({ grant }: { grant: Grant }) {
   const navigate = useNavigate();
   const invalidateList = useInvalidateList();
+  const roleDisplay = useRoleDisplay(grant.roleId);
   const revoked = Boolean(grant.revokedAt);
   const active = grant.active;
 
@@ -416,7 +418,7 @@ function GrantCard({ grant }: { grant: Grant }) {
             className="text-micro text-muted-foreground truncate"
             title={grant.roleId}
           >
-            role: {shortId(grant.roleId)}
+            role: {roleDisplay}
           </span>
         </div>
 
@@ -613,7 +615,12 @@ export function MyAccessPage() {
               Requests
             </TabsTrigger>
             <TabsTrigger value="grants" variant="underline">
-              Grants
+              <span className="flex items-center gap-1.5">
+                Grants
+                <InfoHint label="What is a grant?">
+                  Time-boxed access from an approved request.
+                </InfoHint>
+              </span>
             </TabsTrigger>
           </TabsList>
         </div>

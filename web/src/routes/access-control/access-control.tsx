@@ -9,6 +9,7 @@
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { InfoHint } from "@/components/info-hint";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { RolesTab } from "./roles-tab";
 import { BindingsTab } from "./bindings-tab";
@@ -46,17 +47,34 @@ export function AccessControlPage() {
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
             {canReadRoles && (
               <TabsTrigger value="roles" variant="underline">
-                Roles
+                <span className="flex items-center gap-1.5">
+                  Roles
+                  <InfoHint label="What is a role?">
+                    A named bundle of capabilities.
+                  </InfoHint>
+                </span>
               </TabsTrigger>
             )}
             {canReadBindings && (
               <TabsTrigger value="bindings" variant="underline">
-                Bindings
+                <span className="flex items-center gap-1.5">
+                  Bindings
+                  <InfoHint label="What is a binding?">
+                    Standing access — grants a role to a user or group on a
+                    scope, no expiry.
+                  </InfoHint>
+                </span>
               </TabsTrigger>
             )}
             {canReadPolicies && (
               <TabsTrigger value="policies" variant="underline">
-                Policies
+                <span className="flex items-center gap-1.5">
+                  Policies
+                  <InfoHint label="What is a policy?">
+                    Makes a role requestable — who can request it and who
+                    approves.
+                  </InfoHint>
+                </span>
               </TabsTrigger>
             )}
           </TabsList>

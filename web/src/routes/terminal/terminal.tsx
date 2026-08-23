@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import { useMutation } from "@connectrpc/connect-query";
+import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -26,6 +26,7 @@ import { useTheme } from "next-themes";
 import { X, RotateCw, Loader2, Terminal as TerminalIcon } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { createWebSession } from "@/gen/jumpgate/session/v1/session-SessionService_connectquery";
+import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
@@ -139,6 +140,18 @@ export function TerminalPage() {
   const [attempt, setAttempt] = useState(0);
 
   const { mutateAsync: createSession } = useMutation(createWebSession);
+
+  // Resolve the asset's DNS-style path for the header so we don't show the raw
+  // route-param UUID. Falls back to name, then the short id.
+  const { data: assetDisplayData } = useQuery(
+    getAssetDisplay,
+    { assetId },
+    { enabled: Boolean(assetId) },
+  );
+  const assetLabel =
+    assetDisplayData?.asset?.path ||
+    assetDisplayData?.asset?.name ||
+    (assetId.split("-")[0] ?? assetId);
 
   const close = useCallback(() => {
     // Prefer going back so the catalog/prior view is restored; fall back to root.
@@ -323,10 +336,14 @@ export function TerminalPage() {
               <>
                 <span className="font-mono">{login}</span>
                 <span className="text-muted-foreground"> @ </span>
-                <span className="font-mono text-muted-foreground">{assetId}</span>
+                <span className="font-mono text-muted-foreground" title={assetId}>
+                  {assetLabel}
+                </span>
               </>
             ) : (
-              <span className="font-mono text-muted-foreground">{assetId}</span>
+              <span className="font-mono text-muted-foreground" title={assetId}>
+                {assetLabel}
+              </span>
             )}
           </h1>
         </div>

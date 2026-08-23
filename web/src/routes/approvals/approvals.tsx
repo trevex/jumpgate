@@ -47,6 +47,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { relativeTime, connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
+import { glossCapability } from "@/lib/capability-glossary";
 import {
   ClipboardCheck,
   RefreshCw,
@@ -414,13 +415,19 @@ function RequestRow({ req }: RequestRowProps) {
                   </span>
                   <div className="flex flex-wrap gap-1">
                     {capabilities.map((cap) => (
-                      <Badge
-                        key={cap}
-                        variant="outline"
-                        className="rounded border-border bg-background px-1.5 py-0 font-mono text-eyebrow font-normal text-foreground"
-                      >
-                        {cap}
-                      </Badge>
+                      <Tooltip key={cap}>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="outline"
+                            className="cursor-default rounded border-border bg-background px-1.5 py-0 font-mono text-eyebrow font-normal text-foreground"
+                          >
+                            {cap}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {glossCapability(cap)}
+                        </TooltipContent>
+                      </Tooltip>
                     ))}
                   </div>
                 </div>
@@ -559,6 +566,7 @@ function PendingTab({ onCount }: { onCount?: (n: number) => void }) {
 function ReviewableRow({ grant }: { grant: Grant }) {
   const navigate = useNavigate();
   const subjectDisplay = useRequesterDisplay(grant.subjectUserId);
+  const { label: roleDisplay } = useRoleContext(grant.roleId);
   const assetLabel = grant.assetPath || shortId(grant.assetId);
 
   return (
@@ -604,8 +612,8 @@ function ReviewableRow({ grant }: { grant: Grant }) {
             <Shield className="h-3 w-3 shrink-0" aria-hidden="true" />
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="truncate max-w-[120px] cursor-default font-mono">
-                  {shortId(grant.roleId)}
+                <span className="truncate max-w-[120px] cursor-default">
+                  {roleDisplay}
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs font-mono">
