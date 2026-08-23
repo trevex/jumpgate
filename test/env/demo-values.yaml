@@ -30,3 +30,9 @@ recording:
 
 service:
   silo: { nodePort: 30900 }
+
+# The chart ships with the bundled Postgres OFF (a production install points warden
+# at a customer-operated DB). For the local kind demo/e2e we re-enable the in-cluster
+# Postgres so the stack has a working database out of the box.
+postgres:
+  enabled: true

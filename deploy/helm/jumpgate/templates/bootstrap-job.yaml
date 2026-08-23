@@ -41,12 +41,7 @@ spec:
           command: ["/usr/local/bin/warden-bootstrap"]
           args: ["--out", "/work"{{ if .Values.mesh.ca.existingSecret }}, "--skip-mesh-ca"{{ end }}]
           env:
-            - name: DATABASE_URL
-              {{- if .Values.postgres.enabled }}
-              value: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "jumpgate.postgresHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=disable"
-              {{- else }}
-              value: {{ .Values.warden.databaseUrl | quote }}
-              {{- end }}
+            {{- include "jumpgate.databaseEnv" . | nindent 12 }}
             - name: VAULT_MASTER_KEY
               valueFrom:
                 secretKeyRef:

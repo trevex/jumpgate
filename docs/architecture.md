@@ -478,9 +478,10 @@ end to end without hand-wiring certificates or processes.
   admin, and publishes the SSH user CA's public key as a Secret the ssh test
   workload mounts.
 - **Toggleable in-cluster dependencies.** `postgres.enabled` runs an in-cluster
-  Postgres for warden's data (set it false and point `warden.databaseUrl` at an
-  external database); `silo.enabled` runs an in-cluster S3-compatible object store
-  for recordings (disable it to use any external S3 endpoint).
+  Postgres for warden's data — **off by default** (see [Database](#database) below;
+  the demo/kind values re-enable it); `silo.enabled` runs an in-cluster
+  S3-compatible object store for recordings (disable it to use any external S3
+  endpoint).
 - **Independent sshd test workload — `test/env/testworkload`.** A minimal sshd
   Deployment that trusts the bootstrap SSH user CA. It is a *target*, not part of
   jumpgate, and is applied separately so the chart stays deployment-agnostic.
@@ -491,6 +492,63 @@ end to end without hand-wiring certificates or processes.
   CLI (an admin onboards an SSH asset and a request policy; two users request and
   approve each other's access; one connects and runs a command; an admin auditor
   downloads the recording and confirms it captured the session).
+
+### Database
+
+warden stores everything — the catalog, the authz relations, grants, and the audit
+hash-chain — in Postgres, and runs its embedded goose migrations against whatever
+database it is pointed at on startup. Because that database is the control plane's
+source of truth, in production it should be **customer-operated** with the usual
+guarantees (HA, backups, PITR).
+
+The chart's bundled Postgres (`postgres.enabled`) is a **demo/dev convenience only**:
+a single replica on `emptyDir` storage, no backups, no HA. It is **disabled by
+default** so a production install cannot silently run on it; the kind/demo values
+(`test/env/demo-values.yaml`) re-enable it for local use.
+
+For production, leave `postgres.enabled: false` and point warden at an external
+database via one of:
+
+- `database.url` — an inline connection string (fine for a managed DB whose
+  credentials you inject some other way), or
+- `database.existingSecret` (+ `database.existingSecretKey`, default `uri`) — a
+  reference to an existing Secret holding the DSN, so no credentials live in Helm
+  values. This is the preferred path.
+
+**Bring your own DB with CloudNativePG (CNPG).** Install the CNPG operator, then
+provision a cluster in the release namespace:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: jumpgate-db
+spec:
+  instances: 3
+  storage:
+    size: 20Gi
+  bootstrap:
+    initdb:
+      database: jumpgate
+      owner: jumpgate
+```
+
+CNPG creates a Secret named `<cluster>-app` (here `jumpgate-db-app`) containing a
+ready-to-use `uri` key pointing at the primary service, and manages failover,
+backups, and PITR. Point jumpgate at it:
+
+```yaml
+# values for `helm install jumpgate deploy/helm/jumpgate -f prod-values.yaml`
+postgres:
+  enabled: false
+database:
+  existingSecret: jumpgate-db-app   # CNPG app secret
+  existingSecretKey: uri            # CNPG stores the DSN under "uri"
+```
+
+On startup warden reads the DSN from that Secret and applies its migrations against
+the CNPG cluster. Any external Postgres works the same way — a managed service just
+needs its DSN placed in a Secret (or in `database.url`).
 
 ## Key technology choices
 

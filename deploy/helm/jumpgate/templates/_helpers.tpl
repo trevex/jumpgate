@@ -65,6 +65,27 @@ otherwise fall back to a chart-managed Secret name.
 {{- end -}}
 
 {{/*
+DATABASE_URL env entry, shared by the warden Deployment and the bootstrap Job so
+the bundled-vs-external selection stays in one place. When postgres.enabled it
+points at the bundled service; otherwise it prefers an existing Secret, then an
+inline database.url, then the deprecated warden.databaseUrl, and fails clearly if
+none is set (a production install MUST supply an external database).
+*/}}
+{{- define "jumpgate.databaseEnv" -}}
+- name: DATABASE_URL
+  {{- if .Values.postgres.enabled }}
+  value: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "jumpgate.postgresHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=disable"
+  {{- else if .Values.database.existingSecret }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.database.existingSecret }}
+      key: {{ .Values.database.existingSecretKey | default "uri" }}
+  {{- else }}
+  value: {{ .Values.database.url | default .Values.warden.databaseUrl | required "postgres.enabled=false requires an external database: set database.url, database.existingSecret, or (deprecated) warden.databaseUrl" | quote }}
+  {{- end }}
+{{- end -}}
+
+{{/*
 Service DNS hostnames referenced by component templates.
 */}}
 {{- define "jumpgate.postgresHost" -}}

@@ -39,12 +39,7 @@ spec:
               value: /mesh/tls.key
             - name: MESH_CA_FILE
               value: /mesh/ca.crt
-            - name: DATABASE_URL
-              {{- if .Values.postgres.enabled }}
-              value: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "jumpgate.postgresHost" . }}:5432/{{ .Values.postgres.database }}?sslmode=disable"
-              {{- else }}
-              value: {{ .Values.warden.databaseUrl | quote }}
-              {{- end }}
+            {{- include "jumpgate.databaseEnv" . | nindent 12 }}
             - name: VAULT_MASTER_KEY
               valueFrom:
                 secretKeyRef:

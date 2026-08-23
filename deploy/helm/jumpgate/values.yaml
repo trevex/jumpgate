@@ -10,7 +10,7 @@ images:
   kubectl:  { repository: alpine/kubectl,     tag: "1.34.1", pullPolicy: IfNotPresent }
 
 warden:
-  databaseUrl: ""          # used when postgres.enabled=false
+  databaseUrl: ""          # DEPRECATED alias for database.url (kept for back-compat); prefer database.*
   gatewayEndpoint: ""      # external addr the CLI dials; default localhost:<gateway nodePort>
   logLevel: info
   cookieInsecure: false    # dev/demo only: drop the Secure cookie flag (HTTP access); prod keeps false
@@ -45,12 +45,26 @@ recording:
     accessKey: minioadmin
     secretKey: minioadmin-demo-secret
 
+# Bundled in-cluster Postgres. DEMO/DEV ONLY — single replica, emptyDir storage,
+# no backups/HA/PITR. DISABLED by default: a production install must run Postgres
+# externally (a managed service or an in-cluster operator like CloudNativePG) and
+# point warden at it via database.* below. The kind/demo values re-enable it.
 postgres:
-  enabled: true
+  enabled: false
   image: postgres:17
   user: jumpgate
   password: jumpgate
   database: jumpgate
+
+# External database, used when postgres.enabled=false. Provide EITHER an inline
+# connection string (database.url) OR a reference to an existing Secret holding the
+# DSN (database.existingSecret + database.existingSecretKey). The existing-secret
+# path is preferred for production so the DSN/password never lives in Helm values.
+# warden runs its embedded goose migrations against whichever database it points at.
+database:
+  url: ""                  # e.g. postgres://user:pass@host:5432/jumpgate?sslmode=require
+  existingSecret: ""       # Secret name holding the DSN (takes precedence over url)
+  existingSecretKey: uri   # key within existingSecret (CloudNativePG app secret uses "uri")
 
 silo:
   enabled: true
