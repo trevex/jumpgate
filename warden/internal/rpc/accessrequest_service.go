@@ -382,6 +382,53 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 	return connect.NewResponse(out), nil
 }
 
+// ListReviewableGrants lists completed grants the caller may review (authenticated),
+// ordered by (granted_at DESC, id) with keyset pagination. A grant is reviewable
+// when the caller is its subject OR a standing potential approver of the grant's
+// originating (role, asset).
+//
+// This is a self-scoping list: the per-row review filter IS the authorization, so
+// there is no capability gate — a capless caller gets an OK response with the
+// (possibly empty) set of grants they may review, mirroring ListMyGrants /
+// ListPendingApprovals.
+//
+// Go-side IsApprover filtering happens after the SQL LIMIT, so a page may be
+// shorter than page_size (or empty). The next-page token is keyed to the SQL page
+// position — not the filtered result — so pagination advances past filtered rows
+// rather than stopping early.
+func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListReviewableGrantsRequest]) (*connect.Response[accessrequestv1.ListReviewableGrantsResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	page := accessrequest.PageParams{Limit: limit}
+	if k != nil {
+		page.AfterTs = k.Time
+		page.AfterID = k.ID
+	}
+	rows, next, err := s.svc.ListReviewableGrantsPaged(ctx, caller.ID, page)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &accessrequestv1.ListReviewableGrantsResponse{}
+	for i := range rows {
+		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
+	}
+	// Emit a token whenever the SQL page was full (next != nil), even if the
+	// filtered result is short or empty. The cursor tracks the SQL position (keyed
+	// on granted_at, the sort column) so the next call resumes past everything
+	// already examined.
+	if next != nil {
+		out.NextPageToken = encodeTimeToken(next.Ts, next.ID)
+	}
+	return connect.NewResponse(out), nil
+}
+
 // ListGrants lists grants for admin introspection (admin only), ordered by
 // (granted_at DESC, id) with keyset pagination. The subject_user_id and
 // active_only filters are preserved.

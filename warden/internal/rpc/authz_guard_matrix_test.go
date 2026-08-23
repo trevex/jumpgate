@@ -492,6 +492,12 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.areq.ListGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListGrantsRequest{}), tok))
 			return err
 		}},
+		// ListReviewableGrants is intentionally NOT in this deny matrix: it is a
+		// self-scoping caller list (like ListMyGrants / ListPendingApprovals), not a
+		// capability gate. Its per-row review filter (subject OR standing potential
+		// approver) IS the authorization, so a capless user gets an OK response with
+		// an empty list rather than a denial. That is pinned in
+		// TestAuthzSelfServiceListsAreNotDenied.
 
 		// ---- VaultService ----
 		{"Vault.InitCA", PD, func() error {
@@ -653,5 +659,16 @@ func TestAuthzSelfServiceListsAreNotDenied(t *testing.T) {
 	}
 	if len(grants.Msg.Grants) != 0 {
 		t.Errorf("capless ListMyGrants = %d, want 0", len(grants.Msg.Grants))
+	}
+
+	// ListReviewableGrants is a self-scoping caller list (subject OR standing
+	// potential approver): a capless user is not denied — they get an empty
+	// (non-error) result rather than a PermissionDenied.
+	reviewable, err := cl.areq.ListReviewableGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListReviewableGrantsRequest{}), tok))
+	if err != nil {
+		t.Fatalf("ListReviewableGrants: %v", err)
+	}
+	if len(reviewable.Msg.Grants) != 0 {
+		t.Errorf("capless ListReviewableGrants = %d, want 0", len(reviewable.Msg.Grants))
 	}
 }

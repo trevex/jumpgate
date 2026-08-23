@@ -962,6 +962,58 @@ func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page 
 	return toGrants(rows), nil
 }
 
+// ListReviewableGrantsPaged returns grants the caller may review — grants where
+// the caller is the subject OR a standing potential approver of the grant's
+// originating (role, asset) — with keyset pagination on (granted_at DESC, id ASC).
+//
+// It fetches an unfiltered SQL page (all subjects, active_only=false so past and
+// revoked grants remain reviewable) then filters in Go per row, exactly like
+// ListPendingApprovalsPaged: the returned cursor tracks the LAST SQL ROW scanned
+// (not the last kept row), so a page emits a next-cursor whenever the SQL page
+// was full even if every row was filtered out — the client then resumes past the
+// filtered rows rather than stopping early. The per-row filter IS the authz for
+// this caller-scoped list (no capability gate).
+func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Grant, *PageCursor, error) {
+	params := gen.ListGrantsFilteredPagedParams{
+		ActiveOnly: false, // include revoked/expired/past grants
+		Lim:        page.Limit,
+	}
+	if page.AfterTs != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
+	}
+	rows, err := gen.New(s.pool).ListGrantsFilteredPaged(ctx, params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list reviewable grants paged: %w", err)
+	}
+
+	// Determine the SQL-page cursor before filtering: emit a token whenever the
+	// SQL page was full so the next call resumes past everything already examined,
+	// even if every row on this page was filtered out for this caller.
+	var next *PageCursor
+	if len(rows) == int(page.Limit) {
+		last := rows[len(rows)-1]
+		next = &PageCursor{Ts: last.GrantedAt, ID: last.ID}
+	}
+
+	out := make([]Grant, 0)
+	for _, g := range rows {
+		if g.SubjectUserID != caller {
+			// Standing potential approver of the grant's originating (role, asset).
+			// IsApprover is standing-only and already excludes deactivated users.
+			ok, err := s.resolver.IsApprover(ctx, caller, g.RoleID, g.ScopeAssetID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
+		out = append(out, toGrant(g))
+	}
+	return out, next, nil
+}
+
 // PageParams carries decoded keyset cursor fields for time-ordered lists.
 // AfterTs and AfterID are zero/nil when on the first page.
 type PageParams struct {

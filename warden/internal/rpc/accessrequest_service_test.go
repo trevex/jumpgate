@@ -157,6 +157,99 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 	}
 }
 
+// TestListReviewableGrants verifies the review-scoped grant list: the grant's
+// subject and any standing potential approver of the grant's originating
+// (role, asset) can review it; an unrelated user sees nothing. This mirrors the
+// per-row authz of CanReviewGrant, applied as a self-scoping list filter.
+func TestListReviewableGrants(t *testing.T) {
+	pool, url := newServer(t)
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole %s: %v", name, err)
+		}
+		return r.ID
+	}
+	targetRole := mkRole("lrg-target")
+	requesterRole := mkRole("lrg-requester")
+	approverRole := mkRole("lrg-approver")
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lrg-folder"})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "lrg-asset", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: targetRole, ScopeAssetID: pgU(asset.ID), RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy: %v", err)
+	}
+
+	// alice = subject (requester), bob = standing potential approver, mallory = unrelated.
+	seedUser(t, pool, "lrg-alice@x", "password123", false)
+	seedUser(t, pool, "lrg-bob@x", "password123", false)
+	seedUser(t, pool, "lrg-mallory@x", "password123", false)
+	aliceUID := userIDByEmail(t, pool, "lrg-alice@x")
+	bobUID := userIDByEmail(t, pool, "lrg-bob@x")
+
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: requesterRole, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(aliceUID),
+	}); err != nil {
+		t.Fatalf("bind requester: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: approverRole, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(bobUID),
+	}); err != nil {
+		t.Fatalf("bind approver: %v", err)
+	}
+
+	aliceTok := authClient(t, url, "lrg-alice@x", "password123")
+	bobTok := authClient(t, url, "lrg-bob@x", "password123")
+	malloryTok := authClient(t, url, "lrg-mallory@x", "password123")
+	client := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+
+	// alice requests → bob approves → a completed grant, subject=alice.
+	r, err := client.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: targetRole.String(), AssetId: asset.ID.String(), DurationSeconds: 3600,
+	}), aliceTok))
+	if err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+	if _, err := client.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{
+		RequestId: r.Msg.Request.Id,
+	}), bobTok)); err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+
+	countReviewable := func(tok string) int {
+		resp, err := client.ListReviewableGrants(ctx, withToken(connect.NewRequest(&accessrequestv1.ListReviewableGrantsRequest{}), tok))
+		if err != nil {
+			t.Fatalf("ListReviewableGrants: %v", err)
+		}
+		return len(resp.Msg.Grants)
+	}
+
+	// subject sees it
+	if n := countReviewable(aliceTok); n != 1 {
+		t.Fatalf("subject: %d, want 1", n)
+	}
+	// standing potential approver sees it
+	if n := countReviewable(bobTok); n != 1 {
+		t.Fatalf("approver: %d, want 1", n)
+	}
+	// unrelated user does not
+	if n := countReviewable(malloryTok); n != 0 {
+		t.Fatalf("unrelated: %d, want 0", n)
+	}
+}
+
 func TestResolveApproval(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
