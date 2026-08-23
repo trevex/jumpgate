@@ -27,10 +27,16 @@ func StartPostgres(t *testing.T) string {
 
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
-	sockDir := filepath.Join(dir, "sock")
-	if err := os.MkdirAll(sockDir, 0o750); err != nil {
+	// Postgres appends "/.s.PGSQL.5432" to the -k socket directory, and the full
+	// socket path must fit in sockaddr_un.sun_path (~107 bytes). t.TempDir() embeds
+	// the test name and, under the Nix devshell, a "/tmp/nix-shell.XXXXXX" prefix,
+	// which for long test names overflows that limit and makes pg_ctl fail to bind
+	// ("could not start server"). Put the socket in a short, independent temp dir.
+	sockDir, err := os.MkdirTemp("", "pgs")
+	if err != nil {
 		t.Fatalf("mkdir sock: %v", err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 
 	run := func(name string, args ...string) {
 		cmd := exec.Command(name, args...) //nolint:gosec // fixed binary names from a trusted PATH (devshell)
