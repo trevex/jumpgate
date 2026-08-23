@@ -106,7 +106,7 @@ function GroupRowActionsCell({ group }: GroupRowActionsProps) {
         >
           <DropdownMenuItem
             onSelect={() => setDeleteOpen(true)}
-            className="text-[13px] text-destructive focus:text-destructive"
+            className="text-body text-destructive focus:text-destructive"
           >
             <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
             Delete
@@ -148,7 +148,7 @@ function GroupHome({ group }: { group: Group }) {
       </span>
     );
   }
-  return <span className="font-mono text-[12px]">{group.folderPath}</span>;
+  return <span className="font-mono text-compact">{group.folderPath}</span>;
 }
 
 // ─── Groups tab ───────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ export function GroupsTab() {
           <Button
             size="sm"
             onClick={() => setNewGroupOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New group
@@ -211,13 +211,13 @@ export function GroupsTab() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Name
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Home
                 </TableHead>
-                <TableHead className="h-9 w-12 px-4 text-right text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 w-12 px-4 text-right text-eyebrow font-semibold uppercase tracking-widest">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -252,7 +252,7 @@ export function GroupsTab() {
                 size="sm"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="h-7 text-[12px]"
+                className="h-7 text-compact"
               >
                 {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>

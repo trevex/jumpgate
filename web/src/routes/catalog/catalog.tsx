@@ -38,8 +38,8 @@ function Detail({ selected, onCleared }: DetailProps) {
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
         <LayoutGrid className="h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
         <div>
-          <p className="text-[13px] font-medium text-foreground">Select an item</p>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
+          <p className="text-body font-medium text-foreground">Select an item</p>
+          <p className="mt-0.5 text-compact text-muted-foreground">
             Choose a folder, asset, role, or group from the tree to view details.
           </p>
         </div>
@@ -109,7 +109,7 @@ export function CatalogPage() {
       >
         {/* Pane header */}
         <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-          <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground select-none">
+          <h2 className="text-micro font-semibold uppercase tracking-widest text-muted-foreground select-none">
             Catalog
           </h2>
           {showRootCreate && (

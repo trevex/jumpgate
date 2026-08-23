@@ -57,8 +57,8 @@ export function EmptyState({
       )}
     >
       <Icon className={cn(EMPTY_ICON[size], "text-muted-foreground/25")} aria-hidden="true" />
-      {title && <p className="text-[14px] font-medium text-foreground">{title}</p>}
-      <p className="max-w-xs text-[13px] text-muted-foreground">{message}</p>
+      {title && <p className="text-sm font-medium text-foreground">{title}</p>}
+      <p className="max-w-xs text-body text-muted-foreground">{message}</p>
     </div>
   );
 }
@@ -99,13 +99,13 @@ export function ErrorState({
       )}
     >
       {Icon && <Icon className="h-8 w-8 text-destructive/60" aria-hidden="true" />}
-      <p className="max-w-sm text-[13px] text-muted-foreground">{message}</p>
+      <p className="max-w-sm text-body text-muted-foreground">{message}</p>
       {onRetry && (
         <Button
           variant="outline"
           size="sm"
           onClick={onRetry}
-          className="h-7 gap-1.5 text-[12px]"
+          className="h-7 gap-1.5 text-compact"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
           Retry

@@ -48,9 +48,9 @@ interface NewPolicyDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 /** A trigger button that shows the chosen role or a placeholder. */
 function RoleField({
@@ -68,14 +68,14 @@ function RoleField({
       variant="outline"
       size="sm"
       onClick={onOpen}
-      className="h-9 justify-start gap-2 text-[13px] font-normal"
+      className="h-9 justify-start gap-2 text-body font-normal"
     >
       {role ? (
         <>
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{role.name}</span>
           {role.folderPath && (
-            <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+            <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
               {role.folderPath}
             </span>
           )}
@@ -163,8 +163,8 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New request policy</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New request policy</DialogTitle>
+          <DialogDescription className="text-body">
             A policy makes a role requestable at a scope. An approval count and
             optional requester / approver roles govern who may request and grant
             it; an optional duration caps each grant.
@@ -184,7 +184,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Optional"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={!nameValid}
             />
             {!nameValid ? (
@@ -214,19 +214,19 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               variant="outline"
               size="sm"
               onClick={() => setScopePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-[13px] font-normal"
+              className="h-9 justify-start gap-2 text-body font-normal"
             >
               {scope.kind === "folder" ? (
                 <>
                   <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                     {scope.path}
                   </span>
                 </>
               ) : scope.kind === "asset" ? (
                 <>
                   <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                     {scope.path}
                   </span>
                 </>
@@ -258,7 +258,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               max={20}
               value={approvals}
               onChange={(e) => setApprovals(e.target.value)}
-              className="h-9 w-28 text-[13px]"
+              className="h-9 w-28 text-body"
               aria-invalid={!approvalsValid}
             />
             {!approvalsValid ? (
@@ -287,7 +287,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
                   variant="ghost"
                   size="sm"
                   onClick={() => setRequesterRole(null)}
-                  className="h-9 shrink-0 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+                  className="h-9 shrink-0 px-2 text-compact text-muted-foreground hover:text-foreground"
                 >
                   Clear
                 </Button>
@@ -315,7 +315,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
                   variant="ghost"
                   size="sm"
                   onClick={() => setApproverRole(null)}
-                  className="h-9 shrink-0 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+                  className="h-9 shrink-0 px-2 text-compact text-muted-foreground hover:text-foreground"
                 >
                   Clear
                 </Button>
@@ -339,7 +339,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               value={hours}
               onChange={(e) => setHours(e.target.value)}
               placeholder="No cap"
-              className="h-9 w-28 text-[13px]"
+              className="h-9 w-28 text-body"
               aria-invalid={!hoursValid}
             />
             {!hoursValid ? (
@@ -358,7 +358,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -366,7 +366,7 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create policy"}
             </Button>

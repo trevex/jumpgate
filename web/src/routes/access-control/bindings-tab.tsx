@@ -135,7 +135,7 @@ function FolderScope({ folderId }: { folderId: string }) {
   const { data } = useQuery(resolveFolder, { ref: folderId }, { enabled: true });
   const path = data?.path || shortId(folderId);
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
+    <span className="inline-flex items-center gap-1.5 font-mono text-compact">
       <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate" title={path}>
         {path}
@@ -148,7 +148,7 @@ function AssetScope({ assetId }: { assetId: string }) {
   const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: true });
   const path = data?.asset?.path || data?.asset?.name || shortId(assetId);
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
+    <span className="inline-flex items-center gap-1.5 font-mono text-compact">
       <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate" title={path}>
         {path}
@@ -213,7 +213,7 @@ export function BindingsTab() {
           <Button
             size="sm"
             onClick={() => setNewBindingOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New binding
@@ -236,13 +236,13 @@ export function BindingsTab() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Role
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Subject
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Scope
                 </TableHead>
                 <TableHead className="h-9 w-10 px-4" />
@@ -275,7 +275,7 @@ export function BindingsTab() {
                 size="sm"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="h-7 text-[12px]"
+                className="h-7 text-compact"
               >
                 {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>

@@ -52,7 +52,7 @@ function RoleScope({ role }: { role: Role }) {
       </span>
     );
   }
-  return <span className="font-mono text-[12px]">{role.folderPath}</span>;
+  return <span className="font-mono text-compact">{role.folderPath}</span>;
 }
 
 // ─── Roles tab ────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ export function RolesTab() {
           <Button
             size="sm"
             onClick={() => setNewRoleOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New role
@@ -115,13 +115,13 @@ export function RolesTab() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Name
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Scope
                 </TableHead>
-                <TableHead className="h-9 px-4 text-right text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-right text-eyebrow font-semibold uppercase tracking-widest">
                   Capabilities
                 </TableHead>
               </TableRow>
@@ -144,7 +144,7 @@ export function RolesTab() {
                   <TableCell className="px-4 py-2.5 text-right">
                     <Badge
                       variant="secondary"
-                      className="rounded px-1.5 py-0 text-[11px] font-semibold tabular-nums"
+                      className="rounded px-1.5 py-0 text-micro font-semibold tabular-nums"
                     >
                       {role.capabilities.length}
                     </Badge>
@@ -161,7 +161,7 @@ export function RolesTab() {
                 size="sm"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="h-7 text-[12px]"
+                className="h-7 text-compact"
               >
                 {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>

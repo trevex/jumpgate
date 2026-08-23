@@ -100,11 +100,11 @@ export function RolePicker({
                 <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate text-foreground">{role.name}</span>
                 {role.folderPath ? (
-                  <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
                     {role.folderPath}
                   </span>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/70">
+                  <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground/70">
                     <Globe className="h-3 w-3" aria-hidden="true" />
                     global
                   </span>

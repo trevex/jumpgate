@@ -47,8 +47,8 @@ interface NewBindingDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
 
 export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) {
   const invalidateList = useInvalidateList();
@@ -106,8 +106,8 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New binding</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New binding</DialogTitle>
+          <DialogDescription className="text-body">
             A standing binding grants a role to a subject. An optional scope
             confines it to a folder subtree or a single asset; global otherwise.
           </DialogDescription>
@@ -122,14 +122,14 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
               variant="outline"
               size="sm"
               onClick={() => setRolePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-[13px] font-normal"
+              className="h-9 justify-start gap-2 text-body font-normal"
             >
               {role ? (
                 <>
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate text-left">{role.name}</span>
                   {role.folderPath && (
-                    <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                    <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
                       {role.folderPath}
                     </span>
                   )}
@@ -150,7 +150,7 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
               variant="outline"
               size="sm"
               onClick={() => setSubjectPickerOpen(true)}
-              className="h-9 justify-start gap-2 text-[13px] font-normal"
+              className="h-9 justify-start gap-2 text-body font-normal"
             >
               {subject ? (
                 <>
@@ -160,7 +160,7 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
                     <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   )}
                   <span className="min-w-0 flex-1 truncate text-left">{subject.label}</span>
-                  <span className="shrink-0 text-[11px] capitalize text-muted-foreground">
+                  <span className="shrink-0 text-micro capitalize text-muted-foreground">
                     {subject.kind}
                   </span>
                 </>
@@ -180,19 +180,19 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
               variant="outline"
               size="sm"
               onClick={() => setScopePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-[13px] font-normal"
+              className="h-9 justify-start gap-2 text-body font-normal"
             >
               {scope.kind === "folder" ? (
                 <>
                   <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                     {scope.path}
                   </span>
                 </>
               ) : scope.kind === "asset" ? (
                 <>
                   <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                     {scope.path}
                   </span>
                 </>
@@ -218,7 +218,7 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -226,7 +226,7 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create binding"}
             </Button>

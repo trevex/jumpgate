@@ -50,8 +50,8 @@ export function ConfirmDialog({
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">{title}</DialogTitle>
-          <DialogDescription className="text-[13px] leading-relaxed">
+          <DialogTitle className="text-title">{title}</DialogTitle>
+          <DialogDescription className="text-body leading-relaxed">
             {description}
           </DialogDescription>
         </DialogHeader>
@@ -62,7 +62,7 @@ export function ConfirmDialog({
             size="sm"
             onClick={() => onOpenChange(false)}
             disabled={pending}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
           >
             Cancel
           </Button>
@@ -72,7 +72,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={pending}
             aria-label={confirmAriaLabel ?? confirmLabel}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
           >
             {pending ? (pendingLabel ?? "Working…") : confirmLabel}
           </Button>

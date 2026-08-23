@@ -193,11 +193,11 @@ function MemberRow({
     <div className="flex items-center gap-3 px-1 py-2">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] text-foreground" title={primary}>
+        <div className="truncate text-body text-foreground" title={primary}>
           {primary}
         </div>
         {secondaryGlobal ? (
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+          <div className="flex items-center gap-1 text-micro text-muted-foreground/70">
             <Globe className="h-3 w-3" aria-hidden="true" />
             global
           </div>
@@ -205,7 +205,7 @@ function MemberRow({
           secondary && (
             <div
               className={cn(
-                "truncate text-[11px] text-muted-foreground",
+                "truncate text-micro text-muted-foreground",
                 secondaryMono && "font-mono",
               )}
               title={secondary}
@@ -244,7 +244,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <h3 className="flex items-center gap-2 px-1 text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
         {title}
         <span className="tabular-nums text-muted-foreground/60">{count}</span>
       </h3>
@@ -278,7 +278,7 @@ function GroupDetailBody({ group }: { group: Group }) {
           <Button
             size="sm"
             onClick={() => setPickerOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Add member
@@ -353,8 +353,8 @@ export function GroupDetailSheet({
         {group && (
           <>
             <SheetHeader>
-              <SheetTitle className="text-[15px]">{group.name}</SheetTitle>
-              <SheetDescription className="text-[13px]">
+              <SheetTitle className="text-title">{group.name}</SheetTitle>
+              <SheetDescription className="text-body">
                 {group.folderPath ? (
                   <>
                     Governed under{" "}

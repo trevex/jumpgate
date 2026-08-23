@@ -60,7 +60,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <Badge
       variant="outline"
-      className={cn("rounded px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide border", style)}
+      className={cn("rounded px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide border", style)}
     >
       {label}
     </Badge>
@@ -122,7 +122,7 @@ function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
   return (
     <span
       className={cn(
-        "font-mono text-[11px] tabular-nums",
+        "font-mono text-micro tabular-nums",
         expired ? "text-muted-foreground line-through" : "text-foreground",
       )}
       title={expiresAt}
@@ -166,14 +166,14 @@ function RequestRow({ req }: { req: AccessRequest }) {
       {/* Asset / Role */}
       <div className="flex flex-col gap-0.5 min-w-0">
         <span
-          className="font-mono text-[11px] text-muted-foreground truncate"
+          className="font-mono text-micro text-muted-foreground truncate"
           title={req.assetId}
           aria-label={`Asset ${assetDisplay}`}
         >
           {assetDisplay}
         </span>
         <span
-          className="text-[11px] text-muted-foreground truncate"
+          className="text-micro text-muted-foreground truncate"
           title={req.roleId}
           aria-label={`Role ${roleDisplay}`}
         >
@@ -181,7 +181,7 @@ function RequestRow({ req }: { req: AccessRequest }) {
         </span>
         {req.reason && (
           <span
-            className="text-[12px] text-foreground line-clamp-2"
+            className="text-compact text-foreground line-clamp-2"
             title={req.reason}
           >
             {req.reason}
@@ -197,14 +197,14 @@ function RequestRow({ req }: { req: AccessRequest }) {
       {/* Time */}
       <div className="flex flex-col items-end gap-0.5 pt-0.5 shrink-0">
         <span
-          className="text-[11px] text-muted-foreground whitespace-nowrap"
+          className="text-micro text-muted-foreground whitespace-nowrap"
           title={req.createdAt}
         >
           {relativeTime(req.createdAt)}
         </span>
         {req.resolvedAt && (
           <span
-            className="text-[10px] text-muted-foreground/70 whitespace-nowrap"
+            className="text-eyebrow text-muted-foreground/70 whitespace-nowrap"
             title={req.resolvedAt}
           >
             resolved {relativeTime(req.resolvedAt)}
@@ -261,13 +261,13 @@ function RequestsTab() {
     <div className="flex flex-col">
       {/* Column header */}
       <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b border-border px-4 py-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <span className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
           Asset / Role / Reason
         </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <span className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
           Status
         </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground text-right">
+        <span className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground text-right">
           Time
         </span>
       </div>
@@ -287,7 +287,7 @@ function RequestsTab() {
             size="sm"
             onClick={() => fetchNextPage()}
             disabled={isFetchingNextPage}
-            className="h-7 text-[12px]"
+            className="h-7 text-compact"
           >
             {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
@@ -356,7 +356,7 @@ function RevokeButton({
       onClick={handleClick}
       disabled={isRevoking}
       className={cn(
-        "h-6 text-[11px] transition-colors",
+        "h-6 text-micro transition-colors",
         confirming
           ? "border-red-400 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/50 dark:bg-red-500/15 dark:text-red-300 dark:hover:bg-red-500/25"
           : "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300",
@@ -409,13 +409,13 @@ function GrantCard({ grant }: { grant: Grant }) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span
-            className="font-mono text-[11px] text-foreground truncate"
+            className="font-mono text-micro text-foreground truncate"
             title={grant.assetId}
           >
             {grant.assetPath || shortId(grant.assetId)}
           </span>
           <span
-            className="text-[11px] text-muted-foreground truncate"
+            className="text-micro text-muted-foreground truncate"
             title={grant.roleId}
           >
             role: {shortId(grant.roleId)}
@@ -426,21 +426,21 @@ function GrantCard({ grant }: { grant: Grant }) {
           {revoked ? (
             <Badge
               variant="outline"
-              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-red-600 tracking-wide dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+              className="rounded border-red-200 bg-red-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-red-600 tracking-wide dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
             >
               Revoked
             </Badge>
           ) : grant.active ? (
             <Badge
               variant="outline"
-              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-green-700 tracking-wide dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
+              className="rounded border-green-300 bg-green-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-green-700 tracking-wide dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
             >
               Active
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-[10px] font-semibold uppercase text-slate-500 tracking-wide dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300"
+              className="rounded border-slate-200 bg-slate-50 px-1.5 py-0 text-eyebrow font-semibold uppercase text-slate-500 tracking-wide dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300"
             >
               Expired
             </Badge>
@@ -463,7 +463,7 @@ function GrantCard({ grant }: { grant: Grant }) {
                 className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                 aria-hidden="true"
               />
-              <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
+              <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
                 {cmd}
               </code>
               <InlineCopyButton text={cmd} label="Copy connect command" />
@@ -482,7 +482,7 @@ function GrantCard({ grant }: { grant: Grant }) {
               target="_blank"
               rel="noopener noreferrer"
               className={cn(
-                "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:underline",
+                "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-micro font-medium text-primary transition-colors hover:underline",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               )}
               aria-label={`Open browser terminal as ${login}`}
@@ -501,7 +501,7 @@ function GrantCard({ grant }: { grant: Grant }) {
           variant="ghost"
           size="sm"
           onClick={() => navigate(`/recordings?grantId=${grant.id}`)}
-          className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+          className="h-7 gap-1.5 px-2 text-compact text-muted-foreground hover:text-foreground"
           aria-label="View session recordings for this grant"
         >
           <Film className="h-3.5 w-3.5" aria-hidden="true" />
@@ -518,7 +518,7 @@ function GrantCard({ grant }: { grant: Grant }) {
 
       {/* Revoked reason */}
       {revoked && grant.revokedReason && (
-        <p className="text-[11px] text-muted-foreground italic">
+        <p className="text-micro text-muted-foreground italic">
           Reason: {grant.revokedReason}
         </p>
       )}
@@ -584,7 +584,7 @@ function GrantsTab() {
             size="sm"
             onClick={() => fetchNextPage()}
             disabled={isFetchingNextPage}
-            className="h-7 text-[12px]"
+            className="h-7 text-compact"
           >
             {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
@@ -601,8 +601,8 @@ export function MyAccessPage() {
     <div className="flex flex-col gap-0 h-full">
       {/* Page header */}
       <header className="border-b border-border px-6 py-5">
-        <h1 className="text-[15px] font-semibold text-foreground">My Access</h1>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">
+        <h1 className="text-title font-semibold text-foreground">My Access</h1>
+        <p className="mt-0.5 text-compact text-muted-foreground">
           Your pending requests and active access grants.
         </p>
       </header>
@@ -614,7 +614,7 @@ export function MyAccessPage() {
             <TabsTrigger
               value="requests"
               className={cn(
-                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
                 "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
               )}
             >
@@ -623,7 +623,7 @@ export function MyAccessPage() {
             <TabsTrigger
               value="grants"
               className={cn(
-                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+                "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
                 "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
               )}
             >

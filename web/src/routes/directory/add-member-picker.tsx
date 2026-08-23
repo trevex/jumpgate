@@ -170,7 +170,7 @@ function KindToggle({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:text-foreground",
@@ -227,7 +227,7 @@ function UserOptions({
                 {u.displayName || u.email}
               </span>
               {u.displayName && u.email && (
-                <span className="shrink-0 truncate text-[11px] text-muted-foreground">
+                <span className="shrink-0 truncate text-micro text-muted-foreground">
                   {u.email}
                 </span>
               )}
@@ -281,11 +281,11 @@ function GroupOptions({
               <UsersIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate text-foreground">{g.name}</span>
               {g.folderPath ? (
-                <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
                   {g.folderPath}
                 </span>
               ) : (
-                <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/70">
+                <span className="inline-flex shrink-0 items-center gap-1 text-micro text-muted-foreground/70">
                   <Globe className="h-3 w-3" aria-hidden="true" />
                   global
                 </span>

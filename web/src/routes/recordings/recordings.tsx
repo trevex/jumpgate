@@ -103,7 +103,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <Badge
       variant="outline"
-      className={cn("rounded px-1.5 py-0 text-[10px] font-semibold capitalize tabular-nums", style)}
+      className={cn("rounded px-1.5 py-0 text-eyebrow font-semibold capitalize tabular-nums", style)}
     >
       {status}
     </Badge>
@@ -171,7 +171,7 @@ function RecordingRow({ rec, isSelected, onSelect }: RecordingRowProps) {
     >
       {/* Asset */}
       <TableCell className="py-2.5">
-        <span className="flex items-center gap-1.5 font-mono text-[12px] text-foreground">
+        <span className="flex items-center gap-1.5 font-mono text-compact text-foreground">
           <Server className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -184,7 +184,7 @@ function RecordingRow({ rec, isSelected, onSelect }: RecordingRowProps) {
 
       {/* User */}
       <TableCell className="py-2.5">
-        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-compact text-muted-foreground">
           <User className="h-3 w-3 shrink-0" aria-hidden="true" />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -203,7 +203,7 @@ function RecordingRow({ rec, isSelected, onSelect }: RecordingRowProps) {
       {/* Started */}
       <TableCell className="py-2.5">
         <span
-          className="flex items-center gap-1 text-[12px] text-muted-foreground whitespace-nowrap"
+          className="flex items-center gap-1 text-compact text-muted-foreground whitespace-nowrap"
           title={rec.startedAtUnixMs ? new Date(Number(rec.startedAtUnixMs)).toISOString() : ""}
         >
           <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -212,7 +212,7 @@ function RecordingRow({ rec, isSelected, onSelect }: RecordingRowProps) {
       </TableCell>
 
       {/* Duration */}
-      <TableCell className="py-2.5 tabular-nums text-[12px] text-muted-foreground">
+      <TableCell className="py-2.5 tabular-nums text-compact text-muted-foreground">
         {formatDuration(rec.startedAtUnixMs, rec.endedAtUnixMs)}
       </TableCell>
 
@@ -302,10 +302,10 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
       {/* Panel header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 shrink-0">
         <Terminal className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden="true" />
-        <span className="flex-1 min-w-0 text-[12px] font-medium text-white/80 truncate font-mono">
+        <span className="flex-1 min-w-0 text-compact font-medium text-white/80 truncate font-mono">
           {assetDisplay || shortId(sessionId)}
         </span>
-        <span className="text-[10px] text-white/40 font-mono shrink-0">{shortId(sessionId)}</span>
+        <span className="text-eyebrow text-white/40 font-mono shrink-0">{shortId(sessionId)}</span>
         <Button
           variant="ghost"
           size="icon"
@@ -322,7 +322,7 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
         {playerError ? (
           <div className="flex flex-col items-center gap-3 text-center">
             <AlertTriangle className="h-8 w-8 text-amber-400/80" aria-hidden="true" />
-            <p className="text-[13px] text-white/60 max-w-xs">{playerError}</p>
+            <p className="text-body text-white/60 max-w-xs">{playerError}</p>
           </div>
         ) : (
           <div
@@ -370,7 +370,7 @@ function FilterChipShell({
   return (
     <Badge
       variant="secondary"
-      className="gap-1 rounded-full px-2 py-0.5 text-[11px] font-normal"
+      className="gap-1 rounded-full px-2 py-0.5 text-micro font-normal"
     >
       <Icon className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="text-muted-foreground">{prefix}:</span>
@@ -389,7 +389,7 @@ interface FilterChipsProps {
 function FilterChips({ assetId, userId, grantId, onClear }: FilterChipsProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-6 py-2.5 border-b border-border shrink-0 bg-muted/20">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <span className="text-micro font-medium uppercase tracking-wider text-muted-foreground">
         Filtered by
       </span>
       {assetId && <AssetFilterChip assetId={assetId} />}
@@ -403,7 +403,7 @@ function FilterChips({ assetId, userId, grantId, onClear }: FilterChipsProps) {
         variant="ghost"
         size="sm"
         onClick={onClear}
-        className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+        className="h-6 gap-1 px-2 text-micro text-muted-foreground hover:text-foreground"
         aria-label="Clear all recording filters"
       >
         <X className="h-3 w-3" aria-hidden="true" />
@@ -486,7 +486,7 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
       <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <Film className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <span className="text-[13px] font-medium text-foreground">
+          <span className="text-body font-medium text-foreground">
             {allRecordings.length > 0 ? `${allRecordings.length} recording${allRecordings.length !== 1 ? "s" : ""}` : "Recordings"}
           </span>
         </div>
@@ -494,7 +494,7 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
           variant="ghost"
           size="sm"
           onClick={() => { setPageToken(""); void refetch(); }}
-          className="h-7 gap-1 text-[12px] text-muted-foreground"
+          className="h-7 gap-1 text-compact text-muted-foreground"
           aria-label="Refresh recordings list"
         >
           <RefreshCw className="h-3 w-3" aria-hidden="true" />
@@ -517,11 +517,11 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9">Asset</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9">User</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9">Status</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9">Started</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9">Duration</TableHead>
+                <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9">Asset</TableHead>
+                <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9">User</TableHead>
+                <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9">Status</TableHead>
+                <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9">Started</TableHead>
+                <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9">Duration</TableHead>
                 <TableHead className="w-6" />
               </TableRow>
             </TableHeader>
@@ -551,11 +551,11 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Asset</TableHead>
-                  <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">User</TableHead>
-                  <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Status</TableHead>
-                  <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Started</TableHead>
-                  <TableHead className="text-[10px] uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Duration</TableHead>
+                  <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Asset</TableHead>
+                  <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">User</TableHead>
+                  <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Status</TableHead>
+                  <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Started</TableHead>
+                  <TableHead className="text-eyebrow uppercase tracking-wider py-2 h-9 text-muted-foreground font-semibold">Duration</TableHead>
                   <TableHead className="w-6" />
                 </TableRow>
               </TableHeader>
@@ -579,7 +579,7 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
                   size="sm"
                   onClick={handleLoadMore}
                   disabled={isLoadingMore}
-                  className="h-7 gap-1.5 text-[12px]"
+                  className="h-7 gap-1.5 text-compact"
                 >
                   {isLoadingMore ? (
                     <>
@@ -628,8 +628,8 @@ export function RecordingsPage() {
     <div className="flex flex-col h-full">
       {/* Page header */}
       <header className="border-b border-border px-6 py-5 shrink-0">
-        <h1 className="text-[15px] font-semibold text-foreground">Recordings</h1>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">
+        <h1 className="text-title font-semibold text-foreground">Recordings</h1>
+        <p className="mt-0.5 text-compact text-muted-foreground">
           SSH session recordings for audit and review.
         </p>
       </header>

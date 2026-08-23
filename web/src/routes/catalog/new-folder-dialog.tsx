@@ -40,9 +40,9 @@ interface NewFolderDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function NewFolderDialog({
   open,
@@ -90,12 +90,12 @@ export function NewFolderDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New folder</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New folder</DialogTitle>
+          <DialogDescription className="text-body">
             {parentPath ? (
               <>
                 Create a folder under{" "}
-                <span className="font-mono text-[12px]">{parentPath}</span>.
+                <span className="font-mono text-compact">{parentPath}</span>.
               </>
             ) : (
               "Create a folder at the catalog root."
@@ -116,7 +116,7 @@ export function NewFolderDialog({
               onChange={(e) => setName(e.target.value)}
               onBlur={() => setNameTouched(true)}
               placeholder="production"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
             />
             {nameTouched && !nameValid ? (
@@ -136,7 +136,7 @@ export function NewFolderDialog({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -144,7 +144,7 @@ export function NewFolderDialog({
               type="submit"
               size="sm"
               disabled={!nameValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create folder"}
             </Button>

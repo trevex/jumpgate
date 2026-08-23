@@ -49,8 +49,8 @@ interface CapabilityInputProps {
   id?: string;
 }
 
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function CapabilityInput({ value, onChange, id }: CapabilityInputProps) {
   const [draft, setDraft] = useState("");
@@ -94,7 +94,7 @@ export function CapabilityInput({ value, onChange, id }: CapabilityInputProps) {
             <Badge
               key={cap}
               variant="secondary"
-              className="gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] font-medium"
+              className="gap-1 rounded px-1.5 py-0.5 font-mono text-micro font-medium"
             >
               {cap}
               <button
@@ -123,7 +123,7 @@ export function CapabilityInput({ value, onChange, id }: CapabilityInputProps) {
         onKeyDown={handleKeyDown}
         onBlur={commit}
         placeholder="ssh:login:deploy — press Enter to add"
-        className={cn("h-9 font-mono text-[13px]", error && "border-destructive")}
+        className={cn("h-9 font-mono text-body", error && "border-destructive")}
         aria-invalid={error != null}
       />
 
@@ -138,12 +138,12 @@ export function CapabilityInput({ value, onChange, id }: CapabilityInputProps) {
 
       {/* Vocabulary reference — the common families, so operators don't memorise. */}
       <details className="mt-1 rounded border border-border bg-muted/30 px-2.5 py-1.5">
-        <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+        <summary className="cursor-pointer select-none text-micro font-medium text-muted-foreground">
           Common capabilities
         </summary>
         <ul className="mt-1.5 flex flex-col gap-1">
           {VOCABULARY.map((v) => (
-            <li key={v.pattern} className="flex items-baseline gap-2 text-[11px]">
+            <li key={v.pattern} className="flex items-baseline gap-2 text-micro">
               <code className="shrink-0 font-mono text-foreground">{v.pattern}</code>
               <span className="text-muted-foreground">{v.note}</span>
             </li>

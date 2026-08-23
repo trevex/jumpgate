@@ -20,14 +20,14 @@ interface CapListProps {
 export function CapList({ caps, className }: CapListProps) {
   if (caps.length === 0) {
     return (
-      <p className="text-[12px] text-muted-foreground italic">None</p>
+      <p className="text-compact text-muted-foreground italic">None</p>
     );
   }
   return (
     <ul className={cn("flex flex-wrap gap-1.5", className)} aria-label="Capabilities">
       {caps.map((cap) => (
         <li key={cap}>
-          <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+          <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-eyebrow text-foreground">
             {cap}
           </span>
         </li>
@@ -47,7 +47,7 @@ interface DetailSectionProps {
 export function DetailSection({ title, children, className }: DetailSectionProps) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <h3 className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
         {title}
       </h3>
       {children}
@@ -95,10 +95,10 @@ export function DetailError({ error }: DetailErrorProps) {
       <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
         <Lock className="h-10 w-10 text-muted-foreground/40" aria-hidden="true" />
         <div>
-          <p className="text-[13px] font-medium text-foreground">
+          <p className="text-body font-medium text-foreground">
             Access restricted
           </p>
-          <p className="mt-1 text-[12px] text-muted-foreground">
+          <p className="mt-1 text-compact text-muted-foreground">
             You don't have access to view this item.
           </p>
         </div>
@@ -110,8 +110,8 @@ export function DetailError({ error }: DetailErrorProps) {
     <div className="flex flex-col items-center justify-center gap-3 p-10 text-center">
       <AlertCircle className="h-10 w-10 text-destructive/60" aria-hidden="true" />
       <div>
-        <p className="text-[13px] font-medium text-foreground">Something went wrong</p>
-        <p className="mt-1 text-[11px] font-mono text-muted-foreground">{ce.message}</p>
+        <p className="text-body font-medium text-foreground">Something went wrong</p>
+        <p className="mt-1 text-micro font-mono text-muted-foreground">{ce.message}</p>
       </div>
     </div>
   );
@@ -127,7 +127,7 @@ interface RoleNameProps {
 export function RolePill({ name, folderPath }: RoleNameProps) {
   const label = folderPath ? `${name}.${folderPath}` : name;
   return (
-    <span className="inline-flex items-center rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+    <span className="inline-flex items-center rounded border border-border bg-muted px-2 py-0.5 text-micro font-medium text-foreground">
       {label}
     </span>
   );

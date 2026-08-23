@@ -85,7 +85,7 @@ function StatusPill({ status }: { status: Status }) {
       aria-live="polite"
       aria-label={`Connection status: ${meta.label}${detail}`}
       className={cn(
-        "flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] font-medium",
+        "flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-micro font-medium",
         meta.text,
       )}
     >
@@ -318,7 +318,7 @@ export function TerminalPage() {
       <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3">
         <div className="flex min-w-0 items-center gap-2">
           <TerminalIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h1 className="truncate text-[13px] font-medium text-foreground">
+          <h1 className="truncate text-body font-medium text-foreground">
             {login ? (
               <>
                 <span className="font-mono">{login}</span>
@@ -338,7 +338,7 @@ export function TerminalPage() {
               variant="outline"
               size="sm"
               onClick={reconnect}
-              className="h-7 gap-1.5 text-[12px]"
+              className="h-7 gap-1.5 text-compact"
               aria-label="Reconnect"
             >
               <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
@@ -367,7 +367,7 @@ export function TerminalPage() {
 
         {status.kind === "connecting" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="flex items-center gap-2 rounded-md bg-black/50 px-3 py-2 text-[12px] text-slate-200">
+            <div className="flex items-center gap-2 rounded-md bg-black/50 px-3 py-2 text-compact text-slate-200">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Opening session…
             </div>

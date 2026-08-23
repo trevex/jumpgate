@@ -115,7 +115,7 @@ function DurationChips({
               onClick={() => selectPreset(p.seconds)}
               aria-pressed={active}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors duration-100",
+                "rounded-md border px-3 py-1.5 text-compact font-medium transition-colors duration-100",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 active
                   ? "border-primary bg-primary/10 text-primary"
@@ -131,7 +131,7 @@ function DurationChips({
           onClick={toggleCustom}
           aria-pressed={showCustom}
           className={cn(
-            "rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors duration-100",
+            "rounded-md border px-3 py-1.5 text-compact font-medium transition-colors duration-100",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
             showCustom
               ? "border-primary bg-primary/10 text-primary"
@@ -158,7 +158,7 @@ function DurationChips({
               "placeholder:text-muted-foreground",
             )}
           />
-          <span className="text-[12px] text-muted-foreground">hours</span>
+          <span className="text-compact text-muted-foreground">hours</span>
         </div>
       )}
     </div>
@@ -179,7 +179,7 @@ function FieldLabel({
   return (
     <label
       htmlFor={htmlFor}
-      className="block text-[11px] font-semibold uppercase tracking-widest text-muted-foreground"
+      className="block text-micro font-semibold uppercase tracking-widest text-muted-foreground"
     >
       {children}
       {required && (
@@ -277,8 +277,8 @@ export function RequestSheet({
         aria-label="Request access"
       >
         <SheetHeader className="border-b border-border px-6 py-5">
-          <SheetTitle className="text-[15px]">Request access</SheetTitle>
-          <SheetDescription className="flex items-center gap-1.5 text-[12px]">
+          <SheetTitle className="text-title">Request access</SheetTitle>
+          <SheetDescription className="flex items-center gap-1.5 text-compact">
             <Server className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="font-mono">{asset.path ?? asset.name}</span>
           </SheetDescription>
@@ -318,7 +318,7 @@ export function RequestSheet({
               </SelectContent>
             </Select>
             {selectedRole && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-micro text-muted-foreground">
                 {selectedRole.folderPath
                   ? `Scoped to folder: ${selectedRole.folderPath}`
                   : "Global role"}
@@ -364,7 +364,7 @@ export function RequestSheet({
             />
             <p
               id="reason-hint"
-              className="text-[11px] text-muted-foreground"
+              className="text-micro text-muted-foreground"
             >
               Required. This will be visible to approvers.
             </p>
@@ -378,7 +378,7 @@ export function RequestSheet({
             size="sm"
             onClick={() => handleOpenChange(false)}
             disabled={isPending}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
           >
             Cancel
           </Button>
@@ -387,7 +387,7 @@ export function RequestSheet({
             form="request-access-form"
             size="sm"
             disabled={!canSubmit}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
             aria-disabled={!canSubmit}
           >
             {isPending ? "Submitting…" : "Submit request"}

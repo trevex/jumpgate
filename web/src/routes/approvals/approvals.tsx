@@ -156,7 +156,7 @@ function ApprovalProgress({
   return (
     <Badge
       variant="outline"
-      className="rounded border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold tabular-nums text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+      className="rounded border-amber-200 bg-amber-50 px-1.5 py-0 text-eyebrow font-semibold tabular-nums text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
       aria-label={`${approvalsSoFar} of ${requiredApprovals} approvals received`}
     >
       {approvalsSoFar}/{requiredApprovals}
@@ -212,8 +212,8 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Deny request?</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">Deny request?</DialogTitle>
+          <DialogDescription className="text-body">
             This will immediately deny{" "}
             <span className="font-medium text-foreground">{requesterDisplay}</span>
             's request for{" "}
@@ -228,7 +228,7 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
             size="sm"
             onClick={() => handleOpenChange(false)}
             disabled={isPending}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
           >
             Cancel
           </Button>
@@ -237,7 +237,7 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
             size="sm"
             onClick={handleDeny}
             disabled={isPending}
-            className="h-8 text-[13px]"
+            className="h-8 text-body"
             aria-label="Confirm deny request"
           >
             {isPending ? "Denying…" : "Deny request"}
@@ -291,7 +291,7 @@ function RequestRow({ req }: RequestRowProps) {
           {/* Row 1: Requester + asset + role */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {/* Requester */}
-            <span className="flex items-center gap-1 text-[13px] font-medium text-foreground">
+            <span className="flex items-center gap-1 text-body font-medium text-foreground">
               <User className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -305,10 +305,10 @@ function RequestRow({ req }: RequestRowProps) {
               </Tooltip>
             </span>
 
-            <span className="text-[11px] text-muted-foreground" aria-hidden="true">→</span>
+            <span className="text-micro text-muted-foreground" aria-hidden="true">→</span>
 
             {/* Asset */}
-            <span className="flex items-center gap-1 text-[12px] text-foreground">
+            <span className="flex items-center gap-1 text-compact text-foreground">
               <Server className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -322,10 +322,10 @@ function RequestRow({ req }: RequestRowProps) {
               </Tooltip>
             </span>
 
-            <span className="text-[11px] text-muted-foreground" aria-hidden="true">·</span>
+            <span className="text-micro text-muted-foreground" aria-hidden="true">·</span>
 
             {/* Role */}
-            <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+            <span className="flex items-center gap-1 text-compact text-muted-foreground">
               <Shield className="h-3 w-3 shrink-0" aria-hidden="true" />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -343,7 +343,7 @@ function RequestRow({ req }: RequestRowProps) {
           {/* Row 2: Reason */}
           {req.reason && (
             <p
-              className="text-[12px] text-muted-foreground line-clamp-2 leading-relaxed"
+              className="text-compact text-muted-foreground line-clamp-2 leading-relaxed"
               title={req.reason}
             >
               "{req.reason}"
@@ -353,7 +353,7 @@ function RequestRow({ req }: RequestRowProps) {
           {/* Row 3: Meta — time + approvals + decision-context toggle */}
           <div className="flex items-center gap-3 flex-wrap">
             <span
-              className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"
+              className="flex items-center gap-1 text-micro text-muted-foreground whitespace-nowrap"
               title={req.createdAt}
             >
               <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -377,7 +377,7 @@ function RequestRow({ req }: RequestRowProps) {
                     ? "Hide decision context"
                     : "Show decision context"
                 }
-                className="flex items-center gap-0.5 rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                className="flex items-center gap-0.5 rounded text-micro font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               >
                 {contextOpen ? (
                   <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -398,10 +398,10 @@ function RequestRow({ req }: RequestRowProps) {
                     className="h-3 w-3 shrink-0 text-muted-foreground"
                     aria-hidden="true"
                   />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+                  <span className="text-eyebrow font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
                     Target
                   </span>
-                  <code className="truncate font-mono text-[11px] text-foreground" title={assetTarget}>
+                  <code className="truncate font-mono text-micro text-foreground" title={assetTarget}>
                     {assetTarget}
                   </code>
                 </div>
@@ -409,7 +409,7 @@ function RequestRow({ req }: RequestRowProps) {
 
               {capabilities.length > 0 && (
                 <div className="flex flex-col gap-1">
-                  <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-eyebrow font-semibold uppercase tracking-wide text-muted-foreground">
                     <KeyRound className="h-3 w-3 shrink-0" aria-hidden="true" />
                     Grants {capabilities.length} capabilit{capabilities.length === 1 ? "y" : "ies"}
                   </span>
@@ -418,7 +418,7 @@ function RequestRow({ req }: RequestRowProps) {
                       <Badge
                         key={cap}
                         variant="outline"
-                        className="rounded border-border bg-background px-1.5 py-0 font-mono text-[10px] font-normal text-foreground"
+                        className="rounded border-border bg-background px-1.5 py-0 font-mono text-eyebrow font-normal text-foreground"
                       >
                         {cap}
                       </Badge>
@@ -438,7 +438,7 @@ function RequestRow({ req }: RequestRowProps) {
             onClick={() => doApprove({ requestId: req.id })}
             disabled={isApproving}
             aria-label={`Approve ${requesterDisplay}'s request`}
-            className="h-7 gap-1 px-3 text-[12px] bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600"
+            className="h-7 gap-1 px-3 text-compact bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600"
           >
             {isApproving ? (
               <span className="flex items-center gap-1">
@@ -460,7 +460,7 @@ function RequestRow({ req }: RequestRowProps) {
             onClick={() => setDenyOpen(true)}
             disabled={isApproving}
             aria-label={`Deny ${requesterDisplay}'s request`}
-            className="h-7 gap-1 px-3 text-[12px] border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/50"
+            className="h-7 gap-1 px-3 text-compact border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:hover:border-red-500/50"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             Deny
@@ -487,10 +487,10 @@ function TableHeader() {
       className="grid grid-cols-[1fr_auto] gap-x-4 border-b border-border bg-muted/30 px-6 py-2.5"
       aria-hidden="true"
     >
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <span className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
         Requester · Asset · Role · Reason
       </span>
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground text-right">
+      <span className="text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground text-right">
         Actions
       </span>
     </div>
@@ -570,7 +570,7 @@ function ReviewableRow({ grant }: { grant: Grant }) {
       <div className="flex flex-1 flex-col gap-1.5 min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {/* Subject */}
-          <span className="flex items-center gap-1 text-[13px] font-medium text-foreground">
+          <span className="flex items-center gap-1 text-body font-medium text-foreground">
             <User className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -582,10 +582,10 @@ function ReviewableRow({ grant }: { grant: Grant }) {
             </Tooltip>
           </span>
 
-          <span className="text-[11px] text-muted-foreground" aria-hidden="true">→</span>
+          <span className="text-micro text-muted-foreground" aria-hidden="true">→</span>
 
           {/* Asset */}
-          <span className="flex items-center gap-1 text-[12px] text-foreground">
+          <span className="flex items-center gap-1 text-compact text-foreground">
             <Server className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -597,10 +597,10 @@ function ReviewableRow({ grant }: { grant: Grant }) {
             </Tooltip>
           </span>
 
-          <span className="text-[11px] text-muted-foreground" aria-hidden="true">·</span>
+          <span className="text-micro text-muted-foreground" aria-hidden="true">·</span>
 
           {/* Role */}
-          <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+          <span className="flex items-center gap-1 text-compact text-muted-foreground">
             <Shield className="h-3 w-3 shrink-0" aria-hidden="true" />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -617,7 +617,7 @@ function ReviewableRow({ grant }: { grant: Grant }) {
 
         {/* Meta — granted time */}
         <span
-          className="flex items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap"
+          className="flex items-center gap-1 text-micro text-muted-foreground whitespace-nowrap"
           title={grant.grantedAt}
         >
           <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -631,7 +631,7 @@ function ReviewableRow({ grant }: { grant: Grant }) {
           variant="outline"
           size="sm"
           onClick={() => navigate(`/recordings?grantId=${grant.id}`)}
-          className="h-7 gap-1.5 px-3 text-[12px]"
+          className="h-7 gap-1.5 px-3 text-compact"
           aria-label={`View session recordings for ${subjectDisplay}'s grant`}
         >
           <Film className="h-3.5 w-3.5" aria-hidden="true" />
@@ -705,7 +705,7 @@ function ReviewableTab() {
             size="sm"
             onClick={() => fetchNextPage()}
             disabled={isFetchingNextPage}
-            className="h-7 text-[12px]"
+            className="h-7 text-compact"
           >
             {isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>
@@ -718,7 +718,7 @@ function ReviewableTab() {
 // ─── Approvals page ───────────────────────────────────────────────────────────
 
 const TAB_TRIGGER = cn(
-  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
   "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
 );
 
@@ -729,8 +729,8 @@ export function ApprovalsPage() {
     <div className="flex flex-col h-full">
       {/* Page header */}
       <header className="border-b border-border px-6 py-5">
-        <h1 className="text-[15px] font-semibold text-foreground">Approvals</h1>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">
+        <h1 className="text-title font-semibold text-foreground">Approvals</h1>
+        <p className="mt-0.5 text-compact text-muted-foreground">
           Requests awaiting your decision, and grants you may review.
         </p>
       </header>
@@ -745,7 +745,7 @@ export function ApprovalsPage() {
                 {pendingCount > 0 && (
                   <Badge
                     variant="default"
-                    className="h-4 min-w-4 rounded-full px-1 text-[10px] font-semibold tabular-nums"
+                    className="h-4 min-w-4 rounded-full px-1 text-eyebrow font-semibold tabular-nums"
                     aria-label={`${pendingCount} pending approval${pendingCount !== 1 ? "s" : ""}`}
                   >
                     {pendingCount > 99 ? "99+" : pendingCount}

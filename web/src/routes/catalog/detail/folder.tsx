@@ -70,7 +70,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
       <header className="flex flex-col gap-1">
         <div className="flex items-start gap-2">
           <Folder className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-tight text-foreground">
+          <h2 className="min-w-0 flex-1 text-title font-semibold leading-tight text-foreground">
             {name}
           </h2>
           {hasActions && (
@@ -89,7 +89,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                 {mayCreateFolder && (
                   <DropdownMenuItem
                     onSelect={() => setNewFolderOpen(true)}
-                    className="text-[13px]"
+                    className="text-body"
                   >
                     <FolderPlus className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                     New folder
@@ -98,7 +98,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                 {mayCreateAsset && (
                   <DropdownMenuItem
                     onSelect={() => setNewAssetOpen(true)}
-                    className="text-[13px]"
+                    className="text-body"
                   >
                     <Server className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                     New asset
@@ -109,14 +109,14 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                     {(mayCreateFolder || mayCreateAsset) && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       onSelect={() => setRenameOpen(true)}
-                      className="text-[13px]"
+                      className="text-body"
                     >
                       <Pencil className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Rename
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => setMoveOpen(true)}
-                      className="text-[13px]"
+                      className="text-body"
                     >
                       <FolderInput className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Move
@@ -130,7 +130,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                     )}
                     <DropdownMenuItem
                       onSelect={() => setDeleteOpen(true)}
-                      className="text-[13px] text-destructive focus:text-destructive"
+                      className="text-body text-destructive focus:text-destructive"
                     >
                       <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Delete
@@ -142,7 +142,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
           )}
         </div>
         {path && (
-          <p className="pl-6 font-mono text-[11px] text-muted-foreground" aria-label="Folder path">
+          <p className="pl-6 font-mono text-micro text-muted-foreground" aria-label="Folder path">
             {path}
           </p>
         )}

@@ -140,8 +140,7 @@
   /* ── Type scale (compact console density) ── replaces the ~390 arbitrary
      text-[NNpx] usages with 5 named tiers, each carrying a deliberate line-height.
      text-sm / text-lg / text-xl remain for login + primitive defaults. */
-  --text-eyebrow: 0.625rem;   --text-eyebrow--line-height: 1rem;      /* 10px — uppercase headers, meta */
-  --text-eyebrow--font-weight: 600;
+  --text-eyebrow: 0.625rem;   --text-eyebrow--line-height: 1rem;      /* 10px — uppercase headers, meta (pure size; weight/tracking stay explicit) */
   --text-micro: 0.6875rem;    --text-micro--line-height: 1rem;        /* 11px — dense meta, mono ids */
   --text-compact: 0.75rem;    --text-compact--line-height: 1.125rem;  /* 12px — secondary text, button labels */
   --text-body: 0.8125rem;     --text-body--line-height: 1.25rem;      /* 13px — default dense row/body text */

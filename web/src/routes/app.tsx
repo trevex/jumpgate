@@ -88,7 +88,7 @@ function SideNavLink({ item, caps }: SideNavLinkProps) {
       {item.label === "Approvals" && pendingCount > 0 && (
         <Badge
           variant="default"
-          className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-[10px] font-semibold leading-none"
+          className="ml-auto h-5 min-w-5 rounded-full px-1.5 text-eyebrow font-semibold leading-none"
           aria-label={`${pendingCount} pending approval${pendingCount !== 1 ? "s" : ""}`}
         >
           {pendingCount > 99 ? "99+" : pendingCount}
@@ -105,7 +105,7 @@ function UserInitials({ email }: { email: string }) {
   return (
     <span
       aria-hidden="true"
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-micro font-semibold text-primary"
     >
       {initial}
     </span>
@@ -265,7 +265,7 @@ export function AppShell() {
                 <span className="hidden sm:inline">Search…</span>
                 <kbd
                   aria-hidden="true"
-                  className="ml-1 hidden items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex"
+                  className="ml-1 hidden items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-eyebrow font-medium text-muted-foreground sm:inline-flex"
                 >
                   ⌘K
                 </kbd>

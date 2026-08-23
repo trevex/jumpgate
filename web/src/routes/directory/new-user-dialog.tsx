@@ -42,9 +42,9 @@ interface NewUserDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
   const invalidateList = useInvalidateList();
@@ -107,8 +107,8 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New user</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New user</DialogTitle>
+          <DialogDescription className="text-body">
             Create a directory account. The user signs in with the email and
             password you set here.
           </DialogDescription>
@@ -128,7 +128,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               onChange={(e) => setEmail(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, email: true }))}
               placeholder="user@example.com"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={touched.email && !emailValid}
             />
             {touched.email && !emailValid && (
@@ -149,7 +149,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               onChange={(e) => setDisplayName(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, displayName: true }))}
               placeholder="Ada Lovelace"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={touched.displayName && !nameValid}
             />
             {touched.displayName && !nameValid && (
@@ -172,7 +172,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               onChange={(e) => setPassword(e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, password: true }))}
               placeholder="At least 8 characters"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={touched.password && !passwordValid}
             />
             {touched.password && !passwordValid ? (
@@ -189,7 +189,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -197,7 +197,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create user"}
             </Button>

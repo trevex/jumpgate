@@ -92,7 +92,7 @@ function CapabilitiesSection({ roleId }: { roleId: string }) {
           onRetry={() => void refetch()}
         />
       ) : capabilities.length === 0 ? (
-        <p className="px-1 py-2 text-[12px] text-muted-foreground">
+        <p className="px-1 py-2 text-compact text-muted-foreground">
           No capabilities.
         </p>
       ) : (
@@ -101,7 +101,7 @@ function CapabilitiesSection({ roleId }: { roleId: string }) {
             <Badge
               key={cap}
               variant="secondary"
-              className="rounded px-1.5 py-0.5 font-mono text-[11px] font-medium"
+              className="rounded px-1.5 py-0.5 font-mono text-micro font-medium"
             >
               {cap}
             </Badge>
@@ -145,10 +145,10 @@ function GrantEdgeRow({
     <div className="flex items-center gap-3 px-1 py-2">
       <GitFork className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] text-foreground" title={sourceName}>
+        <div className="truncate text-body text-foreground" title={sourceName}>
           {sourceName}
         </div>
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-micro text-muted-foreground">
           via <span className="font-medium text-foreground">{via}</span>
           {source?.folderPath && (
             <span className="ml-1 font-mono text-muted-foreground/70">
@@ -201,7 +201,7 @@ function AddGrantEdge({ roleId }: { roleId: string }) {
           variant="outline"
           size="sm"
           onClick={() => setPickerOpen(true)}
-          className="h-8 flex-1 justify-start gap-2 text-[12px] font-normal"
+          className="h-8 flex-1 justify-start gap-2 text-compact font-normal"
         >
           {source ? (
             <>
@@ -216,14 +216,14 @@ function AddGrantEdge({ roleId }: { roleId: string }) {
         </Button>
 
         <Select value={via} onValueChange={setVia}>
-          <SelectTrigger className="h-8 w-[130px] text-[12px]" aria-label="Grant via">
+          <SelectTrigger className="h-8 w-[130px] text-compact" aria-label="Grant via">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="same_object" className="text-[12px]">
+            <SelectItem value="same_object" className="text-compact">
               same object
             </SelectItem>
-            <SelectItem value="parent" className="text-[12px]">
+            <SelectItem value="parent" className="text-compact">
               parent
             </SelectItem>
           </SelectContent>
@@ -238,7 +238,7 @@ function AddGrantEdge({ roleId }: { roleId: string }) {
           doAdd({ roleId, sourceRoleId: source.id, via })
         }
         disabled={!source || isPending}
-        className="h-7 gap-1 self-end px-3 text-[12px]"
+        className="h-7 gap-1 self-end px-3 text-compact"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
         {isPending ? "Adding…" : "Add edge"}
@@ -328,8 +328,8 @@ function DeleteRole({
   return (
     <section className="mt-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5">
       <div className="min-w-0">
-        <p className="text-[12px] font-medium text-foreground">Delete role</p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-compact font-medium text-foreground">Delete role</p>
+        <p className="text-micro text-muted-foreground">
           Cascades to bindings, policies, and grants.
         </p>
       </div>
@@ -338,7 +338,7 @@ function DeleteRole({
         size="sm"
         onClick={() => setConfirmOpen(true)}
         disabled={isPending}
-        className="h-7 shrink-0 gap-1 px-3 text-[12px]"
+        className="h-7 shrink-0 gap-1 px-3 text-compact"
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
         Delete
@@ -373,7 +373,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <h3 className="flex items-center gap-2 px-1 text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
         {title}
         <span className="tabular-nums text-muted-foreground/60">{count}</span>
       </h3>
@@ -400,11 +400,11 @@ export function RoleDetailSheet({
         {role && (
           <>
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2 text-[15px]">
+              <SheetTitle className="flex items-center gap-2 text-title">
                 <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 {role.name}
               </SheetTitle>
-              <SheetDescription className="text-[13px]">
+              <SheetDescription className="text-body">
                 {role.folderPath ? (
                   <>
                     Scoped to{" "}

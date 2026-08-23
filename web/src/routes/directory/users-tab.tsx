@@ -63,7 +63,7 @@ function UserStatusBadge({ active }: { active: boolean }) {
     <Badge
       variant="outline"
       className={cn(
-        "rounded px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide border",
+        "rounded px-1.5 py-0 text-eyebrow font-semibold uppercase tracking-wide border",
         active
           ? "border-green-300 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"
           : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-500/30 dark:bg-slate-500/10 dark:text-slate-300",
@@ -150,7 +150,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
           {canReactivate && (
             <DropdownMenuItem
               onSelect={() => doReactivate({ userId: user.id })}
-              className="text-[13px]"
+              className="text-body"
             >
               <UserCheck className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
               Reactivate
@@ -159,7 +159,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
           {canDeactivate && (
             <DropdownMenuItem
               onSelect={() => setDeactivateOpen(true)}
-              className="text-[13px]"
+              className="text-body"
             >
               <UserMinus className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
               Deactivate
@@ -168,7 +168,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
           {canDelete && (
             <DropdownMenuItem
               onSelect={() => setDeleteOpen(true)}
-              className="text-[13px] text-destructive focus:text-destructive"
+              className="text-body text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
               Delete
@@ -255,7 +255,7 @@ export function UsersTab() {
           <Button
             size="sm"
             onClick={() => setNewUserOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New user
@@ -278,16 +278,16 @@ export function UsersTab() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Email
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Display name
                 </TableHead>
-                <TableHead className="h-9 px-4 text-right text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-right text-eyebrow font-semibold uppercase tracking-widest">
                   Status
                 </TableHead>
-                <TableHead className="h-9 w-12 px-4 text-right text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 w-12 px-4 text-right text-eyebrow font-semibold uppercase tracking-widest">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -323,7 +323,7 @@ export function UsersTab() {
                 size="sm"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="h-7 text-[12px]"
+                className="h-7 text-compact"
               >
                 {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>

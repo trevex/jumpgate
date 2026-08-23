@@ -16,7 +16,7 @@ import { BindingsTab } from "./bindings-tab";
 import { PoliciesTab } from "./policies-tab";
 
 const TAB_TRIGGER = cn(
-  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors",
+  "relative h-8 rounded-none border-b-2 border-transparent bg-transparent px-4 pb-2 pt-0 text-body font-medium text-muted-foreground shadow-none transition-colors",
   "data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none",
 );
 
@@ -37,8 +37,8 @@ export function AccessControlPage() {
     <div className="flex h-full flex-col gap-0">
       {/* Page header */}
       <header className="border-b border-border px-6 py-5">
-        <h1 className="text-[15px] font-semibold text-foreground">Access control</h1>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">
+        <h1 className="text-title font-semibold text-foreground">Access control</h1>
+        <p className="mt-0.5 text-compact text-muted-foreground">
           Manage roles, standing bindings, and request policies.
         </p>
       </header>

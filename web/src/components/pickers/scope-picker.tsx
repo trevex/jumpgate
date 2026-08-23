@@ -133,7 +133,7 @@ function KindToggle({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-compact font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:text-foreground",
@@ -214,7 +214,7 @@ function CatalogOptions({
               <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate text-foreground">{hit.name}</span>
               {hit.path && (
-                <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
                   {hit.path}
                 </span>
               )}

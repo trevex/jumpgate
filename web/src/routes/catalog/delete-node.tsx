@@ -72,12 +72,12 @@ export function DeleteNode({
   const description =
     kind === "folder" ? (
       <>
-        Delete <span className="font-mono text-[12px]">{name}</span>? Only an
+        Delete <span className="font-mono text-compact">{name}</span>? Only an
         empty folder can be deleted.
       </>
     ) : (
       <>
-        Delete <span className="font-mono text-[12px]">{name}</span>? This
+        Delete <span className="font-mono text-compact">{name}</span>? This
         permanently removes the asset, its credentials, and any access to it.
       </>
     );

@@ -172,8 +172,8 @@ interface AssetConfigFormProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
 
 export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
   function patch(next: Partial<ConfigDraft>) {
@@ -210,7 +210,7 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
           value={value.targetAddress}
           onChange={(e) => patch({ targetAddress: e.target.value })}
           placeholder="db-primary.internal:22"
-          className="h-9 font-mono text-[13px]"
+          className="h-9 font-mono text-body"
         />
         <p className={FIELD_HINT}>
           host:port the worker dials. Empty = worker default resolution.
@@ -229,7 +229,7 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
           onChange={(e) => patch({ hostPublicKey: e.target.value })}
           placeholder="ssh-ed25519 AAAA…"
           rows={2}
-          className="min-h-[3.5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-[11px] shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-[3.5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-micro shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <p className={FIELD_HINT}>
           Optional OpenSSH authorized_keys line. Set = pin the host key; empty =
@@ -246,7 +246,7 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
             variant="outline"
             size="sm"
             onClick={addLogin}
-            className="h-7 gap-1 text-[12px]"
+            className="h-7 gap-1 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Add login
@@ -275,7 +275,7 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
                       onChange={(e) => patchLogin(i, { login: e.target.value })}
                       placeholder="root"
                       aria-label={`Login name for row ${i + 1}`}
-                      className="h-8 flex-1 font-mono text-[13px]"
+                      className="h-8 flex-1 font-mono text-body"
                     />
                     <Select
                       value={l.kind}
@@ -285,13 +285,13 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
                     >
                       <SelectTrigger
                         aria-label={`Auth kind for row ${i + 1}`}
-                        className="h-8 w-[150px] text-[13px]"
+                        className="h-8 w-[150px] text-body"
                       >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {KINDS.map((k) => (
-                          <SelectItem key={k} value={k} className="text-[13px]">
+                          <SelectItem key={k} value={k} className="text-body">
                             {KIND_LABEL[k]}
                           </SelectItem>
                         ))}
@@ -323,7 +323,7 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
                             : "Private key PEM"
                       }
                       aria-label={`Secret for row ${i + 1}`}
-                      className="h-8 text-[13px]"
+                      className="h-8 text-body"
                     />
                   )}
                 </li>

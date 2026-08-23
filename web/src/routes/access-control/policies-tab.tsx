@@ -81,7 +81,7 @@ function FolderScope({ folderId }: { folderId: string }) {
   const { data } = useQuery(resolveFolder, { ref: folderId }, { enabled: true });
   const path = data?.path || shortId(folderId);
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
+    <span className="inline-flex items-center gap-1.5 font-mono text-compact">
       <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate" title={path}>
         {path}
@@ -94,7 +94,7 @@ function AssetScope({ assetId }: { assetId: string }) {
   const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: true });
   const path = data?.asset?.path || data?.asset?.name || shortId(assetId);
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
+    <span className="inline-flex items-center gap-1.5 font-mono text-compact">
       <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate" title={path}>
         {path}
@@ -151,7 +151,7 @@ export function PoliciesTab() {
           <Button
             size="sm"
             onClick={() => setNewPolicyOpen(true)}
-            className="h-7 gap-1 px-3 text-[12px]"
+            className="h-7 gap-1 px-3 text-compact"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New policy
@@ -174,16 +174,16 @@ export function PoliciesTab() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Name
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Requestable role
                 </TableHead>
-                <TableHead className="h-9 px-4 text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-eyebrow font-semibold uppercase tracking-widest">
                   Scope
                 </TableHead>
-                <TableHead className="h-9 px-4 text-right text-[10px] font-semibold uppercase tracking-widest">
+                <TableHead className="h-9 px-4 text-right text-eyebrow font-semibold uppercase tracking-widest">
                   Min approvals
                 </TableHead>
               </TableRow>
@@ -213,7 +213,7 @@ export function PoliciesTab() {
                   <TableCell className="px-4 py-2.5 text-right">
                     <Badge
                       variant="secondary"
-                      className="rounded px-1.5 py-0 text-[11px] font-semibold tabular-nums"
+                      className="rounded px-1.5 py-0 text-micro font-semibold tabular-nums"
                     >
                       {policy.requiredApprovals}
                     </Badge>
@@ -230,7 +230,7 @@ export function PoliciesTab() {
                 size="sm"
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
-                className="h-7 text-[12px]"
+                className="h-7 text-compact"
               >
                 {isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>

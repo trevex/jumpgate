@@ -39,9 +39,9 @@ interface NewGroupDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
   const invalidateList = useInvalidateList();
@@ -93,8 +93,8 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New group</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New group</DialogTitle>
+          <DialogDescription className="text-body">
             Create a group. Optionally give it a folder home to delegate its
             governance to that part of the catalog; leave it global otherwise.
           </DialogDescription>
@@ -114,7 +114,7 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
               onChange={(e) => setName(e.target.value)}
               onBlur={() => setNameTouched(true)}
               placeholder="platform-oncall"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
             />
             {nameTouched && !nameValid ? (
@@ -136,12 +136,12 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => setPickerOpen(true)}
-                className="h-9 flex-1 justify-start gap-2 text-[13px] font-normal"
+                className="h-9 flex-1 justify-start gap-2 text-body font-normal"
               >
                 {home ? (
                   <>
                     <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                       {home.path}
                     </span>
                   </>
@@ -180,7 +180,7 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -188,7 +188,7 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
               type="submit"
               size="sm"
               disabled={!nameValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create group"}
             </Button>

@@ -52,7 +52,7 @@ interface MoveDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
 
 // A discriminated destination: a real folder, or (folders only) the root.
 type Destination =
@@ -108,8 +108,8 @@ export function MoveDialog({ open, onOpenChange, kind, id }: MoveDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Move {kind}</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">Move {kind}</DialogTitle>
+          <DialogDescription className="text-body">
             Choose a destination folder for this {kind}
             {kind === "folder" ? ", or move it to the catalog root." : "."}
           </DialogDescription>
@@ -123,11 +123,11 @@ export function MoveDialog({ open, onOpenChange, kind, id }: MoveDialogProps) {
               variant="outline"
               size="sm"
               onClick={() => setPickerOpen(true)}
-              className="h-9 justify-start gap-2 text-[13px] font-normal"
+              className="h-9 justify-start gap-2 text-body font-normal"
             >
               <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
               {dest?.to === "folder" ? (
-                <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                   {dest.folder.path}
                 </span>
               ) : (
@@ -143,7 +143,7 @@ export function MoveDialog({ open, onOpenChange, kind, id }: MoveDialogProps) {
                 variant={dest?.to === "root" ? "secondary" : "ghost"}
                 size="sm"
                 onClick={() => setDest({ to: "root" })}
-                className="h-8 justify-start gap-2 text-[13px] font-normal"
+                className="h-8 justify-start gap-2 text-body font-normal"
               >
                 <FolderTree className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="flex-1 text-left">Move to catalog root</span>
@@ -158,7 +158,7 @@ export function MoveDialog({ open, onOpenChange, kind, id }: MoveDialogProps) {
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -167,7 +167,7 @@ export function MoveDialog({ open, onOpenChange, kind, id }: MoveDialogProps) {
               size="sm"
               onClick={handleSubmit}
               disabled={!dest || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Moving…" : "Move"}
             </Button>

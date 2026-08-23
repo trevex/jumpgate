@@ -114,7 +114,7 @@ export function FolderPicker({ open, onOpenChange, onSelect }: FolderPickerProps
                 <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate text-foreground">{hit.name}</span>
                 {hit.path && (
-                  <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
                     {hit.path}
                   </span>
                 )}

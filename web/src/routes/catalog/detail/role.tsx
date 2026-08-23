@@ -31,7 +31,7 @@ export function RoleDetail({ id, name }: RoleDetailProps) {
       {/* Header */}
       <header className="flex items-start gap-2">
         <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <h2 className="text-[15px] font-semibold leading-tight text-foreground">
+        <h2 className="text-title font-semibold leading-tight text-foreground">
           {name}
         </h2>
       </header>

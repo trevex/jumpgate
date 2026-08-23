@@ -45,9 +45,9 @@ interface NewRoleDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
   const invalidateList = useInvalidateList();
@@ -107,8 +107,8 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">New role</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">New role</DialogTitle>
+          <DialogDescription className="text-body">
             A role bundles capabilities. Grant it to subjects via a binding, or
             make it requestable via a policy. Capabilities are immutable after
             creation.
@@ -129,7 +129,7 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
               onChange={(e) => setName(e.target.value)}
               onBlur={() => setNameTouched(true)}
               placeholder="db-reader"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
             />
             {nameTouched && !nameValid ? (
@@ -163,12 +163,12 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => setPickerOpen(true)}
-                className="h-9 flex-1 justify-start gap-2 text-[13px] font-normal"
+                className="h-9 flex-1 justify-start gap-2 text-body font-normal"
               >
                 {scope ? (
                   <>
                     <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
                       {scope.path}
                     </span>
                   </>
@@ -207,7 +207,7 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -215,7 +215,7 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Creating…" : "Create role"}
             </Button>

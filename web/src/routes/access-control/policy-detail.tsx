@@ -139,7 +139,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <h3 className="flex items-center gap-2 px-1 text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground">
         {title}
         {count !== undefined && (
           <span className="tabular-nums text-muted-foreground/60">{count}</span>
@@ -159,8 +159,8 @@ function FieldRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-3 px-1 py-1.5">
-      <span className="shrink-0 text-[12px] text-muted-foreground">{label}</span>
-      <span className="min-w-0 text-right text-[13px] text-foreground">{children}</span>
+      <span className="shrink-0 text-compact text-muted-foreground">{label}</span>
+      <span className="min-w-0 text-right text-body text-foreground">{children}</span>
     </div>
   );
 }
@@ -177,7 +177,7 @@ function ConfigurationSection({ policy }: { policy: RequestPolicy }) {
         <FieldRow label="Required approvals">
           <Badge
             variant="secondary"
-            className="rounded px-1.5 py-0 text-[11px] font-semibold tabular-nums"
+            className="rounded px-1.5 py-0 text-micro font-semibold tabular-nums"
           >
             {policy.requiredApprovals}
           </Badge>
@@ -249,7 +249,7 @@ function SubjectRow({
       ) : (
         <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       )}
-      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground" title={label}>
+      <span className="min-w-0 flex-1 truncate text-body text-foreground" title={label}>
         {label}
       </span>
       {canRemove && (
@@ -298,7 +298,7 @@ function AddSubject({ policyId, kind }: { policyId: string; kind: SubjectKind })
         variant="outline"
         size="sm"
         onClick={() => setPickerOpen(true)}
-        className="mt-1 h-7 gap-1 self-start px-2.5 text-[12px]"
+        className="mt-1 h-7 gap-1 self-start px-2.5 text-compact"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
         Add {kind}
@@ -326,9 +326,9 @@ function SubjectGroup({
   const heading = kind === "requester" ? "Requesters" : "Approvers";
   return (
     <div className="flex flex-col gap-0.5">
-      <h4 className="px-1 text-[11px] font-medium text-foreground">{heading}</h4>
+      <h4 className="px-1 text-micro font-medium text-foreground">{heading}</h4>
       {subjects.length === 0 ? (
-        <p className="px-1 py-1.5 text-[12px] text-muted-foreground/70">
+        <p className="px-1 py-1.5 text-compact text-muted-foreground/70">
           {kind === "requester"
             ? "No requester subjects."
             : "No approver subjects."}
@@ -500,8 +500,8 @@ function EditPolicyDialog({
     <Dialog open={open} onOpenChange={(next) => !isPending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Edit policy</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">Edit policy</DialogTitle>
+          <DialogDescription className="text-body">
             Adjust the approval count, duration cap, and requester / approver
             source roles. The requestable role and scope are fixed.
           </DialogDescription>
@@ -521,7 +521,7 @@ function EditPolicyDialog({
               max={20}
               value={approvals}
               onChange={(e) => setApprovals(e.target.value)}
-              className="h-9 w-28 text-[13px]"
+              className="h-9 w-28 text-body"
               aria-invalid={!approvalsValid}
             />
             {!approvalsValid && (
@@ -538,7 +538,7 @@ function EditPolicyDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => setRequesterPickerOpen(true)}
-                className="h-9 min-w-0 flex-1 justify-start gap-2 text-[13px] font-normal"
+                className="h-9 min-w-0 flex-1 justify-start gap-2 text-body font-normal"
               >
                 {requesterTouched ? (
                   requesterRole ? (
@@ -564,7 +564,7 @@ function EditPolicyDialog({
                   setRequesterTouched(true);
                   setRequesterRole(null);
                 }}
-                className="h-9 shrink-0 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+                className="h-9 shrink-0 px-2 text-compact text-muted-foreground hover:text-foreground"
               >
                 Clear
               </Button>
@@ -580,7 +580,7 @@ function EditPolicyDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => setApproverPickerOpen(true)}
-                className="h-9 min-w-0 flex-1 justify-start gap-2 text-[13px] font-normal"
+                className="h-9 min-w-0 flex-1 justify-start gap-2 text-body font-normal"
               >
                 {approverTouched ? (
                   approverRole ? (
@@ -606,7 +606,7 @@ function EditPolicyDialog({
                   setApproverTouched(true);
                   setApproverRole(null);
                 }}
-                className="h-9 shrink-0 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+                className="h-9 shrink-0 px-2 text-compact text-muted-foreground hover:text-foreground"
               >
                 Clear
               </Button>
@@ -626,7 +626,7 @@ function EditPolicyDialog({
               value={hours}
               onChange={(e) => setHours(e.target.value)}
               placeholder="No cap"
-              className="h-9 w-28 text-[13px]"
+              className="h-9 w-28 text-body"
               aria-invalid={!hoursValid}
             />
             {!hoursValid && (
@@ -641,7 +641,7 @@ function EditPolicyDialog({
               size="sm"
               onClick={() => onOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -649,7 +649,7 @@ function EditPolicyDialog({
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Saving…" : "Save changes"}
             </Button>
@@ -724,8 +724,8 @@ function DeletePolicy({
   return (
     <section className="mt-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5">
       <div className="min-w-0">
-        <p className="text-[12px] font-medium text-foreground">Delete policy</p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-compact font-medium text-foreground">Delete policy</p>
+        <p className="text-micro text-muted-foreground">
           Its role stops being requestable at this scope.
         </p>
       </div>
@@ -734,7 +734,7 @@ function DeletePolicy({
         size="sm"
         onClick={() => setConfirmOpen(true)}
         disabled={isPending}
-        className="h-7 shrink-0 gap-1 px-3 text-[12px]"
+        className="h-7 shrink-0 gap-1 px-3 text-compact"
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
         Delete
@@ -798,8 +798,8 @@ function ScopeDescription({ policy }: { policy: RequestPolicy }) {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 // ─── Detail Sheet ─────────────────────────────────────────────────────────────
 
@@ -830,13 +830,13 @@ export function PolicyDetailSheet({
         {shown && (
           <>
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2 text-[15px]">
+              <SheetTitle className="flex items-center gap-2 text-title">
                 <ScrollText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 {shown.name || (
                   <span className="text-muted-foreground">Unnamed policy</span>
                 )}
               </SheetTitle>
-              <SheetDescription className="text-[13px]">
+              <SheetDescription className="text-body">
                 <ScopeDescription policy={shown} />
               </SheetDescription>
             </SheetHeader>
@@ -847,7 +847,7 @@ export function PolicyDetailSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => setEditOpen(true)}
-                  className="h-7 gap-1 px-3 text-[12px]"
+                  className="h-7 gap-1 px-3 text-compact"
                 >
                   <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                   Edit

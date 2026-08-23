@@ -135,7 +135,7 @@ function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
             <div key={login} className="flex flex-col gap-1.5" role="listitem">
               <div className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2">
                 <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <code className="flex-1 overflow-x-auto font-mono text-[11px] text-foreground whitespace-nowrap">
+                <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
                   {cmd}
                 </code>
                 <CopyButton text={cmd} />
@@ -145,7 +145,7 @@ function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
                 target="_blank"
                 rel="noopener noreferrer"
                 className={cn(
-                  "inline-flex w-fit items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:underline",
+                  "inline-flex w-fit items-center gap-1.5 rounded px-1.5 py-0.5 text-micro font-medium text-primary transition-colors hover:underline",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 )}
                 aria-label={`Open browser terminal as ${login}`}
@@ -253,20 +253,20 @@ function EditConfigDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Edit config</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">Edit config</DialogTitle>
+          <DialogDescription className="text-body">
             Update the SSH connection and per-login auth for{" "}
-            <span className="font-mono text-[12px]">{assetName}</span>. Leave a
+            <span className="font-mono text-compact">{assetName}</span>. Leave a
             secret blank to keep the current one.
           </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <p className="py-6 text-center text-[13px] text-muted-foreground">
+          <p className="py-6 text-center text-body text-muted-foreground">
             Loading config…
           </p>
         ) : isError ? (
-          <p className="py-6 text-center text-[13px] text-destructive">
+          <p className="py-6 text-center text-body text-destructive">
             {connectErrorMessage(error)}
           </p>
         ) : ssh ? (
@@ -281,7 +281,7 @@ function EditConfigDialog({
             />
 
             {configError && (
-              <p className="text-[11px] text-destructive">{configError}</p>
+              <p className="text-micro text-destructive">{configError}</p>
             )}
 
             <DialogFooter className="mt-1">
@@ -291,7 +291,7 @@ function EditConfigDialog({
                 size="sm"
                 onClick={() => handleOpenChange(false)}
                 disabled={isPending}
-                className="h-8 text-[13px]"
+                className="h-8 text-body"
               >
                 Cancel
               </Button>
@@ -299,14 +299,14 @@ function EditConfigDialog({
                 type="submit"
                 size="sm"
                 disabled={isPending || !hasLogin}
-                className="h-8 text-[13px]"
+                className="h-8 text-body"
               >
                 {isPending ? "Saving…" : "Save config"}
               </Button>
             </DialogFooter>
           </form>
         ) : (
-          <p className="py-6 text-center text-[13px] text-muted-foreground">
+          <p className="py-6 text-center text-body text-muted-foreground">
             This asset has no editable SSH config.
           </p>
         )}
@@ -364,7 +364,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       <header className="flex flex-col gap-1">
         <div className="flex items-start gap-2">
           <Server className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-tight text-foreground">
+          <h2 className="min-w-0 flex-1 text-title font-semibold leading-tight text-foreground">
             {name}
           </h2>
           {canEdit && (
@@ -372,7 +372,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
               variant="outline"
               size="sm"
               onClick={() => setEditOpen(true)}
-              className="h-7 shrink-0 gap-1.5 text-[12px]"
+              className="h-7 shrink-0 gap-1.5 text-compact"
               aria-label="Edit asset config"
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
@@ -396,14 +396,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
                   <>
                     <DropdownMenuItem
                       onSelect={() => setRenameOpen(true)}
-                      className="text-[13px]"
+                      className="text-body"
                     >
                       <Pencil className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Rename
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => setMoveOpen(true)}
-                      className="text-[13px]"
+                      className="text-body"
                     >
                       <FolderInput className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Move
@@ -415,7 +415,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
                     {canEdit && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       onSelect={() => setDeleteOpen(true)}
-                      className="text-[13px] text-destructive focus:text-destructive"
+                      className="text-body text-destructive focus:text-destructive"
                     >
                       <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
                       Delete
@@ -427,7 +427,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           )}
         </div>
         {path && (
-          <p className="pl-6 font-mono text-[11px] text-muted-foreground" aria-label="Asset path">
+          <p className="pl-6 font-mono text-micro text-muted-foreground" aria-label="Asset path">
             {path}
           </p>
         )}
@@ -435,7 +435,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           <div className="pl-6">
             <Badge
               variant="secondary"
-              className="rounded px-1.5 py-0 text-[10px] font-mono uppercase tracking-wide"
+              className="rounded px-1.5 py-0 text-eyebrow font-mono uppercase tracking-wide"
             >
               {assetKind}
             </Badge>
@@ -461,7 +461,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
               variant="outline"
               size="sm"
               onClick={() => navigate(`/recordings?assetId=${id}`)}
-              className="h-7 gap-1.5 text-[12px]"
+              className="h-7 gap-1.5 text-compact"
               aria-label="View session recordings for this asset"
             >
               <Film className="h-3.5 w-3.5" aria-hidden="true" />
@@ -505,7 +505,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
               variant="outline"
               size="sm"
               onClick={() => setSheetOpen(true)}
-              className="mt-1 h-7 text-[12px]"
+              className="mt-1 h-7 text-compact"
               aria-label="Request access to this asset"
             >
               Request access
@@ -525,7 +525,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       {data.capabilities.length === 0 &&
         data.activeRoles.length === 0 &&
         !hasRequestable && (
-          <p className="text-[12px] text-muted-foreground italic">
+          <p className="text-compact text-muted-foreground italic">
             You have no access or pending requestable roles for this asset.
           </p>
         )}

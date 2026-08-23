@@ -43,9 +43,9 @@ interface RenameDialogProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function RenameDialog({
   open,
@@ -106,10 +106,10 @@ export function RenameDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">
+          <DialogTitle className="text-title">
             Rename {kind}
           </DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogDescription className="text-body">
             Give this {kind} a new name. Must be unique among its siblings.
           </DialogDescription>
         </DialogHeader>
@@ -126,7 +126,7 @@ export function RenameDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => setNameTouched(true)}
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
             />
             {nameTouched && !nameValid ? (
@@ -146,7 +146,7 @@ export function RenameDialog({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -154,7 +154,7 @@ export function RenameDialog({
               type="submit"
               size="sm"
               disabled={!nameValid || unchanged || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Saving…" : "Save"}
             </Button>

@@ -77,7 +77,7 @@ function KindFilter({ active, onChange }: KindFilterProps) {
           onClick={() => toggle(kind)}
           aria-pressed={active.has(kind)}
           className={cn(
-            "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium transition-colors duration-150",
+            "inline-flex items-center rounded px-2 py-0.5 text-eyebrow font-medium transition-colors duration-150",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
             active.has(kind)
               ? "bg-primary/10 text-primary"
@@ -129,7 +129,7 @@ function ShowAllAssets({ folderId, onSelect, selected }: ShowAllAssetsProps) {
         <button
           onClick={() => fetchNextPage()}
           disabled={isFetchingNextPage}
-          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-[11px] text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-micro text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Load more assets"
         >
           {isFetchingNextPage ? (
@@ -178,7 +178,7 @@ function ShowAllRoles({ folderId, onSelect, selected }: ShowAllRolesProps) {
         <button
           onClick={() => fetchNextPage()}
           disabled={isFetchingNextPage}
-          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-[11px] text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-micro text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Load more roles"
         >
           {isFetchingNextPage ? (
@@ -227,7 +227,7 @@ function ShowAllGroups({ folderId, onSelect, selected }: ShowAllGroupsProps) {
         <button
           onClick={() => fetchNextPage()}
           disabled={isFetchingNextPage}
-          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-[11px] text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-1.5 pl-10 pr-3 py-1 text-micro text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Load more groups"
         >
           {isFetchingNextPage ? (
@@ -278,7 +278,7 @@ function ShowAllFolders({ folderId, onSelect, selected, filter }: ShowAllFolders
         <button
           onClick={() => fetchNextPage()}
           disabled={isFetchingNextPage}
-          className="flex items-center gap-1.5 pl-6 pr-3 py-1 text-[11px] text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-1.5 pl-6 pr-3 py-1 text-micro text-primary hover:underline disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Load more folders"
         >
           {isFetchingNextPage ? (
@@ -314,7 +314,7 @@ function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
       }
       aria-selected={isSelected}
       className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-[12px] transition-colors duration-100",
+        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         isSelected
           ? "bg-primary/10 text-primary font-medium"
@@ -330,7 +330,7 @@ function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
       />
       <span className="flex-1 truncate">{asset.name}</span>
       {asset.kind && (
-        <span className="shrink-0 rounded px-1 py-0 text-[9px] font-mono uppercase tracking-wide bg-muted text-muted-foreground">
+        <span className="shrink-0 rounded px-1 py-0 text-eyebrow font-mono uppercase tracking-wide bg-muted text-muted-foreground">
           {asset.kind}
         </span>
       )}
@@ -353,7 +353,7 @@ function RoleLeaf({ role, depth, selected, onSelect }: RoleLeafProps) {
       onClick={() => onSelect({ kind: "role", id: role.id, name: role.name })}
       aria-selected={isSelected}
       className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-[12px] transition-colors duration-100",
+        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         isSelected
           ? "bg-primary/10 text-primary font-medium"
@@ -387,7 +387,7 @@ function GroupLeaf({ group, depth, selected, onSelect }: GroupLeafProps) {
       onClick={() => onSelect({ kind: "group", id: group.id, name: group.name })}
       aria-selected={isSelected}
       className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-[12px] transition-colors duration-100",
+        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         isSelected
           ? "bg-primary/10 text-primary font-medium"
@@ -417,7 +417,7 @@ function SectionHeader({ label, depth }: SectionHeaderProps) {
   return (
     <div
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
-      className="pb-0.5 pt-1.5 pr-3 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground select-none"
+      className="pb-0.5 pt-1.5 pr-3 text-eyebrow font-semibold uppercase tracking-widest text-muted-foreground select-none"
       aria-hidden="true"
     >
       {label}
@@ -438,7 +438,7 @@ function ShowAllRow({ label, depth, onExpand }: ShowAllRowProps) {
     <button
       style={leafIndent(depth)}
       onClick={onExpand}
-      className="flex w-full items-center gap-1.5 py-1 pr-3 text-left text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className="flex w-full items-center gap-1.5 py-1 pr-3 text-left text-micro text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       aria-label={`Show all ${label}`}
     >
       <span>Show all {label}</span>
@@ -509,7 +509,7 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
         style={{ paddingLeft: `${depth * 16}px` }}
         onClick={handleFolderClick}
         className={cn(
-          "group flex w-full items-center gap-1.5 py-1 pr-3 text-left text-[12px] font-medium transition-colors duration-100",
+          "group flex w-full items-center gap-1.5 py-1 pr-3 text-left text-compact font-medium transition-colors duration-100",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
           isSelf
             ? "bg-primary/10 text-primary"
@@ -545,7 +545,7 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
           {isLoading && <TreeSkeleton rows={3} />}
 
           {isError && (
-            <li className="flex items-center gap-1.5 py-1 pl-8 pr-3 text-[11px] text-destructive">
+            <li className="flex items-center gap-1.5 py-1 pl-8 pr-3 text-micro text-destructive">
               <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
               <span>Failed to load</span>
             </li>
@@ -663,7 +663,7 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
                 contents.assets.length === 0 &&
                 contents.roles.length === 0 &&
                 contents.groups.length === 0 && (
-                  <li className="py-1.5 pl-8 pr-3 text-[11px] text-muted-foreground italic select-none">
+                  <li className="py-1.5 pl-8 pr-3 text-micro text-muted-foreground italic select-none">
                     Empty folder
                   </li>
                 )}
@@ -835,7 +835,7 @@ export function Tree({ selected, onSelect }: TreeProps) {
                 contents.assets.length === 0 &&
                 contents.roles.length === 0 &&
                 contents.groups.length === 0 && (
-                  <li className="py-12 text-center text-[12px] text-muted-foreground">
+                  <li className="py-12 text-center text-compact text-muted-foreground">
                     No items visible
                   </li>
                 )}

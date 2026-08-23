@@ -50,9 +50,9 @@ interface NewAssetWizardProps {
 }
 
 const FIELD_LABEL =
-  "text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
-const FIELD_HINT = "text-[11px] text-muted-foreground";
-const FIELD_ERROR = "text-[11px] text-destructive";
+  "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
+const FIELD_HINT = "text-micro text-muted-foreground";
+const FIELD_ERROR = "text-micro text-destructive";
 
 export function NewAssetWizard({
   open,
@@ -118,12 +118,12 @@ export function NewAssetWizard({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Onboard SSH asset</DialogTitle>
-          <DialogDescription className="text-[13px]">
+          <DialogTitle className="text-title">Onboard SSH asset</DialogTitle>
+          <DialogDescription className="text-body">
             {folderPath ? (
               <>
                 Onboard an asset under{" "}
-                <span className="font-mono text-[12px]">{folderPath}</span>.
+                <span className="font-mono text-compact">{folderPath}</span>.
                 Secrets are sealed server-side.
               </>
             ) : (
@@ -146,7 +146,7 @@ export function NewAssetWizard({
               onChange={(e) => setName(e.target.value)}
               onBlur={() => setNameTouched(true)}
               placeholder="pg-primary"
-              className="h-9 text-[13px]"
+              className="h-9 text-body"
               aria-invalid={nameTouched && !nameValid}
             />
             {nameTouched && !nameValid ? (
@@ -179,7 +179,7 @@ export function NewAssetWizard({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               Cancel
             </Button>
@@ -187,7 +187,7 @@ export function NewAssetWizard({
               type="submit"
               size="sm"
               disabled={!formValid || isPending}
-              className="h-8 text-[13px]"
+              className="h-8 text-body"
             >
               {isPending ? "Onboarding…" : "Onboard asset"}
             </Button>
