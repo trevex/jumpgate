@@ -36,6 +36,13 @@ import { FolderHomePicker, type FolderHome } from "./folder-home-picker";
 interface NewGroupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Pre-set folder home. When provided the picker is replaced by a read-only
+   * context row and the group is created homed in this folder. When omitted the
+   * caller-driven picker behavior (global or pick a home) is kept.
+   */
+  folderId?: string;
+  folderPath?: string;
 }
 
 const FIELD_LABEL =
@@ -43,13 +50,26 @@ const FIELD_LABEL =
 const FIELD_HINT = "text-micro text-muted-foreground";
 const FIELD_ERROR = "text-micro text-destructive";
 
-export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
+export function NewGroupDialog({
+  open,
+  onOpenChange,
+  folderId,
+  folderPath,
+}: NewGroupDialogProps) {
   const invalidateList = useInvalidateList();
+
+  // When a folder home is pre-set by the caller, the group is created there and
+  // the picker is not shown.
+  const pinnedHome = folderId !== undefined;
 
   const [name, setName] = useState("");
   const [home, setHome] = useState<FolderHome | null>(null);
   const [nameTouched, setNameTouched] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // The effective folder id/path: pinned (from props) or picker-chosen.
+  const effectiveFolderId = pinnedHome ? (folderId ?? "") : (home?.id ?? "");
+  const effectiveFolderPath = pinnedHome ? folderPath : home?.path;
 
   function reset() {
     setName("");
@@ -60,8 +80,8 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
   const { mutate: doCreate, isPending } = useMutation(createGroup, {
     onSuccess: () => {
       toast.success("Group created", {
-        description: home
-          ? `${name.trim()} was added under ${home.path}.`
+        description: effectiveFolderPath
+          ? `${name.trim()} was added under ${effectiveFolderPath}.`
           : `${name.trim()} was added as a global group.`,
       });
       void invalidateList(listGroups);
@@ -86,7 +106,7 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!nameValid || isPending) return;
-    doCreate({ name: name.trim(), folderId: home?.id ?? "" });
+    doCreate({ name: name.trim(), folderId: effectiveFolderId });
   }
 
   return (
@@ -133,6 +153,31 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
           {/* Folder home */}
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Folder home</span>
+            {pinnedHome ? (
+              <>
+                <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-body">
+                  {effectiveFolderPath ? (
+                    <>
+                      <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                        {effectiveFolderPath}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="flex-1 text-left text-muted-foreground">
+                        Global (no folder home)
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p className={FIELD_HINT}>
+                  This group is homed in the selected folder.
+                </p>
+              </>
+            ) : (
+              <>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -174,6 +219,8 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
               Optional. A folder home delegates this group's governance to that
               subtree.
             </p>
+              </>
+            )}
           </div>
 
           <DialogFooter className="mt-1">
@@ -199,11 +246,13 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
         </form>
       </DialogContent>
 
-      <FolderHomePicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onSelect={setHome}
-      />
+      {!pinnedHome && (
+        <FolderHomePicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={setHome}
+        />
+      )}
     </Dialog>
   );
 }

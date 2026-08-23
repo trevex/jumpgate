@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { Folder, MoreHorizontal, FolderPlus, Server, Pencil, FolderInput, Trash2 } from "lucide-react";
+import { Folder, MoreHorizontal, Pencil, FolderInput, Trash2 } from "lucide-react";
 import { getFolderAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,17 +18,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
-import {
-  canCreateFolder,
-  canCreateAsset,
-  canUpdateFolder,
-  canDeleteFolder,
-} from "../catalog-actions";
-import { NewFolderDialog } from "../new-folder-dialog";
-import { NewAssetWizard } from "../new-asset-wizard";
+import { canUpdateFolder, canDeleteFolder } from "../catalog-actions";
+import { CreateMenu } from "../create-menu";
 import { RenameDialog } from "../rename-dialog";
 import { MoveDialog } from "../move-dialog";
 import { DeleteNode } from "../delete-node";
@@ -47,8 +40,6 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
     { folderId: id },
   );
 
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -58,11 +49,10 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
   if (!data) return null;
 
   const caps = data.capabilities;
-  const mayCreateFolder = canCreateFolder(caps);
-  const mayCreateAsset = canCreateAsset(caps);
   const mayUpdate = canUpdateFolder(caps);
   const mayDelete = canDeleteFolder(caps);
-  const hasActions = mayCreateFolder || mayCreateAsset || mayUpdate || mayDelete;
+  // The "…" menu holds only rename/move/delete now; creation lives in CreateMenu.
+  const hasActions = mayUpdate || mayDelete;
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Folder: ${name}`}>
@@ -73,6 +63,13 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
           <h2 className="min-w-0 flex-1 text-title font-semibold leading-tight text-foreground">
             {name}
           </h2>
+          {/* Create menu owns child creation (folder/asset/role/group). */}
+          <CreateMenu
+            folderId={id}
+            folderPath={path}
+            caps={caps}
+            trigger="button"
+          />
           {hasActions && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -86,27 +83,8 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
-                {mayCreateFolder && (
-                  <DropdownMenuItem
-                    onSelect={() => setNewFolderOpen(true)}
-                    className="text-body"
-                  >
-                    <FolderPlus className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-                    New folder
-                  </DropdownMenuItem>
-                )}
-                {mayCreateAsset && (
-                  <DropdownMenuItem
-                    onSelect={() => setNewAssetOpen(true)}
-                    className="text-body"
-                  >
-                    <Server className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-                    New asset
-                  </DropdownMenuItem>
-                )}
                 {mayUpdate && (
                   <>
-                    {(mayCreateFolder || mayCreateAsset) && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       onSelect={() => setRenameOpen(true)}
                       className="text-body"
@@ -124,18 +102,13 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
                   </>
                 )}
                 {mayDelete && (
-                  <>
-                    {(mayCreateFolder || mayCreateAsset || mayUpdate) && (
-                      <DropdownMenuSeparator />
-                    )}
-                    <DropdownMenuItem
-                      onSelect={() => setDeleteOpen(true)}
-                      className="text-body text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
-                      Delete
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem
+                    onSelect={() => setDeleteOpen(true)}
+                    className="text-body text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
+                    Delete
+                  </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -155,23 +128,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
         <CapList caps={caps} />
       </DetailSection>
 
-      {/* ── Authoring dialogs ── */}
-      {mayCreateFolder && (
-        <NewFolderDialog
-          open={newFolderOpen}
-          onOpenChange={setNewFolderOpen}
-          parentId={id}
-          parentPath={path}
-        />
-      )}
-      {mayCreateAsset && (
-        <NewAssetWizard
-          open={newAssetOpen}
-          onOpenChange={setNewAssetOpen}
-          folderId={id}
-          folderPath={path}
-        />
-      )}
+      {/* ── Authoring dialogs (rename/move/delete; creation is in CreateMenu) ── */}
       {mayUpdate && (
         <>
           <RenameDialog

@@ -7,10 +7,9 @@
  * survives page reload.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { LayoutGrid, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LayoutGrid } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useCapabilities } from "@/lib/capabilities";
@@ -21,8 +20,7 @@ import { RoleDetail } from "./detail/role";
 import { GroupDetail } from "./detail/group";
 import { FolderDetail } from "./detail/folder";
 import { encodeSelection, decodeSelection } from "./selection";
-import { canCreateFolder } from "./catalog-actions";
-import { NewFolderDialog } from "./new-folder-dialog";
+import { CreateMenu } from "./create-menu";
 
 // ─── Detail pane switcher ─────────────────────────────────────────────────────
 
@@ -79,8 +77,6 @@ function Detail({ selected, onCleared }: DetailProps) {
 export function CatalogPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const caps = useCapabilities();
-  const showRootCreate = canCreateFolder(caps);
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   const rawSel = searchParams.get("sel");
   const selected = rawSel ? decodeSelection(rawSel) : null;
@@ -112,21 +108,11 @@ export function CatalogPage() {
           <h2 className="text-micro font-semibold uppercase tracking-widest text-muted-foreground select-none">
             Catalog
           </h2>
-          {showRootCreate && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setNewFolderOpen(true)}
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              aria-label="New root folder"
-              title="New folder"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          )}
+          {/* Root create: folder → root, role/group → global (no folderId). */}
+          <CreateMenu caps={caps} trigger="plus" />
         </div>
         <div className="min-h-0 flex-1">
-          <Tree selected={selected} onSelect={handleSelect} />
+          <Tree selected={selected} onSelect={handleSelect} onCleared={clearSelection} />
         </div>
       </aside>
 
@@ -140,10 +126,6 @@ export function CatalogPage() {
           <Detail selected={selected} onCleared={clearSelection} />
         </ScrollArea>
       </main>
-
-      {showRootCreate && (
-        <NewFolderDialog open={newFolderOpen} onOpenChange={setNewFolderOpen} />
-      )}
     </div>
   );
 }

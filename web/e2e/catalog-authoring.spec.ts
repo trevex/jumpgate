@@ -73,9 +73,11 @@ test("catalog authoring: create folder, onboard asset, rename, blocked delete, m
   await page.getByRole("link", { name: "Catalog", exact: true }).click();
 
   // ── 1. Create two root folders: `folder` (holds the asset) and `dest`
-  //       (the later move target). The root "+" button is capability-gated. ──
+  //       (the later move target). Root creation is a capability-gated "Create…"
+  //       menu; open it, then choose "New folder". ──
   async function createRootFolder(name: string) {
-    await page.getByRole("button", { name: "New root folder" }).click();
+    await page.getByRole("button", { name: "Create…" }).click();
+    await page.getByRole("menuitem", { name: "New folder" }).click();
     const dialog = page.getByRole("dialog", { name: "New folder" });
     await expect(dialog).toBeVisible();
     await dialog.getByPlaceholder("production").fill(name);
@@ -92,7 +94,13 @@ test("catalog authoring: create folder, onboard asset, rename, blocked delete, m
   // ── 2. Onboard an SSH asset under `folder` via the wizard, with an inline
   //       password login "app". Secrets are sealed server-side in one tx. ──
   await selectFolder(page, folder);
-  await page.getByRole("button", { name: `Actions for folder ${folder}` }).click();
+  // Creation moved out of the "…" menu into a dedicated "Create…" menu in the
+  // folder detail header. Scope to the detail article so we don't match the
+  // tree-pane "Create…" button.
+  await page
+    .getByRole("article", { name: `Folder: ${folder}` })
+    .getByRole("button", { name: "Create…" })
+    .click();
   await page.getByRole("menuitem", { name: "New asset" }).click();
 
   const wizard = page.getByRole("dialog", { name: "Onboard SSH asset" });

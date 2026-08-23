@@ -42,6 +42,13 @@ import {
 interface NewRoleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Pre-set folder scope. When provided the scope picker is replaced by a
+   * read-only context row and the role is created homed in this folder. When
+   * omitted the caller-driven picker behavior (global or pick a scope) is kept.
+   */
+  folderId?: string;
+  folderPath?: string;
 }
 
 const FIELD_LABEL =
@@ -49,14 +56,27 @@ const FIELD_LABEL =
 const FIELD_HINT = "text-micro text-muted-foreground";
 const FIELD_ERROR = "text-micro text-destructive";
 
-export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
+export function NewRoleDialog({
+  open,
+  onOpenChange,
+  folderId,
+  folderPath,
+}: NewRoleDialogProps) {
   const invalidateList = useInvalidateList();
+
+  // When a folder scope is pre-set by the caller, the role is created there and
+  // the scope picker is not shown.
+  const pinnedScope = folderId !== undefined;
 
   const [name, setName] = useState("");
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [scope, setScope] = useState<FolderHome | null>(null);
   const [nameTouched, setNameTouched] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // The effective folder id/path: pinned (from props) or picker-chosen.
+  const effectiveFolderId = pinnedScope ? (folderId ?? "") : (scope?.id ?? "");
+  const effectiveFolderPath = pinnedScope ? folderPath : scope?.path;
 
   function reset() {
     setName("");
@@ -68,8 +88,8 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
   const { mutate: doCreate, isPending } = useMutation(createRole, {
     onSuccess: () => {
       toast.success("Role created", {
-        description: scope
-          ? `${name.trim()} was created under ${scope.path}.`
+        description: effectiveFolderPath
+          ? `${name.trim()} was created under ${effectiveFolderPath}.`
           : `${name.trim()} was created as a global role.`,
       });
       void invalidateList(listRoles);
@@ -99,7 +119,7 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
     doCreate({
       name: name.trim(),
       capabilities,
-      folderId: scope?.id ?? "",
+      folderId: effectiveFolderId,
     });
   }
 
@@ -160,6 +180,31 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
           {/* Folder scope */}
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Folder scope</span>
+            {pinnedScope ? (
+              <>
+                <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-body">
+                  {effectiveFolderPath ? (
+                    <>
+                      <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                        {effectiveFolderPath}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="flex-1 text-left text-muted-foreground">
+                        Global (no folder scope)
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p className={FIELD_HINT}>
+                  This role is scoped to the selected folder.
+                </p>
+              </>
+            ) : (
+              <>
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -201,6 +246,8 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
               Optional. A folder scope makes the role addressable and governed
               within that subtree.
             </p>
+              </>
+            )}
           </div>
 
           <DialogFooter className="mt-1">
@@ -226,11 +273,13 @@ export function NewRoleDialog({ open, onOpenChange }: NewRoleDialogProps) {
         </form>
       </DialogContent>
 
-      <FolderHomePicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onSelect={setScope}
-      />
+      {!pinnedScope && (
+        <FolderHomePicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={setScope}
+        />
+      )}
     </Dialog>
   );
 }

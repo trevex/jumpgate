@@ -29,6 +29,12 @@ import { listRoles } from "@/gen/jumpgate/access/v1/access-AccessService_connect
 import { listGroups } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import { folderContentsToNodes } from "./tree-model";
 import type { FolderNode, AssetNode, RoleNode, GroupNode } from "./tree-model";
+import {
+  TreeMenuProvider,
+  FolderContextMenu,
+  AssetContextMenu,
+  LeafContextMenu,
+} from "./tree-menus";
 
 // ─── Selection ───────────────────────────────────────────────────────────────
 
@@ -306,35 +312,37 @@ interface AssetLeafProps {
 
 function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
   const isSelected = selected?.kind === "asset" && selected.id === asset.id;
+  const select = () =>
+    onSelect({ kind: "asset", id: asset.id, name: asset.name, path: asset.path, assetKind: asset.kind });
   return (
-    <button
-      style={leafIndent(depth)}
-      onClick={() =>
-        onSelect({ kind: "asset", id: asset.id, name: asset.name, path: asset.path, assetKind: asset.kind })
-      }
-      aria-current={isSelected ? "true" : undefined}
-      className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-        isSelected
-          ? "bg-primary/10 text-primary font-medium"
-          : "text-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <Server
+    <AssetContextMenu asset={{ id: asset.id, name: asset.name }} onOpen={select}>
+      <button
+        style={leafIndent(depth)}
+        onClick={select}
+        aria-current={isSelected ? "true" : undefined}
         className={cn(
-          "h-3.5 w-3.5 shrink-0 transition-colors",
-          isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          isSelected
+            ? "bg-primary/10 text-primary font-medium"
+            : "text-foreground hover:bg-accent hover:text-foreground",
         )}
-        aria-hidden="true"
-      />
-      <span className="flex-1 truncate">{asset.name}</span>
-      {asset.kind && (
-        <span className="shrink-0 rounded px-1 py-0 text-eyebrow font-mono uppercase tracking-wide bg-muted text-muted-foreground">
-          {asset.kind}
-        </span>
-      )}
-    </button>
+      >
+        <Server
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 transition-colors",
+            isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          )}
+          aria-hidden="true"
+        />
+        <span className="flex-1 truncate">{asset.name}</span>
+        {asset.kind && (
+          <span className="shrink-0 rounded px-1 py-0 text-eyebrow font-mono uppercase tracking-wide bg-muted text-muted-foreground">
+            {asset.kind}
+          </span>
+        )}
+      </button>
+    </AssetContextMenu>
   );
 }
 
@@ -347,28 +355,31 @@ interface RoleLeafProps {
 
 function RoleLeaf({ role, depth, selected, onSelect }: RoleLeafProps) {
   const isSelected = selected?.kind === "role" && selected.id === role.id;
+  const select = () => onSelect({ kind: "role", id: role.id, name: role.name });
   return (
-    <button
-      style={leafIndent(depth)}
-      onClick={() => onSelect({ kind: "role", id: role.id, name: role.name })}
-      aria-current={isSelected ? "true" : undefined}
-      className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-        isSelected
-          ? "bg-primary/10 text-primary font-medium"
-          : "text-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <KeyRound
+    <LeafContextMenu node={{ name: role.name }} onOpen={select}>
+      <button
+        style={leafIndent(depth)}
+        onClick={select}
+        aria-current={isSelected ? "true" : undefined}
         className={cn(
-          "h-3.5 w-3.5 shrink-0 transition-colors",
-          isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          isSelected
+            ? "bg-primary/10 text-primary font-medium"
+            : "text-foreground hover:bg-accent hover:text-foreground",
         )}
-        aria-hidden="true"
-      />
-      <span className="flex-1 truncate">{role.name}</span>
-    </button>
+      >
+        <KeyRound
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 transition-colors",
+            isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          )}
+          aria-hidden="true"
+        />
+        <span className="flex-1 truncate">{role.name}</span>
+      </button>
+    </LeafContextMenu>
   );
 }
 
@@ -381,28 +392,31 @@ interface GroupLeafProps {
 
 function GroupLeaf({ group, depth, selected, onSelect }: GroupLeafProps) {
   const isSelected = selected?.kind === "group" && selected.id === group.id;
+  const select = () => onSelect({ kind: "group", id: group.id, name: group.name });
   return (
-    <button
-      style={leafIndent(depth)}
-      onClick={() => onSelect({ kind: "group", id: group.id, name: group.name })}
-      aria-current={isSelected ? "true" : undefined}
-      className={cn(
-        "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-        isSelected
-          ? "bg-primary/10 text-primary font-medium"
-          : "text-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <Users
+    <LeafContextMenu node={{ name: group.name }} onOpen={select}>
+      <button
+        style={leafIndent(depth)}
+        onClick={select}
+        aria-current={isSelected ? "true" : undefined}
         className={cn(
-          "h-3.5 w-3.5 shrink-0 transition-colors",
-          isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          "group flex w-full items-center gap-2 py-1 pr-3 text-left text-compact transition-colors duration-100",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          isSelected
+            ? "bg-primary/10 text-primary font-medium"
+            : "text-foreground hover:bg-accent hover:text-foreground",
         )}
-        aria-hidden="true"
-      />
-      <span className="flex-1 truncate">{group.name}</span>
-    </button>
+      >
+        <Users
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 transition-colors",
+            isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          )}
+          aria-hidden="true"
+        />
+        <span className="flex-1 truncate">{group.name}</span>
+      </button>
+    </LeafContextMenu>
   );
 }
 
@@ -505,33 +519,35 @@ function FolderTreeNode({ folder, depth, selected, onSelect, filter }: FolderNod
   return (
     <li aria-current={isSelf ? "true" : undefined}>
       {/* Folder toggle row */}
-      <button
-        style={{ paddingLeft: `${depth * 16}px` }}
-        onClick={handleFolderClick}
-        aria-expanded={expanded}
-        className={cn(
-          "group flex w-full items-center gap-1.5 py-1 pr-3 text-left text-compact font-medium transition-colors duration-100",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-          isSelf
-            ? "bg-primary/10 text-primary"
-            : "text-foreground hover:bg-accent hover:text-foreground",
-        )}
-        aria-label={`${expanded ? "Collapse" : "Expand"} folder ${folder.name}`}
-      >
-        <ChevronRight
+      <FolderContextMenu folder={{ id: folder.id, name: folder.name, path: folder.path }}>
+        <button
+          style={{ paddingLeft: `${depth * 16}px` }}
+          onClick={handleFolderClick}
+          aria-expanded={expanded}
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
-            expanded && "rotate-90",
+            "group flex w-full items-center gap-1.5 py-1 pr-3 text-left text-compact font-medium transition-colors duration-100",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+            isSelf
+              ? "bg-primary/10 text-primary"
+              : "text-foreground hover:bg-accent hover:text-foreground",
           )}
-          aria-hidden="true"
-        />
-        {expanded ? (
-          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
-        ) : (
-          <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden="true" />
-        )}
-        <span className="flex-1 truncate">{folder.name}</span>
-      </button>
+          aria-label={`${expanded ? "Collapse" : "Expand"} folder ${folder.name}`}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+            aria-hidden="true"
+          />
+          {expanded ? (
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+          ) : (
+            <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden="true" />
+          )}
+          <span className="flex-1 truncate">{folder.name}</span>
+        </button>
+      </FolderContextMenu>
 
       {/* Children */}
       {expanded && (
@@ -681,9 +697,12 @@ function FolderTreeNode({ folder, depth, selected, onSelect, filter }: FolderNod
 interface TreeProps {
   selected: SelectedNode | null;
   onSelect: (node: SelectedNode) => void;
+  /** Fired when a right-click action deletes the selected node, so the shell can
+   *  clear the `?sel=` selection and reset the detail pane. */
+  onCleared?: () => void;
 }
 
-export function Tree({ selected, onSelect }: TreeProps) {
+export function Tree({ selected, onSelect, onCleared }: TreeProps) {
   const [filter, setFilter] = useState<Set<NodeKind>>(
     new Set(["folder", "asset", "role", "group"] as NodeKind[]),
   );
@@ -706,6 +725,7 @@ export function Tree({ selected, onSelect }: TreeProps) {
   };
 
   return (
+    <TreeMenuProvider onCleared={onCleared}>
     <div className="flex h-full flex-col">
       {/* Kind filter chips */}
       <KindFilter active={filter} onChange={setFilter} />
@@ -845,5 +865,6 @@ export function Tree({ selected, onSelect }: TreeProps) {
         </nav>
       </ScrollArea>
     </div>
+    </TreeMenuProvider>
   );
 }
