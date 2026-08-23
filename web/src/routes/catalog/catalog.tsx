@@ -93,6 +93,14 @@ export function CatalogPage() {
     setSearchParams({}, { replace: true });
   }, [setSearchParams]);
 
+  // The pane "+" is context-sensitive: when a folder is selected, create inside
+  // it (New asset becomes available; New role/group pre-home there). Otherwise
+  // it targets the catalog root (folder → root, role/group → global).
+  const createCtx =
+    selected?.kind === "folder"
+      ? { folderId: selected.id, folderPath: selected.path }
+      : undefined;
+
   return (
     <div className="flex h-full flex-col md:flex-row">
       {/* ── Left: tree pane ── */}
@@ -108,8 +116,14 @@ export function CatalogPage() {
           <h2 className="text-micro font-semibold uppercase tracking-widest text-muted-foreground select-none">
             Catalog
           </h2>
-          {/* Root create: folder → root, role/group → global (no folderId). */}
-          <CreateMenu caps={caps} trigger="plus" />
+          {/* Context-sensitive create: targets the selected folder when one is
+              selected, else the catalog root. */}
+          <CreateMenu
+            caps={caps}
+            folderId={createCtx?.folderId}
+            folderPath={createCtx?.folderPath}
+            trigger="plus"
+          />
         </div>
         <div className="min-h-0 flex-1">
           <Tree selected={selected} onSelect={handleSelect} onCleared={clearSelection} />

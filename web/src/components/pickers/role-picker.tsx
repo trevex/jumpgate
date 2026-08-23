@@ -53,7 +53,10 @@ export function RolePicker({
 }: RolePickerProps) {
   const { data, isFetching, isError } = useQuery(
     listRoles,
-    { pageSize: PAGE_SIZE, pageToken: "" },
+    // cascade: include folder-scoped roles across the whole tree, not just
+    // root/global roles (parent defaults to ""). A role can be bound at any
+    // scope its home contains, so the picker must offer them all.
+    { pageSize: PAGE_SIZE, pageToken: "", cascade: true },
     { enabled: open },
   );
 
