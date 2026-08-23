@@ -76,6 +76,51 @@ func TestConnectCapabilitiesDoubleStarOnly(t *testing.T) {
 	}
 }
 
+// TestBareStarStarConfersNoConnect is the behavioral guard for the central
+// connect-vs-management invariant: a user holding ONLY the bare `**`
+// super-capability (and no explicit ssh:login grant) must be denied connect at
+// EVERY connect-decision entrypoint that routes through ConnectCapabilities.
+//
+// This test goes RED if someone changes ConnectCapabilities to stop stripping the
+// literal `**`, or wires a connect entrypoint to the un-stripped CapabilitiesOnScope
+// set — silently granting a bare-`**` admin proxy access into every asset. The
+// invariant is documented at the top of connect_capabilities.go; this pins it.
+func TestBareStarStarConfersNoConnect(t *testing.T) {
+	ctx := context.Background()
+	// The user holds ONLY the bare ** (as CapabilitiesOnScope would return it).
+	a := scopeStub{scoped: authz.Capabilities{"**"}}
+	userID, assetID := uuid.New(), uuid.New()
+
+	// Entrypoint 1: EntitledLogins (credential mint / SetupSession re-auth predicate)
+	// must yield an EMPTY login set against an asset that offers ssh logins.
+	logins, err := authz.EntitledLogins(ctx, a, userID, assetID, []string{"deploy", "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logins) != 0 {
+		t.Fatalf("bare ** must confer no login entitlement; got %v", logins)
+	}
+
+	// Entrypoint 2: ConnectCapabilities (the set GetAssetAccess.capabilities and the
+	// SetupSession re-auth adjudicate against) must not allow ANY ssh:login.
+	caps, err := authz.ConnectCapabilities(ctx, a, userID, assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(caps) != 0 {
+		t.Fatalf("bare ** must strip to an empty connect set; got %v", caps)
+	}
+	if caps.Allows("ssh:login:deploy") {
+		t.Fatal("bare ** must NOT allow ssh:login:deploy (connect must strip **)")
+	}
+	if caps.Allows("ssh:login:root") {
+		t.Fatal("bare ** must NOT allow ssh:login:root (connect must strip **)")
+	}
+	if caps.EntitledLogins([]string{"deploy", "root"}) != nil {
+		t.Fatal("bare ** connect set must entitle no login")
+	}
+}
+
 // A scoped ** (ssh:**) is NOT the literal ** carve-out and must be kept.
 func TestConnectCapabilitiesKeepsScopedDoubleStar(t *testing.T) {
 	a := scopeStub{scoped: authz.Capabilities{"ssh:**"}}

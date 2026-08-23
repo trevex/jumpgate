@@ -9,7 +9,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
@@ -403,18 +402,7 @@ func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[ac
 	}
 	g, err := s.q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: sourceRoleID, Via: req.Msg.Via})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) {
-			switch pgErr.Code {
-			case pgerrcodeUniqueViolation:
-				return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("role grant already exists"))
-			case pgerrcodeForeignKeyViolation:
-				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown role"))
-			case pgerrcodeCheckViolation:
-				return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role grant violates constraint"))
-			}
-		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&accessv1.AddRoleGrantResponse{Grant: toAccessRoleGrantMsg(g)}), nil
 }
