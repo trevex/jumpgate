@@ -715,6 +715,69 @@ func TestWorkerSessionEndedPersistsRecording(t *testing.T) {
 	}
 }
 
+// TestWorkerSessionEndedPersistsRecordingGrantID drives a WorkerStream reporting a
+// SessionEnded whose RecordingInfo carries a grant_id (the JIT grant that authorized
+// the session). warden must attribute the recording to that grant — persist it onto
+// the session_recordings row's grant_id column (FK to access_grants).
+func TestWorkerSessionEndedPersistsRecordingGrantID(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	seed := seedReconcile(t, pool) // seeds a real access_grants row (seed.grant) + live session
+
+	ctx := context.Background()
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	// Register reporting the session as still live so reconcile keeps the row.
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", LiveSessionIds: []string{seed.sess.String()}},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+
+	objectKey := "recordings/ssh/2026/08/19/" + seed.sess.String() + ".cast"
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_SessionEnded{
+		SessionEnded: &dataplanev1.SessionEnded{
+			SessionId: seed.sess.String(),
+			Reason:    "closed",
+			Recording: &dataplanev1.RecordingInfo{
+				Status:    "completed",
+				ObjectKey: objectKey,
+				GrantId:   seed.grant.String(),
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("send session-ended: %v", err)
+	}
+
+	// Poll until the recording row appears, then assert grant_id attribution.
+	var rec gen.SessionRecording
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec, err = gen.New(pool).GetSessionRecording(ctx, seed.sess)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session_recordings row never appeared: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !rec.GrantID.Valid {
+		t.Fatalf("session_recordings.grant_id is NULL, want %s", seed.grant)
+	}
+	if got := uuid.UUID(rec.GrantID.Bytes); got != seed.grant {
+		t.Fatalf("session_recordings.grant_id = %s, want %s", got, seed.grant)
+	}
+}
+
 // waitConnected polls the registry until worker's connected state matches want, or
 // fails after a short timeout (Add/Remove happen inside the handler goroutine).
 func waitConnected(t *testing.T, reg *dataplane.Registry, workerID string, want bool) {

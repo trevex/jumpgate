@@ -249,6 +249,16 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := gen.New(tx)
 
+	// Attribute the recording to the grant that authorized the session, if the worker
+	// reported one. A malformed grant_id is treated as unattributed (NULL) rather than
+	// an error — it's worker-reported metadata, not security-load-bearing here.
+	var grantID pgtype.UUID
+	if g := rec.GetGrantId(); g != "" {
+		if u, err := uuid.Parse(g); err == nil {
+			grantID = pgUUID(u)
+		}
+	}
+
 	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
 		SessionID: sid,
 		UserID:    parties.UserID,
@@ -256,6 +266,7 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 		WorkerID:  parties.WorkerID,
 		Protocol:  "ssh",
 		Format:    "asciicast-v2",
+		GrantID:   grantID,
 		ObjectKey: rec.GetObjectKey(),
 		SizeBytes: rec.GetSizeBytes(),
 		Sha256:    rec.GetSha256(),
