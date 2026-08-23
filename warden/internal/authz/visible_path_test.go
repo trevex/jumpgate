@@ -291,3 +291,51 @@ func TestGlobalFolderReadGovernsWholeTree(t *testing.T) {
 		t.Fatalf("global folder:read must govern deep f2: present=%v governed=%v (%v)", ok, g, FolderIDsOf(all))
 	}
 }
+
+// TestCascadeUnderParentExcludesSelf pins the defect fixed in visibleFoldersQuery:
+// VisibleFoldersUnder(cascade=true, parent=P) must NOT include P itself in the
+// result — only strict descendants. Previously `f.path_ids <@ (...)` was
+// descendant-OR-SELF, so P appeared in its own "folders under P" listing.
+func TestCascadeUnderParentExcludesSelf(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	q := gen.New(pool)
+
+	// Tree: P (parent), Q (child of P).
+	pF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cep-p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cep-q", ParentID: pgUUID(pF.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// User holding catalog:folder:read at P (folder scope), so P is a mgmt anchor.
+	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cep-user@pr", DisplayName: "CEPUser"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "cep-role", Capabilities: caps("catalog:folder:read")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeFolderID: pgUUID(pF.ID), SubjectUserID: pgUUID(u.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// cascade=true, parent=P: Q must appear (governed=true), P must NOT appear.
+	got, err := s.VisibleFoldersUnder(ctx, u.ID, pF.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, ok := governedOf(got, qF.ID); !ok || !g {
+		t.Fatalf("Q must be visible+governed under P (cascade): present=%v governed=%v (%v)", ok, g, FolderIDsOf(got))
+	}
+	if _, ok := governedOf(got, pF.ID); ok {
+		t.Fatalf("P must NOT appear in its own 'folders under P' cascade listing: %v", FolderIDsOf(got))
+	}
+}

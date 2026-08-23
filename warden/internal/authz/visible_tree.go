@@ -413,9 +413,9 @@ func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anch
 		// Whole tree: every folder is at the level.
 		level = "TRUE"
 	case cascade:
-		// Subtree under parent (inclusive).
+		// Subtree strictly under parent (children only, parent excluded).
 		args = append(args, parent)
-		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $3)"
+		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $3) AND f.id <> $3"
 	case parent == uuid.Nil:
 		// Direct children of the root (parent_id IS NULL), bound NULL-safe.
 		args = append(args, (*uuid.UUID)(nil))
