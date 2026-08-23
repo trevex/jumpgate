@@ -3,8 +3,8 @@ import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutDashboard,
-  LayoutGrid,
+  House,
+  FolderTree,
   KeyRound,
   ClipboardCheck,
   Film,
@@ -128,12 +128,12 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "Home",
     to: "/",
-    icon: LayoutDashboard,
+    icon: House,
   },
   {
     label: "Catalog",
     to: "/catalog",
-    icon: LayoutGrid,
+    icon: FolderTree,
   },
   {
     label: "My Access",

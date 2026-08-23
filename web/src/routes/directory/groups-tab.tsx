@@ -171,7 +171,9 @@ export function GroupsTab() {
     isFetchingNextPage,
   } = useInfiniteQuery(
     listGroups,
-    { pageSize: PAGE_SIZE, pageToken: "" },
+    // cascade: descend the whole folder tree so folder-homed groups appear here,
+    // not only root/global groups (parent defaults to "").
+    { pageSize: PAGE_SIZE, pageToken: "", cascade: true },
     {
       pageParamKey: "pageToken",
       getNextPageParam: (last) => last.nextPageToken || undefined,
