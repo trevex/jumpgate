@@ -417,7 +417,12 @@ func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *con
 	}
 	out := &accessrequestv1.ListReviewableGrantsResponse{}
 	for i := range rows {
-		out.Grants = append(out.Grants, toGrantMsg(rows[i]))
+		msg := toGrantMsg(rows[i])
+		// Enrich with the DNS-style asset path so the reviewer sees the real
+		// asset (e.g. pg-primary.db.prod), not a UUID — grantAssetPath is a raw
+		// lookup, so it resolves even for an approver without standing access.
+		msg.AssetPath = s.grantAssetPath(ctx, rows[i].AssetID)
+		out.Grants = append(out.Grants, msg)
 	}
 	// Emit a token whenever the SQL page was full (next != nil), even if the
 	// filtered result is short or empty. The cursor tracks the SQL position (keyed
