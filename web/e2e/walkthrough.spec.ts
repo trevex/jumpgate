@@ -400,12 +400,13 @@ test("walkthrough 1 — admin governance setup", async ({
     // (We check "Requestable via" — the policies scoped to this asset — NOT the
     // caller's own "Requestable roles": admin isn't a wt-sre member, so admin
     // cannot itself request it; wt-sre members can, as walkthrough 2 exercises.)
-    await expect(async () => {
-      await selectAsset(admin, "wt-box");
-      await expect(
-        wtBoxArticle.getByText(/wt-deploy/).first(),
-      ).toBeVisible();
-    }).toPass({ timeout: 20_000 });
+    // Select once and wait: the role label resolves via getRoleDisplay (async,
+    // ~seconds, since it also loads the role's caps). Re-selecting in a retry loop
+    // would remount the row and reset that query, so use one long-timeout expect.
+    await selectAsset(admin, "wt-box");
+    await expect(
+      wtBoxArticle.getByText(/wt-deploy/).first(),
+    ).toBeVisible({ timeout: 20_000 });
   } finally {
     await adminCtx.close();
   }
