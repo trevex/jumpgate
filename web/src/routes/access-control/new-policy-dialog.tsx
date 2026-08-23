@@ -343,7 +343,7 @@ export function NewPolicyDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle className="text-title">New request policy</DialogTitle>
           <DialogDescription className="text-body">

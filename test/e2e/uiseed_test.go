@@ -180,6 +180,19 @@ func TestUISeed(t *testing.T) {
 		"sh", "-c",
 		"printf 'deploy@%s\\n' '"+reviewPath+"' >> /etc/ssh/auth_principals/deploy")
 
+	// Prepare the target for the UI walkthrough spec's onboarded CA box. That
+	// spec (web/e2e/walkthrough.spec.ts) onboards `wt-box` in folder `wt` through
+	// the console, giving it the deterministic path `wt-box.wt` with a `deploy`
+	// CA login, then connects to it live. A CA target only trusts a cert whose
+	// principal it has been told about, and provisioning AuthorizedPrincipalsFile
+	// is a target-host operation done out of band (the real-world "the asset is
+	// always prepared out of band" step). Because the path is deterministic we do
+	// it here ahead of onboarding — appending (not clobbering) so demo-box's and
+	// review-box's principals above are preserved.
+	e.kubectl(t, "exec", "deploy/ssh-target", "--",
+		"sh", "-c",
+		"printf 'deploy@%s\\n' 'wt-box.wt' >> /etc/ssh/auth_principals/deploy")
+
 	// review-box is JIT-requestable via the same ssh-deploy role under its own
 	// cross-approval policy (sre requests and approves).
 	reviewPolicyRef := "approve-review@" + reviewPath
