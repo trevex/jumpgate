@@ -158,6 +158,7 @@ admin for that subtree *and only that subtree*.
    `team`. (The child path is `team.demo`.)
 2. **Define a bounded folder-admin role.** **Access control ▸ Roles ▸ New role** (leave it **global** —
    the *binding* is what scopes it). Name it `folder-admin` and add capabilities:
+   `catalog:folder:read`, `catalog:folder:create`, `catalog:folder:update`,
    `catalog:asset:create`, `catalog:asset:read`, `catalog:asset:update`, `access:role:create`,
    `access:binding:create`, `access:policy:create`, `identity:group:create`, `identity:group:read`,
    `identity:group:add-member`, `ssh:login:*`.

@@ -611,6 +611,9 @@ test("walkthrough 3 — delegated administration", async ({
     await expect(fadminDialog).toBeVisible();
     await fadminDialog.getByPlaceholder("db-reader").fill("wt-fadmin");
     const fadminCaps = [
+      "catalog:folder:read",
+      "catalog:folder:create",
+      "catalog:folder:update",
       "catalog:asset:create",
       "catalog:asset:read",
       "catalog:asset:update",
@@ -659,7 +662,10 @@ test("walkthrough 3 — delegated administration", async ({
     // ── dana (context 4): governs `team` and only `team` ──
     await login(dana, WT_DANA_EMAIL, WT_PASS);
     await openCatalog(dana);
-    // The `team` folder is visible (her catalog:asset:read cascades to it).
+    // Path-reveal: dana governs `team` (her management caps anchor it), so `team`
+    // is visible AND its ancestor `wt` is revealed as a breadcrumb on the path.
+    // Expand `wt` to reach `team` (the tree lazy-loads level by level).
+    await selectFolder(dana, "wt");
     await selectFolder(dana, "team");
     // Create… is present on the team folder (she has caps there).
     await expect(
