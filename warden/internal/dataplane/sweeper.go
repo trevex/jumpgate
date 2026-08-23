@@ -169,7 +169,7 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 		case <-ticker.C:
 			s.sweepOwnedLogged(ctx)
 		case payload := <-trigger:
-			full, users := s.accumulate(payload, nil)
+			full, users := s.accumulate(false, nil, payload)
 			t := time.NewTimer(debounce)
 			coalesce := true
 			for coalesce {
@@ -178,10 +178,7 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 					t.Stop()
 					return
 				case p := <-trigger:
-					full, users = s.accumulate(p, users)
-					if full {
-						users = nil // no need to track specifics once escalated
-					}
+					full, users = s.accumulate(full, users, p)
 					if !t.Stop() {
 						<-t.C
 					}
@@ -195,11 +192,18 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 	}
 }
 
-// accumulate folds one notification payload into the running batch state. Returns the
-// updated (fullSweepRequired, affectedUsers). An empty or unparseable payload escalates
-// the batch to a full sweep (the always-safe fallback); a parseable user UUID adds that
-// user to the set. Once full is true it stays true — a full sweep supersedes narrows.
-func (s *Sweeper) accumulate(payload string, users map[uuid.UUID]struct{}) (bool, map[uuid.UUID]struct{}) {
+// accumulate folds one notification payload into the running batch state (full,users)
+// and returns the updated state. Escalation is MONOTONIC within a debounce window: once
+// full is true it stays true — a full sweep supersedes any narrow ones, so an already-
+// escalated batch is never downgraded by a subsequent specific-user payload, regardless
+// of arrival order. An empty or unparseable payload escalates to a full sweep (the
+// always-safe fallback); a parseable user UUID adds that user to the narrow set. When
+// full, the narrow user set is cleared/ignored — runBatch does one full sweep instead.
+func (s *Sweeper) accumulate(full bool, users map[uuid.UUID]struct{}, payload string) (bool, map[uuid.UUID]struct{}) {
+	if full {
+		// Already escalated; specifics are irrelevant and a full sweep covers them.
+		return true, nil
+	}
 	if payload == "" {
 		return true, nil
 	}
