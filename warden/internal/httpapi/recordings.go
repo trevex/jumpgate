@@ -21,6 +21,16 @@ type ObjectGetter interface {
 	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
+// GrantReviewer authorizes grant-scoped recording review: a recording attributed
+// to a grant is viewable by the grant's subject or a potential approver of the
+// grant's originating request. Additive to the recording:read capability — the
+// cast prelude consults it only after the cap check denies, and only for
+// grant-attributed recordings. Backed by *accessrequest.Service. Nil disables the
+// additive path (only recording:read applies). Fails closed.
+type GrantReviewer interface {
+	CanReviewGrant(ctx context.Context, caller, grantID uuid.UUID) (bool, error)
+}
+
 // authorizeCast runs the shared prelude for both the GET and HEAD cast
 // handlers: it authenticates the caller, parses and loads the recording row,
 // and checks the recording:read capability on the recording's asset scope. It
@@ -70,8 +80,23 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.S
 		return gen.SessionRecording{}, false
 	}
 	if !caps.Allows("recording:read") {
-		http.NotFound(w, r)
-		return gen.SessionRecording{}, false
+		// Additive grant-scoped review: a grant-attributed recording is viewable
+		// by the grant's subject or a potential approver, even without
+		// recording:read. Strictly additive — an unattributed (NULL grant_id)
+		// recording still requires recording:read. Deny stays 404 (existence-hiding).
+		if !row.GrantID.Valid || d.GrantReviewer == nil {
+			http.NotFound(w, r)
+			return gen.SessionRecording{}, false
+		}
+		reviewable, err := d.GrantReviewer.CanReviewGrant(r.Context(), caller.ID, uuid.UUID(row.GrantID.Bytes))
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return gen.SessionRecording{}, false
+		}
+		if !reviewable {
+			http.NotFound(w, r)
+			return gen.SessionRecording{}, false
+		}
 	}
 
 	return row, true
@@ -137,6 +162,10 @@ type RouterDeps struct {
 	// Getter streams asciicast objects from the object store. If nil, the cast
 	// route returns 503 (recording retrieval not configured).
 	Getter ObjectGetter
+	// GrantReviewer authorizes grant-scoped review of a grant-attributed
+	// recording (subject or potential approver), additive to recording:read. If
+	// nil, only the recording:read gate applies.
+	GrantReviewer GrantReviewer
 	// Validate resolves a raw token to a user ID (TokenService.Validate).
 	Validate func(context.Context, string) (uuid.UUID, error)
 	// Load hydrates a CurrentUser from its ID (auth.Lookup.Load).

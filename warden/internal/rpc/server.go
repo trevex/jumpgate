@@ -87,7 +87,7 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer, authorizer), opts)
 	mux.Handle(vaultPath, vaultHandler)
 
-	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL, authorizer), opts)
+	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL, authorizer, arSvc), opts)
 	mux.Handle(recPath, recHandler)
 
 	if sessionSvc != nil {

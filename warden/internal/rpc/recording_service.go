@@ -26,6 +26,16 @@ type Presigner interface {
 	PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (url string, expires time.Time, err error)
 }
 
+// grantReviewer authorizes grant-scoped recording review: a recording attributed
+// to a grant is reviewable by the grant's subject or a potential approver of the
+// grant's originating request. Additive to the recording:read capability — the
+// handlers consult it only after a cap check denies, and only for grant-attributed
+// recordings. Backed by *accessrequest.Service (CanReviewGrant). A nil reviewer
+// (defensive) leaves only the recording:read path in force. Fails closed.
+type grantReviewer interface {
+	CanReviewGrant(ctx context.Context, caller, grantID uuid.UUID) (bool, error)
+}
+
 // Default and maximum page sizes for ListRecordings.
 const (
 	defaultRecordingPageSize = 50
@@ -38,17 +48,20 @@ const (
 // (recording.accessed) via the shared audit Logger, since there is no domain
 // transaction to ride along with.
 type RecordingServer struct {
-	q       *gen.Queries
-	audit   *audit.Logger
-	presign Presigner // may be nil → download fails closed
-	urlTTL  time.Duration
+	q        *gen.Queries
+	audit    *audit.Logger
+	presign  Presigner     // may be nil → download fails closed
+	urlTTL   time.Duration
+	reviewer grantReviewer // may be nil → only recording:read applies
 	capGuard
 }
 
 // NewRecordingServer constructs the RecordingService implementation. presign may
-// be nil, in which case GetRecordingDownload returns FailedPrecondition.
-func NewRecordingServer(q *gen.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer) *RecordingServer {
-	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, capGuard: capGuard{authz: a, q: q}}
+// be nil, in which case GetRecordingDownload returns FailedPrecondition. reviewer
+// authorizes grant-scoped review (subject or potential approver) on top of the
+// recording:read gate; a nil reviewer disables that additive path.
+func NewRecordingServer(q *gen.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *RecordingServer {
+	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
@@ -58,6 +71,10 @@ func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
 	}
 	if r.EndedAt.Valid {
 		endMs = r.EndedAt.Time.UnixMilli()
+	}
+	var grantID string
+	if r.GrantID.Valid {
+		grantID = uuid.UUID(r.GrantID.Bytes).String()
 	}
 	return &recordingv1.Recording{
 		SessionId:       r.SessionID.String(),
@@ -70,6 +87,7 @@ func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
 		Status:          r.Status,
 		StartedAtUnixMs: startMs,
 		EndedAtUnixMs:   endMs,
+		GrantId:         grantID,
 	}
 }
 
@@ -93,6 +111,15 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 		}
 		params.AssetID = pgtype.UUID{Bytes: id, Valid: true}
 	}
+	var grantFilter uuid.UUID
+	if req.Msg.GrantId != "" {
+		id, err := uuid.Parse(req.Msg.GrantId)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad grant_id"))
+		}
+		grantFilter = id
+		params.GrantID = pgtype.UUID{Bytes: id, Valid: true}
+	}
 	// An asset-scoped filter narrows the required cap to that asset; an unfiltered
 	// (fleet-wide) list requires the global recording:read.
 	assetFilter := uuidFromPg(params.AssetID)
@@ -100,8 +127,27 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 	if assetFilter != uuid.Nil {
 		scope = authz.AssetScope(assetFilter)
 	}
-	if err := s.requireCap(ctx, "recording:read", scope); err != nil {
-		return nil, err
+	// Authorization: the recording:read capability is the base gate. When the list
+	// is scoped to a single grant, a caller who lacks recording:read may still be
+	// authorized as the grant's subject or a potential approver (CanReviewGrant).
+	// This is strictly additive: the query already filters to grant_id, so no
+	// out-of-grant rows can leak. When no grant filter is present, only the
+	// capability gate applies (unchanged).
+	if capErr := s.requireCap(ctx, "recording:read", scope); capErr != nil {
+		if grantFilter == uuid.Nil || s.reviewer == nil {
+			return nil, capErr
+		}
+		caller, ok := auth.UserFromContext(ctx)
+		if !ok {
+			return nil, capErr
+		}
+		reviewable, err := s.reviewer.CanReviewGrant(ctx, caller.ID, grantFilter)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+		if !reviewable {
+			return nil, capErr
+		}
 	}
 	limit := req.Msg.PageSize
 	if limit <= 0 {
@@ -147,10 +193,40 @@ func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if err := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID)); err != nil {
+	if err := s.authorizeRecordingRead(ctx, row); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(toRecordingMsg(row)), nil
+}
+
+// authorizeRecordingRead enforces read access to a single recording row: the
+// recording:read capability on the recording's asset scope, OR — for a
+// grant-attributed recording — grant-scoped review (the grant's subject or a
+// potential approver, via CanReviewGrant). Strictly additive: the capability gate
+// is always tried first, and the grant-review fallback only applies to recordings
+// carrying a grant_id, so an unattributed recording always requires recording:read.
+// Returns the existing capability deny error on denial (preserving its code and
+// existence-hiding semantics).
+func (s *RecordingServer) authorizeRecordingRead(ctx context.Context, row gen.SessionRecording) error {
+	capErr := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID))
+	if capErr == nil {
+		return nil
+	}
+	if !row.GrantID.Valid || s.reviewer == nil {
+		return capErr
+	}
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return capErr
+	}
+	reviewable, err := s.reviewer.CanReviewGrant(ctx, caller.ID, uuid.UUID(row.GrantID.Bytes))
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if reviewable {
+		return nil
+	}
+	return capErr
 }
 
 // GetRecordingDownload issues a short-lived presigned download URL for the
@@ -168,7 +244,7 @@ func (s *RecordingServer) GetRecordingDownload(ctx context.Context, req *connect
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if err := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID)); err != nil {
+	if err := s.authorizeRecordingRead(ctx, row); err != nil {
 		return nil, err
 	}
 	if s.presign == nil {

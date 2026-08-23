@@ -216,11 +216,12 @@ func run() error {
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
 	mux := http.NewServeMux()
 	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool, httpapi.RouterDeps{
-		Queries:    apiQ,
-		Authorizer: authorizer,
-		Getter:     castGetter,
-		Validate:   apiLookup.Validate,
-		Load:       apiLookup.Load,
+		Queries:       apiQ,
+		Authorizer:    authorizer,
+		Getter:        castGetter,
+		GrantReviewer: arSvc,
+		Validate:      apiLookup.Validate,
+		Load:          apiLookup.Load,
 	})))
 	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL, cfg.CookieSecure()); err != nil {
 		return err

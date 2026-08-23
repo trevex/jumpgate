@@ -328,6 +328,46 @@ func TestRevokeGrantByApprover(t *testing.T) {
 	}
 }
 
+// TestCanReviewGrant asserts the grant-review predicate: the grant's subject and
+// a standing potential approver may review; an unrelated user and a JIT-granted
+// approver-role holder may not; an unknown grant fails closed (false, no error).
+func TestCanReviewGrant(t *testing.T) {
+	h := setup(t, 1, pgtype.Interval{})
+	subjID := h.mkUser(t, "subj@x")
+	gid := h.activeGrant(t, subjID, time.Hour)
+
+	// Subject → reviewable.
+	if ok, err := h.svc.CanReviewGrant(h.ctx, subjID, gid); err != nil || !ok {
+		t.Fatalf("subject CanReviewGrant = (%v, %v), want (true, nil)", ok, err)
+	}
+
+	// Standing potential approver for (role, asset) → reviewable.
+	approverID := h.mkUser(t, "app@x")
+	h.bindStanding(t, approverID, h.approverRole)
+	if ok, err := h.svc.CanReviewGrant(h.ctx, approverID, gid); err != nil || !ok {
+		t.Fatalf("approver CanReviewGrant = (%v, %v), want (true, nil)", ok, err)
+	}
+
+	// Unrelated user → not reviewable.
+	stranger := h.mkUser(t, "stranger@x")
+	if ok, err := h.svc.CanReviewGrant(h.ctx, stranger, gid); err != nil || ok {
+		t.Fatalf("stranger CanReviewGrant = (%v, %v), want (false, nil)", ok, err)
+	}
+
+	// A JIT-granted approver-role holder is NOT a potential approver (governance is
+	// standing-only) → not reviewable.
+	jitApprover := h.mkUser(t, "jit-app@x")
+	h.grantRole(t, jitApprover, h.approverRole)
+	if ok, err := h.svc.CanReviewGrant(h.ctx, jitApprover, gid); err != nil || ok {
+		t.Fatalf("JIT-approver CanReviewGrant = (%v, %v), want (false, nil)", ok, err)
+	}
+
+	// Unknown grant → fails closed (false, no error).
+	if ok, err := h.svc.CanReviewGrant(h.ctx, subjID, uuid.New()); err != nil || ok {
+		t.Fatalf("unknown-grant CanReviewGrant = (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
 func TestRevokeGrantForbidden(t *testing.T) {
 	h := setup(t, 1, pgtype.Interval{})
 	subjID := h.mkUser(t, "subj@x")

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,6 +35,13 @@ func (f *fakeObjectGetter) GetObject(_ context.Context, _ string) (io.ReadCloser
 		return nil, f.failErr
 	}
 	return io.NopCloser(strings.NewReader(f.body)), nil
+}
+
+// fakeGrantReviewer authorizes review iff (caller, grantID) is in the allow set.
+type fakeGrantReviewer struct{ allow map[[2]uuid.UUID]bool }
+
+func (f *fakeGrantReviewer) CanReviewGrant(_ context.Context, caller, grantID uuid.UUID) (bool, error) {
+	return f.allow[[2]uuid.UUID{caller, grantID}], nil
 }
 
 // ─── test server helpers ──────────────────────────────────────────────────────
@@ -68,6 +76,101 @@ func castServer(t *testing.T, getter httpapi.ObjectGetter) (*pgxpool.Pool, strin
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
 	return pool, srv.URL, lookup
+}
+
+// castServerWithReviewer is castServer with a GrantReviewer wired in, exercising
+// the additive grant-scoped review path in authorizeCast.
+func castServerWithReviewer(t *testing.T, getter httpapi.ObjectGetter, reviewer httpapi.GrantReviewer) (*pgxpool.Pool, string, auth.Lookup) {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	q := gen.New(pool)
+	tokens := auth.NewTokenService(q)
+	lookup := auth.Lookup{Tokens: tokens, Q: q}
+	a := authz.NewSQLAuthorizer(pool)
+
+	router := httpapi.NewRouter(pool, httpapi.RouterDeps{
+		Queries:       q,
+		Authorizer:    a,
+		Getter:        getter,
+		GrantReviewer: reviewer,
+		Validate:      lookup.Validate,
+		Load:          lookup.Load,
+	})
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	return pool, srv.URL, lookup
+}
+
+// seedRealGrant builds the minimal folder→asset→role→request→grant chain so a
+// grant with a real id exists (session_recordings.grant_id has an FK). subject is
+// the grant's subject_user_id. Returns the grant id and the asset id.
+func seedRealGrant(t *testing.T, pool *pgxpool.Pool, subject uuid.UUID) (grantID, assetID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rev-" + uuid.NewString()[:8]})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "a-" + uuid.NewString()[:8], Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rev-role-" + uuid.NewString()[:8], Capabilities: []byte("[]")})
+	if err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+		RequesterUserID: subject, RoleID: role.ID, AssetID: asset.ID,
+		Reason: "review test", RequiredApprovals: 1, Status: "granted",
+		RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		GrantedDuration:   pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessRequest: %v", err)
+	}
+	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID,
+		SubjectUserID: subject, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessGrant: %v", err)
+	}
+	return grant.ID, asset.ID
+}
+
+// seedGrantRecording inserts a recording attributed to grantID and returns its
+// session ID.
+func seedGrantRecording(t *testing.T, pool *pgxpool.Pool, userID, assetID, grantID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	sessID := uuid.New()
+	if err := gen.New(pool).UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+		SessionID: sessID,
+		UserID:    userID,
+		AssetID:   assetID,
+		WorkerID:  "worker-test",
+		Protocol:  "ssh",
+		Format:    "asciicast",
+		ObjectKey: fmt.Sprintf("recordings/%s.cast", sessID),
+		SizeBytes: 42,
+		Sha256:    "deadbeef",
+		Status:    "completed",
+		GrantID:   pgtype.UUID{Bytes: grantID, Valid: true},
+	}); err != nil {
+		t.Fatalf("upsert grant recording: %v", err)
+	}
+	return sessID
 }
 
 // seedUserWithCap creates a user + a global role carrying recording:read and
@@ -332,6 +435,48 @@ func TestCastCookieSameOrigin(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "cookie-hello") {
 		t.Errorf("body missing expected content: %q", string(body))
+	}
+}
+
+// TestCastGrantReviewer: a caller WITHOUT recording:read can stream a
+// grant-attributed recording when the GrantReviewer authorizes them (subject or
+// potential approver), but is still denied (404) on an unattributed (NULL
+// grant_id) recording — the grant-review path only adds access.
+func TestCastGrantReviewer(t *testing.T) {
+	const castBody = `{"version":2}` + "\n" + `[0.5,"o","review-hello"]`
+	getter := &fakeObjectGetter{body: castBody}
+
+	rev := &fakeGrantReviewer{allow: map[[2]uuid.UUID]bool{}}
+	pool, srvURL, lookup := castServerWithReviewer(t, getter, rev)
+
+	// Caller holds NO recording:read.
+	userID, tok := seedUserWithCap(t, pool, lookup, "reviewer@test", false)
+
+	// A real access_grant (grant_id has an FK) with its asset.
+	grantID, assetID := seedRealGrant(t, pool, userID)
+	rev.allow[[2]uuid.UUID{userID, grantID}] = true
+
+	grantSess := seedGrantRecording(t, pool, userID, assetID, grantID)
+	nullSess := seedRecording(t, pool, userID, assetID)
+
+	// (a) grant-attributed recording, reviewer authorizes → 200 + body.
+	resp := doGet(t, srvURL+"/api/recordings/"+grantSess.String()+"/cast", tok, "")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("(grant reviewer) want 200, got %d: %s", resp.StatusCode, body)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "review-hello") {
+		t.Errorf("body missing expected content: %q", string(body))
+	}
+
+	// (b) NULL-grant recording, same caller (no recording:read) → 404, since the
+	//     grant-review path does not apply to unattributed recordings.
+	resp2 := doGet(t, srvURL+"/api/recordings/"+nullSess.String()+"/cast", tok, "")
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("(NULL grant, no cap) want 404, got %d", resp2.StatusCode)
 	}
 }
 

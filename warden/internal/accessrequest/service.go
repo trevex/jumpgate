@@ -567,6 +567,29 @@ func (s *Service) CanReadForRequest(ctx context.Context, caller uuid.UUID, kind 
 	return false, nil
 }
 
+// CanReviewGrant reports whether caller may review the sessions/recordings of
+// grantID: caller is the grant's subject, OR a potential approver of the grant's
+// originating request (the same standing approver-eligibility as the
+// pending-approvals inbox, generalized past pending). Additive to capability
+// checks — callers consult it only after a cap check denies. Fails closed: an
+// unknown grant yields false, not an error swallowed to true.
+func (s *Service) CanReviewGrant(ctx context.Context, caller, grantID uuid.UUID) (bool, error) {
+	g, err := gen.New(s.pool).GetGrant(ctx, grantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get grant: %w", err)
+	}
+	if g.SubjectUserID == caller {
+		return true, nil
+	}
+	// Standing approver of the grant's originating (role, asset). IsApprover is
+	// standing-only (a JIT grant never confers approver eligibility) and already
+	// excludes deactivated users.
+	return s.resolver.IsApprover(ctx, caller, g.RoleID, g.ScopeAssetID)
+}
+
 // grantIDFor returns the grant id for a granted request, or uuid.Nil.
 func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRequest) uuid.UUID {
 	if r.Status != "granted" {

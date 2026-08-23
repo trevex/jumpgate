@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	accessrequestv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	recordingv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/internal/audit"
@@ -225,6 +227,175 @@ func TestRecordingCapabilityGating(t *testing.T) {
 	}
 	if _, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessB.String()}), atok)); err != nil {
 		t.Fatalf("admin GetRecording B = %v, want ok", err)
+	}
+}
+
+// seedGrantAttributedRecording builds a real request→approve→grant flow so the
+// resulting access_grant has a real (role, asset, subject) and returns the grant
+// id, the asset id, the requester/subject id, and the approver's id. alice is the
+// requester/subject; bob is bound to the approver role (a potential approver). It
+// then seeds a recording attributed to that grant and returns its session id.
+//
+// It uses the AccessRequest RPCs (not raw inserts) so the grant is genuine and the
+// approver-eligibility is decided by the same policy machinery the inbox uses.
+func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) (grantID, assetID, sessionID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := gen.New(pool)
+
+	adminTok := adminToken(t, url)
+	asset := newAsset(t, url, adminTok, "ssh")
+	aID := uuid.MustParse(asset.Id)
+
+	mkRole := func(name string) uuid.UUID {
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString(), Capabilities: []byte("[]")})
+		if err != nil {
+			t.Fatalf("CreateRole: %v", err)
+		}
+		return r.ID
+	}
+	target := mkRole("gr-target")
+	requesterRole := mkRole("gr-requester")
+	approverRole := mkRole("gr-approver")
+
+	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		RoleID: target, RequiredApprovals: 1,
+		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
+	}); err != nil {
+		t.Fatalf("CreateRequestPolicy: %v", err)
+	}
+
+	bind := func(uid, roleID uuid.UUID) {
+		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+			RoleID: roleID, ScopeAssetID: pgU(aID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+	}
+
+	seedUser(t, pool, "alice@rev", "password123", false)
+	seedUser(t, pool, "bob@rev", "password123", false)
+	aliceID := userIDByEmail(t, pool, "alice@rev")
+	bind(aliceID, requesterRole)
+	bind(userIDByEmail(t, pool, "bob@rev"), approverRole)
+
+	aliceTok := authClient(t, url, "alice@rev", "password123")
+	bobTok := authClient(t, url, "bob@rev", "password123")
+
+	arc := accessrequestv1connect.NewAccessRequestServiceClient(http.DefaultClient, url)
+	resp, err := arc.RequestAccess(ctx, withToken(connect.NewRequest(&accessrequestv1.RequestAccessRequest{
+		RoleId: target.String(), AssetId: asset.Id, DurationSeconds: 3600, Reason: "review test",
+	}), aliceTok))
+	if err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+	appr, err := arc.ApproveRequest(ctx, withToken(connect.NewRequest(&accessrequestv1.ApproveRequestRequest{
+		RequestId: resp.Msg.Request.Id,
+	}), bobTok))
+	if err != nil {
+		t.Fatalf("ApproveRequest: %v", err)
+	}
+	gID := uuid.MustParse(appr.Msg.Request.GrantId)
+
+	// Seed a recording attributed to the grant. The subject of the recording is
+	// alice; the session is authorized by the grant.
+	sID := uuid.New()
+	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+		SessionID: sID,
+		UserID:    aliceID,
+		AssetID:   aID,
+		WorkerID:  "worker-1",
+		Protocol:  "ssh",
+		Format:    "asciicast",
+		ObjectKey: "recordings/" + sID.String() + ".cast",
+		SizeBytes: 7,
+		Sha256:    "cafef00d",
+		Status:    "completed",
+		StartedAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+		EndedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		GrantID:   pgtype.UUID{Bytes: gID, Valid: true},
+	}); err != nil {
+		t.Fatalf("UpsertSessionRecording (grant-attributed): %v", err)
+	}
+	return gID, aID, sID
+}
+
+// TestListRecordingsByGrant_SubjectAndApprover asserts that a grant-attributed
+// recording is listable (filtered by grant_id) by the grant's subject and by a
+// potential approver of the grant's originating request — neither of whom holds
+// recording:read — while an unrelated user without recording:read is denied.
+func TestListRecordingsByGrant_SubjectAndApprover(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	seedUser(t, pool, "mallory@rev", "password123", false)
+	ctx := context.Background()
+
+	grantID, _, sessionID := seedGrantAttributedRecording(t, pool, url)
+
+	aliceTok := authClient(t, url, "alice@rev", "password123") // subject
+	bobTok := authClient(t, url, "bob@rev", "password123")     // potential approver
+	malloryTok := authClient(t, url, "mallory@rev", "password123")
+
+	rc := recordingv1connect.NewRecordingServiceClient(http.DefaultClient, url)
+
+	// Subject sees the grant's recording.
+	sub, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{GrantId: grantID.String()}), aliceTok))
+	if err != nil {
+		t.Fatalf("subject ListRecordings(grant) = %v, want ok", err)
+	}
+	if len(sub.Msg.Recordings) != 1 || sub.Msg.Recordings[0].SessionId != sessionID.String() {
+		t.Fatalf("subject recordings = %+v, want [%s]", sub.Msg.Recordings, sessionID)
+	}
+	if sub.Msg.Recordings[0].GrantId != grantID.String() {
+		t.Fatalf("subject recording grant_id = %q, want %s", sub.Msg.Recordings[0].GrantId, grantID)
+	}
+
+	// Potential approver sees the same recording (no recording:read held).
+	app, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{GrantId: grantID.String()}), bobTok))
+	if err != nil {
+		t.Fatalf("approver ListRecordings(grant) = %v, want ok", err)
+	}
+	if len(app.Msg.Recordings) != 1 || app.Msg.Recordings[0].SessionId != sessionID.String() {
+		t.Fatalf("approver recordings = %+v, want [%s]", app.Msg.Recordings, sessionID)
+	}
+
+	// Unrelated user without recording:read → denied (existing cap deny code).
+	if _, err := rc.ListRecordings(ctx, withToken(connect.NewRequest(&recordingv1.ListRecordingsRequest{GrantId: grantID.String()}), malloryTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("unrelated ListRecordings(grant) = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+}
+
+// TestGetRecording_ApproverCanReadGrantAttributed asserts a potential approver
+// (holding no recording:read) can GetRecording a grant-attributed recording, but
+// is denied on an unattributed (NULL grant_id) recording — the grant-review path
+// only adds access, it never bypasses recording:read.
+func TestGetRecording_ApproverCanReadGrantAttributed(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	ctx := context.Background()
+
+	grantID, assetID, sessionID := seedGrantAttributedRecording(t, pool, url)
+	_ = grantID
+
+	bobTok := authClient(t, url, "bob@rev", "password123") // potential approver, no recording:read
+
+	// A NULL-grant recording on the same asset — bob must NOT be able to read it.
+	nullSess := seedRecordingRow(t, pool, userIDByEmail(t, pool, "alice@rev"), assetID)
+
+	rc := recordingv1connect.NewRecordingServiceClient(http.DefaultClient, url)
+
+	// Grant-attributed recording → approver allowed.
+	got, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessionID.String()}), bobTok))
+	if err != nil {
+		t.Fatalf("approver GetRecording(grant-attributed) = %v, want ok", err)
+	}
+	if got.Msg.SessionId != sessionID.String() {
+		t.Fatalf("GetRecording session_id = %q, want %s", got.Msg.SessionId, sessionID)
+	}
+
+	// NULL-grant recording → approver denied (recording:read still required).
+	if _, err := rc.GetRecording(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: nullSess.String()}), bobTok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("approver GetRecording(NULL grant) = %v, want PermissionDenied", connect.CodeOf(err))
 	}
 }
 
