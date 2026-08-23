@@ -225,13 +225,23 @@ async function terminalContains(page: Page, needle: string): Promise<void> {
 // terminal route, waits for connected, echoes a unique marker, and asserts it.
 async function openTerminalHrefAndEcho(page: Page, href: string): Promise<string> {
   const marker = "JG_WT_" + Date.now().toString(36).toUpperCase() + "_" + Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  await page.goto(href);
-  await expect(page.locator(".xterm")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText(/connected/i, { timeout: 30_000 });
-  await page.locator(".xterm").click();
-  await page.keyboard.type(`echo ${marker}`);
-  await page.keyboard.press("Enter"); // xterm sends CR — required to run the command
-  await terminalContains(page, marker);
+  // The "Open terminal" affordance is a target="_blank" link: the terminal route
+  // is chromeless (no app shell / nav), so in the product it opens in its OWN tab
+  // and the caller's page stays on the app. Mirror that with a fresh page — a
+  // same-page goto would strand the caller on the navless terminal, hanging the
+  // next nav click (e.g. openCatalog).
+  const term = await page.context().newPage();
+  try {
+    await term.goto(href);
+    await expect(term.locator(".xterm")).toBeVisible();
+    await expect(term.getByRole("status")).toContainText(/connected/i, { timeout: 30_000 });
+    await term.locator(".xterm").click();
+    await term.keyboard.type(`echo ${marker}`);
+    await term.keyboard.press("Enter"); // xterm sends CR — required to run the command
+    await terminalContains(term, marker);
+  } finally {
+    await term.close();
+  }
   return marker;
 }
 
