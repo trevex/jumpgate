@@ -89,6 +89,7 @@
             pkgs.rustup
             pkgs.cargo-nextest
             pkgs.cargo-watch
+            pkgs.cargo-deny
             pkgs.buf
             pkgs.protobuf
             pkgs.protoc-gen-go

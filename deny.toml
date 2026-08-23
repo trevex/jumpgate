@@ -1,0 +1,35 @@
+# cargo-deny configuration for the jumpgate Rust workspace.
+#
+# This file exists primarily to mechanically enforce the ring-only rustls
+# CryptoProvider invariant (see [bans] below). CI runs `cargo deny check bans`
+# only; the other sections are configured permissively so this stays focused on
+# the aws-lc ban and does not gate on licenses/advisories (a separate effort).
+
+[graph]
+all-features = true
+
+# Enforces the ring-only rustls CryptoProvider invariant: aws-lc-rs/aws-lc-sys
+# must never enter the dependency tree (mixing providers breaks the mesh and
+# races install_default). See the crypto-provider setup in jumpgate-mesh.
+[bans]
+multiple-versions = "allow"
+deny = [
+    { name = "aws-lc-rs" },
+    { name = "aws-lc-sys" },
+]
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+# Not gated in this task; allow everything so `cargo deny check licenses`
+# (should it ever be run) does not fail. CI only runs `check bans`.
+allow = []
+confidence-threshold = 0.8
+
+[sources]
+unknown-registry = "allow"
+unknown-git = "allow"

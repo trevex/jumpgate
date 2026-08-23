@@ -8,7 +8,7 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
-.PHONY: help gen build test lint fmt ci e2e-ssh web \
+.PHONY: help gen build test lint fmt ci e2e-ssh web rust-deny \
         kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
         ui-dev ui-dev-reset ui-build
 
@@ -45,6 +45,10 @@ lint: ## Run formatters/linters
 	cd cli && golangci-lint run ./...
 	cargo fmt --all -- --check
 	cargo clippy --all-targets -- -D warnings
+	$(MAKE) rust-deny
+
+rust-deny: ## Enforce the ring-only crypto invariant (ban aws-lc-rs/aws-lc-sys)
+	cargo deny check bans
 
 fmt: ## Auto-format
 	gofmt -w warden cli 2>/dev/null || true
