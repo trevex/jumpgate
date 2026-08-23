@@ -9,6 +9,12 @@
  * to the server: `subjectUserId` XOR `subjectGroupId`, and at most one of
  * `scopeFolderId` / `scopeAssetId` (neither = global).
  *
+ * The role and scope can each be pinned by the caller (independently,
+ * composably): `fixedRole` (e.g. from a role detail pane) replaces the
+ * role-picker with a read-only role row, and `fixedScope` (e.g. from a
+ * folder/asset detail pane) replaces the scope-picker with a read-only scope
+ * row. Whatever isn't pinned stays an active picker.
+ *
  * On success: toast + invalidate `listRoleBindings` so the tab re-seeds, then
  * close and reset. On error: surface `connectErrorMessage(err)` via toast (the
  * server is the real gate — e.g. PermissionDenied, or AlreadyExists for a
@@ -51,6 +57,17 @@ export interface FixedScope {
   path?: string;
 }
 
+/**
+ * A role pinned by the caller (e.g. a role detail pane). When set, the
+ * role-picker is hidden and `id` is sent verbatim as `roleId`; `name` and the
+ * optional `folderPath` back the read-only role row.
+ */
+export interface FixedRole {
+  id: string;
+  name: string;
+  folderPath?: string;
+}
+
 interface NewBindingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,6 +76,12 @@ interface NewBindingDialogProps {
    * is replaced by a read-only scope row. Absent = today's behavior (picker).
    */
   fixedScope?: FixedScope;
+  /**
+   * When present, the binding always grants this role: the role-picker is
+   * replaced by a read-only role row. Absent = today's behavior (picker).
+   * Independent of and composable with `fixedScope`.
+   */
+  fixedRole?: FixedRole;
 }
 
 const FIELD_LABEL =
@@ -69,6 +92,7 @@ export function NewBindingDialog({
   open,
   onOpenChange,
   fixedScope,
+  fixedRole,
 }: NewBindingDialogProps) {
   const invalidateList = useInvalidateList();
 
@@ -86,6 +110,12 @@ export function NewBindingDialog({
     ? { kind: fixedScope.kind, id: fixedScope.id, path: fixedScope.path ?? "" }
     : scope;
 
+  // When a role is fixed by the caller, that role is sent to the server;
+  // otherwise the picker-chosen `role` is used.
+  const effectiveRole: PickedRole | null = fixedRole
+    ? { id: fixedRole.id, name: fixedRole.name, folderPath: fixedRole.folderPath ?? "" }
+    : role;
+
   function reset() {
     setRole(null);
     setSubject(null);
@@ -95,7 +125,7 @@ export function NewBindingDialog({
   const { mutate: doCreate, isPending } = useMutation(createRoleBinding, {
     onSuccess: () => {
       toast.success("Binding created", {
-        description: `${subject?.label ?? "The subject"} now holds ${role?.name ?? "the role"}.`,
+        description: `${subject?.label ?? "The subject"} now holds ${effectiveRole?.name ?? "the role"}.`,
       });
       void invalidateList(listRoleBindings);
       reset();
@@ -107,7 +137,8 @@ export function NewBindingDialog({
   });
 
   // Role + subject are required; scope always has a value (global by default).
-  const formValid = role !== null && subject !== null;
+  // The role may be fixed by the caller, so validate against effectiveRole.
+  const formValid = effectiveRole !== null && subject !== null;
 
   function handleOpenChange(next: boolean) {
     if (isPending) return;
@@ -117,9 +148,9 @@ export function NewBindingDialog({
 
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
-    if (!formValid || isPending || !role || !subject) return;
+    if (!formValid || isPending || !effectiveRole || !subject) return;
     doCreate({
-      roleId: role.id,
+      roleId: effectiveRole.id,
       subjectUserId: subject.kind === "user" ? subject.id : "",
       subjectGroupId: subject.kind === "group" ? subject.id : "",
       scopeFolderId: effectiveScope.kind === "folder" ? effectiveScope.id : "",
@@ -142,29 +173,41 @@ export function NewBindingDialog({
           {/* Role */}
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Role</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setRolePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-body font-normal"
-            >
-              {role ? (
-                <>
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left">{role.name}</span>
-                  {role.folderPath && (
-                    <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
-                      {role.folderPath}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="flex-1 text-left text-muted-foreground">
-                  Choose a role…
+            {fixedRole ? (
+              <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-body">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate text-foreground">
+                  {fixedRole.name}
                 </span>
-              )}
-            </Button>
+                <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
+                  {fixedRole.folderPath || "global"}
+                </span>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setRolePickerOpen(true)}
+                className="h-9 justify-start gap-2 text-body font-normal"
+              >
+                {role ? (
+                  <>
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-left">{role.name}</span>
+                    {role.folderPath && (
+                      <span className="shrink-0 truncate font-mono text-micro text-muted-foreground">
+                        {role.folderPath}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="flex-1 text-left text-muted-foreground">
+                    Choose a role…
+                  </span>
+                )}
+              </Button>
+            )}
           </div>
 
           {/* Subject */}
@@ -273,11 +316,13 @@ export function NewBindingDialog({
         </form>
       </DialogContent>
 
-      <RolePicker
-        open={rolePickerOpen}
-        onOpenChange={setRolePickerOpen}
-        onSelect={setRole}
-      />
+      {!fixedRole && (
+        <RolePicker
+          open={rolePickerOpen}
+          onOpenChange={setRolePickerOpen}
+          onSelect={setRole}
+        />
+      )}
       <SubjectPicker
         open={subjectPickerOpen}
         onOpenChange={setSubjectPickerOpen}

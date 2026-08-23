@@ -51,11 +51,14 @@ import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage, shortId } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { canUpdateRole, canDeleteRole } from "./role-actions";
+import { canCreateBinding } from "./binding-actions";
+import { NewBindingDialog } from "./new-binding-dialog";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import {
   ShieldCheck,
   GitFork,
   Globe,
+  Link2,
   Plus,
   Trash2,
   X,
@@ -389,6 +392,8 @@ export function RoleDetailSheet({
 }) {
   const caps = useCapabilities();
   const canDelete = canDeleteRole(caps);
+  const mayBind = canCreateBinding(caps);
+  const [bindOpen, setBindOpen] = useState(false);
 
   return (
     <Sheet open={role !== null} onOpenChange={onOpenChange}>
@@ -396,10 +401,24 @@ export function RoleDetailSheet({
         {role && (
           <>
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2 text-title">
-                <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                {role.name}
-              </SheetTitle>
+              <div className="flex items-start gap-2">
+                <SheetTitle className="flex min-w-0 flex-1 items-center gap-2 text-title">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 truncate">{role.name}</span>
+                </SheetTitle>
+                {mayBind && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBindOpen(true)}
+                    className="h-7 shrink-0 gap-1.5 text-compact"
+                    aria-label={`Bind role ${role.name}`}
+                  >
+                    <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Bind this role
+                  </Button>
+                )}
+              </div>
               <SheetDescription className="text-body">
                 {role.folderPath ? (
                   <>
@@ -422,6 +441,18 @@ export function RoleDetailSheet({
             <GrantEdgesSection roleId={role.id} />
             {canDelete && (
               <DeleteRole role={role} onDeleted={() => onOpenChange(false)} />
+            )}
+
+            {mayBind && (
+              <NewBindingDialog
+                open={bindOpen}
+                onOpenChange={setBindOpen}
+                fixedRole={{
+                  id: role.id,
+                  name: role.name,
+                  folderPath: role.folderPath,
+                }}
+              />
             )}
           </>
         )}
