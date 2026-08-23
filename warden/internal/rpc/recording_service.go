@@ -50,7 +50,7 @@ const (
 type RecordingServer struct {
 	q        *gen.Queries
 	audit    *audit.Logger
-	presign  Presigner     // may be nil → download fails closed
+	presign  Presigner // may be nil → download fails closed
 	urlTTL   time.Duration
 	reviewer grantReviewer // may be nil → only recording:read applies
 	capGuard
