@@ -81,6 +81,7 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 		RecordingRequired:  out.RecordingRequired,
 		RecordingObjectKey: out.RecordingObjectKey,
 		TargetHostKey:      out.TargetHostKey,
+		GrantId:            out.GrantID,
 	}
 	switch out.CredentialKind {
 	case "ssh-cert":

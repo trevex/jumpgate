@@ -260,6 +260,109 @@ func (f *fixture) drainAudit(t *testing.T) {
 	}
 }
 
+// insertActiveGrant seeds an active (unrevoked, unexpired) access_grant for the
+// fixture's (user, asset) via a minimal granted access_request, mirroring the
+// terminator test's seed. Returns the grant id.
+func (f *fixture) insertActiveGrant(t *testing.T) uuid.UUID {
+	t.Helper()
+	req, err := f.q.CreateAccessRequest(f.ctx, gen.CreateAccessRequestParams{
+		RequesterUserID:   f.user,
+		RoleID:            f.role,
+		AssetID:           f.asset,
+		Reason:            "seed",
+		RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		RequiredApprovals: 0,
+		GrantedDuration:   pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
+		Status:            "granted",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessRequest: %v", err)
+	}
+	g, err := f.q.CreateAccessGrant(f.ctx, gen.CreateAccessGrantParams{
+		RequestID: req.ID, RoleID: f.role, ScopeAssetID: f.asset, SubjectUserID: f.user,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateAccessGrant: %v", err)
+	}
+	return g.ID
+}
+
+// liveSessionGrantID reads back the grant_id recorded on the sole live session for
+// the fixture's (user, asset), as its string form ("" when NULL).
+func (f *fixture) liveSessionGrantID(t *testing.T) string {
+	t.Helper()
+	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, gen.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
+	if err != nil {
+		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("live_sessions rows = %d, want 1", len(rows))
+	}
+	if !rows[0].GrantID.Valid {
+		return ""
+	}
+	return uuid.UUID(rows[0].GrantID.Bytes).String()
+}
+
+// TestSetupAttributesSingleActiveGrant asserts that when exactly one active grant
+// covers (user, asset), the session is attributed to it — both in the returned
+// SetupResult and in the recorded live_sessions.grant_id.
+func TestSetupAttributesSingleActiveGrant(t *testing.T) {
+	f := setup(t)
+	grantID := f.insertActiveGrant(t)
+	tok := f.mintToken(t, f.clientFp)
+
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if res.GrantID != grantID.String() {
+		t.Fatalf("GrantID = %q, want %s", res.GrantID, grantID)
+	}
+	if got := f.liveSessionGrantID(t); got != grantID.String() {
+		t.Fatalf("live_sessions.grant_id = %q, want %s", got, grantID)
+	}
+}
+
+// TestSetupNoGrantForStandingSession asserts a session authorized purely by a
+// standing binding (no active grant) is left unattributed.
+func TestSetupNoGrantForStandingSession(t *testing.T) {
+	f := setup(t)
+	tok := f.mintToken(t, f.clientFp)
+
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if res.GrantID != "" {
+		t.Fatalf("GrantID = %q, want empty", res.GrantID)
+	}
+	if got := f.liveSessionGrantID(t); got != "" {
+		t.Fatalf("live_sessions.grant_id = %q, want empty", got)
+	}
+}
+
+// TestSetupAmbiguousGrantsNotAttributed asserts that two active grants covering
+// (user, asset) make attribution ambiguous, so the session is left unattributed.
+func TestSetupAmbiguousGrantsNotAttributed(t *testing.T) {
+	f := setup(t)
+	f.insertActiveGrant(t)
+	f.insertActiveGrant(t) // two active → ambiguous
+	tok := f.mintToken(t, f.clientFp)
+
+	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if res.GrantID != "" {
+		t.Fatalf("GrantID = %q, want empty (ambiguous)", res.GrantID)
+	}
+	if got := f.liveSessionGrantID(t); got != "" {
+		t.Fatalf("live_sessions.grant_id = %q, want empty (ambiguous)", got)
+	}
+}
+
 func TestSetupSessionHappyPath(t *testing.T) {
 	f := setup(t)
 	tok := f.mintToken(t, f.clientFp)

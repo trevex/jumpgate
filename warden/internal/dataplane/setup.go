@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/ssh"
 
@@ -70,6 +71,9 @@ type SetupResult struct {
 	// authorized_keys-style public-key line), or empty when unset. The worker
 	// fails closed on a mismatch when it is non-empty; empty = accept-and-log.
 	TargetHostKey string
+	// GrantID is the authorizing JIT grant when exactly one active grant covers
+	// (user, asset); empty for standing (zero grants) or ambiguous (multiple).
+	GrantID string
 }
 
 // capRecordExempt, when held on the asset, permits an unrecorded SSH session.
@@ -156,14 +160,26 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := gen.New(tx)
-	// GrantID is intentionally omitted (zero value pgtype.UUID{} → NULL): teardown
-	// re-evaluates the held-role closure, so the grant link would be an unused
-	// optimization.
+	// Attribute the session to its authorizing JIT grant when exactly one active
+	// grant covers (user, asset). Zero (standing binding) or multiple (ambiguous)
+	// active grants leave grant_id NULL — the attribution must be unambiguous.
+	var grantID pgtype.UUID
+	ids, err := q.ActiveGrantIDsForUserAsset(ctx, gen.ActiveGrantIDsForUserAssetParams{
+		SubjectUserID: claims.UserID,
+		ScopeAssetID:  claims.AssetID,
+	})
+	if err != nil {
+		return SetupResult{}, fmt.Errorf("resolve grant: %w", err)
+	}
+	if len(ids) == 1 {
+		grantID = pgtype.UUID{Bytes: ids[0], Valid: true}
+	}
 	if _, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
 		ID:          claims.SessionID,
 		UserID:      claims.UserID,
 		AssetID:     claims.AssetID,
 		WorkerID:    workerID,
+		GrantID:     grantID,
 		Protocol:    "ssh",
 		Principals:  []string{login},
 		ClientKeyFp: claims.ClientKeyFingerprint,
@@ -215,6 +231,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		// The host-key pin travels to the worker, which enforces it on the target
 		// hop (fail closed on mismatch). Empty when the asset has no pin configured.
 		TargetHostKey: cfg.HostPublicKey,
+		GrantID:       grantIDString(grantID),
 	}
 	switch cred.Kind {
 	case "ssh-cert":
@@ -227,6 +244,14 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		return SetupResult{}, fmt.Errorf("unexpected credential kind %q", cred.Kind)
 	}
 	return res, nil
+}
+
+// grantIDString renders a pgtype.UUID as its string form, empty when NULL/invalid.
+func grantIDString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	return uuid.UUID(u.Bytes).String()
 }
 
 // containsLogin reports whether xs contains s.
