@@ -13,6 +13,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
 import {
@@ -41,6 +42,7 @@ import {
   KeyRound,
   AlertTriangle,
   SquareArrowOutUpRight,
+  Film,
 } from "lucide-react";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -378,6 +380,7 @@ function RevokeButton({
 // ─── Grant card ───────────────────────────────────────────────────────────────
 
 function GrantCard({ grant }: { grant: Grant }) {
+  const navigate = useNavigate();
   const invalidateList = useInvalidateList();
   const revoked = Boolean(grant.revokedAt);
   const active = grant.active;
@@ -491,15 +494,27 @@ function GrantCard({ grant }: { grant: Grant }) {
         </div>
       )}
 
-      {/* Revoke — two-step confirm, active grants only */}
-      {active && (
-        <div className="flex justify-end">
+      {/* Footer — session recordings (always, subjects may review their own
+          sessions) + revoke (two-step confirm, active grants only) */}
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(`/recordings?grantId=${grant.id}`)}
+          className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground hover:text-foreground"
+          aria-label="View session recordings for this grant"
+        >
+          <Film className="h-3.5 w-3.5" aria-hidden="true" />
+          Session recordings
+        </Button>
+
+        {active && (
           <RevokeButton
             isRevoking={isRevoking}
             onConfirmed={() => doRevoke({ grantId: grant.id, reason: "Self-revoked" })}
           />
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Revoked reason */}
       {revoked && grant.revokedReason && (
