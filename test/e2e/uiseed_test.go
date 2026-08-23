@@ -22,7 +22,11 @@ const (
 //   - a separate standing-access password asset (password-box) that alice
 //     connects to via the CLI to produce a COMPLETED recording, so the browser
 //     audit view has content to play back without granting standing access to
-//     demo-box (which would spoil the JIT flow).
+//     demo-box (which would spoil the JIT flow);
+//   - a second JIT-requestable asset (review-box) that alice reaches through an
+//     approved grant, producing a grant-attributed recording — the fixture the
+//     browser session-review discovery paths (subject grant card, approver
+//     Reviewable list, per-asset filter) play back.
 //
 // It assumes a fresh cluster (the make ui-e2e path runs it right after kind-up).
 // Object creation is not idempotent; re-seeding a dirty cluster is expected to
@@ -149,5 +153,77 @@ func TestUISeed(t *testing.T) {
 	}
 	if sessionID == "" {
 		t.Fatal("no completed recording appeared for password-box within 60s")
+	}
+
+	// ── Grant-attributed recording fixture: a SECOND JIT-requestable asset
+	// (review-box) that alice reaches ONLY through an approved grant, so its
+	// recording is attributed to that grant (session_recordings.grant_id). This
+	// backs the browser session-review discovery paths — the subject's grant
+	// card, the approver's Reviewable list, and the per-asset filter. Kept
+	// distinct from demo-box so the browser request→approve flow there stays
+	// pristine (no pre-existing grant on demo-box). ──
+	reviewOut := e.asActor(t, "admin", "assets", "ssh", "create", "review-box",
+		"--folder", "demo",
+		"--target", "ssh-target.default.svc.cluster.local:22",
+		"--login", "deploy", "-o", "json")
+	reviewAssetID := jsonID(reviewOut)
+	if reviewAssetID == "" {
+		t.Fatalf("no review-box asset id:\n%s", reviewOut)
+	}
+	reviewPath := jsonField(reviewOut, "path")
+	if reviewPath == "" {
+		t.Fatalf("no review-box asset path:\n%s", reviewOut)
+	}
+	// Append review-box's host-scoped CA principal to the deploy principals file
+	// (demo-box's write above used > and would otherwise clobber it).
+	e.kubectl(t, "exec", "deploy/ssh-target", "--",
+		"sh", "-c",
+		"printf 'deploy@%s\\n' '"+reviewPath+"' >> /etc/ssh/auth_principals/deploy")
+
+	// review-box is JIT-requestable via the same ssh-deploy role under its own
+	// cross-approval policy (sre requests and approves).
+	reviewPolicyRef := "approve-review@" + reviewPath
+	e.asActor(t, "admin", "policies", "create",
+		"--name", "approve-review",
+		"--request-role", roleID,
+		"--asset", reviewPath,
+		"--min-approvals", "1")
+	e.asActor(t, "admin", "policies", "add-subject", reviewPolicyRef, "--kind", "requester", "--group", "sre")
+	e.asActor(t, "admin", "policies", "add-subject", reviewPolicyRef, "--kind", "approver", "--group", "sre")
+
+	// alice requests → bob approves → alice connects over the grant, producing a
+	// COMPLETED recording attributed to the resulting grant.
+	e.login(t, "alice", uiAliceEmail, alicePass)
+	reviewReqOut := e.asActor(t, "alice", "access", "request",
+		"deploy@"+reviewPath, "--role", "ssh-deploy", "--duration", "1h",
+		"--reason", "e2e: session-review discovery", "-o", "json")
+	reviewReqID := jsonID(reviewReqOut)
+	if reviewReqID == "" {
+		t.Fatalf("no review-box request id:\n%s", reviewReqOut)
+	}
+	e.login(t, "bob", uiBobEmail, bobPass)
+	e.asActor(t, "bob", "access", "approve", reviewReqID)
+
+	e.login(t, "alice", uiAliceEmail, alicePass)
+	reviewScript := "echo " + marker + "; whoami; exit\n"
+	reviewConn := e.connectWithStdin(t, "alice", "deploy@"+reviewPath, reviewScript)
+	if !strings.Contains(reviewConn, marker) {
+		t.Fatalf("review-box connect missing marker:\n%s", reviewConn)
+	}
+
+	// Poll until review-box's grant-attributed recording is COMPLETED, so the
+	// browser can play it back the moment it opens the filtered view.
+	reviewDeadline := time.Now().Add(60 * time.Second)
+	var reviewSession string
+	for time.Now().Before(reviewDeadline) {
+		list := e.asActor(t, "admin", "recordings", "list", "--asset", reviewAssetID, "-o", "json")
+		if id := completedSessionID(list); id != "" {
+			reviewSession = id
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if reviewSession == "" {
+		t.Fatal("no completed recording appeared for review-box within 60s")
 	}
 }
