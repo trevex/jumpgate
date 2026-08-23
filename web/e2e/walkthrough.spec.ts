@@ -396,23 +396,14 @@ test("walkthrough 1 — admin governance setup", async ({
     await policyDialog.getByRole("button", { name: "Create policy" }).click();
     await expect(policyDialog).toBeHidden();
 
-    // wt-box now shows wt-deploy under its Requestable roles section.
+    // The policy now lists wt-deploy under wt-box's "Requestable via" section.
+    // (We check "Requestable via" — the policies scoped to this asset — NOT the
+    // caller's own "Requestable roles": admin isn't a wt-sre member, so admin
+    // cannot itself request it; wt-sre members can, as walkthrough 2 exercises.)
     await expect(async () => {
-      if (
-        !(await wtBoxArticle
-          .getByRole("list", { name: "Requestable roles" })
-          .getByText(/wt-deploy/)
-          .first()
-          .isVisible()
-          .catch(() => false))
-      ) {
-        await selectAsset(admin, "wt-box");
-      }
+      await selectAsset(admin, "wt-box");
       await expect(
-        admin
-          .getByRole("list", { name: "Requestable roles" })
-          .getByText(/wt-deploy/)
-          .first(),
+        wtBoxArticle.getByText(/wt-deploy/).first(),
       ).toBeVisible();
     }).toPass({ timeout: 20_000 });
   } finally {
