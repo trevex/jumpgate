@@ -66,6 +66,13 @@ async function selectFolder(page: Page, name: string): Promise<void> {
   const collapse = tree(page).getByRole("button", {
     name: new RegExp(`Collapse folder ${name}$`),
   });
+  // The tree loads asynchronously: its container appears (openCatalog's gate)
+  // before the folder rows stream in — up to several seconds for a low-privilege
+  // user. Wait for THIS folder's toggle to exist before branching on expand.count(),
+  // which does NOT auto-wait: a premature 0 read would take the else-branch and
+  // click a "Collapse folder" button that never exists for a collapsed folder,
+  // hanging until the test timeout (Playwright actions have no default timeout).
+  await expect(expand.or(collapse).first()).toBeVisible({ timeout: 30_000 });
   if (await expand.count()) {
     await expand.first().click();
   } else {

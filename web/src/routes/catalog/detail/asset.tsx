@@ -19,6 +19,7 @@ import {
   updateAssetConfig,
   listFolderContents,
 } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
+import { listPoliciesForAsset } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -516,8 +517,10 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           open={policyOpen}
           onOpenChange={setPolicyOpen}
           fixedScope={{ kind: "asset", id, path }}
-          // Also re-seed this asset's access so "Requestable roles" updates.
-          extraInvalidate={getAssetAccess}
+          // Re-seed this asset's access so "Requestable roles" updates, and the
+          // asset-scoped policy list so the "Requestable via" section shows the
+          // freshly created policy (it keys off listPoliciesForAsset).
+          extraInvalidate={[getAssetAccess, listPoliciesForAsset]}
         />
       )}
 
