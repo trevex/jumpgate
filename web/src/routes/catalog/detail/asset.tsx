@@ -11,8 +11,9 @@
 import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { createConnectQueryKey } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2 } from "lucide-react";
+import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film } from "lucide-react";
 import { useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   getAssetAccess,
@@ -38,6 +39,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { capsCover } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { RequestSheet } from "../request-sheet";
@@ -325,6 +327,7 @@ export interface AssetDetailProps {
 }
 
 export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetailProps) {
+  const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -347,6 +350,13 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   // `**` and so would hide these controls from an admin.
   const canEdit = canUpdateAsset(data.managementCapabilities);
   const canDelete = canDeleteAsset(data.managementCapabilities);
+  // Session-review discovery: surface a jump to this asset's recordings for
+  // anyone who can read them. `recording:read` cascades on the connect arm
+  // (ConnectCapabilities), but a bare-`**` admin/auditor holds it only via the
+  // management set (which retains `**`), so check both.
+  const canViewRecordings =
+    capsCover(data.capabilities, "recording:read") ||
+    capsCover(data.managementCapabilities, "recording:read");
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Asset: ${name}`}>
@@ -439,6 +449,25 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       {sshLogins.length > 0 && (
         <>
           <ConnectBlock assetId={id} logins={sshLogins} assetPath={path ?? ""} />
+          <div className="h-px bg-border" role="separator" />
+        </>
+      )}
+
+      {/* Session recordings (only when the caller can read this asset's recordings) */}
+      {canViewRecordings && (
+        <>
+          <DetailSection title="Recordings">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/recordings?assetId=${id}`)}
+              className="h-7 gap-1.5 text-[12px]"
+              aria-label="View session recordings for this asset"
+            >
+              <Film className="h-3.5 w-3.5" aria-hidden="true" />
+              View session recordings
+            </Button>
+          </DetailSection>
           <div className="h-px bg-border" role="separator" />
         </>
       )}
