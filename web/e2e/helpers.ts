@@ -11,5 +11,5 @@ export async function login(page: Page, email: string, password: string): Promis
   await page.getByLabel("email").fill(email);
   await page.getByLabel("password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Catalog", exact: true })).toBeVisible();
 }

@@ -70,7 +70,7 @@ test("catalog authoring: create folder, onboard asset, rename, blocked delete, m
   const asset2 = `box2-${sfx}`;
 
   await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
-  await page.getByRole("link", { name: "Catalog" }).click();
+  await page.getByRole("link", { name: "Catalog", exact: true }).click();
 
   // ── 1. Create two root folders: `folder` (holds the asset) and `dest`
   //       (the later move target). The root "+" button is capability-gated. ──

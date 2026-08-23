@@ -49,6 +49,8 @@ interface OverviewCardProps {
   icon: React.ComponentType<{ className?: string }>;
   count?: number;
   to: string;
+  /** Neutral link text ("View all"/"Review") — deliberately shares no word with
+   *  the sidebar nav labels so a card link is never confused with a nav item. */
   linkLabel: string;
   children: React.ReactNode;
 }
@@ -178,7 +180,7 @@ function MyAccessCard() {
   const { data } = useQuery(listMyGrants, { pageSize: 25, pageToken: "" });
   const active = (data?.grants ?? []).filter((g) => g.active);
   return (
-    <OverviewCard title="My active access" icon={KeyRound} count={active.length} to="/access" linkLabel="My Access">
+    <OverviewCard title="My active access" icon={KeyRound} count={active.length} to="/access" linkLabel="View all">
       {active.length === 0 ? (
         <CardEmpty message="No active grants. Browse the catalog to request access." />
       ) : (
@@ -194,7 +196,7 @@ function MyRequestsCard() {
   const { data } = useQuery(listMyRequests, { pageSize: 25, pageToken: "" });
   const pending = (data?.requests ?? []).filter((r) => r.status === "pending");
   return (
-    <OverviewCard title="My pending requests" icon={Clock3} count={pending.length} to="/access" linkLabel="My Access">
+    <OverviewCard title="My pending requests" icon={Clock3} count={pending.length} to="/access" linkLabel="View all">
       {pending.length === 0 ? (
         <CardEmpty message="No requests awaiting a decision." />
       ) : (
@@ -223,7 +225,7 @@ function RecordingsCard() {
   const { data } = useQuery(listRecordings, { pageSize: 5 });
   const recs = data?.recordings ?? [];
   return (
-    <OverviewCard title="Recent recordings" icon={Film} to="/recordings" linkLabel="Recordings">
+    <OverviewCard title="Recent recordings" icon={Film} to="/recordings" linkLabel="View all">
       {recs.length === 0 ? (
         <CardEmpty message="No session recordings yet." />
       ) : (

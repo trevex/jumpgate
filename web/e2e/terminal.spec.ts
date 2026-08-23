@@ -37,7 +37,7 @@ async function openTerminalAndEcho(page: Page, folder: string, asset: string): P
   const marker = "JG_WEBTTY_" + Date.now().toString(36).toUpperCase();
 
   // Open the Catalog (the landing route is the Overview dashboard).
-  await page.getByRole("link", { name: "Catalog" }).click();
+  await page.getByRole("link", { name: "Catalog", exact: true }).click();
   await page.getByRole("button", { name: `Expand folder ${folder}` }).click();
   const tree = page.locator('nav[aria-label="Catalog tree"]');
   await tree.getByRole("button", { name: asset }).click();

@@ -13,7 +13,7 @@ test("login shows capabilities then logout", async ({ page }) => {
 
   // The app shell renders: the primary nav and the signed-in footer (the email
   // is carried on a span labelled "Signed in as <email>").
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Catalog", exact: true })).toBeVisible();
   await expect(page.getByLabel(`Signed in as ${email}`)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
