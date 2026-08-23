@@ -1,4 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+/* ── Self-hosted fonts ── vendored via @fontsource (bundled by Vite, served by
+   warden). NO external CDN: the console loads zero third-party assets. Fira Sans
+   ships static weights; Fira Code ships a variable font (one file, all weights). */
+@import "@fontsource/fira-sans/300.css";
+@import "@fontsource/fira-sans/400.css";
+@import "@fontsource/fira-sans/500.css";
+@import "@fontsource/fira-sans/600.css";
+@import "@fontsource/fira-sans/700.css";
+@import "@fontsource-variable/fira-code/wght.css";
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -8,7 +16,9 @@
   --background: #F8FAFC;
   --foreground: #0F172A;
   --muted: #F1F5FD;
-  --muted-foreground: #64748B;
+  /* slate-600 — darkened from #64748B so muted text clears WCAG AA (4.5:1) on
+     both white and the tinted --muted panels, lifting dozens of call-sites. */
+  --muted-foreground: #475569;
   --border: #E4ECFC;
   --input: #E4ECFC;
   --ring: #2563EB;
@@ -32,6 +42,15 @@
   --sidebar-border: #E4ECFC;
   --sidebar-accent: #F1F5FD;
   --sidebar-accent-foreground: #0F172A;
+
+  /* ── Semantic status tokens ── one source of truth for success/warning/danger/
+     info/neutral (fg text, bg fill, border). Light values chosen to clear AA on
+     their own bg (e.g. green-700 on green-50); dark parity is defined once below. */
+  --success-fg: #15803D; --success-bg: #F0FDF4; --success-border: #86EFAC;
+  --warning-fg: #B45309; --warning-bg: #FFFBEB; --warning-border: #FCD34D;
+  --danger-fg:  #B91C1C; --danger-bg:  #FEF2F2; --danger-border:  #FCA5A5;
+  --info-fg:    #1D4ED8; --info-bg:    #EFF6FF; --info-border:    #93C5FD;
+  --neutral-fg: #475569; --neutral-bg: #F8FAFC; --neutral-border: #E2E8F0;
 }
 
 /* ── Dark theme ── considered deep, blue-tinted slate for a trustworthy console.
@@ -66,6 +85,14 @@
   --sidebar-border: #1E293B;
   --sidebar-accent: #1B2637;
   --sidebar-accent-foreground: #E2E8F0;
+
+  /* Dark status parity — brighter fg for legibility on dark; translucent bg/border
+     so status chips sit on any dark surface. Defined once (was hand-written per call). */
+  --success-fg: #86EFAC; --success-bg: rgb(34 197 94 / 0.10);  --success-border: rgb(34 197 94 / 0.30);
+  --warning-fg: #FCD34D; --warning-bg: rgb(245 158 11 / 0.10); --warning-border: rgb(245 158 11 / 0.30);
+  --danger-fg:  #FCA5A5; --danger-bg:  rgb(239 68 68 / 0.10);  --danger-border:  rgb(239 68 68 / 0.30);
+  --info-fg:    #93C5FD; --info-bg:    rgb(59 130 246 / 0.10); --info-border:    rgb(59 130 246 / 0.30);
+  --neutral-fg: #94A3B8; --neutral-bg: rgb(100 116 139 / 0.10); --neutral-border: rgb(100 116 139 / 0.30);
 }
 
 /* ── Map the semantic vars into Tailwind utilities (bg-background, text-foreground,
@@ -99,10 +126,26 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 
+  --color-success-fg: var(--success-fg); --color-success-bg: var(--success-bg); --color-success-border: var(--success-border);
+  --color-warning-fg: var(--warning-fg); --color-warning-bg: var(--warning-bg); --color-warning-border: var(--warning-border);
+  --color-danger-fg:  var(--danger-fg);  --color-danger-bg:  var(--danger-bg);  --color-danger-border:  var(--danger-border);
+  --color-info-fg:    var(--info-fg);    --color-info-bg:    var(--info-bg);    --color-info-border:    var(--info-border);
+  --color-neutral-fg: var(--neutral-fg); --color-neutral-bg: var(--neutral-bg); --color-neutral-border: var(--neutral-border);
+
   --radius: 0.375rem;
 
   --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
+  --font-mono: "Fira Code Variable", "Fira Code", ui-monospace, monospace;
+
+  /* ── Type scale (compact console density) ── replaces the ~390 arbitrary
+     text-[NNpx] usages with 5 named tiers, each carrying a deliberate line-height.
+     text-sm / text-lg / text-xl remain for login + primitive defaults. */
+  --text-eyebrow: 0.625rem;   --text-eyebrow--line-height: 1rem;      /* 10px — uppercase headers, meta */
+  --text-eyebrow--font-weight: 600;
+  --text-micro: 0.6875rem;    --text-micro--line-height: 1rem;        /* 11px — dense meta, mono ids */
+  --text-compact: 0.75rem;    --text-compact--line-height: 1.125rem;  /* 12px — secondary text, button labels */
+  --text-body: 0.8125rem;     --text-body--line-height: 1.25rem;      /* 13px — default dense row/body text */
+  --text-title: 0.9375rem;    --text-title--line-height: 1.375rem;    /* 15px — page/section/dialog titles */
 }
 
 @layer base {

@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Loader2, ShieldCheck } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { login } from "../gen/jumpgate/auth/v1/auth-AuthService_connectquery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Logo } from "@/components/brand/logo";
 import { connectErrorMessage } from "@/lib/format";
 
 export function LoginPage() {
@@ -26,11 +27,8 @@ export function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-[400px]">
         {/* Brand lockup */}
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <ShieldCheck className="h-7 w-7 text-primary" aria-hidden="true" />
-          <span className="text-xl font-semibold tracking-tight text-foreground">
-            jumpgate
-          </span>
+        <div className="mb-6 flex justify-center">
+          <Logo markClassName="h-7 w-7" wordmarkClassName="text-xl" />
         </div>
 
         {/* Auth card */}

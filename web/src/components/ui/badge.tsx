@@ -15,6 +15,13 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+        // Status pills — square radius (overrides the rounded-full base), semantic
+        // tokens (one source of truth, light+dark parity). Use for state labels.
+        success: "rounded border-success-border bg-success-bg text-success-fg",
+        warning: "rounded border-warning-border bg-warning-bg text-warning-fg",
+        danger: "rounded border-danger-border bg-danger-bg text-danger-fg",
+        info: "rounded border-info-border bg-info-bg text-info-fg",
+        neutral: "rounded border-neutral-border bg-neutral-bg text-neutral-fg",
       },
     },
     defaultVariants: {

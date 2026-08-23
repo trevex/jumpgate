@@ -21,6 +21,7 @@ import { Button } from "../components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { ThemeToggle } from "../components/theme-toggle";
 import { SearchPalette, useCommandK } from "../components/search-palette";
+import { Logo } from "../components/brand/logo";
 import { cn } from "../lib/utils";
 
 // ─── Pending-approvals badge count ──────────────────────────────────────────
@@ -187,11 +188,8 @@ export function AppShell() {
           aria-label="Primary navigation"
         >
           {/* Brand */}
-          <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-            <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
-            <span className="text-sm font-semibold tracking-tight text-foreground">
-              jumpgate
-            </span>
+          <div className="flex h-14 items-center border-b border-border px-4">
+            <Logo markClassName="h-5 w-5" wordmarkClassName="text-sm" />
           </div>
 
           {/* Nav */}
