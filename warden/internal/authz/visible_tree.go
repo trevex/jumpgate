@@ -397,6 +397,65 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 	return out, rows.Err()
 }
 
+// FolderPathVisible reports whether `folderID` is visible to the user under the
+// same path-reveal model as VisibleFoldersUnder: the folder is an ancestor-or-self
+// of an anchor (on the path to something the user can see/administer) OR inside a
+// folder the user manages. GetFolderAccess uses it to decide existence for a folder
+// the user holds no direct capability on — so a delegate can open the breadcrumb
+// ancestors above the subtree they govern. A global catalog:folder:read / ** holder
+// sees every folder that exists.
+func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if global.Allows("catalog:folder:read") {
+		var exists bool
+		if err := s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM folders WHERE id = $1)`, folderID).Scan(&exists); err != nil {
+			return false, fmt.Errorf("folder exists: %w", err)
+		}
+		return exists, nil
+	}
+
+	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	assetHomes, err := s.visibleAssetFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	anchors := unionKeys(mgmt, roleHomes, groupHomes, assetHomes)
+	if len(anchors) == 0 {
+		return false, nil
+	}
+	mgmtIDs := mapKeys(mgmt)
+
+	// Visible iff folderID is an ancestor-or-self of an anchor (path reveal) OR
+	// inside a folder the user manages (cascade down) — mirrors visibleFoldersQuery.
+	var vis bool
+	err = s.pool.QueryRow(ctx, `
+WITH f  AS (SELECT path_ids FROM folders WHERE id = $1),
+     ap AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[])),
+     mp AS (SELECT path_ids FROM folders WHERE id = ANY($3::uuid[]))
+SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
+    OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids)`,
+		folderID, anchors, mgmtIDs).Scan(&vis)
+	if err != nil {
+		return false, fmt.Errorf("folder path visible: %w", err)
+	}
+	return vis, nil
+}
+
 // visibleFoldersQuery builds the single-query, two-anchor-set path-reveal SELECT
 // used by VisibleFoldersUnder. `anchors` are the folders whose path must be
 // revealed (ancestor-or-self); `mgmtIDs` are the folders the user manages (their

@@ -509,11 +509,15 @@ func (s *CatalogServer) GetFolderAccess(ctx context.Context, req *connect.Reques
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(caps) == 0 {
-		assets, err := s.authorizer.VisibleAssetsUnder(ctx, u.ID, id, true)
+		// No direct caps here: the folder is disclosable only if it is path-visible
+		// (a breadcrumb on the way to something the user can see/administer, e.g. a
+		// delegate viewing the ancestors above the subtree they govern). This
+		// subsumes the old "has a visible asset in its subtree" check.
+		vis, err := s.authorizer.FolderPathVisible(ctx, u.ID, id)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
-		if len(assets) == 0 {
+		if !vis {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 		}
 	}

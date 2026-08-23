@@ -129,6 +129,49 @@ func TestPathRevealForGroupAdmin(t *testing.T) {
 	assertMgmtCapPathReveal(t, "pr-group-admin", "identity:group:read")
 }
 
+// TestFolderPathVisible: the existence primitive behind GetFolderAccess. A folder
+// admin bound at `team` makes `root` (ancestor path) and `team` (managed) visible,
+// but the sibling `other` is not — mirroring VisibleFoldersUnder's predicate.
+func TestFolderPathVisible(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	user, root, team, other := seedPathReveal(t, pool, "fpv-admin", "catalog:asset:read")
+
+	for _, tc := range []struct {
+		name   string
+		folder uuid.UUID
+		want   bool
+	}{
+		{"ancestor root (path)", root, true},
+		{"managed team", team, true},
+		{"sibling other", other, false},
+	} {
+		got, err := s.FolderPathVisible(ctx, user, tc.folder)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("FolderPathVisible(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+
+	// A stranger with no bindings sees none of them.
+	stranger, err := gen.New(pool).CreateUser(ctx, gen.CreateUserParams{Email: "fpv-stranger@pr", DisplayName: "S"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []uuid.UUID{root, team, other} {
+		got, err := s.FolderPathVisible(ctx, stranger.ID, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got {
+			t.Errorf("stranger should not see folder %s", f)
+		}
+	}
+}
+
 // TestGovernedFalseForBreadcrumb: a user with standing (connect) access to an asset
 // deep in a/b/c sees the ancestors a and b via path-reveal — visible but NEVER
 // governed (they hold no management cap anywhere) — and the asset via

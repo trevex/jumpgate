@@ -75,6 +75,13 @@ type Authorizer interface {
 	// subtree under `parent` is the candidate level, not just the immediate children.
 	VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error)
 
+	// FolderPathVisible reports whether one folder is visible to the user under the
+	// same path-reveal model as VisibleFoldersUnder (ancestor-or-self of an anchor, or
+	// inside a managed folder). Used to decide existence for a folder the user holds no
+	// direct capability on, so a delegate can open the breadcrumb ancestors above the
+	// subtree they govern. A global catalog:folder:read / ** holder sees every folder.
+	FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error)
+
 	// VisibleAssetsUnder returns the ids of the assets under `parent` (a folder;
 	// uuid.Nil is the root) the user may SEE, unioning management with access and
 	// connect. An asset is visible when the user holds "catalog:asset:read" on its

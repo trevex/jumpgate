@@ -31,6 +31,9 @@ func (scopeStub) RolesOnAsset(context.Context, uuid.UUID, uuid.UUID) (authz.Asse
 func (scopeStub) VisibleFoldersUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]authz.VisibleFolder, error) {
 	return nil, nil
 }
+func (scopeStub) FolderPathVisible(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return false, nil
+}
 func (scopeStub) VisibleAssetsUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {
 	return nil, nil
 }
