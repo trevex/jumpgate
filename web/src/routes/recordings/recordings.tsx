@@ -11,7 +11,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import type { ReactNode } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import { create as createPlayer } from "asciinema-player";
 import "asciinema-player/dist/bundle/asciinema-player.css";
@@ -335,6 +336,83 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
   );
 }
 
+// ─── Active-filter chips ──────────────────────────────────────────────────────
+
+/** Chip label for an asset filter — resolves the asset path/name via display RPC. */
+function AssetFilterChip({ assetId }: { assetId: string }) {
+  const label = useAssetDisplay(assetId);
+  return (
+    <FilterChipShell icon={Server} prefix="Asset">
+      {label}
+    </FilterChipShell>
+  );
+}
+
+/** Chip label for a user filter — resolves the display name/email via display RPC. */
+function UserFilterChip({ userId }: { userId: string }) {
+  const label = useUserDisplay(userId);
+  return (
+    <FilterChipShell icon={User} prefix="User">
+      {label}
+    </FilterChipShell>
+  );
+}
+
+function FilterChipShell({
+  icon: Icon,
+  prefix,
+  children,
+}: {
+  icon: typeof Server;
+  prefix: string;
+  children: ReactNode;
+}) {
+  return (
+    <Badge
+      variant="secondary"
+      className="gap-1 rounded-full px-2 py-0.5 text-[11px] font-normal"
+    >
+      <Icon className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="text-muted-foreground">{prefix}:</span>
+      <span className="max-w-[160px] truncate font-mono text-foreground">{children}</span>
+    </Badge>
+  );
+}
+
+interface FilterChipsProps {
+  assetId: string;
+  userId: string;
+  grantId: string;
+  onClear: () => void;
+}
+
+function FilterChips({ assetId, userId, grantId, onClear }: FilterChipsProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-6 py-2.5 border-b border-border shrink-0 bg-muted/20">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        Filtered by
+      </span>
+      {assetId && <AssetFilterChip assetId={assetId} />}
+      {userId && <UserFilterChip userId={userId} />}
+      {grantId && (
+        <FilterChipShell icon={Film} prefix="Grant">
+          {shortId(grantId)}
+        </FilterChipShell>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onClear}
+        className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+        aria-label="Clear all recording filters"
+      >
+        <X className="h-3 w-3" aria-hidden="true" />
+        Clear
+      </Button>
+    </div>
+  );
+}
+
 // ─── Recordings list ──────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
@@ -345,15 +423,38 @@ interface RecordingsListProps {
 }
 
 function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
+  const [sp, setSearchParams] = useSearchParams();
+  const assetId = sp.get("assetId") ?? "";
+  const userId = sp.get("userId") ?? "";
+  const grantId = sp.get("grantId") ?? "";
+  const hasFilter = Boolean(assetId || userId || grantId);
+
   const [pageToken, setPageToken] = useState("");
   const [allRecordings, setAllRecordings] = useState<Recording[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // A filter change must restart pagination from the first page. The query key
+  // below already includes the filter inputs (so the fetch refetches), but the
+  // accumulated-pages state must also reset so stale rows don't linger.
+  useEffect(() => {
+    setPageToken("");
+    setAllRecordings([]);
+    setNextToken(null);
+  }, [assetId, userId, grantId]);
+
   const { data, isLoading, isError, error, refetch } = useQuery(listRecordings, {
     pageSize: PAGE_SIZE,
     pageToken,
+    userId,
+    assetId,
+    grantId,
   });
+
+  // Clear all active filters by dropping the query params.
+  const clearFilters = useCallback(() => {
+    setSearchParams({}, { replace: true });
+  }, [setSearchParams]);
 
   // Accumulate pages.
   useEffect(() => {
@@ -400,6 +501,16 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
         </Button>
       </div>
 
+      {/* Active-filter chips */}
+      {hasFilter && (
+        <FilterChips
+          assetId={assetId}
+          userId={userId}
+          grantId={grantId}
+          onClear={clearFilters}
+        />
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {isInitialLoading ? (
@@ -428,8 +539,12 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
           <EmptyState
             icon={Film}
             size="lg"
-            title="No recordings yet"
-            message="Session recordings will appear here once SSH sessions have been recorded."
+            title={hasFilter ? "No recordings for this filter" : "No recordings yet"}
+            message={
+              hasFilter
+                ? "No recordings match the active filter. Clear it to see all recordings."
+                : "Session recordings will appear here once SSH sessions have been recorded."
+            }
           />
         ) : (
           <>
