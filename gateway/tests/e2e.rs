@@ -355,6 +355,7 @@ async fn e2e_happy_path() {
         mesh_certs: gateway_mesh_certs(&pki),
         verification_key: Arc::new(RwLock::new(Some(pubkey))),
         console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
     };
 
     let external = build_external_tls();
@@ -402,6 +403,7 @@ async fn e2e_bad_token_403() {
         mesh_certs: gateway_mesh_certs(&pki),
         verification_key: Arc::new(RwLock::new(Some(wrong_pk))),
         console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
     };
 
     let external = build_external_tls();
@@ -432,6 +434,7 @@ async fn e2e_no_worker_502() {
         mesh_certs: gateway_mesh_certs(&pki),
         verification_key: Arc::new(RwLock::new(Some(pubkey))),
         console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
     };
 
     let external = build_external_tls();
@@ -468,6 +471,7 @@ async fn e2e_san_mismatch_502() {
         mesh_certs: gateway_mesh_certs(&pki),
         verification_key: Arc::new(RwLock::new(Some(pubkey))),
         console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
     };
 
     let external = build_external_tls();

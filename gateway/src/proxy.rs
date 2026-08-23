@@ -8,7 +8,9 @@
 //! TLS handshake. After the handshake we forward an HTTP CONNECT carrying the
 //! session token and, on `200`, hand the raw TLS stream to [`pump`].
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use std::time::Duration;
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
@@ -115,15 +117,205 @@ pub async fn connect_worker_terminal(
     Ok(stream)
 }
 
+/// Resource bounds applied to a proxied byte pump (and the WS terminal relay):
+/// an idle timeout (no bytes either direction) and an absolute lifetime cap.
+/// A zero [`Duration`] disables the corresponding bound.
+#[derive(Clone, Copy, Debug)]
+pub struct SessionLimits {
+    /// Tear the session down if no bytes flow in EITHER direction for this long.
+    /// Zero disables the idle check.
+    pub idle_timeout: Duration,
+    /// Absolute wall-clock cap on the session. Zero = unlimited.
+    pub max_lifetime: Duration,
+}
+
+impl SessionLimits {
+    /// No bounds — behaves like a bare `copy_bidirectional`. Handy for tests and
+    /// callers that opt out.
+    pub const UNBOUNDED: SessionLimits = SessionLimits {
+        idle_timeout: Duration::ZERO,
+        max_lifetime: Duration::ZERO,
+    };
+}
+
+/// Why a bounded pump/relay stopped. `Closed` is the normal path (one side hung
+/// up); the timeout variants signal a bound tripped so the caller can log it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// A peer closed the connection (or a copy errored) — the ordinary exit.
+    Closed,
+    /// No bytes flowed in either direction within `idle_timeout`.
+    Idle,
+    /// The absolute `max_lifetime` cap elapsed.
+    Lifetime,
+}
+
 /// Blind-pipe bytes between the external client stream and the worker stream
 /// until either side closes. Returns `(client→worker, worker→client)` byte
 /// counts. The caller holds the `lb::Guard`, which is dropped once this returns.
+///
+/// Unbounded: prefer [`pump_bounded`] on the hot path so a stalled peer cannot
+/// hold a worker slot + target connection open forever.
 pub async fn pump<A, B>(mut client: A, mut worker: B) -> std::io::Result<(u64, u64)>
 where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
     tokio::io::copy_bidirectional(&mut client, &mut worker).await
+}
+
+/// Blind-pipe bytes between the two streams like [`pump`], but bounded by
+/// `limits`: an idle timeout (no bytes EITHER direction) and an absolute
+/// lifetime cap. Returns the byte counts and why the pump stopped.
+///
+/// A [`StopReason::Idle`]/[`StopReason::Lifetime`] is a normal exit — the caller
+/// runs the SAME teardown (drop the load guard, etc.) as on `Closed`. Any real
+/// I/O error still surfaces as `Err`.
+///
+/// Correctness: the idle clock is reset on every non-zero read in either
+/// direction, so an actively flowing session is never torn down; only a session
+/// with no progress for `idle_timeout` (or one exceeding `max_lifetime`) is.
+pub async fn pump_bounded<A, B>(
+    client: A,
+    worker: B,
+    limits: SessionLimits,
+) -> std::io::Result<((u64, u64), StopReason)>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    // Fast path: no bounds → plain bidirectional copy.
+    if limits.idle_timeout.is_zero() && limits.max_lifetime.is_zero() {
+        let mut client = client;
+        let mut worker = worker;
+        let counts = tokio::io::copy_bidirectional(&mut client, &mut worker).await?;
+        return Ok((counts, StopReason::Closed));
+    }
+
+    let inner = copy_bidirectional_idle(client, worker, limits.idle_timeout);
+
+    if limits.max_lifetime.is_zero() {
+        return inner.await;
+    }
+    match tokio::time::timeout(limits.max_lifetime, inner).await {
+        Ok(res) => res,
+        // Absolute cap tripped: report it; the caller tears the session down.
+        Err(_elapsed) => Ok(((0, 0), StopReason::Lifetime)),
+    }
+}
+
+/// Idle-aware bidirectional copy: pump bytes both ways, resetting a shared idle
+/// clock on any non-zero read. If `idle_timeout` is non-zero and no bytes flow
+/// in either direction within it, stop with [`StopReason::Idle`].
+///
+/// Implemented as a `select!` loop over both read directions, each `read`
+/// wrapped in `tokio::time::timeout(idle_timeout, …)`; a per-direction timeout
+/// only counts as idle when the OTHER direction has also been idle since the
+/// last activity, so a one-way-busy stream (e.g. a long download) is preserved.
+async fn copy_bidirectional_idle<A, B>(
+    mut client: A,
+    mut worker: B,
+    idle_timeout: Duration,
+) -> std::io::Result<((u64, u64), StopReason)>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut c2w: u64 = 0; // client → worker bytes
+    let mut w2c: u64 = 0; // worker → client bytes
+    let mut cbuf = vec![0u8; 16 * 1024];
+    let mut wbuf = vec![0u8; 16 * 1024];
+    let mut client_eof = false;
+    let mut worker_eof = false;
+
+    // A read future is "idle-limited" only when the timeout is enabled. We track
+    // the last-activity instant and, on a per-read timeout, only declare the
+    // whole session idle if BOTH directions have been quiet since then.
+    let mut last_activity = tokio::time::Instant::now();
+
+    loop {
+        if client_eof && worker_eof {
+            return Ok(((c2w, w2c), StopReason::Closed));
+        }
+
+        // Deadline for the earliest allowable idle trip.
+        let deadline = last_activity + idle_timeout;
+
+        tokio::select! {
+            // client → worker
+            r = read_with_deadline(&mut client, &mut cbuf, idle_timeout, deadline), if !client_eof => {
+                match r {
+                    ReadOutcome::Data(n) => {
+                        last_activity = tokio::time::Instant::now();
+                        worker.write_all(&cbuf[..n]).await?;
+                        worker.flush().await?;
+                        c2w += n as u64;
+                    }
+                    ReadOutcome::Eof => {
+                        client_eof = true;
+                        // Half-close the worker's write side so the peer sees EOF.
+                        let _ = worker.shutdown().await;
+                    }
+                    ReadOutcome::Idle => return Ok(((c2w, w2c), StopReason::Idle)),
+                    ReadOutcome::Err(e) => return Err(e),
+                }
+            }
+
+            // worker → client
+            r = read_with_deadline(&mut worker, &mut wbuf, idle_timeout, deadline), if !worker_eof => {
+                match r {
+                    ReadOutcome::Data(n) => {
+                        last_activity = tokio::time::Instant::now();
+                        client.write_all(&wbuf[..n]).await?;
+                        client.flush().await?;
+                        w2c += n as u64;
+                    }
+                    ReadOutcome::Eof => {
+                        worker_eof = true;
+                        let _ = client.shutdown().await;
+                    }
+                    ReadOutcome::Idle => return Ok(((c2w, w2c), StopReason::Idle)),
+                    ReadOutcome::Err(e) => return Err(e),
+                }
+            }
+        }
+    }
+}
+
+/// Outcome of a single deadline-bounded read.
+enum ReadOutcome {
+    Data(usize),
+    Eof,
+    Idle,
+    Err(std::io::Error),
+}
+
+/// Read into `buf`, bounded by the shared idle `deadline`. `idle_timeout` being
+/// zero disables the bound (waits indefinitely). A read that completes with a
+/// non-zero count is `Data`; a clean `0` is `Eof`; the deadline elapsing with no
+/// data is `Idle`.
+async fn read_with_deadline<R>(
+    r: &mut R,
+    buf: &mut [u8],
+    idle_timeout: Duration,
+    deadline: tokio::time::Instant,
+) -> ReadOutcome
+where
+    R: AsyncRead + Unpin,
+{
+    if idle_timeout.is_zero() {
+        return match r.read(buf).await {
+            Ok(0) => ReadOutcome::Eof,
+            Ok(n) => ReadOutcome::Data(n),
+            Err(e) => ReadOutcome::Err(e),
+        };
+    }
+    match tokio::time::timeout_at(deadline, r.read(buf)).await {
+        Ok(Ok(0)) => ReadOutcome::Eof,
+        Ok(Ok(n)) => ReadOutcome::Data(n),
+        Ok(Err(e)) => ReadOutcome::Err(e),
+        Err(_elapsed) => ReadOutcome::Idle,
+    }
 }
 
 #[cfg(test)]
@@ -309,6 +501,64 @@ mod tests {
         // Close the client side; pump should finish.
         drop(client_end);
         let _ = pump_task.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pump_bounded_idle_timeout_fires() {
+        // Two duplex pairs standing in for client and worker; neither side ever
+        // sends, so the idle timeout must trip and stop the pump.
+        let (_client_peer, client) = tokio::io::duplex(64);
+        let (_worker_peer, worker) = tokio::io::duplex(64);
+        let limits = SessionLimits {
+            idle_timeout: Duration::from_secs(5),
+            max_lifetime: Duration::ZERO,
+        };
+        let ((c2w, w2c), reason) = pump_bounded(client, worker, limits).await.unwrap();
+        assert_eq!(reason, StopReason::Idle);
+        assert_eq!((c2w, w2c), (0, 0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pump_bounded_max_lifetime_fires() {
+        // An always-idle session; the absolute cap trips even with idle disabled.
+        let (_client_peer, client) = tokio::io::duplex(64);
+        let (_worker_peer, worker) = tokio::io::duplex(64);
+        let limits = SessionLimits {
+            idle_timeout: Duration::ZERO,
+            max_lifetime: Duration::from_secs(10),
+        };
+        let (_counts, reason) = pump_bounded(client, worker, limits).await.unwrap();
+        assert_eq!(reason, StopReason::Lifetime);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pump_bounded_active_session_not_torn_down() {
+        // Data flows steadily just under the idle window; the pump must keep going
+        // and only stop when the peer actually closes — NOT on a false idle trip.
+        let (mut client_peer, client) = tokio::io::duplex(1024);
+        let (mut worker_peer, worker) = tokio::io::duplex(1024);
+        let limits = SessionLimits {
+            idle_timeout: Duration::from_secs(5),
+            max_lifetime: Duration::ZERO,
+        };
+        let pump = tokio::spawn(async move { pump_bounded(client, worker, limits).await });
+
+        // Send a byte every 2s (well under the 5s idle window) a few times.
+        for _ in 0..5 {
+            client_peer.write_all(b"x").await.unwrap();
+            client_peer.flush().await.unwrap();
+            // Drain what the pump forwards so the worker side doesn't backpressure.
+            let mut b = [0u8; 1];
+            worker_peer.read_exact(&mut b).await.unwrap();
+            assert_eq!(&b, b"x");
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+
+        // Now go quiet: the idle window elapses → Idle stop, proving the earlier
+        // activity kept it alive (it did not trip during the active phase).
+        let ((c2w, _w2c), reason) = pump.await.unwrap().unwrap();
+        assert_eq!(reason, StopReason::Idle);
+        assert_eq!(c2w, 5);
     }
 
     #[tokio::test]

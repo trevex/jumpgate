@@ -37,6 +37,7 @@ use tokio_tungstenite::tungstenite::handshake::server::{
 };
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::proxy::{SessionLimits, StopReason};
 use crate::{lb, proxy, token, GatewayState};
 
 /// A single relayed frame's length field caps what we buffer from the worker, an
@@ -252,6 +253,7 @@ pub async fn handle_terminal<S>(
     head: Vec<u8>,
     stream: S,
     origin_policy: Arc<OriginPolicy>,
+    limits: SessionLimits,
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -369,8 +371,17 @@ pub async fn handle_terminal<S>(
         "terminal session relay established"
     );
 
-    if let Err(e) = relay(ws, worker).await {
-        tracing::debug!(error = %e, "terminal relay ended");
+    match relay(ws, worker, limits).await {
+        Ok(StopReason::Closed) => {}
+        Ok(reason) => {
+            tracing::info!(
+                session_id = %claims.session_id,
+                worker = %entry.worker_id,
+                ?reason,
+                "terminal session ended by resource bound"
+            );
+        }
+        Err(e) => tracing::debug!(error = %e, "terminal relay ended"),
     }
     // _guard drops here → decrements the worker's in-flight count.
 }
@@ -407,11 +418,20 @@ where
 /// - browser `Ping` → `Pong`; `Close`/EOF (either side) → tear down both;
 /// - a ~30s keepalive ping is sent when idle.
 ///
+/// Bounded by `limits`: a session with no frames flowing in EITHER direction for
+/// `idle_timeout` is torn down ([`StopReason::Idle`]); one exceeding
+/// `max_lifetime` is torn down ([`StopReason::Lifetime`]). A zero [`Duration`]
+/// disables the corresponding bound. The keepalive ping/pong is NOT counted as
+/// activity, so a browser tab that's connected-but-silent still times out. On
+/// every exit path the browser side is cleanly closed, so the caller's teardown
+/// (drop the load guard) runs identically for a normal close and a bound trip.
+///
 /// Text and other WebSocket message types are ignored (the protocol is binary).
 async fn relay<C, W>(
     ws: tokio_tungstenite::WebSocketStream<C>,
     mut worker: W,
-) -> std::io::Result<()>
+    limits: SessionLimits,
+) -> std::io::Result<StopReason>
 where
     C: AsyncRead + AsyncWrite + Unpin,
     W: AsyncRead + AsyncWrite + Unpin,
@@ -422,12 +442,29 @@ where
     // Skip the immediate first tick.
     keepalive.tick().await;
 
-    loop {
+    // Absolute-lifetime deadline (if enabled). A far-future instant stands in for
+    // "unlimited" so the select arm can always be present without extra branching.
+    let start = tokio::time::Instant::now();
+    let lifetime_deadline = if limits.max_lifetime.is_zero() {
+        None
+    } else {
+        Some(start + limits.max_lifetime)
+    };
+    let lifetime_sleep = tokio::time::sleep_until(
+        lifetime_deadline.unwrap_or_else(|| start + Duration::from_secs(3_600 * 24 * 365)),
+    );
+    tokio::pin!(lifetime_sleep);
+
+    // Idle tracking: reset on any real DATA frame either direction.
+    let mut last_activity = tokio::time::Instant::now();
+
+    let stop = loop {
         tokio::select! {
             // Browser → worker.
             msg = ws_rx.next() => {
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
+                        last_activity = tokio::time::Instant::now();
                         write_len_frame(&mut worker, &data).await?;
                         worker.flush().await?;
                     }
@@ -438,10 +475,10 @@ where
                     // ignored — the terminal protocol is binary only.
                     Some(Ok(Message::Pong(_))) | Some(Ok(Message::Text(_)))
                     | Some(Ok(Message::Frame(_))) => {}
-                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Close(_))) | None => break StopReason::Closed,
                     Some(Err(e)) => {
                         tracing::debug!(error = %e, "terminal WS read error");
-                        break;
+                        break StopReason::Closed;
                     }
                 }
             }
@@ -450,26 +487,39 @@ where
             frame = read_len_frame(&mut worker) => {
                 match frame {
                     Ok(f) => {
+                        last_activity = tokio::time::Instant::now();
                         ws_tx.send(Message::Binary(f.into())).await.map_err(ws_io_err)?;
                     }
                     // EOF / bad frame: the worker closed the mesh stream.
-                    Err(_) => break,
+                    Err(_) => break StopReason::Closed,
                 }
             }
 
-            // Idle keepalive.
+            // Idle keepalive + idle-timeout check.
             _ = keepalive.tick() => {
-                if ws_tx.send(Message::Ping(Vec::new().into())).await.is_err() {
-                    break;
+                if !limits.idle_timeout.is_zero()
+                    && last_activity.elapsed() >= limits.idle_timeout
+                {
+                    break StopReason::Idle;
                 }
+                if ws_tx.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break StopReason::Closed;
+                }
+            }
+
+            // Absolute lifetime cap (only fires when enabled — otherwise the
+            // deadline is ~1y out and never reached before a normal close).
+            _ = &mut lifetime_sleep, if lifetime_deadline.is_some() => {
+                break StopReason::Lifetime;
             }
         }
-    }
+    };
 
-    // Cleanly close the browser side; ignore errors (peer may be gone).
+    // Cleanly close the browser side; ignore errors (peer may be gone). This runs
+    // on EVERY exit path — normal close, idle, or lifetime — so teardown is uniform.
     let _ = ws_tx.send(Message::Close(None)).await;
     let _ = ws_tx.close().await;
-    Ok(())
+    Ok(stop)
 }
 
 /// Map a tungstenite send error to an `io::Error` for the relay's `Result`.

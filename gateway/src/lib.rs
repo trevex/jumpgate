@@ -35,6 +35,9 @@ pub struct GatewayState {
     /// Allowed browser-console `Origin`s for the WebSocket terminal endpoint
     /// (`GATEWAY_CONSOLE_ORIGIN`). Empty = dev allow-all (with a warning).
     pub console_origin: Arc<terminal::OriginPolicy>,
+    /// Idle + absolute-lifetime bounds applied to every proxied session (CONNECT
+    /// byte pump and WS terminal relay), guarding against slow-loris / idle-hold.
+    pub session_limits: proxy::SessionLimits,
 }
 
 /// Read the HTTP request head (up to the terminating `\r\n\r\n`), bounded by
@@ -43,8 +46,15 @@ pub struct GatewayState {
 async fn read_request_head<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Result<Vec<u8>> {
     let mut buf = Vec::with_capacity(1024);
     let mut chunk = [0u8; 1024];
+    // Offset from which the next terminator scan starts. We only ever rescan the
+    // freshly-appended bytes plus a 3-byte overlap (to catch a `\r\n\r\n` split
+    // across two reads), so the total scan work is O(n) across the whole head
+    // rather than O(n²) from re-scanning the accumulated buffer every read.
+    let mut scan_from = 0usize;
     loop {
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        if let Some(rel) = buf[scan_from..].windows(4).position(|w| w == b"\r\n\r\n") {
+            // Terminator found; return the head (including the CRLFCRLF).
+            let _ = rel; // position is relative; the full buffer is the head.
             return Ok(buf);
         }
         if buf.len() > connect::MAX_HEADER {
@@ -53,6 +63,9 @@ async fn read_request_head<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Res
                 "request header too large",
             ));
         }
+        // Next scan may start 3 bytes back so a terminator straddling this read
+        // and the next is not missed.
+        scan_from = buf.len().saturating_sub(3);
         let n = stream.read(&mut chunk).await?;
         if n == 0 {
             // EOF before a full head: return what we have (parse will reject it).
@@ -107,7 +120,9 @@ pub async fn handle_connection(state: GatewayState, mut client: TlsStream<tokio:
     // Browser terminal: a WebSocket upgrade GET. The head is replayed into the
     // WS handshake, which reads the request itself.
     if is_websocket_upgrade(&head) {
-        terminal::handle_terminal(state.clone(), head, client, state.console_origin.clone()).await;
+        let limits = state.session_limits;
+        terminal::handle_terminal(state.clone(), head, client, state.console_origin.clone(), limits)
+            .await;
         return;
     }
 
@@ -176,8 +191,100 @@ pub async fn handle_connection(state: GatewayState, mut client: TlsStream<tokio:
     {
         return;
     }
-    if let Err(e) = proxy::pump(client, worker).await {
-        tracing::debug!(error = %e, "pump ended");
+    match proxy::pump_bounded(client, worker, state.session_limits).await {
+        Ok((_counts, proxy::StopReason::Closed)) => {}
+        Ok((_counts, reason)) => {
+            // Idle/lifetime bound tripped: a normal teardown, just observable.
+            tracing::info!(worker = %entry.worker_id, ?reason, "session ended by resource bound");
+        }
+        Err(e) => tracing::debug!(error = %e, "pump ended"),
     }
     // _guard drops here → decrements the worker's in-flight count.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::ReadBuf;
+
+    /// An `AsyncRead` that yields a scripted sequence of byte chunks, one per
+    /// `poll_read`, so we can force a header terminator to straddle two reads.
+    struct ChunkReader {
+        chunks: VecDeque<Vec<u8>>,
+    }
+
+    impl ChunkReader {
+        fn new(chunks: Vec<Vec<u8>>) -> Self {
+            ChunkReader {
+                chunks: chunks.into(),
+            }
+        }
+    }
+
+    impl AsyncRead for ChunkReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if let Some(chunk) = self.chunks.pop_front() {
+                let n = chunk.len().min(buf.remaining());
+                buf.put_slice(&chunk[..n]);
+                // If the chunk didn't fit, push the remainder back for next poll.
+                if n < chunk.len() {
+                    self.chunks.push_front(chunk[n..].to_vec());
+                }
+            }
+            // Empty deque → EOF (Ready with nothing filled).
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn header_scan_detects_terminator_split_across_reads() {
+        // "\r\n\r\n" is split so that the first two bytes arrive in one read and
+        // the last two in the next — the tail-rescan-with-overlap must still see it.
+        let head = ChunkReader::new(vec![
+            b"CONNECT asset-1 HTTP/1.1\r\nHost: x\r".to_vec(),
+            b"\n\r\n".to_vec(),
+            b"SHOULD-NOT-BE-READ".to_vec(),
+        ]);
+        let mut r = head;
+        let out = read_request_head(&mut r).await.unwrap();
+        assert!(out.ends_with(b"\r\n\r\n"), "terminator not detected");
+        // The head stops at the terminator; trailing body bytes are not consumed.
+        assert!(!out.windows(6).any(|w| w == b"SHOULD"));
+    }
+
+    #[tokio::test]
+    async fn header_scan_detects_terminator_split_one_byte_per_read() {
+        // Pathological: one byte per read. The overlap window must still catch a
+        // terminator no matter how the reads chop it up.
+        let bytes = b"GET /terminal HTTP/1.1\r\n\r\n";
+        let chunks: Vec<Vec<u8>> = bytes.iter().map(|b| vec![*b]).collect();
+        let mut r = ChunkReader::new(chunks);
+        let out = read_request_head(&mut r).await.unwrap();
+        assert_eq!(out, bytes);
+    }
+
+    #[tokio::test]
+    async fn header_scan_rejects_oversized_header() {
+        // A stream that never terminates: once the buffer exceeds MAX_HEADER the
+        // read must fail with InvalidData rather than growing unbounded.
+        let filler = vec![b'A'; 4096];
+        let chunks = vec![filler.clone(), filler.clone(), filler.clone(), filler];
+        let mut r = ChunkReader::new(chunks);
+        let err = read_request_head(&mut r).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn header_scan_eof_before_terminator_returns_partial() {
+        let mut r = ChunkReader::new(vec![b"CONNECT x HTTP/1.1\r\n".to_vec()]);
+        let out = read_request_head(&mut r).await.unwrap();
+        assert_eq!(out, b"CONNECT x HTTP/1.1\r\n");
+    }
 }

@@ -60,12 +60,24 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    let session_limits = gateway::proxy::SessionLimits {
+        idle_timeout: config.session_idle_timeout,
+        max_lifetime: config.session_max_lifetime,
+    };
+    tracing::info!(
+        max_connections = config.max_connections,
+        idle_timeout_secs = session_limits.idle_timeout.as_secs(),
+        max_lifetime_secs = session_limits.max_lifetime.as_secs(),
+        "gateway resource bounds",
+    );
+
     let state = GatewayState {
         roster: Roster::default(),
         counters: LoadCounters::default(),
         mesh_certs,
         verification_key: Arc::new(RwLock::new(None)),
         console_origin: Arc::new(console_origin),
+        session_limits,
     };
 
     // Roster client: stream worker updates + fetch the session verification key.
@@ -96,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         config.listen.clone(),
         server_config,
         state,
+        config.max_connections,
     ));
 
     tokio::select! {
@@ -112,22 +125,40 @@ async fn run_external_listener(
     addr: String,
     server_config: Arc<rustls::ServerConfig>,
     state: GatewayState,
+    max_connections: usize,
 ) -> anyhow::Result<()> {
     let acceptor = TlsAcceptor::from(server_config);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!(%addr, "gateway external TLS listener ready");
+    // Bound concurrent external connections (and, since each holds its permit for
+    // the life of its handler task, concurrent per-connection tasks). Acquiring a
+    // permit BEFORE accepting the next socket applies natural backpressure once
+    // we're at capacity, rather than accepting unboundedly.
+    let limiter = Arc::new(tokio::sync::Semaphore::new(max_connections));
+    tracing::info!(%addr, max_connections, "gateway external TLS listener ready");
 
     loop {
+        // Wait for a free connection slot before accepting the next socket.
+        let permit = match limiter.clone().acquire_owned().await {
+            Ok(p) => p,
+            // The semaphore is never closed; this is unreachable in practice.
+            Err(_) => anyhow::bail!("connection limiter semaphore closed"),
+        };
         let (tcp, peer) = match listener.accept().await {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!(error = %e, "accept failed");
+                // Drop the permit (via the loop restart) so a transient accept
+                // error doesn't leak a slot.
+                drop(permit);
                 continue;
             }
         };
         let acceptor = acceptor.clone();
         let st = state.clone();
         tokio::spawn(async move {
+            // Held for the whole handler; released on task completion (normal
+            // exit, TLS-handshake failure, or panic-unwind of the task).
+            let _permit = permit;
             match acceptor.accept(tcp).await {
                 Ok(tls) => gateway::handle_connection(st, tls).await,
                 Err(e) => tracing::warn!(%peer, error = %e, "tls handshake failed"),
