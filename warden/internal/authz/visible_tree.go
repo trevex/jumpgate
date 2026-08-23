@@ -2,7 +2,9 @@ package authz
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -637,9 +639,12 @@ func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UU
 	}, nil
 }
 
-// VisibleRolesUnder returns the role ids under `parent` the user may see. See the
-// Authorizer interface for the visibility predicate.
-func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+// visibleRolesHomed returns the roles under `parent` the user may see, each with
+// its home folder, applying the full role-visibility predicate (held ∪
+// requestable ∪ manageable-via access:role:read). It is the single source of
+// truth for that predicate: VisibleRolesUnder maps it to ids, and the folder-anchor
+// helper reads its home folders — neither re-implements the predicate.
+func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	nodes, err := s.nodesHomedUnder(ctx, "roles", parent, cascade)
 	if err != nil {
 		return nil, err
@@ -663,14 +668,14 @@ func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uu
 		return nil, err
 	}
 
-	var out []uuid.UUID
+	var out []nodeFolder
 	for _, n := range nodes {
 		if _, ok := held[n.ID]; ok {
-			out = append(out, n.ID)
+			out = append(out, n)
 			continue
 		}
 		if _, ok := requestable[n.ID]; ok {
-			out = append(out, n.ID)
+			out = append(out, n)
 			continue
 		}
 		// Management axis (folder-less nodes handled inside manageable: nil folder
@@ -680,15 +685,28 @@ func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uu
 			return nil, err
 		}
 		if ok {
-			out = append(out, n.ID)
+			out = append(out, n)
 		}
 	}
 	return out, nil
 }
 
-// VisibleGroupsUnder returns the group ids under `parent` the user may see. See
-// the Authorizer interface for the visibility predicate.
-func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+// VisibleRolesUnder returns the role ids under `parent` the user may see. See the
+// Authorizer interface for the visibility predicate.
+func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.visibleRolesHomed(ctx, userID, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	return nodeIDs(nodes), nil
+}
+
+// visibleGroupsHomed returns the groups under `parent` the user may see, each with
+// its home folder, applying the full group-visibility predicate (transitive
+// membership ∪ manageable-via identity:group:read). Single source of truth for the
+// predicate: VisibleGroupsUnder maps it to ids and the folder-anchor helper reads
+// its home folders.
+func (s *sqlAuthorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	nodes, err := s.nodesHomedUnder(ctx, "groups", parent, cascade)
 	if err != nil {
 		return nil, err
@@ -708,10 +726,10 @@ func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent u
 		return nil, err
 	}
 
-	var out []uuid.UUID
+	var out []nodeFolder
 	for _, n := range nodes {
 		if _, ok := member[n.ID]; ok {
-			out = append(out, n.ID)
+			out = append(out, n)
 			continue
 		}
 		ok, err := manageable(n.Folder)
@@ -719,8 +737,143 @@ func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent u
 			return nil, err
 		}
 		if ok {
-			out = append(out, n.ID)
+			out = append(out, n)
 		}
 	}
 	return out, nil
+}
+
+// VisibleGroupsUnder returns the group ids under `parent` the user may see. See
+// the Authorizer interface for the visibility predicate.
+func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.visibleGroupsHomed(ctx, userID, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	return nodeIDs(nodes), nil
+}
+
+// nodeIDs projects the ids out of a []nodeFolder (preserving order).
+func nodeIDs(nodes []nodeFolder) []uuid.UUID {
+	if len(nodes) == 0 {
+		return nil
+	}
+	out := make([]uuid.UUID, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, n.ID)
+	}
+	return out
+}
+
+// nodeHomeFolders collects the non-nil home folders of the given nodes into a set.
+// Folder-less (global) nodes contribute no anchor.
+func nodeHomeFolders(nodes []nodeFolder) map[uuid.UUID]struct{} {
+	out := map[uuid.UUID]struct{}{}
+	for _, n := range nodes {
+		if n.Folder != nil {
+			out[*n.Folder] = struct{}{}
+		}
+	}
+	return out
+}
+
+// visibleRoleHomeFolders returns the set of home folders of every role visible to
+// the user (whole-tree cascade). These folders anchor path-reveal so the browse
+// path down to a visible role is never hidden.
+func (s *sqlAuthorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	nodes, err := s.visibleRolesHomed(ctx, userID, uuid.Nil, true)
+	if err != nil {
+		return nil, err
+	}
+	return nodeHomeFolders(nodes), nil
+}
+
+// visibleGroupHomeFolders returns the set of home folders of every group visible to
+// the user (whole-tree cascade). These folders anchor path-reveal so the browse
+// path down to a visible group is never hidden.
+func (s *sqlAuthorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	nodes, err := s.visibleGroupsHomed(ctx, userID, uuid.Nil, true)
+	if err != nil {
+		return nil, err
+	}
+	return nodeHomeFolders(nodes), nil
+}
+
+// ── Folder anchors (catalog path-reveal) ───────────────────────────────────
+//
+// A folder is an "anchor" when the user has a relationship to a folder-homed node
+// at or under it, so the browse PATH to that node must be revealed. The three
+// helpers below compute the three anchor-source SETS of folder ids; a caller
+// unions them (and does the ltree path expansion) elsewhere.
+
+// isManagementCap reports whether a capability pattern grants management (as
+// opposed to pure connect). Management = anything under catalog:/access:/identity:
+// or the ** / * wildcard. A bare ssh:* is connect and does NOT anchor a folder.
+func isManagementCap(pat string) bool {
+	if pat == "**" || pat == "*" {
+		return true
+	}
+	return strings.HasPrefix(pat, "catalog:") ||
+		strings.HasPrefix(pat, "access:") ||
+		strings.HasPrefix(pat, "identity:")
+}
+
+// mgmtScopeFolders returns the folder scopes at which the user holds a role that
+// grants a management capability (folder/asset/role/group admin). Bounded by the
+// user's held folder-bindings (the held closure, object_kind='folder'); glob
+// classification is done in Go over that small set. These folders anchor
+// path-reveal AND set the `governed` flag used by the catalog browse.
+//
+// roles.capabilities is a jsonb pattern array, so — exactly as scanCapabilities /
+// capsOnFolders do — it is scanned as raw bytes and json-unmarshaled into the
+// Capabilities ([]string) set (it has no pgx codec for a direct scan).
+func (s *sqlAuthorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	rows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT h.object_id, r.capabilities
+FROM held h JOIN roles r ON r.id = h.role_id
+WHERE h.object_kind = 'folder'`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("mgmt scope folders: %w", err)
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]struct{}{}
+	for rows.Next() {
+		var (
+			fid uuid.UUID
+			raw []byte
+		)
+		if err := rows.Scan(&fid, &raw); err != nil {
+			return nil, fmt.Errorf("scan mgmt scope: %w", err)
+		}
+		var patterns Capabilities
+		if err := json.Unmarshal(raw, &patterns); err != nil {
+			return nil, fmt.Errorf("mgmt scope unmarshal: %w", err)
+		}
+		for _, c := range patterns {
+			if isManagementCap(c) {
+				out[fid] = struct{}{}
+				break
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// visibleAssetFolders returns the home folders of every asset visible to the user
+// (the full VisibleAssetsUnder union: access ∪ management ∪ connect, whole-tree
+// cascade). These folders anchor the path down to a reachable asset.
+func (s *sqlAuthorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	assetIDs, err := s.VisibleAssetsUnder(ctx, userID, uuid.Nil, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(assetIDs) == 0 {
+		return map[uuid.UUID]struct{}{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT folder_id FROM assets WHERE id = ANY($1::uuid[])`, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("visible asset folders: %w", err)
+	}
+	defer rows.Close()
+	return scanUUIDSet(rows)
 }

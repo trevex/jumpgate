@@ -8,7 +8,44 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
+
+// keys returns the map's keys as a slice (order-independent), for feeding the
+// set-based require* assertions.
+func keys(m map[uuid.UUID]struct{}) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// mustCreateUser inserts a user via the generated query layer and returns its id.
+func mustCreateUser(t testing.TB, q *gen.Queries, email string) uuid.UUID {
+	t.Helper()
+	u, err := q.CreateUser(context.Background(), gen.CreateUserParams{Email: email, DisplayName: email})
+	if err != nil {
+		t.Fatalf("mustCreateUser(%s): %v", email, err)
+	}
+	return u.ID
+}
+
+// mustCreateFolder inserts a folder (optional parent) via the generated query
+// layer and returns its id.
+func mustCreateFolder(t testing.TB, q *gen.Queries, name string, parent *uuid.UUID) uuid.UUID {
+	t.Helper()
+	params := gen.CreateFolderParams{Name: name}
+	if parent != nil {
+		params.ParentID = pgUUID(*parent)
+	}
+	f, err := q.CreateFolder(context.Background(), params)
+	if err != nil {
+		t.Fatalf("mustCreateFolder(%s): %v", name, err)
+	}
+	return f.ID
+}
 
 // mkFolder inserts a folder with the given name and optional parent, returning
 // its id. The DB trigger populates path_ids automatically.
