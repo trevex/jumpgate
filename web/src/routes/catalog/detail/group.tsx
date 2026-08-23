@@ -1,14 +1,23 @@
 /**
- * group.tsx — group detail pane.
+ * group.tsx — catalog group detail pane.
  *
- * Shows the caller's management capabilities on one group.
+ * A full group detail: identity (name), the caller's management capabilities on
+ * the group, its Members (users + sub-groups, with add/remove — the shared
+ * membership body), and the roles bound to it as a subject.
+ *
  * GetGroupAccess returns NotFound (existence-hiding) when the caller has no
  * relationship — handled by the shared DetailError component.
+ *
+ * The catalog tree only carries id + name for a group (there is no id-keyed
+ * group-display RPC that returns a folder home), so the folder-home line is
+ * omitted here; the shared membership body is driven off id + name.
  */
 
 import { useQuery } from "@connectrpc/connect-query";
 import { Users } from "lucide-react";
 import { getGroupAccess } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
+import { GroupMembers } from "@/components/groups/group-members";
+import { GroupBindings } from "@/components/groups/group-bindings";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
 
 export interface GroupDetailProps {
@@ -41,6 +50,16 @@ export function GroupDetail({ id, name }: GroupDetailProps) {
       {/* Management capabilities */}
       <DetailSection title="Your management capabilities on this group">
         <CapList caps={data.capabilities} />
+      </DetailSection>
+
+      {/* Members */}
+      <DetailSection title="Members">
+        <GroupMembers group={{ groupId: id, groupName: name }} />
+      </DetailSection>
+
+      {/* Bound roles */}
+      <DetailSection title="Bound roles">
+        <GroupBindings groupId={id} />
       </DetailSection>
     </article>
   );

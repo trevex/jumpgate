@@ -29,7 +29,6 @@ import {
   addUserToGroup,
   addGroupToGroup,
 } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
-import type { Group } from "@/gen/jumpgate/identity/v1/identity_pb";
 import {
   CommandDialog,
   CommandInput,
@@ -40,7 +39,8 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
-import { membersQueryKey } from "./group-detail";
+import { membersQueryKey } from "@/components/groups/group-members";
+import type { GroupRef } from "@/components/groups/group-members";
 
 const LIST_PAGE_SIZE = 50;
 
@@ -48,7 +48,7 @@ type Kind = "user" | "group";
 
 interface AddMemberPickerProps {
   /** The group being edited — members are added to this group. */
-  group: Group;
+  group: GroupRef;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -67,7 +67,7 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
   }, [open]);
 
   function invalidateMembers() {
-    const key = membersQueryKey(group.id);
+    const key = membersQueryKey(group.groupId);
     void queryClient
       .cancelQueries({ queryKey: key })
       .then(() => queryClient.invalidateQueries({ queryKey: key }));
@@ -76,7 +76,7 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
   const { mutate: doAddUser, isPending: addingUser } = useMutation(addUserToGroup, {
     onSuccess: () => {
       toast.success("Member added", {
-        description: `Added a user to ${group.name}.`,
+        description: `Added a user to ${group.groupName}.`,
       });
       invalidateMembers();
       onOpenChange(false);
@@ -87,7 +87,7 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
   const { mutate: doAddGroup, isPending: addingGroup } = useMutation(addGroupToGroup, {
     onSuccess: () => {
       toast.success("Sub-group added", {
-        description: `Added a sub-group to ${group.name}.`,
+        description: `Added a sub-group to ${group.groupName}.`,
       });
       invalidateMembers();
       onOpenChange(false);
@@ -101,7 +101,7 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      label={`Add member to ${group.name}`}
+      label={`Add member to ${group.groupName}`}
       // Client-side filtering is done below; cmdk's own filter is off so the
       // selectable set is exactly what we render.
       commandProps={{ shouldFilter: false }}
@@ -136,14 +136,14 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
         <UserOptions
           query={query}
           disabled={busy}
-          onPick={(userId) => doAddUser({ groupId: group.id, userId })}
+          onPick={(userId) => doAddUser({ groupId: group.groupId, userId })}
         />
       ) : (
         <GroupOptions
           query={query}
-          excludeGroupId={group.id}
+          excludeGroupId={group.groupId}
           disabled={busy}
-          onPick={(memberGroupId) => doAddGroup({ groupId: group.id, memberGroupId })}
+          onPick={(memberGroupId) => doAddGroup({ groupId: group.groupId, memberGroupId })}
         />
       )}
     </CommandDialog>
