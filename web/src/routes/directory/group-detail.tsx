@@ -38,7 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { useCapabilities } from "@/lib/capabilities";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   canAddMember,
@@ -61,10 +61,6 @@ import {
  * the picker must match this exact input, so it is exported and shared.
  */
 export const MEMBERS_PAGE_SIZE = 100;
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Members query key (shared, scoped to one group) ──────────────────────────
 

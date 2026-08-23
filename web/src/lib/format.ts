@@ -81,6 +81,17 @@ export function isExpired(rfc3339: string): boolean {
   return Date.parse(rfc3339) <= Date.now();
 }
 
+// ─── Identifier shortening ────────────────────────────────────────────────────
+
+/**
+ * Returns the first dash-delimited segment of an identifier (typically the
+ * leading block of a UUID), falling back to the full id when it contains no
+ * dash.
+ */
+export function shortId(id: string): string {
+  return id.split("-")[0] ?? id;
+}
+
 // ─── ConnectError message extraction ─────────────────────────────────────────
 
 /**

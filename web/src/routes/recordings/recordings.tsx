@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@connectrpc/connect-query";
+import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
 import { create as createPlayer } from "asciinema-player";
 import "asciinema-player/dist/bundle/asciinema-player.css";
 import type { Player } from "asciinema-player";
@@ -38,7 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState, ErrorState } from "@/components/states/states";
 import { cn } from "@/lib/utils";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import {
   Film,
   RefreshCw,
@@ -52,10 +52,6 @@ import {
 } from "lucide-react";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 /** Format duration between two unix-ms timestamps as m:ss or h:mm:ss */
 function formatDuration(startMs: bigint, endMs: bigint): string {
@@ -429,56 +425,42 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
   const grantId = sp.get("grantId") ?? "";
   const hasFilter = Boolean(assetId || userId || grantId);
 
-  const [pageToken, setPageToken] = useState("");
-  const [allRecordings, setAllRecordings] = useState<Recording[]>([]);
-  const [nextToken, setNextToken] = useState<string | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // The filter inputs are part of the query input (and thus the query key), so
+  // changing a filter automatically resets pagination to the first page — no
+  // manual reset needed.
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
+    listRecordings,
+    {
+      pageSize: PAGE_SIZE,
+      pageToken: "",
+      userId,
+      assetId,
+      grantId,
+    },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
+  );
 
-  // A filter change must restart pagination from the first page. The query key
-  // below already includes the filter inputs (so the fetch refetches), but the
-  // accumulated-pages state must also reset so stale rows don't linger.
-  useEffect(() => {
-    setPageToken("");
-    setAllRecordings([]);
-    setNextToken(null);
-  }, [assetId, userId, grantId]);
-
-  const { data, isLoading, isError, error, refetch } = useQuery(listRecordings, {
-    pageSize: PAGE_SIZE,
-    pageToken,
-    userId,
-    assetId,
-    grantId,
-  });
+  const allRecordings = data?.pages.flatMap((p) => p.recordings) ?? [];
 
   // Clear all active filters by dropping the query params.
   const clearFilters = useCallback(() => {
     setSearchParams({}, { replace: true });
   }, [setSearchParams]);
 
-  // Accumulate pages.
-  useEffect(() => {
-    if (!data) return;
-    if (pageToken === "") {
-      // First page: replace.
-      setAllRecordings(data.recordings ?? []);
-    } else {
-      // Subsequent page: append.
-      setAllRecordings((prev) => [...prev, ...(data.recordings ?? [])]);
-      setIsLoadingMore(false);
-    }
-    setNextToken(data.nextPageToken || null);
-  }, [data, pageToken]);
-
-  const handleLoadMore = useCallback(() => {
-    if (nextToken) {
-      setIsLoadingMore(true);
-      setPageToken(nextToken);
-    }
-  }, [nextToken]);
-
   // Show initial loading skeletons only on first fetch.
-  const isInitialLoading = isLoading && pageToken === "" && allRecordings.length === 0;
+  const isInitialLoading = isLoading && allRecordings.length === 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -493,7 +475,7 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setPageToken(""); void refetch(); }}
+          onClick={() => void refetch()}
           className="h-7 gap-1 text-compact text-muted-foreground"
           aria-label="Refresh recordings list"
         >
@@ -572,16 +554,16 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
             </Table>
 
             {/* Load more */}
-            {nextToken && (
+            {hasNextPage && (
               <div className="flex justify-center py-4 border-t border-border">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleLoadMore}
-                  disabled={isLoadingMore}
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
                   className="h-7 gap-1.5 text-compact"
                 >
-                  {isLoadingMore ? (
+                  {isFetchingNextPage ? (
                     <>
                       <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
                       Loading…

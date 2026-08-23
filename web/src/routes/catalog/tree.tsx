@@ -265,7 +265,7 @@ function ShowAllFolders({ folderId, onSelect, selected, filter }: ShowAllFolders
   return (
     <>
       {folders.map((f) => (
-        <FolderNode_
+        <FolderTreeNode
           key={f.id}
           folder={{ id: f.id, name: f.name, path: f.path, parentId: f.parentId }}
           depth={1}
@@ -458,7 +458,7 @@ function TreeSkeleton({ rows = 4 }: { rows?: number }) {
   );
 }
 
-// ─── FolderNode (recursive, expandable) ──────────────────────────────────────
+// ─── FolderTreeNode (recursive, expandable) ──────────────────────────────────
 
 // Track which kind is "expanded to show-all" per folder
 type ExpandedKinds = Set<"assets" | "roles" | "groups" | "folders">;
@@ -471,7 +471,7 @@ interface FolderNodeProps {
   filter: Set<NodeKind>;
 }
 
-function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodeProps) {
+function FolderTreeNode({ folder, depth, selected, onSelect, filter }: FolderNodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [expandedKinds, setExpandedKinds] = useState<ExpandedKinds>(new Set());
 
@@ -567,7 +567,7 @@ function FolderNode_({ folder, depth, selected, onSelect, filter }: FolderNodePr
                   ) : (
                     <>
                       {contents.folders.map((child) => (
-                        <FolderNode_
+                        <FolderTreeNode
                           key={child.id}
                           folder={child}
                           depth={depth + 1}
@@ -739,7 +739,7 @@ export function Tree({ selected, onSelect }: TreeProps) {
                   ) : (
                     <>
                       {contents.folders.map((f) => (
-                        <FolderNode_
+                        <FolderTreeNode
                           key={f.id}
                           folder={f}
                           depth={1}

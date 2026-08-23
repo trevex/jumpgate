@@ -1,18 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 // Admin holds ** so every catalog authoring affordance (create/rename/move/
 // delete) is available.
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
-
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("email").fill(email);
-  await page.getByLabel("password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
-}
 
 // The catalog tree nav — used to scope name lookups to the tree pane (both the
 // tree and the detail pane render the same names).

@@ -1,17 +1,9 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 // Admin holds ** so every directory affordance is available.
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
-
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("email").fill(email);
-  await page.getByLabel("password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
-}
 
 test("directory: create a user and a group, then add the user as a member", async ({ page }) => {
   test.setTimeout(90_000);

@@ -45,7 +45,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { useCapabilities } from "@/lib/capabilities";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import { NewBindingDialog } from "./new-binding-dialog";
 import { DeleteBinding } from "./delete-binding";
 import { canCreateBinding, canDeleteBinding } from "./binding-actions";
@@ -62,10 +62,6 @@ import {
 
 const PAGE_SIZE = 50;
 const GROUPS_PAGE_SIZE = 100;
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Role cell (enriched via getRoleDisplay) ──────────────────────────────────
 

@@ -9,10 +9,8 @@
  */
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
-import { Server, Copy, Check, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film } from "lucide-react";
-import { useState, useCallback, useEffect } from "react";
+import { Server, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -42,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { capsCover } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
+import { CopyButton } from "@/components/copy-button";
 import { RequestSheet } from "../request-sheet";
 import { canUpdateAsset, canDeleteAsset } from "../catalog-actions";
 import { RenameDialog } from "../rename-dialog";
@@ -78,42 +77,6 @@ function sshLoginsCoveredByCaps(caps: string[]): string[] {
     .filter((login) => login !== "*" && login !== "**");
 }
 
-// ─── Copy-to-clipboard button ─────────────────────────────────────────────────
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // Clipboard not available — silently ignore
-    }
-  }, [text]);
-
-  return (
-    <button
-      onClick={copy}
-      className={cn(
-        "flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors duration-150",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-        copied
-          ? "text-green-600 dark:text-green-400"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-      aria-label={copied ? "Copied" : "Copy command"}
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-      )}
-    </button>
-  );
-}
-
 // ─── SSH connect block ────────────────────────────────────────────────────────
 
 interface ConnectBlockProps {
@@ -138,7 +101,7 @@ function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
                 <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
                   {cmd}
                 </code>
-                <CopyButton text={cmd} />
+                <CopyButton text={cmd} label="Copy command" size="md" />
               </div>
               <a
                 href={terminalHref}
@@ -183,7 +146,6 @@ function EditConfigDialog({
   open,
   onOpenChange,
 }: EditConfigDialogProps) {
-  const queryClient = useQueryClient();
   const invalidateList = useInvalidateList();
 
   const { data, isLoading, isError, error } = useQuery(
@@ -206,21 +168,7 @@ function EditConfigDialog({
   const { mutate: doUpdate, isPending } = useMutation(updateAssetConfig, {
     onSuccess: () => {
       toast.success("Config updated");
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({
-          schema: getAsset,
-          input: { assetId },
-          cardinality: "finite",
-        }),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({
-          schema: getAssetAccess,
-          input: { assetId },
-          cardinality: "finite",
-        }),
-      });
-      void invalidateList(listFolderContents);
+      void invalidateList([getAsset, getAssetAccess, listFolderContents]);
       setConfigError(null);
       onOpenChange(false);
     },

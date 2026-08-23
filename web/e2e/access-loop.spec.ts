@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { login } from "./helpers";
 
 // Actor credentials — defaults match test/e2e/uiseed_test.go (the seed the
 // make ui-e2e target runs before this spec). Overridable via env for ad-hoc runs.
@@ -8,20 +9,6 @@ const ALICE_EMAIL = process.env.E2E_ALICE_EMAIL ?? "alice@demo.test";
 const ALICE_PASSWORD = process.env.E2E_ALICE_PASSWORD ?? "alice-password-1234";
 const BOB_EMAIL = process.env.E2E_BOB_EMAIL ?? "bob@demo.test";
 const BOB_PASSWORD = process.env.E2E_BOB_PASSWORD ?? "bob-password-1234";
-
-/**
- * Logs an actor into the console: navigate to the app, ride the redirect to
- * /login, submit credentials, and wait for the app shell (the Catalog nav link)
- * to render.
- */
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("email").fill(email);
-  await page.getByLabel("password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
-}
 
 test("request → approve → connect-command → audit across four actors", async ({ browser }) => {
   // Four logins plus several server round-trips (JIT grant creation, recording

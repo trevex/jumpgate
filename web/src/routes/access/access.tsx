@@ -12,7 +12,7 @@
  * any extra lookups.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
@@ -33,11 +33,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { cn } from "@/lib/utils";
-import { relativeTime, timeRemaining, isExpired, connectErrorMessage } from "@/lib/format";
+import { relativeTime, timeRemaining, isExpired, connectErrorMessage, shortId } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
+import { CopyButton } from "@/components/copy-button";
 import {
-  Copy,
-  Check,
   Terminal,
   ClipboardList,
   KeyRound,
@@ -68,42 +67,6 @@ function StatusBadge({ status }: { status: string }) {
     >
       {label}
     </Badge>
-  );
-}
-
-// ─── Copy button (inline) ─────────────────────────────────────────────────────
-
-function InlineCopyButton({ text, label }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // clipboard not available — silently ignore
-    }
-  }, [text]);
-
-  return (
-    <button
-      onClick={copy}
-      className={cn(
-        "flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-        copied
-          ? "text-success-fg"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-      aria-label={copied ? "Copied" : (label ?? "Copy")}
-    >
-      {copied ? (
-        <Check className="h-3 w-3" aria-hidden="true" />
-      ) : (
-        <Copy className="h-3 w-3" aria-hidden="true" />
-      )}
-    </button>
   );
 }
 
@@ -138,11 +101,6 @@ function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
 }
 
 // ─── Requests table ───────────────────────────────────────────────────────────
-
-// Truncates a UUID to its first segment for display (e.g. "a3f2b1c0-…")
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Per-row enrichment hooks ─────────────────────────────────────────────────
 // The caller is party to their own requests, so the request-scoped display
@@ -466,7 +424,7 @@ function GrantCard({ grant }: { grant: Grant }) {
               <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
                 {cmd}
               </code>
-              <InlineCopyButton text={cmd} label="Copy connect command" />
+              <CopyButton text={cmd} label="Copy connect command" />
             </div>
           ))}
         </div>

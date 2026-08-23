@@ -48,7 +48,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { canUpdateRole, canDeleteRole } from "./role-actions";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
@@ -68,10 +68,6 @@ const VIA_LABEL: Record<string, string> = {
   same_object: "same object",
   parent: "parent",
 };
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Capabilities section ─────────────────────────────────────────────────────
 

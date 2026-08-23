@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 // The gateway serves the terminal WSS on its external TLS listener with a
 // self-signed (mesh-CA) cert, so the browser must accept it.
@@ -9,15 +10,6 @@ test.use({ ignoreHTTPSErrors: true });
 // an admin holding `**` does not (the UI only surfaces concrete login caps).
 const ALICE_EMAIL = process.env.E2E_ALICE_EMAIL ?? "alice@demo.test";
 const ALICE_PASSWORD = process.env.E2E_ALICE_PASSWORD ?? "alice-password-1234";
-
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("email").fill(email);
-  await page.getByLabel("password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
-}
 
 // Reads the live xterm screen buffer (renderer-agnostic) via the window hook the
 // terminal page installs, and checks it contains `needle`.

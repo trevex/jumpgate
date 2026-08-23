@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { login } from "./helpers";
 
 // Actor credentials — defaults match test/e2e/uiseed_test.go (the seed the
 // make ui-e2e target runs before this spec). The seed provisions review-box: a
@@ -14,15 +15,6 @@ const BOB_EMAIL = process.env.E2E_BOB_EMAIL ?? "bob@demo.test";
 const BOB_PASSWORD = process.env.E2E_BOB_PASSWORD ?? "bob-password-1234";
 
 const REVIEW_ASSET = "review-box.demo";
-
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/login$/);
-  await page.getByLabel("email").fill(email);
-  await page.getByLabel("password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
-}
 
 // Given a page already on a (grant- or asset-scoped) recordings list, open the
 // first recording and assert the asciinema player mounts and its cast streams

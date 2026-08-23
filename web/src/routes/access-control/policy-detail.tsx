@@ -66,7 +66,7 @@ import { Badge } from "@/components/ui/badge";
 import { ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { canUpdatePolicy, canDeletePolicy, isValidApprovals } from "./policy-actions";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
@@ -93,10 +93,6 @@ const SUBJECTS_PAGE_SIZE = 100;
 const GROUPS_PAGE_SIZE = 100;
 
 type SubjectKind = "requester" | "approver";
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 /** Render a duration in seconds (bigint) as a compact human string. */
 function formatDuration(seconds: bigint): string {

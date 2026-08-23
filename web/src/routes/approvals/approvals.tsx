@@ -45,7 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
-import { relativeTime, connectErrorMessage } from "@/lib/format";
+import { relativeTime, connectErrorMessage, shortId } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { glossCapability } from "@/lib/capability-glossary";
 import {
@@ -63,12 +63,6 @@ import {
   KeyRound,
   Film,
 } from "lucide-react";
-
-// ─── Short-UUID fallback ──────────────────────────────────────────────────────
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Per-row enrichment hooks ─────────────────────────────────────────────────
 

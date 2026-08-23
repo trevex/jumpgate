@@ -44,17 +44,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { useCapabilities } from "@/lib/capabilities";
-import { connectErrorMessage } from "@/lib/format";
+import { connectErrorMessage, shortId } from "@/lib/format";
 import { NewPolicyDialog } from "./new-policy-dialog";
 import { PolicyDetailSheet } from "./policy-detail";
 import { canCreatePolicy } from "./policy-actions";
 import { ScrollText, Plus, ShieldCheck, Folder, Boxes, Layers } from "lucide-react";
 
 const PAGE_SIZE = 50;
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // ─── Requestable-role cell (enriched via getRoleDisplay) ──────────────────────
 

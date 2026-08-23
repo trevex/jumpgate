@@ -31,13 +31,9 @@ import { listRecordings } from "@/gen/jumpgate/recording/v1/recording-RecordingS
 import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { useWhoAmI } from "@/auth";
 import { capsCover, useCapabilities } from "@/lib/capabilities";
-import { relativeTime, timeRemaining } from "@/lib/format";
+import { relativeTime, timeRemaining, shortId } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-function shortId(id: string): string {
-  return id.split("-")[0] ?? id;
-}
 
 // Resolve an asset's display path (cached; falls back to short id).
 function useAssetPath(assetId: string): string {

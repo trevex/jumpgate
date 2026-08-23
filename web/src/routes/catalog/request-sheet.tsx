@@ -11,8 +11,6 @@
 
 import { useState, useCallback } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { RoleRef } from "@/gen/jumpgate/catalog/v1/catalog_pb";
 import {
@@ -39,6 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { Server, Clock } from "lucide-react";
 
 // ─── Duration presets ────────────────────────────────────────────────────────
@@ -206,7 +205,7 @@ export function RequestSheet({
   open,
   onOpenChange,
 }: RequestSheetProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateList();
 
   // ── Form state
   const [roleId, setRoleId] = useState<string>("");
@@ -238,9 +237,7 @@ export function RequestSheet({
       });
       // Scope invalidation to the access-request queries only — avoid
       // flushing catalog/vault queries which are unaffected by a new request.
-      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listMyRequests, cardinality: undefined }) });
-      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listMyGrants, cardinality: undefined }) });
-      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: listPendingApprovals, cardinality: undefined }) });
+      void invalidate([listMyRequests, listMyGrants, listPendingApprovals]);
       handleOpenChange(false);
     },
     onError: (err) => {
