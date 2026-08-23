@@ -43,6 +43,12 @@ service AccessRequestService {
 
   // ListGrants lists access grants for admin introspection (active + past).
   rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {}
+
+  // ListReviewableGrants returns completed grants the caller may review — grants
+  // where the caller is the subject OR a potential approver of the grant's
+  // originating request. Drives the approver "Reviewable" list; each grant's
+  // recordings are reachable via ListRecordings(grant_id=…).
+  rpc ListReviewableGrants(ListReviewableGrantsRequest) returns (ListReviewableGrantsResponse) {}
 }
 
 message ResolveApprovalRequest {
@@ -171,6 +177,16 @@ message ListGrantsRequest {
 }
 
 message ListGrantsResponse {
+  repeated Grant grants          = 1;
+  string         next_page_token = 2;
+}
+
+message ListReviewableGrantsRequest {
+  int32  page_size  = 1 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 2;
+}
+
+message ListReviewableGrantsResponse {
   repeated Grant grants          = 1;
   string         next_page_token = 2;
 }

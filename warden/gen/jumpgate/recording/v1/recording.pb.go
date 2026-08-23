@@ -34,6 +34,7 @@ type Recording struct {
 	Status          string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
 	StartedAtUnixMs int64                  `protobuf:"varint,9,opt,name=started_at_unix_ms,json=startedAtUnixMs,proto3" json:"started_at_unix_ms,omitempty"`
 	EndedAtUnixMs   int64                  `protobuf:"varint,10,opt,name=ended_at_unix_ms,json=endedAtUnixMs,proto3" json:"ended_at_unix_ms,omitempty"`
+	GrantId         string                 `protobuf:"bytes,11,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // authorizing JIT grant; empty = standing/unattributed
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -138,12 +139,20 @@ func (x *Recording) GetEndedAtUnixMs() int64 {
 	return 0
 }
 
+func (x *Recording) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
 type ListRecordingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`    // optional; empty => any user (validated as uuid when set)
 	AssetId       string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"` // optional; empty => any asset (validated as uuid when set)
 	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	GrantId       string                 `protobuf:"bytes,5,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // optional; empty => any grant. When set, returns only that grant's recordings.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -202,6 +211,13 @@ func (x *ListRecordingsRequest) GetPageSize() int32 {
 func (x *ListRecordingsRequest) GetPageToken() string {
 	if x != nil {
 		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListRecordingsRequest) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
 	}
 	return ""
 }
@@ -358,7 +374,7 @@ var File_jumpgate_recording_v1_recording_proto protoreflect.FileDescriptor
 
 const file_jumpgate_recording_v1_recording_proto_rawDesc = "" +
 	"\n" +
-	"%jumpgate/recording/v1/recording.proto\x12\x15jumpgate.recording.v1\x1a\x1bbuf/validate/validate.proto\"\xb7\x02\n" +
+	"%jumpgate/recording/v1/recording.proto\x12\x15jumpgate.recording.v1\x1a\x1bbuf/validate/validate.proto\"\xd2\x02\n" +
 	"\tRecording\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
@@ -372,13 +388,15 @@ const file_jumpgate_recording_v1_recording_proto_rawDesc = "" +
 	"\x06status\x18\b \x01(\tR\x06status\x12+\n" +
 	"\x12started_at_unix_ms\x18\t \x01(\x03R\x0fstartedAtUnixMs\x12'\n" +
 	"\x10ended_at_unix_ms\x18\n" +
-	" \x01(\x03R\rendedAtUnixMs\"\x92\x01\n" +
+	" \x01(\x03R\rendedAtUnixMs\x12\x19\n" +
+	"\bgrant_id\x18\v \x01(\tR\agrantId\"\xad\x01\n" +
 	"\x15ListRecordingsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x19\n" +
 	"\basset_id\x18\x02 \x01(\tR\aassetId\x12&\n" +
 	"\tpage_size\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"\x82\x01\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\x12\x19\n" +
+	"\bgrant_id\x18\x05 \x01(\tR\agrantId\"\x82\x01\n" +
 	"\x16ListRecordingsResponse\x12@\n" +
 	"\n" +
 	"recordings\x18\x01 \x03(\v2 .jumpgate.recording.v1.RecordingR\n" +

@@ -300,7 +300,8 @@ type RecordingInfo struct {
 	Sha256          string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`                         // hex sha256 over the exact uploaded bytes
 	StartedAtUnixMs int64                  `protobuf:"varint,4,opt,name=started_at_unix_ms,json=startedAtUnixMs,proto3" json:"started_at_unix_ms,omitempty"`
 	EndedAtUnixMs   int64                  `protobuf:"varint,5,opt,name=ended_at_unix_ms,json=endedAtUnixMs,proto3" json:"ended_at_unix_ms,omitempty"`
-	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // "completed" | "failed" | "aborted"
+	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`                  // "completed" | "failed" | "aborted"
+	GrantId         string                 `protobuf:"bytes,7,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // the JIT grant that authorized the session; empty = standing/unattributed
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -373,6 +374,13 @@ func (x *RecordingInfo) GetEndedAtUnixMs() int64 {
 func (x *RecordingInfo) GetStatus() string {
 	if x != nil {
 		return x.Status
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
 	}
 	return ""
 }
@@ -634,6 +642,7 @@ type SetupSessionResponse struct {
 	// presented host key does not match (fail closed / MITM protection). Empty =
 	// no pin: the worker accepts and logs the presented key (TOFU-off).
 	TargetHostKey string `protobuf:"bytes,8,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`
+	GrantId       string `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // authorizing JIT grant for this session; empty = standing/unattributed
 	// The credential the worker uses to authenticate to the target as the login.
 	//
 	// Types that are valid to be assigned to Credential:
@@ -707,6 +716,13 @@ func (x *SetupSessionResponse) GetRecordingObjectKey() string {
 func (x *SetupSessionResponse) GetTargetHostKey() string {
 	if x != nil {
 		return x.TargetHostKey
+	}
+	return ""
+}
+
+func (x *SetupSessionResponse) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
 	}
 	return ""
 }
@@ -788,7 +804,7 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12B\n" +
-	"\trecording\x18\x03 \x01(\v2$.jumpgate.dataplane.v1.RecordingInfoR\trecording\"\xd3\x01\n" +
+	"\trecording\x18\x03 \x01(\v2$.jumpgate.dataplane.v1.RecordingInfoR\trecording\"\xee\x01\n" +
 	"\rRecordingInfo\x12\x1d\n" +
 	"\n" +
 	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x1d\n" +
@@ -797,7 +813,8 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12+\n" +
 	"\x12started_at_unix_ms\x18\x04 \x01(\x03R\x0fstartedAtUnixMs\x12'\n" +
 	"\x10ended_at_unix_ms\x18\x05 \x01(\x03R\rendedAtUnixMs\x12\x16\n" +
-	"\x06status\x18\x06 \x01(\tR\x06status\"\x8d\x01\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\x12\x19\n" +
+	"\bgrant_id\x18\a \x01(\tR\agrantId\"\x8d\x01\n" +
 	"\rServerMessage\x126\n" +
 	"\x03ack\x18\x01 \x01(\v2\".jumpgate.dataplane.v1.RegisterAckH\x00R\x03ack\x12=\n" +
 	"\bteardown\x18\x02 \x01(\v2\x1f.jumpgate.dataplane.v1.TeardownH\x00R\bteardownB\x05\n" +
@@ -812,14 +829,15 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x123\n" +
 	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\x12\x1d\n" +
-	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xdf\x02\n" +
+	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xfa\x02\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
 	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
 	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
-	"\x0ftarget_host_key\x18\b \x01(\tR\rtargetHostKey\x12)\n" +
+	"\x0ftarget_host_key\x18\b \x01(\tR\rtargetHostKey\x12\x19\n" +
+	"\bgrant_id\x18\t \x01(\tR\agrantId\x12)\n" +
 	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
 	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
 	"\vprivate_key\x18\a \x01(\fH\x00R\n" +

@@ -27,6 +27,7 @@ message Recording {
   string status = 8;
   int64 started_at_unix_ms = 9;
   int64 ended_at_unix_ms = 10;
+  string grant_id = 11; // authorizing JIT grant; empty = standing/unattributed
 }
 
 message ListRecordingsRequest {
@@ -34,6 +35,7 @@ message ListRecordingsRequest {
   string asset_id   = 2; // optional; empty => any asset (validated as uuid when set)
   int32  page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   string page_token = 4;
+  string grant_id   = 5; // optional; empty => any grant. When set, returns only that grant's recordings.
 }
 
 message ListRecordingsResponse {

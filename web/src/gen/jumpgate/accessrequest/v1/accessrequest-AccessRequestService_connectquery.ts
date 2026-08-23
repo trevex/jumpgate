@@ -76,3 +76,13 @@ export const listMyGrants = AccessRequestService.method.listMyGrants;
  * @generated from rpc jumpgate.accessrequest.v1.AccessRequestService.ListGrants
  */
 export const listGrants = AccessRequestService.method.listGrants;
+
+/**
+ * ListReviewableGrants returns completed grants the caller may review — grants
+ * where the caller is the subject OR a potential approver of the grant's
+ * originating request. Drives the approver "Reviewable" list; each grant's
+ * recordings are reachable via ListRecordings(grant_id=…).
+ *
+ * @generated from rpc jumpgate.accessrequest.v1.AccessRequestService.ListReviewableGrants
+ */
+export const listReviewableGrants = AccessRequestService.method.listReviewableGrants;

@@ -63,6 +63,9 @@ const (
 	// AccessRequestServiceListGrantsProcedure is the fully-qualified name of the AccessRequestService's
 	// ListGrants RPC.
 	AccessRequestServiceListGrantsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListGrants"
+	// AccessRequestServiceListReviewableGrantsProcedure is the fully-qualified name of the
+	// AccessRequestService's ListReviewableGrants RPC.
+	AccessRequestServiceListReviewableGrantsProcedure = "/jumpgate.accessrequest.v1.AccessRequestService/ListReviewableGrants"
 )
 
 // AccessRequestServiceClient is a client for the jumpgate.accessrequest.v1.AccessRequestService
@@ -91,6 +94,11 @@ type AccessRequestServiceClient interface {
 	ListMyGrants(context.Context, *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error)
 	// ListGrants lists access grants for admin introspection (active + past).
 	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
+	// ListReviewableGrants returns completed grants the caller may review — grants
+	// where the caller is the subject OR a potential approver of the grant's
+	// originating request. Drives the approver "Reviewable" list; each grant's
+	// recordings are reachable via ListRecordings(grant_id=…).
+	ListReviewableGrants(context.Context, *connect.Request[v1.ListReviewableGrantsRequest]) (*connect.Response[v1.ListReviewableGrantsResponse], error)
 }
 
 // NewAccessRequestServiceClient constructs a client for the
@@ -165,6 +173,12 @@ func NewAccessRequestServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(accessRequestServiceMethods.ByName("ListGrants")),
 			connect.WithClientOptions(opts...),
 		),
+		listReviewableGrants: connect.NewClient[v1.ListReviewableGrantsRequest, v1.ListReviewableGrantsResponse](
+			httpClient,
+			baseURL+AccessRequestServiceListReviewableGrantsProcedure,
+			connect.WithSchema(accessRequestServiceMethods.ByName("ListReviewableGrants")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -180,6 +194,7 @@ type accessRequestServiceClient struct {
 	revokeGrant          *connect.Client[v1.RevokeGrantRequest, v1.RevokeGrantResponse]
 	listMyGrants         *connect.Client[v1.ListMyGrantsRequest, v1.ListMyGrantsResponse]
 	listGrants           *connect.Client[v1.ListGrantsRequest, v1.ListGrantsResponse]
+	listReviewableGrants *connect.Client[v1.ListReviewableGrantsRequest, v1.ListReviewableGrantsResponse]
 }
 
 // ResolveApproval calls jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval.
@@ -232,6 +247,11 @@ func (c *accessRequestServiceClient) ListGrants(ctx context.Context, req *connec
 	return c.listGrants.CallUnary(ctx, req)
 }
 
+// ListReviewableGrants calls jumpgate.accessrequest.v1.AccessRequestService.ListReviewableGrants.
+func (c *accessRequestServiceClient) ListReviewableGrants(ctx context.Context, req *connect.Request[v1.ListReviewableGrantsRequest]) (*connect.Response[v1.ListReviewableGrantsResponse], error) {
+	return c.listReviewableGrants.CallUnary(ctx, req)
+}
+
 // AccessRequestServiceHandler is an implementation of the
 // jumpgate.accessrequest.v1.AccessRequestService service.
 type AccessRequestServiceHandler interface {
@@ -258,6 +278,11 @@ type AccessRequestServiceHandler interface {
 	ListMyGrants(context.Context, *connect.Request[v1.ListMyGrantsRequest]) (*connect.Response[v1.ListMyGrantsResponse], error)
 	// ListGrants lists access grants for admin introspection (active + past).
 	ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error)
+	// ListReviewableGrants returns completed grants the caller may review — grants
+	// where the caller is the subject OR a potential approver of the grant's
+	// originating request. Drives the approver "Reviewable" list; each grant's
+	// recordings are reachable via ListRecordings(grant_id=…).
+	ListReviewableGrants(context.Context, *connect.Request[v1.ListReviewableGrantsRequest]) (*connect.Response[v1.ListReviewableGrantsResponse], error)
 }
 
 // NewAccessRequestServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -327,6 +352,12 @@ func NewAccessRequestServiceHandler(svc AccessRequestServiceHandler, opts ...con
 		connect.WithSchema(accessRequestServiceMethods.ByName("ListGrants")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accessRequestServiceListReviewableGrantsHandler := connect.NewUnaryHandler(
+		AccessRequestServiceListReviewableGrantsProcedure,
+		svc.ListReviewableGrants,
+		connect.WithSchema(accessRequestServiceMethods.ByName("ListReviewableGrants")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.accessrequest.v1.AccessRequestService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccessRequestServiceResolveApprovalProcedure:
@@ -349,6 +380,8 @@ func NewAccessRequestServiceHandler(svc AccessRequestServiceHandler, opts ...con
 			accessRequestServiceListMyGrantsHandler.ServeHTTP(w, r)
 		case AccessRequestServiceListGrantsProcedure:
 			accessRequestServiceListGrantsHandler.ServeHTTP(w, r)
+		case AccessRequestServiceListReviewableGrantsProcedure:
+			accessRequestServiceListReviewableGrantsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -396,4 +429,8 @@ func (UnimplementedAccessRequestServiceHandler) ListMyGrants(context.Context, *c
 
 func (UnimplementedAccessRequestServiceHandler) ListGrants(context.Context, *connect.Request[v1.ListGrantsRequest]) (*connect.Response[v1.ListGrantsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListGrants is not implemented"))
+}
+
+func (UnimplementedAccessRequestServiceHandler) ListReviewableGrants(context.Context, *connect.Request[v1.ListReviewableGrantsRequest]) (*connect.Response[v1.ListReviewableGrantsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.accessrequest.v1.AccessRequestService.ListReviewableGrants is not implemented"))
 }

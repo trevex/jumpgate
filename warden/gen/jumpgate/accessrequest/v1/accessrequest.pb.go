@@ -1285,6 +1285,110 @@ func (x *ListGrantsResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ListReviewableGrantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReviewableGrantsRequest) Reset() {
+	*x = ListReviewableGrantsRequest{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReviewableGrantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReviewableGrantsRequest) ProtoMessage() {}
+
+func (x *ListReviewableGrantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReviewableGrantsRequest.ProtoReflect.Descriptor instead.
+func (*ListReviewableGrantsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListReviewableGrantsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListReviewableGrantsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListReviewableGrantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*Grant               `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReviewableGrantsResponse) Reset() {
+	*x = ListReviewableGrantsResponse{}
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReviewableGrantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReviewableGrantsResponse) ProtoMessage() {}
+
+func (x *ListReviewableGrantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReviewableGrantsResponse.ProtoReflect.Descriptor instead.
+func (*ListReviewableGrantsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListReviewableGrantsResponse) GetGrants() []*Grant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+func (x *ListReviewableGrantsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_jumpgate_accessrequest_v1_accessrequest_proto protoreflect.FileDescriptor
 
 const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
@@ -1385,7 +1489,15 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"v\n" +
 	"\x12ListGrantsResponse\x128\n" +
 	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xbc\t\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"d\n" +
+	"\x1bListReviewableGrantsRequest\x12&\n" +
+	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\"\x80\x01\n" +
+	"\x1cListReviewableGrantsResponse\x128\n" +
+	"\x06grants\x18\x01 \x03(\v2 .jumpgate.accessrequest.v1.GrantR\x06grants\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xc8\n" +
+	"\n" +
 	"\x14AccessRequestService\x12z\n" +
 	"\x0fResolveApproval\x121.jumpgate.accessrequest.v1.ResolveApprovalRequest\x1a2.jumpgate.accessrequest.v1.ResolveApprovalResponse\"\x00\x12t\n" +
 	"\rRequestAccess\x12/.jumpgate.accessrequest.v1.RequestAccessRequest\x1a0.jumpgate.accessrequest.v1.RequestAccessResponse\"\x00\x12t\n" +
@@ -1397,7 +1509,8 @@ const file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc = "" +
 	"\vRevokeGrant\x12-.jumpgate.accessrequest.v1.RevokeGrantRequest\x1a..jumpgate.accessrequest.v1.RevokeGrantResponse\"\x00\x12q\n" +
 	"\fListMyGrants\x12..jumpgate.accessrequest.v1.ListMyGrantsRequest\x1a/.jumpgate.accessrequest.v1.ListMyGrantsResponse\"\x00\x12k\n" +
 	"\n" +
-	"ListGrants\x12,.jumpgate.accessrequest.v1.ListGrantsRequest\x1a-.jumpgate.accessrequest.v1.ListGrantsResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
+	"ListGrants\x12,.jumpgate.accessrequest.v1.ListGrantsRequest\x1a-.jumpgate.accessrequest.v1.ListGrantsResponse\"\x00\x12\x89\x01\n" +
+	"\x14ListReviewableGrants\x126.jumpgate.accessrequest.v1.ListReviewableGrantsRequest\x1a7.jumpgate.accessrequest.v1.ListReviewableGrantsResponse\"\x00BQZOgithub.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1;accessrequestv1b\x06proto3"
 
 var (
 	file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescOnce sync.Once
@@ -1411,7 +1524,7 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescGZIP() []byte {
 	return file_jumpgate_accessrequest_v1_accessrequest_proto_rawDescData
 }
 
-var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_jumpgate_accessrequest_v1_accessrequest_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_jumpgate_accessrequest_v1_accessrequest_proto_goTypes = []any{
 	(*ResolveApprovalRequest)(nil),       // 0: jumpgate.accessrequest.v1.ResolveApprovalRequest
 	(*ResolveApprovalResponse)(nil),      // 1: jumpgate.accessrequest.v1.ResolveApprovalResponse
@@ -1435,6 +1548,8 @@ var file_jumpgate_accessrequest_v1_accessrequest_proto_goTypes = []any{
 	(*ListMyGrantsResponse)(nil),         // 19: jumpgate.accessrequest.v1.ListMyGrantsResponse
 	(*ListGrantsRequest)(nil),            // 20: jumpgate.accessrequest.v1.ListGrantsRequest
 	(*ListGrantsResponse)(nil),           // 21: jumpgate.accessrequest.v1.ListGrantsResponse
+	(*ListReviewableGrantsRequest)(nil),  // 22: jumpgate.accessrequest.v1.ListReviewableGrantsRequest
+	(*ListReviewableGrantsResponse)(nil), // 23: jumpgate.accessrequest.v1.ListReviewableGrantsResponse
 }
 var file_jumpgate_accessrequest_v1_accessrequest_proto_depIdxs = []int32{
 	2,  // 0: jumpgate.accessrequest.v1.RequestAccessResponse.request:type_name -> jumpgate.accessrequest.v1.AccessRequest
@@ -1445,31 +1560,34 @@ var file_jumpgate_accessrequest_v1_accessrequest_proto_depIdxs = []int32{
 	15, // 5: jumpgate.accessrequest.v1.RevokeGrantResponse.grant:type_name -> jumpgate.accessrequest.v1.Grant
 	15, // 6: jumpgate.accessrequest.v1.ListMyGrantsResponse.grants:type_name -> jumpgate.accessrequest.v1.Grant
 	15, // 7: jumpgate.accessrequest.v1.ListGrantsResponse.grants:type_name -> jumpgate.accessrequest.v1.Grant
-	0,  // 8: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
-	3,  // 9: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:input_type -> jumpgate.accessrequest.v1.RequestAccessRequest
-	5,  // 10: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:input_type -> jumpgate.accessrequest.v1.CancelRequestRequest
-	7,  // 11: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:input_type -> jumpgate.accessrequest.v1.ApproveRequestRequest
-	9,  // 12: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:input_type -> jumpgate.accessrequest.v1.DenyRequestRequest
-	11, // 13: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:input_type -> jumpgate.accessrequest.v1.ListMyRequestsRequest
-	13, // 14: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:input_type -> jumpgate.accessrequest.v1.ListPendingApprovalsRequest
-	16, // 15: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:input_type -> jumpgate.accessrequest.v1.RevokeGrantRequest
-	18, // 16: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:input_type -> jumpgate.accessrequest.v1.ListMyGrantsRequest
-	20, // 17: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:input_type -> jumpgate.accessrequest.v1.ListGrantsRequest
-	1,  // 18: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
-	4,  // 19: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:output_type -> jumpgate.accessrequest.v1.RequestAccessResponse
-	6,  // 20: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:output_type -> jumpgate.accessrequest.v1.CancelRequestResponse
-	8,  // 21: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:output_type -> jumpgate.accessrequest.v1.ApproveRequestResponse
-	10, // 22: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:output_type -> jumpgate.accessrequest.v1.DenyRequestResponse
-	12, // 23: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:output_type -> jumpgate.accessrequest.v1.ListMyRequestsResponse
-	14, // 24: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:output_type -> jumpgate.accessrequest.v1.ListPendingApprovalsResponse
-	17, // 25: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:output_type -> jumpgate.accessrequest.v1.RevokeGrantResponse
-	19, // 26: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:output_type -> jumpgate.accessrequest.v1.ListMyGrantsResponse
-	21, // 27: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:output_type -> jumpgate.accessrequest.v1.ListGrantsResponse
-	18, // [18:28] is the sub-list for method output_type
-	8,  // [8:18] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	15, // 8: jumpgate.accessrequest.v1.ListReviewableGrantsResponse.grants:type_name -> jumpgate.accessrequest.v1.Grant
+	0,  // 9: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:input_type -> jumpgate.accessrequest.v1.ResolveApprovalRequest
+	3,  // 10: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:input_type -> jumpgate.accessrequest.v1.RequestAccessRequest
+	5,  // 11: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:input_type -> jumpgate.accessrequest.v1.CancelRequestRequest
+	7,  // 12: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:input_type -> jumpgate.accessrequest.v1.ApproveRequestRequest
+	9,  // 13: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:input_type -> jumpgate.accessrequest.v1.DenyRequestRequest
+	11, // 14: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:input_type -> jumpgate.accessrequest.v1.ListMyRequestsRequest
+	13, // 15: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:input_type -> jumpgate.accessrequest.v1.ListPendingApprovalsRequest
+	16, // 16: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:input_type -> jumpgate.accessrequest.v1.RevokeGrantRequest
+	18, // 17: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:input_type -> jumpgate.accessrequest.v1.ListMyGrantsRequest
+	20, // 18: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:input_type -> jumpgate.accessrequest.v1.ListGrantsRequest
+	22, // 19: jumpgate.accessrequest.v1.AccessRequestService.ListReviewableGrants:input_type -> jumpgate.accessrequest.v1.ListReviewableGrantsRequest
+	1,  // 20: jumpgate.accessrequest.v1.AccessRequestService.ResolveApproval:output_type -> jumpgate.accessrequest.v1.ResolveApprovalResponse
+	4,  // 21: jumpgate.accessrequest.v1.AccessRequestService.RequestAccess:output_type -> jumpgate.accessrequest.v1.RequestAccessResponse
+	6,  // 22: jumpgate.accessrequest.v1.AccessRequestService.CancelRequest:output_type -> jumpgate.accessrequest.v1.CancelRequestResponse
+	8,  // 23: jumpgate.accessrequest.v1.AccessRequestService.ApproveRequest:output_type -> jumpgate.accessrequest.v1.ApproveRequestResponse
+	10, // 24: jumpgate.accessrequest.v1.AccessRequestService.DenyRequest:output_type -> jumpgate.accessrequest.v1.DenyRequestResponse
+	12, // 25: jumpgate.accessrequest.v1.AccessRequestService.ListMyRequests:output_type -> jumpgate.accessrequest.v1.ListMyRequestsResponse
+	14, // 26: jumpgate.accessrequest.v1.AccessRequestService.ListPendingApprovals:output_type -> jumpgate.accessrequest.v1.ListPendingApprovalsResponse
+	17, // 27: jumpgate.accessrequest.v1.AccessRequestService.RevokeGrant:output_type -> jumpgate.accessrequest.v1.RevokeGrantResponse
+	19, // 28: jumpgate.accessrequest.v1.AccessRequestService.ListMyGrants:output_type -> jumpgate.accessrequest.v1.ListMyGrantsResponse
+	21, // 29: jumpgate.accessrequest.v1.AccessRequestService.ListGrants:output_type -> jumpgate.accessrequest.v1.ListGrantsResponse
+	23, // 30: jumpgate.accessrequest.v1.AccessRequestService.ListReviewableGrants:output_type -> jumpgate.accessrequest.v1.ListReviewableGrantsResponse
+	20, // [20:31] is the sub-list for method output_type
+	9,  // [9:20] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_accessrequest_v1_accessrequest_proto_init() }
@@ -1483,7 +1601,7 @@ func file_jumpgate_accessrequest_v1_accessrequest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc), len(file_jumpgate_accessrequest_v1_accessrequest_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

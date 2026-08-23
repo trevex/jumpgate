@@ -45,6 +45,7 @@ message RecordingInfo {
   int64 started_at_unix_ms = 4;
   int64 ended_at_unix_ms = 5;
   string status = 6; // "completed" | "failed" | "aborted"
+  string grant_id = 7; // the JIT grant that authorized the session; empty = standing/unattributed
 }
 
 message ServerMessage {
@@ -76,6 +77,7 @@ message SetupSessionResponse {
   // presented host key does not match (fail closed / MITM protection). Empty =
   // no pin: the worker accepts and logs the presented key (TOFU-off).
   string target_host_key = 8;
+  string grant_id = 9; // authorizing JIT grant for this session; empty = standing/unattributed
   // The credential the worker uses to authenticate to the target as the login.
   oneof credential {
     bytes ssh_certificate = 2; // ca: OpenSSH cert over Kw
