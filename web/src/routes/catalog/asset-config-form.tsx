@@ -309,23 +309,37 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
                     </Button>
                   </div>
 
-                  {needsSecret && (
-                    <Input
-                      type="password"
-                      autoComplete="new-password"
-                      value={l.secret}
-                      onChange={(e) => patchLogin(i, { secret: e.target.value })}
-                      placeholder={
-                        keepsExisting
-                          ? "•••••• (unchanged)"
-                          : l.kind === "password"
-                            ? "Password"
-                            : "Private key PEM"
-                      }
-                      aria-label={`Secret for row ${i + 1}`}
-                      className="h-8 text-body"
-                    />
-                  )}
+                  {needsSecret &&
+                    (l.kind === "key" ? (
+                      // A private key is multi-line PEM — a textarea, not a
+                      // single-line field, so it can be pasted as-is.
+                      <textarea
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={l.secret}
+                        onChange={(e) => patchLogin(i, { secret: e.target.value })}
+                        placeholder={
+                          keepsExisting
+                            ? "•••••• (unchanged) — paste a new key to rotate"
+                            : "-----BEGIN OPENSSH PRIVATE KEY-----\n…"
+                        }
+                        rows={4}
+                        aria-label={`Private key for row ${i + 1}`}
+                        className="min-h-[5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-micro shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    ) : (
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={l.secret}
+                        onChange={(e) => patchLogin(i, { secret: e.target.value })}
+                        placeholder={
+                          keepsExisting ? "•••••• (unchanged)" : "Password"
+                        }
+                        aria-label={`Secret for row ${i + 1}`}
+                        className="h-8 text-body"
+                      />
+                    ))}
                 </li>
               );
             })}

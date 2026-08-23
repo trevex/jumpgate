@@ -13,18 +13,28 @@
  *     empty (int64 field, so bigint in TS; 0 means "no per-scope cap").
  *   - `name` — optional; validated against `^[a-zA-Z0-9_-]*$` when present.
  *
+ * Two optional subject lists (Requesters / Approvers) let the caller stage
+ * specific users / groups (via the shared SubjectPicker) at creation time —
+ * distinct from the requester / approver *roles* above (a role is a capability
+ * gate; a subject is a named user or group). These are written after the policy
+ * exists: `createRequestPolicy` first, then one `addPolicySubject` per staged
+ * subject, sequentially so a partial failure names the offending subject.
+ *
  * On success: toast + invalidate `listRequestPolicies` so the tab re-seeds, then
  * close and reset. On error: surface `connectErrorMessage(err)` via toast (the
- * server is the real gate — e.g. PermissionDenied, or a duplicate policy).
+ * server is the real gate — e.g. PermissionDenied, or a duplicate policy). If the
+ * policy is created but a subject add fails, the policy is NOT lost — the toast
+ * says so and names the failed subject; adding subjects needs `access:policy:update`.
  */
 
 import { useState } from "react";
 import type { DescMethodUnary } from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
-import { ShieldCheck, Folder, Boxes, Layers } from "lucide-react";
+import { ShieldCheck, Folder, Boxes, Layers, User, Users, Plus, X } from "lucide-react";
 import {
   createRequestPolicy,
+  addPolicySubject,
   listRequestPolicies,
 } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import {
@@ -39,6 +49,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import { ScopePicker, type PickedScope } from "@/components/pickers/scope-picker";
+import {
+  SubjectPicker,
+  type PickedSubject,
+} from "@/components/pickers/subject-picker";
 import { connectErrorMessage } from "@/lib/format";
 import { isValidPolicyName, isValidApprovals } from "./policy-actions";
 import { useInvalidateList } from "@/lib/query";
@@ -109,6 +123,88 @@ function RoleField({
   );
 }
 
+/**
+ * A build-a-list control for policy subjects (users / groups). Picked subjects
+ * appear as removable rows; the "Add" button opens the shared SubjectPicker.
+ * These are staged in local state and written via `addPolicySubject` on submit
+ * (the policy must exist first), distinct from the requester / approver *roles*.
+ */
+function SubjectList({
+  label,
+  hint,
+  addLabel,
+  subjects,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  hint: string;
+  addLabel: string;
+  subjects: PickedSubject[];
+  onAdd: (subject: PickedSubject) => void;
+  onRemove: (index: number) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className={FIELD_LABEL}>{label}</span>
+      {subjects.length > 0 && (
+        <div className="flex flex-col divide-y divide-border rounded-md border border-input">
+          {subjects.map((s, i) => (
+            <div
+              key={`${s.kind}:${s.id}`}
+              className="flex items-center gap-2 px-2.5 py-1.5"
+            >
+              {s.kind === "user" ? (
+                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              ) : (
+                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              )}
+              <span
+                className="min-w-0 flex-1 truncate text-body text-foreground"
+                title={s.label}
+              >
+                {s.label}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onRemove(i)}
+                aria-label={`Remove ${s.label}`}
+                className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setPickerOpen(true)}
+        className="h-8 gap-1 self-start px-2.5 text-compact"
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        {addLabel}
+      </Button>
+      <p className={FIELD_HINT}>{hint}</p>
+      <SubjectPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(subject) => {
+          // De-dupe on (kind, id).
+          if (!subjects.some((x) => x.kind === subject.kind && x.id === subject.id)) {
+            onAdd(subject);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function NewPolicyDialog({
   open,
   onOpenChange,
@@ -124,6 +220,8 @@ export function NewPolicyDialog({
   const [requesterRole, setRequesterRole] = useState<PickedRole | null>(null);
   const [approverRole, setApproverRole] = useState<PickedRole | null>(null);
   const [hours, setHours] = useState("");
+  const [requesterSubjects, setRequesterSubjects] = useState<PickedSubject[]>([]);
+  const [approverSubjects, setApproverSubjects] = useState<PickedSubject[]>([]);
 
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
@@ -138,26 +236,22 @@ export function NewPolicyDialog({
     setRequesterRole(null);
     setApproverRole(null);
     setHours("");
+    setRequesterSubjects([]);
+    setApproverSubjects([]);
   }
 
-  const { mutate: doCreate, isPending } = useMutation(createRequestPolicy, {
-    onSuccess: () => {
-      toast.success("Policy created", {
-        description: `${role?.name ?? "The role"} is now requestable.`,
-      });
-      const extra = extraInvalidate
-        ? Array.isArray(extraInvalidate)
-          ? extraInvalidate
-          : [extraInvalidate]
-        : [];
-      void invalidateList([listRequestPolicies, ...extra]);
-      reset();
-      onOpenChange(false);
-    },
-    onError: (err) => {
-      toast.error("Create failed", { description: connectErrorMessage(err) });
-    },
-  });
+  const { mutateAsync: createPolicyAsync } = useMutation(createRequestPolicy);
+  const { mutateAsync: addSubjectAsync } = useMutation(addPolicySubject);
+  const [isPending, setIsPending] = useState(false);
+
+  function finishInvalidate() {
+    const extra = extraInvalidate
+      ? Array.isArray(extraInvalidate)
+        ? extraInvalidate
+        : [extraInvalidate]
+      : [];
+    void invalidateList([listRequestPolicies, ...extra]);
+  }
 
   const approvalsNum = Number(approvals);
   const approvalsValid = approvals.trim() !== "" && isValidApprovals(approvalsNum);
@@ -174,21 +268,77 @@ export function NewPolicyDialog({
     onOpenChange(next);
   }
 
-  function handleSubmit(e: { preventDefault: () => void }) {
+  async function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!formValid || isPending || !role) return;
     const durationSeconds =
       hours.trim() === "" ? 0n : BigInt(Math.round(hoursNum * 3600));
-    doCreate({
-      roleId: role.id,
-      name: name.trim(),
-      scopeFolderId: fixedScope ? "" : scope.kind === "folder" ? scope.id : "",
-      scopeAssetId: fixedScope ? fixedScope.id : scope.kind === "asset" ? scope.id : "",
-      requiredApprovals: approvalsNum,
-      requesterRoleId: requesterRole?.id ?? "",
-      approverRoleId: approverRole?.id ?? "",
-      maxDurationSeconds: durationSeconds,
-    });
+
+    setIsPending(true);
+    let policyId: string;
+    try {
+      const res = await createPolicyAsync({
+        roleId: role.id,
+        name: name.trim(),
+        scopeFolderId: fixedScope ? "" : scope.kind === "folder" ? scope.id : "",
+        scopeAssetId: fixedScope ? fixedScope.id : scope.kind === "asset" ? scope.id : "",
+        requiredApprovals: approvalsNum,
+        requesterRoleId: requesterRole?.id ?? "",
+        approverRoleId: approverRole?.id ?? "",
+        maxDurationSeconds: durationSeconds,
+      });
+      policyId = res.policy?.id ?? "";
+    } catch (err) {
+      toast.error("Create failed", { description: connectErrorMessage(err) });
+      setIsPending(false);
+      return;
+    }
+
+    // Policy exists now. Attach staged subjects one at a time so a partial
+    // failure is attributable to the specific user / group that failed.
+    const staged: { kind: "requester" | "approver"; subject: PickedSubject }[] = [
+      ...requesterSubjects.map((subject) => ({ kind: "requester" as const, subject })),
+      ...approverSubjects.map((subject) => ({ kind: "approver" as const, subject })),
+    ];
+
+    let added = 0;
+    let failed: { label: string; err: unknown } | null = null;
+    if (policyId) {
+      for (const { kind, subject } of staged) {
+        try {
+          await addSubjectAsync({
+            policyId,
+            kind,
+            subjectUserId: subject.kind === "user" ? subject.id : "",
+            subjectGroupId: subject.kind === "group" ? subject.id : "",
+          });
+          added += 1;
+        } catch (err) {
+          failed = { label: subject.label, err };
+          break; // Stop on first failure; report it, keep the created policy.
+        }
+      }
+    }
+
+    finishInvalidate();
+    setIsPending(false);
+
+    if (failed) {
+      // The policy WAS created; only a subject add failed. Don't lose that.
+      toast.error("Policy created, but adding a subject failed", {
+        description: `Policy created${added > 0 ? ` (${added} subject${added === 1 ? "" : "s"} added)` : ""}. Failed to add "${failed.label}": ${connectErrorMessage(failed.err)}. Add remaining subjects from Access control ▸ Policies.`,
+      });
+    } else {
+      toast.success("Policy created", {
+        description:
+          added > 0
+            ? `${role.name} is now requestable — ${added} subject${added === 1 ? "" : "s"} added.`
+            : `${role.name} is now requestable.`,
+      });
+    }
+
+    reset();
+    onOpenChange(false);
   }
 
   return (
@@ -373,6 +523,30 @@ export function NewPolicyDialog({
               Optional. Let holders of this role approve requests.
             </p>
           </div>
+
+          {/* Requester subjects (optional) */}
+          <SubjectList
+            label="Requesters"
+            addLabel="Add requester"
+            subjects={requesterSubjects}
+            onAdd={(s) => setRequesterSubjects((prev) => [...prev, s])}
+            onRemove={(i) =>
+              setRequesterSubjects((prev) => prev.filter((_, idx) => idx !== i))
+            }
+            hint="Specific users/groups who may request. (Separate from the optional requester role above.)"
+          />
+
+          {/* Approver subjects (optional) */}
+          <SubjectList
+            label="Approvers"
+            addLabel="Add approver"
+            subjects={approverSubjects}
+            onAdd={(s) => setApproverSubjects((prev) => [...prev, s])}
+            onRemove={(i) =>
+              setApproverSubjects((prev) => prev.filter((_, idx) => idx !== i))
+            }
+            hint="Specific users/groups who may approve. (Separate from the optional approver role above.)"
+          />
 
           {/* Max duration (optional) */}
           <div className="flex flex-col gap-1.5">
