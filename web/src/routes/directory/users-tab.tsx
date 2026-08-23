@@ -18,9 +18,7 @@
  */
 
 import { useState } from "react";
-import { useQuery, useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
 import {
   listUsers,
@@ -53,6 +51,7 @@ import { useCapabilities } from "@/lib/capabilities";
 import { useWhoAmI } from "@/auth";
 import { cn } from "@/lib/utils";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { Users, MoreHorizontal, Plus, UserMinus, UserCheck, Trash2 } from "lucide-react";
 
 const PAGE_SIZE = 50;
@@ -77,14 +76,6 @@ function UserStatusBadge({ active }: { active: boolean }) {
 
 // ─── Row actions ──────────────────────────────────────────────────────────────
 
-function useInvalidateUsers() {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({ schema: listUsers, cardinality: undefined }),
-    });
-}
-
 interface UserRowActionsProps {
   user: User;
   isSelf: boolean;
@@ -92,7 +83,7 @@ interface UserRowActionsProps {
 
 function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
   const caps = useCapabilities();
-  const invalidateUsers = useInvalidateUsers();
+  const invalidateList = useInvalidateList();
 
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -110,7 +101,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
       toast.success("User deactivated", {
         description: `${label} can no longer sign in; live sessions terminated.`,
       });
-      invalidateUsers();
+      void invalidateList(listUsers);
       setDeactivateOpen(false);
     },
     onError: (err) => toast.error("Deactivate failed", { description: connectErrorMessage(err) }),
@@ -119,7 +110,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
   const { mutate: doReactivate, isPending: reactivating } = useMutation(reactivateUser, {
     onSuccess: () => {
       toast.success("User reactivated", { description: `${label} can sign in again.` });
-      invalidateUsers();
+      void invalidateList(listUsers);
     },
     onError: (err) => toast.error("Reactivate failed", { description: connectErrorMessage(err) }),
   });
@@ -127,7 +118,7 @@ function UserRowActionsCell({ user, isSelf }: UserRowActionsProps) {
   const { mutate: doDelete, isPending: deleting } = useMutation(deleteUser, {
     onSuccess: () => {
       toast.success("User deleted", { description: `${label} was permanently removed.` });
-      invalidateUsers();
+      void invalidateList(listUsers);
       setDeleteOpen(false);
     },
     onError: (err) => toast.error("Delete failed", { description: connectErrorMessage(err) }),

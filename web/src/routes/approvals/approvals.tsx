@@ -10,14 +10,13 @@
  * small confirm dialog with an optional reason textarea (reason is UI-only —
  * DenyRequestRequest only carries request_id on the wire).
  *
- * Invalidation on success: listPendingApprovals + listMyRequests + listMyGrants
- * (scoped via createConnectQueryKey so unrelated catalog queries are untouched).
+ * Invalidation on success: listPendingApprovals + listMyRequests + listMyGrants,
+ * routed through the race-safe useInvalidateList helper (cancel-then-invalidate,
+ * scoped to those lists so unrelated catalog queries are untouched).
  */
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   listPendingApprovals,
@@ -44,6 +43,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState, ErrorState } from "@/components/states/states";
 import { relativeTime, connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import {
   ClipboardCheck,
   RefreshCw,
@@ -176,7 +176,7 @@ interface DenyDialogProps {
  * the requester's ListMyRequests view.
  */
 function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   const requesterDisplay = useRequesterDisplay(request.requesterId);
   const { label: assetDisplay } = useAssetContext(request.assetId);
@@ -186,15 +186,7 @@ function DenyDialog({ request, open, onOpenChange, onDenied }: DenyDialogProps) 
       toast.success("Request denied", {
         description: `Denied ${requesterDisplay}'s request for ${assetDisplay}.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listPendingApprovals, cardinality: undefined }),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listMyRequests, cardinality: undefined }),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listMyGrants, cardinality: undefined }),
-      });
+      void invalidateList([listPendingApprovals, listMyRequests, listMyGrants]);
       onOpenChange(false);
       onDenied();
     },
@@ -260,7 +252,7 @@ interface RequestRowProps {
 function RequestRow({ req }: RequestRowProps) {
   const [denyOpen, setDenyOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   // Enrichment — three parallel per-row queries (cheap: cached after first fetch)
   const requesterDisplay = useRequesterDisplay(req.requesterId);
@@ -274,15 +266,7 @@ function RequestRow({ req }: RequestRowProps) {
       toast.success("Request approved", {
         description: `Approved ${requesterDisplay}'s request for ${assetDisplay}.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listPendingApprovals, cardinality: undefined }),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listMyRequests, cardinality: undefined }),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listMyGrants, cardinality: undefined }),
-      });
+      void invalidateList([listPendingApprovals, listMyRequests, listMyGrants]);
     },
     onError: (err) => {
       toast.error("Approval failed", { description: connectErrorMessage(err) });

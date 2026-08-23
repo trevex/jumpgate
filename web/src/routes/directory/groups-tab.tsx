@@ -21,8 +21,6 @@
 
 import { useState } from "react";
 import { useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   listGroups,
@@ -51,19 +49,12 @@ import { GroupDetailSheet } from "./group-detail";
 import { canCreateGroup, canDeleteGroup } from "./group-actions";
 import { useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { UsersRound, MoreHorizontal, Plus, Trash2, Globe } from "lucide-react";
 
 const PAGE_SIZE = 50;
 
 // ─── Row actions ──────────────────────────────────────────────────────────────
-
-function useInvalidateGroups() {
-  const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({ schema: listGroups, cardinality: undefined }),
-    });
-}
 
 interface GroupRowActionsProps {
   group: Group;
@@ -71,7 +62,7 @@ interface GroupRowActionsProps {
 
 function GroupRowActionsCell({ group }: GroupRowActionsProps) {
   const caps = useCapabilities();
-  const invalidateGroups = useInvalidateGroups();
+  const invalidateList = useInvalidateList();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const canDelete = canDeleteGroup(caps);
@@ -81,7 +72,7 @@ function GroupRowActionsCell({ group }: GroupRowActionsProps) {
       toast.success("Group deleted", {
         description: `${group.name} was permanently removed.`,
       });
-      invalidateGroups();
+      void invalidateList(listGroups);
       setDeleteOpen(false);
     },
     onError: (err) => toast.error("Delete failed", { description: connectErrorMessage(err) }),

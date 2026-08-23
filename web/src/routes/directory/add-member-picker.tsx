@@ -67,7 +67,10 @@ export function AddMemberPicker({ group, open, onOpenChange }: AddMemberPickerPr
   }, [open]);
 
   function invalidateMembers() {
-    void queryClient.invalidateQueries({ queryKey: membersQueryKey(group.id) });
+    const key = membersQueryKey(group.id);
+    void queryClient
+      .cancelQueries({ queryKey: key })
+      .then(() => queryClient.invalidateQueries({ queryKey: key }));
   }
 
   const { mutate: doAddUser, isPending: addingUser } = useMutation(addUserToGroup, {

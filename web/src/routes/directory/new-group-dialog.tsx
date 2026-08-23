@@ -12,8 +12,6 @@
 
 import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Folder, Globe, X } from "lucide-react";
 import {
@@ -31,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import { isValidGroupName } from "./group-actions";
 import { FolderHomePicker, type FolderHome } from "./folder-home-picker";
 
@@ -45,7 +44,7 @@ const FIELD_HINT = "text-[11px] text-muted-foreground";
 const FIELD_ERROR = "text-[11px] text-destructive";
 
 export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   const [name, setName] = useState("");
   const [home, setHome] = useState<FolderHome | null>(null);
@@ -65,9 +64,7 @@ export function NewGroupDialog({ open, onOpenChange }: NewGroupDialogProps) {
           ? `${name.trim()} was added under ${home.path}.`
           : `${name.trim()} was added as a global group.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listGroups, cardinality: undefined }),
-      });
+      void invalidateList(listGroups);
       reset();
       onOpenChange(false);
     },

@@ -79,8 +79,12 @@ export function membersQueryKey(groupId: string) {
 
 function useInvalidateMembers(groupId: string) {
   const queryClient = useQueryClient();
-  return () =>
-    void queryClient.invalidateQueries({ queryKey: membersQueryKey(groupId) });
+  return () => {
+    const key = membersQueryKey(groupId);
+    void queryClient
+      .cancelQueries({ queryKey: key })
+      .then(() => queryClient.invalidateQueries({ queryKey: key }));
+  };
 }
 
 // ─── User member row (id-only → enriched via getUserDisplay) ──────────────────

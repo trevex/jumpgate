@@ -18,11 +18,16 @@ import { useQueryClient } from "@tanstack/react-query";
 export function useInvalidateList() {
   const queryClient = useQueryClient();
   return useCallback(
-    (schema: DescMethodUnary) => {
-      const key = createConnectQueryKey({ schema, cardinality: undefined });
-      return queryClient
-        .cancelQueries({ queryKey: key })
-        .then(() => queryClient.invalidateQueries({ queryKey: key }));
+    (schemas: DescMethodUnary | DescMethodUnary[]) => {
+      const list = Array.isArray(schemas) ? schemas : [schemas];
+      return Promise.all(
+        list.map((schema) => {
+          const key = createConnectQueryKey({ schema, cardinality: undefined });
+          return queryClient
+            .cancelQueries({ queryKey: key })
+            .then(() => queryClient.invalidateQueries({ queryKey: key }));
+        }),
+      );
     },
     [queryClient],
   );

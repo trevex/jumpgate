@@ -12,8 +12,6 @@
 
 import { useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
-import { createConnectQueryKey } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   createUser,
@@ -30,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import {
   isValidEmail,
   isValidDisplayName,
@@ -48,7 +47,7 @@ const FIELD_HINT = "text-[11px] text-muted-foreground";
 const FIELD_ERROR = "text-[11px] text-destructive";
 
 export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
 
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -72,9 +71,7 @@ export function NewUserDialog({ open, onOpenChange }: NewUserDialogProps) {
       toast.success("User created", {
         description: `${email.trim()} was added to the directory.`,
       });
-      void queryClient.invalidateQueries({
-        queryKey: createConnectQueryKey({ schema: listUsers, cardinality: undefined }),
-      });
+      void invalidateList(listUsers);
       reset();
       onOpenChange(false);
     },

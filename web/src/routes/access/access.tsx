@@ -14,7 +14,6 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useInfiniteQuery, useMutation } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   listMyRequests,
@@ -33,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { cn } from "@/lib/utils";
 import { relativeTime, timeRemaining, isExpired, connectErrorMessage } from "@/lib/format";
+import { useInvalidateList } from "@/lib/query";
 import {
   Copy,
   Check,
@@ -378,14 +378,14 @@ function RevokeButton({
 // ─── Grant card ───────────────────────────────────────────────────────────────
 
 function GrantCard({ grant }: { grant: Grant }) {
-  const queryClient = useQueryClient();
+  const invalidateList = useInvalidateList();
   const revoked = Boolean(grant.revokedAt);
   const active = grant.active;
 
   const { mutate: doRevoke, isPending: isRevoking } = useMutation(revokeGrant, {
     onSuccess: () => {
       toast.success("Grant revoked");
-      queryClient.invalidateQueries();
+      void invalidateList([listMyGrants, listMyRequests]);
     },
     onError: (err) => {
       toast.error("Failed to revoke", { description: connectErrorMessage(err) });
