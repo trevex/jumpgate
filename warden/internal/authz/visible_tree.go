@@ -418,6 +418,22 @@ func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID 
 		return exists, nil
 	}
 
+	// Asset arm first (cheap, scoped to this folder's subtree): the folder is
+	// visible if its subtree holds a visible asset — F is then an ancestor-or-self
+	// of that asset's folder. This is the common case (a user browsing to an asset
+	// they can reach) and avoids the pricier whole-tree anchor closures below.
+	assets, err := s.VisibleAssetsUnder(ctx, userID, folderID, true)
+	if err != nil {
+		return false, err
+	}
+	if len(assets) > 0 {
+		return true, nil
+	}
+
+	// Folder / role / group arm: F is an ancestor-or-self of a folder the user
+	// manages, or that homes a role/group they can see. Only reached when the
+	// subtree holds no visible asset (e.g. a delegate viewing the ancestors above
+	// an empty folder they govern).
 	mgmt, err := s.mgmtScopeFolders(ctx, userID)
 	if err != nil {
 		return false, err
@@ -430,11 +446,7 @@ func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID 
 	if err != nil {
 		return false, err
 	}
-	assetHomes, err := s.visibleAssetFolders(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	anchors := unionKeys(mgmt, roleHomes, groupHomes, assetHomes)
+	anchors := unionKeys(mgmt, roleHomes, groupHomes)
 	if len(anchors) == 0 {
 		return false, nil
 	}
