@@ -99,6 +99,8 @@ Makefile            Task entrypoints
 - Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
 - Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC capability guards (`capGuard.requireCap`) enforce access — management authz is capability-only (no `is_admin` flag; the bootstrap admin holds `**` via a global role binding). Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
 - Validation via protovalidate (CEL constraints in the `.proto`). Errors use Connect codes; non-visible resources return `CodeNotFound` (never `PermissionDenied`) to avoid leaking existence.
+- **Timestamps:** typed control-plane RPCs use `google.protobuf.Timestamp`; the worker/data-plane binary path uses `int64 *_unix_ms` for compactness; RFC3339 strings appear only in human-facing DTO fields (e.g. `created_at`/`expires_at` on access-request DTOs) — legacy; prefer `google.protobuf.Timestamp` for new typed fields.
+- **Pagination:** `List*` RPCs keyset-paginate via `page_token`/`next_page_token`, with `page_size` bounded `[0, 100]`. The lone exception is `CatalogService.ListFolderContents`, which is a bounded *preview* (first ~50 of each kind, `*_has_more` signals truncation, no page tokens); callers needing the full list of a kind must use the per-kind `List*` RPC.
 - Bootstrapping: there is no self-signup — on first startup an initial admin is seeded automatically when `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are set in the environment. Without those vars no admin is pre-created; subsequent admin creation requires a direct DB seed.
 
 ## Web UI

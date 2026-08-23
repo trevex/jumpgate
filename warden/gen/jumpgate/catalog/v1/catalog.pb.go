@@ -2463,7 +2463,7 @@ func (x *ResolveFolderResponse) GetPath() string {
 	return ""
 }
 
-// ListFolderContents returns the first bounded slice (up to 50 items per kind) of
+// ListFolderContents returns the first bounded slice (up to ~50 items per kind) of
 // each child kind visible to the caller under a given folder. parent="" = root.
 // has_more indicates additional items exist beyond the returned slice; callers
 // wanting more should use the dedicated per-kind List RPCs with full pagination.
@@ -2512,6 +2512,12 @@ func (x *ListFolderContentsRequest) GetParent() string {
 	return ""
 }
 
+// ListFolderContentsResponse is a BOUNDED PREVIEW: the first ~50 items of each
+// child kind. This response DOES NOT PAGINATE — it carries no page tokens. Each
+// `<kind>_has_more` bool is TRUE when that kind was truncated (more items exist
+// beyond the returned slice). To retrieve the full list of a kind, call the
+// per-kind paginating RPC (ListFolders / ListAssets / ListRoles / ListGroups),
+// which use page_token / next_page_token. Do NOT treat these slices as complete.
 type ListFolderContentsResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Folders        []*Folder              `protobuf:"bytes,1,rep,name=folders,proto3" json:"folders,omitempty"`

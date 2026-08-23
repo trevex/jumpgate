@@ -1104,7 +1104,7 @@ export const ResolveFolderResponseSchema: GenMessage<ResolveFolderResponse> = /*
   messageDesc(file_jumpgate_catalog_v1_catalog, 41);
 
 /**
- * ListFolderContents returns the first bounded slice (up to 50 items per kind) of
+ * ListFolderContents returns the first bounded slice (up to ~50 items per kind) of
  * each child kind visible to the caller under a given folder. parent="" = root.
  * has_more indicates additional items exist beyond the returned slice; callers
  * wanting more should use the dedicated per-kind List RPCs with full pagination.
@@ -1128,6 +1128,13 @@ export const ListFolderContentsRequestSchema: GenMessage<ListFolderContentsReque
   messageDesc(file_jumpgate_catalog_v1_catalog, 42);
 
 /**
+ * ListFolderContentsResponse is a BOUNDED PREVIEW: the first ~50 items of each
+ * child kind. This response DOES NOT PAGINATE — it carries no page tokens. Each
+ * `<kind>_has_more` bool is TRUE when that kind was truncated (more items exist
+ * beyond the returned slice). To retrieve the full list of a kind, call the
+ * per-kind paginating RPC (ListFolders / ListAssets / ListRoles / ListGroups),
+ * which use page_token / next_page_token. Do NOT treat these slices as complete.
+ *
  * @generated from message jumpgate.catalog.v1.ListFolderContentsResponse
  */
 export type ListFolderContentsResponse = Message<"jumpgate.catalog.v1.ListFolderContentsResponse"> & {
@@ -1392,10 +1399,17 @@ export const CatalogService: GenService<{
     output: typeof ResolveFolderResponseSchema;
   },
   /**
-   * ListFolderContents returns the first bounded slice of each child kind
-   * (folders, assets, roles, groups) visible to the caller under one folder.
-   * parent="" or omitted = root. has_more=true means additional items exist
-   * beyond the 50-item first slice.
+   * ListFolderContents is a BOUNDED PREVIEW, not a paginating list. It returns
+   * the FIRST ~50 items of EACH child kind (folders, assets, roles, groups)
+   * visible to the caller under one folder in a single call — a "first screen"
+   * optimization for browse UIs. parent="" or omitted = root.
+   *
+   * IT DOES NOT PAGINATE: there is no page_token / next_page_token. The per-kind
+   * `*_has_more` bools in the response signal that the preview was TRUNCATED (more
+   * items of that kind exist beyond the returned slice). Callers that need the
+   * FULL list of any kind MUST use the dedicated per-kind RPCs — ListFolders,
+   * ListAssets, ListRoles, ListGroups — which keyset-paginate via
+   * page_token/next_page_token. (Read as: this is really "PreviewFolderContents".)
    *
    * @generated from rpc jumpgate.catalog.v1.CatalogService.ListFolderContents
    */

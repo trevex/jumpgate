@@ -30,9 +30,9 @@ message Recording {
 }
 
 message ListRecordingsRequest {
-  string user_id    = 1;
-  string asset_id   = 2;
-  int32  page_size  = 3;
+  string user_id    = 1; // optional; empty => any user (validated as uuid when set)
+  string asset_id   = 2; // optional; empty => any asset (validated as uuid when set)
+  int32  page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   string page_token = 4;
 }
 

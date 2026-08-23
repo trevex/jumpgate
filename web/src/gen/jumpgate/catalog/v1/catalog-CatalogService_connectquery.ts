@@ -85,10 +85,17 @@ export const resolveAsset = CatalogService.method.resolveAsset;
 export const resolveFolder = CatalogService.method.resolveFolder;
 
 /**
- * ListFolderContents returns the first bounded slice of each child kind
- * (folders, assets, roles, groups) visible to the caller under one folder.
- * parent="" or omitted = root. has_more=true means additional items exist
- * beyond the 50-item first slice.
+ * ListFolderContents is a BOUNDED PREVIEW, not a paginating list. It returns
+ * the FIRST ~50 items of EACH child kind (folders, assets, roles, groups)
+ * visible to the caller under one folder in a single call — a "first screen"
+ * optimization for browse UIs. parent="" or omitted = root.
+ *
+ * IT DOES NOT PAGINATE: there is no page_token / next_page_token. The per-kind
+ * `*_has_more` bools in the response signal that the preview was TRUNCATED (more
+ * items of that kind exist beyond the returned slice). Callers that need the
+ * FULL list of any kind MUST use the dedicated per-kind RPCs — ListFolders,
+ * ListAssets, ListRoles, ListGroups — which keyset-paginate via
+ * page_token/next_page_token. (Read as: this is really "PreviewFolderContents".)
  *
  * @generated from rpc jumpgate.catalog.v1.CatalogService.ListFolderContents
  */

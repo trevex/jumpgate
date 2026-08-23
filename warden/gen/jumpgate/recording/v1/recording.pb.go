@@ -140,8 +140,8 @@ func (x *Recording) GetEndedAtUnixMs() int64 {
 
 type ListRecordingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	AssetId       string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`    // optional; empty => any user (validated as uuid when set)
+	AssetId       string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"` // optional; empty => any asset (validated as uuid when set)
 	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -372,11 +372,11 @@ const file_jumpgate_recording_v1_recording_proto_rawDesc = "" +
 	"\x06status\x18\b \x01(\tR\x06status\x12+\n" +
 	"\x12started_at_unix_ms\x18\t \x01(\x03R\x0fstartedAtUnixMs\x12'\n" +
 	"\x10ended_at_unix_ms\x18\n" +
-	" \x01(\x03R\rendedAtUnixMs\"\x87\x01\n" +
+	" \x01(\x03R\rendedAtUnixMs\"\x92\x01\n" +
 	"\x15ListRecordingsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x19\n" +
-	"\basset_id\x18\x02 \x01(\tR\aassetId\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\basset_id\x18\x02 \x01(\tR\aassetId\x12&\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"\x82\x01\n" +
 	"\x16ListRecordingsResponse\x12@\n" +
