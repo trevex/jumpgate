@@ -14,6 +14,9 @@ import (
 
 type Querier interface {
 	AcquireAuditLock(ctx context.Context) error
+	// Active (unrevoked, unexpired) grants for a subject on an asset. Used to attribute
+	// a JIT session to its grant when exactly one is active.
+	ActiveGrantIDsForUserAsset(ctx context.Context, arg ActiveGrantIDsForUserAssetParams) ([]uuid.UUID, error)
 	AddApproval(ctx context.Context, arg AddApprovalParams) (AccessRequestApproval, error)
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)

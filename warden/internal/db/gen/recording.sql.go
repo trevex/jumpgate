@@ -13,7 +13,7 @@ import (
 )
 
 const getSessionRecording = `-- name: GetSessionRecording :one
-SELECT session_id, user_id, asset_id, worker_id, protocol, format, object_key, size_bytes, sha256, status, started_at, ended_at, created_at FROM session_recordings WHERE session_id = $1
+SELECT session_id, user_id, asset_id, worker_id, protocol, format, object_key, size_bytes, sha256, status, started_at, ended_at, created_at, grant_id FROM session_recordings WHERE session_id = $1
 `
 
 func (q *Queries) GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error) {
@@ -33,26 +33,29 @@ func (q *Queries) GetSessionRecording(ctx context.Context, sessionID uuid.UUID) 
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.CreatedAt,
+		&i.GrantID,
 	)
 	return i, err
 }
 
 const listSessionRecordings = `-- name: ListSessionRecordings :many
-SELECT session_id, user_id, asset_id, worker_id, protocol, format, object_key, size_bytes, sha256, status, started_at, ended_at, created_at FROM session_recordings
+SELECT session_id, user_id, asset_id, worker_id, protocol, format, object_key, size_bytes, sha256, status, started_at, ended_at, created_at, grant_id FROM session_recordings
 WHERE ($1::uuid IS NULL OR user_id = $1)
   AND ($2::uuid IS NULL OR asset_id = $2)
+  AND ($3::uuid IS NULL OR grant_id = $3)
   AND (
-    $3::timestamptz IS NULL
-    OR created_at < $3
-    OR (created_at = $3 AND session_id > $4::uuid)
+    $4::timestamptz IS NULL
+    OR created_at < $4
+    OR (created_at = $4 AND session_id > $5::uuid)
   )
 ORDER BY created_at DESC, session_id
-LIMIT $5
+LIMIT $6
 `
 
 type ListSessionRecordingsParams struct {
 	UserID         pgtype.UUID        `json:"user_id"`
 	AssetID        pgtype.UUID        `json:"asset_id"`
+	GrantID        pgtype.UUID        `json:"grant_id"`
 	AfterTs        pgtype.Timestamptz `json:"after_ts"`
 	AfterSessionID pgtype.UUID        `json:"after_session_id"`
 	Lim            int32              `json:"lim"`
@@ -62,6 +65,7 @@ func (q *Queries) ListSessionRecordings(ctx context.Context, arg ListSessionReco
 	rows, err := q.db.Query(ctx, listSessionRecordings,
 		arg.UserID,
 		arg.AssetID,
+		arg.GrantID,
 		arg.AfterTs,
 		arg.AfterSessionID,
 		arg.Lim,
@@ -87,6 +91,7 @@ func (q *Queries) ListSessionRecordings(ctx context.Context, arg ListSessionReco
 			&i.StartedAt,
 			&i.EndedAt,
 			&i.CreatedAt,
+			&i.GrantID,
 		); err != nil {
 			return nil, err
 		}
@@ -101,14 +106,15 @@ func (q *Queries) ListSessionRecordings(ctx context.Context, arg ListSessionReco
 const upsertSessionRecording = `-- name: UpsertSessionRecording :exec
 INSERT INTO session_recordings (
     session_id, user_id, asset_id, worker_id, protocol, format,
-    object_key, size_bytes, sha256, status, started_at, ended_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    object_key, size_bytes, sha256, status, started_at, ended_at, grant_id
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 ON CONFLICT (session_id) DO UPDATE SET
     size_bytes = EXCLUDED.size_bytes,
     sha256     = EXCLUDED.sha256,
     status     = EXCLUDED.status,
     started_at = EXCLUDED.started_at,
-    ended_at   = EXCLUDED.ended_at
+    ended_at   = EXCLUDED.ended_at,
+    grant_id   = COALESCE(EXCLUDED.grant_id, session_recordings.grant_id)
 `
 
 type UpsertSessionRecordingParams struct {
@@ -124,6 +130,7 @@ type UpsertSessionRecordingParams struct {
 	Status    string             `json:"status"`
 	StartedAt pgtype.Timestamptz `json:"started_at"`
 	EndedAt   pgtype.Timestamptz `json:"ended_at"`
+	GrantID   pgtype.UUID        `json:"grant_id"`
 }
 
 func (q *Queries) UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error {
@@ -140,6 +147,7 @@ func (q *Queries) UpsertSessionRecording(ctx context.Context, arg UpsertSessionR
 		arg.Status,
 		arg.StartedAt,
 		arg.EndedAt,
+		arg.GrantID,
 	)
 	return err
 }

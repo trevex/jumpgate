@@ -206,6 +206,7 @@ type SessionRecording struct {
 	StartedAt pgtype.Timestamptz `json:"started_at"`
 	EndedAt   pgtype.Timestamptz `json:"ended_at"`
 	CreatedAt time.Time          `json:"created_at"`
+	GrantID   pgtype.UUID        `json:"grant_id"`
 }
 
 type SessionSigningKey struct {

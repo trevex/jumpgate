@@ -13,6 +13,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activeGrantIDsForUserAsset = `-- name: ActiveGrantIDsForUserAsset :many
+SELECT id FROM access_grants
+WHERE subject_user_id = $1 AND scope_asset_id = $2
+  AND revoked_at IS NULL AND expires_at > now()
+`
+
+type ActiveGrantIDsForUserAssetParams struct {
+	SubjectUserID uuid.UUID `json:"subject_user_id"`
+	ScopeAssetID  uuid.UUID `json:"scope_asset_id"`
+}
+
+// Active (unrevoked, unexpired) grants for a subject on an asset. Used to attribute
+// a JIT session to its grant when exactly one is active.
+func (q *Queries) ActiveGrantIDsForUserAsset(ctx context.Context, arg ActiveGrantIDsForUserAssetParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, activeGrantIDsForUserAsset, arg.SubjectUserID, arg.ScopeAssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const addApproval = `-- name: AddApproval :one
 INSERT INTO access_request_approvals (request_id, approver_user_id, decision)
 VALUES ($1, $2, $3)

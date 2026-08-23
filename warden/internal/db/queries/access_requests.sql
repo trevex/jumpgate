@@ -136,3 +136,10 @@ RETURNING *;
 UPDATE access_grants SET revoked_at = now(), revoked_reason = 'expired'
 WHERE revoked_at IS NULL AND expires_at <= now()
 RETURNING *;
+
+-- name: ActiveGrantIDsForUserAsset :many
+-- Active (unrevoked, unexpired) grants for a subject on an asset. Used to attribute
+-- a JIT session to its grant when exactly one is active.
+SELECT id FROM access_grants
+WHERE subject_user_id = $1 AND scope_asset_id = $2
+  AND revoked_at IS NULL AND expires_at > now();
