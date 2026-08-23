@@ -41,16 +41,35 @@ import { ScopePicker, type PickedScope } from "@/components/pickers/scope-picker
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 
+/**
+ * A scope pinned by the caller (e.g. the catalog folder/asset detail pane).
+ * When set, the scope-picker is hidden and this scope is sent verbatim.
+ */
+export interface FixedScope {
+  kind: "folder" | "asset";
+  id: string;
+  path?: string;
+}
+
 interface NewBindingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * When present, the binding is confined to this folder/asset: the scope-picker
+   * is replaced by a read-only scope row. Absent = today's behavior (picker).
+   */
+  fixedScope?: FixedScope;
 }
 
 const FIELD_LABEL =
   "text-micro font-semibold uppercase tracking-wide text-muted-foreground";
 const FIELD_HINT = "text-micro text-muted-foreground";
 
-export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) {
+export function NewBindingDialog({
+  open,
+  onOpenChange,
+  fixedScope,
+}: NewBindingDialogProps) {
   const invalidateList = useInvalidateList();
 
   const [role, setRole] = useState<PickedRole | null>(null);
@@ -60,6 +79,12 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
+
+  // When a scope is fixed by the caller, that scope is sent to the server;
+  // otherwise the picker-chosen `scope` is used.
+  const effectiveScope: PickedScope = fixedScope
+    ? { kind: fixedScope.kind, id: fixedScope.id, path: fixedScope.path ?? "" }
+    : scope;
 
   function reset() {
     setRole(null);
@@ -97,8 +122,8 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
       roleId: role.id,
       subjectUserId: subject.kind === "user" ? subject.id : "",
       subjectGroupId: subject.kind === "group" ? subject.id : "",
-      scopeFolderId: scope.kind === "folder" ? scope.id : "",
-      scopeAssetId: scope.kind === "asset" ? scope.id : "",
+      scopeFolderId: effectiveScope.kind === "folder" ? effectiveScope.id : "",
+      scopeAssetId: effectiveScope.kind === "asset" ? effectiveScope.id : "",
     });
   }
 
@@ -175,39 +200,53 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
           {/* Scope */}
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Scope</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setScopePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-body font-normal"
-            >
-              {scope.kind === "folder" ? (
-                <>
+            {fixedScope ? (
+              <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-body">
+                {fixedScope.kind === "folder" ? (
                   <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
-                    {scope.path}
-                  </span>
-                </>
-              ) : scope.kind === "asset" ? (
-                <>
+                ) : (
                   <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
-                    {scope.path}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="flex-1 text-left text-muted-foreground">
-                    Global (no scope)
-                  </span>
-                </>
-              )}
-            </Button>
+                )}
+                <span className="min-w-0 flex-1 truncate font-mono text-compact text-foreground">
+                  {fixedScope.path || fixedScope.id}
+                </span>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setScopePickerOpen(true)}
+                className="h-9 justify-start gap-2 text-body font-normal"
+              >
+                {scope.kind === "folder" ? (
+                  <>
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                      {scope.path}
+                    </span>
+                  </>
+                ) : scope.kind === "asset" ? (
+                  <>
+                    <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                      {scope.path}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="flex-1 text-left text-muted-foreground">
+                      Global (no scope)
+                    </span>
+                  </>
+                )}
+              </Button>
+            )}
             <p className={FIELD_HINT}>
-              Confine the binding to a folder subtree or a single asset, or leave
-              it global.
+              {fixedScope
+                ? `Confined to this ${fixedScope.kind}.`
+                : "Confine the binding to a folder subtree or a single asset, or leave it global."}
             </p>
           </div>
 
@@ -244,11 +283,13 @@ export function NewBindingDialog({ open, onOpenChange }: NewBindingDialogProps) 
         onOpenChange={setSubjectPickerOpen}
         onSelect={setSubject}
       />
-      <ScopePicker
-        open={scopePickerOpen}
-        onOpenChange={setScopePickerOpen}
-        onSelect={setScope}
-      />
+      {!fixedScope && (
+        <ScopePicker
+          open={scopePickerOpen}
+          onOpenChange={setScopePickerOpen}
+          onSelect={setScope}
+        />
+      )}
     </Dialog>
   );
 }

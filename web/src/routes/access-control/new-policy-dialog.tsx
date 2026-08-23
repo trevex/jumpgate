@@ -19,6 +19,7 @@
  */
 
 import { useState } from "react";
+import type { DescMethodUnary } from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
 import { ShieldCheck, Folder, Boxes, Layers } from "lucide-react";
@@ -42,9 +43,30 @@ import { connectErrorMessage } from "@/lib/format";
 import { isValidPolicyName, isValidApprovals } from "./policy-actions";
 import { useInvalidateList } from "@/lib/query";
 
+/**
+ * An asset scope pinned by the caller (the catalog asset detail pane). Policies
+ * are asset-scoped in this mode, so only `kind: "asset"` is supported.
+ */
+export interface FixedPolicyScope {
+  kind: "asset";
+  id: string;
+  path?: string;
+}
+
 interface NewPolicyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * When present, the policy is confined to this asset: the scope-picker is
+   * replaced by a read-only scope row. Absent = today's behavior (picker).
+   */
+  fixedScope?: FixedPolicyScope;
+  /**
+   * Extra query schemas to invalidate on success (beyond `listRequestPolicies`).
+   * The asset detail pane passes `getAssetAccess` so its "Requestable roles"
+   * section re-seeds after a policy is created.
+   */
+  extraInvalidate?: DescMethodUnary | DescMethodUnary[];
 }
 
 const FIELD_LABEL =
@@ -87,7 +109,12 @@ function RoleField({
   );
 }
 
-export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
+export function NewPolicyDialog({
+  open,
+  onOpenChange,
+  fixedScope,
+  extraInvalidate,
+}: NewPolicyDialogProps) {
   const invalidateList = useInvalidateList();
 
   const [name, setName] = useState("");
@@ -118,7 +145,12 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
       toast.success("Policy created", {
         description: `${role?.name ?? "The role"} is now requestable.`,
       });
-      void invalidateList(listRequestPolicies);
+      const extra = extraInvalidate
+        ? Array.isArray(extraInvalidate)
+          ? extraInvalidate
+          : [extraInvalidate]
+        : [];
+      void invalidateList([listRequestPolicies, ...extra]);
       reset();
       onOpenChange(false);
     },
@@ -150,8 +182,8 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
     doCreate({
       roleId: role.id,
       name: name.trim(),
-      scopeFolderId: scope.kind === "folder" ? scope.id : "",
-      scopeAssetId: scope.kind === "asset" ? scope.id : "",
+      scopeFolderId: fixedScope ? "" : scope.kind === "folder" ? scope.id : "",
+      scopeAssetId: fixedScope ? fixedScope.id : scope.kind === "asset" ? scope.id : "",
       requiredApprovals: approvalsNum,
       requesterRoleId: requesterRole?.id ?? "",
       approverRoleId: approverRole?.id ?? "",
@@ -212,39 +244,49 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
           {/* Scope (optional) */}
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Scope</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setScopePickerOpen(true)}
-              className="h-9 justify-start gap-2 text-body font-normal"
-            >
-              {scope.kind === "folder" ? (
-                <>
-                  <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
-                    {scope.path}
-                  </span>
-                </>
-              ) : scope.kind === "asset" ? (
-                <>
-                  <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
-                    {scope.path}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="flex-1 text-left text-muted-foreground">
-                    Role-default (no scope)
-                  </span>
-                </>
-              )}
-            </Button>
+            {fixedScope ? (
+              <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-body">
+                <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate font-mono text-compact text-foreground">
+                  {fixedScope.path || fixedScope.id}
+                </span>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setScopePickerOpen(true)}
+                className="h-9 justify-start gap-2 text-body font-normal"
+              >
+                {scope.kind === "folder" ? (
+                  <>
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                      {scope.path}
+                    </span>
+                  </>
+                ) : scope.kind === "asset" ? (
+                  <>
+                    <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-left font-mono text-compact">
+                      {scope.path}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="flex-1 text-left text-muted-foreground">
+                      Role-default (no scope)
+                    </span>
+                  </>
+                )}
+              </Button>
+            )}
             <p className={FIELD_HINT}>
-              Confine the policy to a folder subtree or a single asset, or leave
-              it at the role's own level.
+              {fixedScope
+                ? "Confined to this asset."
+                : "Confine the policy to a folder subtree or a single asset, or leave it at the role's own level."}
             </p>
           </div>
 
@@ -389,11 +431,13 @@ export function NewPolicyDialog({ open, onOpenChange }: NewPolicyDialogProps) {
         onSelect={setRole}
         label="Choose the requestable role"
       />
-      <ScopePicker
-        open={scopePickerOpen}
-        onOpenChange={setScopePickerOpen}
-        onSelect={setScope}
-      />
+      {!fixedScope && (
+        <ScopePicker
+          open={scopePickerOpen}
+          onOpenChange={setScopePickerOpen}
+          onSelect={setScope}
+        />
+      )}
       <RolePicker
         open={requesterPickerOpen}
         onOpenChange={setRequesterPickerOpen}

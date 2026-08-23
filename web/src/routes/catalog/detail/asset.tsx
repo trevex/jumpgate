@@ -9,7 +9,7 @@
  */
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { Server, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film } from "lucide-react";
+import { Server, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -37,12 +37,17 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { capsCover } from "@/lib/capabilities";
+import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { CopyButton } from "@/components/copy-button";
 import { RequestSheet } from "../request-sheet";
 import { canUpdateAsset, canDeleteAsset } from "../catalog-actions";
+import { canCreateBinding } from "../../access-control/binding-actions";
+import { canCreatePolicy } from "../../access-control/policy-actions";
+import { NewBindingDialog } from "../../access-control/new-binding-dialog";
+import { NewPolicyDialog } from "../../access-control/new-policy-dialog";
+import { ScopeBindings } from "./scope-bindings";
 import { RenameDialog } from "../rename-dialog";
 import { MoveDialog } from "../move-dialog";
 import { DeleteNode } from "../delete-node";
@@ -281,6 +286,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [bindOpen, setBindOpen] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
+
+  // Binding/policy creation are GLOBAL `access:*` actions, gated on the caller's
+  // own global capabilities (as the Access-control tabs do). The server re-checks.
+  const globalCaps = useCapabilities();
+  const mayBind = canCreateBinding(globalCaps);
+  const mayMakeRequestable = canCreatePolicy(globalCaps);
 
   const { data, isLoading, isError, error } = useQuery(
     getAssetAccess,
@@ -424,6 +437,59 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       <DetailSection title="Your capabilities on this asset">
         <CapList caps={data.capabilities} />
       </DetailSection>
+
+      {/* Bindings scoped directly to this asset (+ governance affordances) */}
+      <DetailSection title="Bindings">
+        {(mayBind || mayMakeRequestable) && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {mayBind && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setBindOpen(true)}
+                className="h-7 gap-1.5 text-compact"
+                aria-label="Bind a role to this asset"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Bind a role
+              </Button>
+            )}
+            {mayMakeRequestable && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPolicyOpen(true)}
+                className="h-7 gap-1.5 text-compact"
+                aria-label="Make this asset requestable"
+              >
+                <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                Make requestable
+              </Button>
+            )}
+          </div>
+        )}
+        <ScopeBindings
+          assetId={id}
+          emptyMessage="No roles bound directly to this asset."
+        />
+      </DetailSection>
+
+      {mayBind && (
+        <NewBindingDialog
+          open={bindOpen}
+          onOpenChange={setBindOpen}
+          fixedScope={{ kind: "asset", id, path }}
+        />
+      )}
+      {mayMakeRequestable && (
+        <NewPolicyDialog
+          open={policyOpen}
+          onOpenChange={setPolicyOpen}
+          fixedScope={{ kind: "asset", id, path }}
+          // Also re-seed this asset's access so "Requestable roles" updates.
+          extraInvalidate={getAssetAccess}
+        />
+      )}
 
       {/* Active roles */}
       {data.activeRoles.length > 0 && (

@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { Folder, MoreHorizontal, Pencil, FolderInput, Trash2 } from "lucide-react";
+import { Folder, MoreHorizontal, Pencil, FolderInput, Trash2, Plus } from "lucide-react";
 import { getFolderAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +19,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { useCapabilities } from "@/lib/capabilities";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
 import { canUpdateFolder, canDeleteFolder } from "../catalog-actions";
+import { canCreateBinding } from "../../access-control/binding-actions";
+import { NewBindingDialog } from "../../access-control/new-binding-dialog";
+import { ScopeBindings } from "./scope-bindings";
 import { CreateMenu } from "../create-menu";
 import { RenameDialog } from "../rename-dialog";
 import { MoveDialog } from "../move-dialog";
@@ -35,6 +39,12 @@ export interface FolderDetailProps {
 }
 
 export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
+  // Binding creation is a GLOBAL `access:*` action, so it's gated on the
+  // caller's own global capabilities (as the Access-control tabs do), not the
+  // per-folder management caps from getFolderAccess. The server re-checks.
+  const globalCaps = useCapabilities();
+  const mayBind = canCreateBinding(globalCaps);
+
   const { data, isLoading, isError, error } = useQuery(
     getFolderAccess,
     { folderId: id },
@@ -43,6 +53,7 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [bindOpen, setBindOpen] = useState(false);
 
   if (isLoading) return <DetailSkeleton />;
   if (isError) return <DetailError error={error} />;
@@ -127,6 +138,35 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
       <DetailSection title="Your management capabilities on this folder">
         <CapList caps={caps} />
       </DetailSection>
+
+      <div className="h-px bg-border" role="separator" />
+
+      {/* Bindings scoped to this folder (with a Bind-a-role affordance) */}
+      <DetailSection title="Bindings">
+        {mayBind && (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBindOpen(true)}
+              className="h-7 gap-1.5 text-compact"
+              aria-label="Bind a role to this folder"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Bind a role
+            </Button>
+          </div>
+        )}
+        <ScopeBindings folderId={id} emptyMessage="No roles bound to this folder." />
+      </DetailSection>
+
+      {mayBind && (
+        <NewBindingDialog
+          open={bindOpen}
+          onOpenChange={setBindOpen}
+          fixedScope={{ kind: "folder", id, path }}
+        />
+      )}
 
       {/* ── Authoring dialogs (rename/move/delete; creation is in CreateMenu) ── */}
       {mayUpdate && (
