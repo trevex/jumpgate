@@ -22,74 +22,17 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 }
 
 // heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
-// a user ($1), every (role, object) the user holds via direct standing bindings
-// and the explicit role_grants rewrite graph (same_object + parent). It is
-// group-aware and cycle-safe (UNION dedup over the finite roles × objects set
-// guarantees termination — no depth column needed).
+// a user ($1), every (role, object) the user holds via direct standing bindings,
+// active JIT access_grants, and the explicit role_grants rewrite graph
+// (same_object + parent). It is group-aware and cycle-safe.
 //
-// PostgreSQL permits the recursive self-reference exactly once, so the three
-// expansion branches are combined via a LATERAL subquery referencing the current
-// row h (not the recursive relation).
-//
-// SECURITY — SINGLE SOURCE OF TRUTH: the `user_groups` + `held` forward-closure
-// below is duplicated in requestable.go (requestableRolesCTE,
-// visibleRequestableCTE). Check's grant decision and the Requestable-tier
-// eligibility MUST resolve membership identically. If you change a role_grants
-// expansion arm or the base case here, change ALL copies or eligibility silently
-// diverges from Check. (Kept as copies because each query wraps it in different
-// trailing CTEs; keep the closure semantics identical.)
-//
-// The `held` BASE is `role_bindings ∪ active access_grants`: a standing binding
-// OR a live JIT grant (M3c). The active-grant arm below (user-subject +
-// asset-scope, revoked_at IS NULL AND expires_at > now()) MUST stay byte-for-byte
-// identical across all held-style copies. Because activity is filtered by now(),
-// an expired/revoked grant stops conferring immediately — no reaper required.
-const heldCTE = `
-WITH RECURSIVE
-user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
-held(role_id, object_kind, object_id) AS (
-    -- base: direct standing bindings for the user or a (nested) group
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
-    -- KEEP THIS ARM IDENTICAL across all held-style copies (requestable.go).
-    SELECT g.role_id, 'asset'::text, g.scope_asset_id
-    FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    SELECT x.role_id, x.object_kind, x.object_id
-    FROM held h,
-    LATERAL (
-        -- same_object: hold S on O + rule (R ⊇ S same_object) ⇒ hold R on O
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        -- parent → child folders of folder O
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        -- parent → child assets directly in folder O
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x
-)`
+// SINGLE SOURCE OF TRUTH: it is COMPOSED from the shared fragments in
+// heldclosure.go (heldCTEPrefix = cteUserGroups + heldClosureSQL("held", true)),
+// the very same fragments requestable.go composes its `held` / `held_standing`
+// closures from. Because Check's grant decision and the Requestable-tier
+// eligibility draw the closure body from one source, they cannot silently
+// diverge. Each query still appends its own trailing SELECT (below).
+var heldCTE = heldCTEPrefix
 
 func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {

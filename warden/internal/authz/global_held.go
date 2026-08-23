@@ -15,13 +15,16 @@ import (
 // It faithfully mirrors heldCTE's security-critical arms, dropping the object
 // dimension:
 //
-//   - The `user_groups` recursive CTE is copied VERBATIM from heldCTE (direct
-//     membership base + recursive nested-group arm).
+//   - The `user_groups` recursive CTE is the SHARED cteUserGroups fragment
+//     (heldclosure.go) — the same one heldCTE / requestable.go compose from.
 //   - The base arm is the standing role_bindings arm with heldCTE's deactivation
-//     guard copied verbatim (a deactivated user holds nothing), but the object
-//     predicate is REPLACED by the scopeless predicate `scope_folder_id IS NULL
-//     AND scope_asset_id IS NULL`. There is NO active-grant arm: JIT access_grants
-//     are always asset-scoped, so they can never confer a GLOBAL (scopeless) role.
+//     guard (a deactivated user holds nothing), but the object predicate is
+//     REPLACED by the scopeless predicate `scope_folder_id IS NULL AND
+//     scope_asset_id IS NULL`, and the object dimension is dropped. There is NO
+//     active-grant arm: JIT access_grants are always asset-scoped, so they can
+//     never confer a GLOBAL (scopeless) role. (This closure therefore does NOT
+//     reuse cteStandingBase/cteRewriteArms — its base and recursion genuinely
+//     differ from the object-dimensioned held closure.)
 //   - The role_grants closure applies BOTH `via='same_object'` AND `via='parent'`:
 //     with no object dimension there is no folder/asset to descend into, so a
 //     global role simply confers every role reachable through EITHER rewrite arm.
@@ -30,13 +33,7 @@ import (
 //
 // Termination is by UNION dedup over the finite role set (no depth column needed),
 // exactly as in heldCTE. The final relation is `global_held(role_id)`.
-const globalHeldCTE = `
-WITH RECURSIVE
-user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
+var globalHeldCTE = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + `
 global_held(role_id) AS (
     -- base: scopeless standing bindings for the user or a (nested) group.
     SELECT rb.role_id

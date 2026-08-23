@@ -1,101 +1,39 @@
 package authz
 
-// Drift-guard for the DUPLICATED held-closure recursive CTEs.
+// Guards for the SINGLE-SOURCED held-closure recursive CTEs.
 //
 // The forward "held" closure (role membership through the role_grants rewrite
-// graph) is hand-copied as unexported const SQL in three places:
+// graph) is no longer hand-copied: every held / held_standing closure is
+// COMPOSED from the shared string fragments in heldclosure.go
 //
-//   - heldCTE               (sql_authorizer.go)   — powers Check / VisibleAssets /
-//                                                    RolesOnAsset (Active tier).
-//   - requestableRolesCTE   (requestable.go)      — Requestable-tier eligibility
-//                                                    for one asset.
-//   - visibleRequestableCTE (requestable.go)      — Requestable-tier across all
-//                                                    assets.
+//   - cteUserGroups   — the recursive group-membership CTE.
+//   - cteStandingBase — the standing role_bindings base arm.
+//   - cteGrantArm     — the active-JIT-grant base arm (held ONLY).
+//   - cteRewriteArms  — the three-arm role_grants rewrite LATERAL block.
+//   - heldClosureSQL(name, withGrants) — assembles a closure from the fragments.
 //
-// Across those consts live FIVE forward-closures: one `held` in heldCTE, plus a
-// `held` (grant-augmented) and a `held_standing` (standing-only) in each of the
-// two requestable consts. Every one of the five MUST share the SAME user_groups
-// recursive CTE, the SAME three-arm role_grants rewrite block (same_object +
-// two parent arms), and the SAME standing-binding base arm — otherwise the
-// Requestable-tier eligibility silently diverges from Check's grant decision,
-// which is a security-critical bug (a role offered/withheld inconsistently).
+// via heldCTEPrefix (heldCTE, sql_authorizer.go) and requestableClosuresPrefix
+// (requestableRolesCTE + visibleRequestableCTE, requestable.go). Because the
+// closure body has exactly ONE source, Requestable-tier eligibility cannot
+// silently diverge from Check's grant decision — the historical
+// hand-copy-drift bug is now impossible by construction.
 //
-// The `held` closures ADDITIONALLY carry the active-grant base arm; the
-// `held_standing` closures MUST NOT (a JIT grant confers access but not
-// governance/request eligibility).
+// These tests defend that property from two angles:
 //
-// This test pins today's reviewed-correct SQL: the canonical fragments below are
-// copied verbatim from heldCTE. If a future edit changes one copy without the
-// others, this test goes red and points at the invariant. An INTENTIONAL change
-// to a shared arm must update BOTH every code copy AND the canonical fragment
-// here — that is the point: it forces a conscious, all-copies update.
+//  1. COMPOSITION — every composed query const must actually contain the shared
+//     fragments (once per embedded closure). A future edit that bypasses the
+//     builder and inlines a bespoke closure would drop a fragment and go red.
 //
-// NOTE: heldCTE's rewrite block carries explanatory `-- comments` that the
-// requestable copies omit. Those comments are documentation, not semantics, so
-// the comparison normalizes SQL line-comments and whitespace away and asserts
-// the SQL BODY is identical.
+//  2. GRANT-ARM INVARIANT — the standing-only `held_standing` closure must NEVER
+//     carry the grant arm (a JIT grant confers access but NOT governance/request
+//     eligibility). This is enforced STRUCTURALLY by heldClosureSQL omitting
+//     cteGrantArm when withGrants == false; the tests pin that structure.
 
 import (
 	"regexp"
 	"strings"
 	"testing"
 )
-
-// canonicalUserGroups is the recursive user_groups CTE body — copied verbatim
-// from heldCTE (sql_authorizer.go). Must appear in all five closures' consts.
-const canonicalUserGroups = `
-user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),`
-
-// canonicalRewriteArms is the three-arm role_grants rewrite LATERAL block
-// (same_object + parent→folders + parent→assets) — copied verbatim from heldCTE
-// (sql_authorizer.go), comments included. Normalization strips the comments so
-// the requestable copies (which omit them) still match on SQL body.
-const canonicalRewriteArms = `
-    LATERAL (
-        -- same_object: hold S on O + rule (R ⊇ S same_object) ⇒ hold R on O
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        -- parent → child folders of folder O
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        -- parent → child assets directly in folder O
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x`
-
-// canonicalStandingBase is the standing role_bindings base arm — the base every
-// held-style closure shares. Copied verbatim from heldCTE (sql_authorizer.go).
-const canonicalStandingBase = `
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
-
-// canonicalGrantArm is the active-grant base arm carried ONLY by the `held`
-// closures (never by `held_standing`). Copied verbatim from heldCTE
-// (sql_authorizer.go), comments included (normalized away for comparison).
-const canonicalGrantArm = `
-    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
-    -- KEEP THIS ARM IDENTICAL across all held-style copies (requestable.go).
-    SELECT g.role_id, 'asset'::text, g.scope_asset_id
-    FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
 
 var (
 	lineCommentRe = regexp.MustCompile(`--[^\n]*`)
@@ -104,7 +42,7 @@ var (
 
 // normalizeSQL strips SQL line-comments and collapses all whitespace runs to a
 // single space, so comparisons key on SQL body — indentation and documentary
-// `-- comments` (which legitimately differ between copies) are ignored.
+// `-- comments` are ignored.
 func normalizeSQL(s string) string {
 	s = lineCommentRe.ReplaceAllString(s, "")
 	s = wsRe.ReplaceAllString(s, " ")
@@ -123,23 +61,26 @@ func containsNorm(haystack, fragment string) bool {
 	return strings.Contains(normalizeSQL(haystack), normalizeSQL(fragment))
 }
 
-// heldConst names one of the duplicated CTE consts under test, with the exact
-// occurrence counts each shared fragment must have in it.
+const bypassHint = "A composed held-closure query no longer draws its closure " +
+	"body from the shared fragments in heldclosure.go (cteUserGroups / " +
+	"cteStandingBase / cteGrantArm / cteRewriteArms via heldClosureSQL). If you " +
+	"inlined a bespoke closure you have reintroduced the copy-paste-drift risk " +
+	"this refactor removed — compose from heldClosureSQL instead."
+
+// composedConst names one of the query consts built from the shared fragments,
+// with the expected per-const occurrence count of each shared fragment.
 //
 // A const may embed MORE THAN ONE forward-closure (each requestable const embeds
-// both a `held` and a `held_standing`), and the shared rewrite arms + standing
-// base arm appear once PER CLOSURE. Counting (not mere containment) is essential:
-// containment would pass even if ONE of two closures diverged, because the other,
-// pristine closure still supplies a matching fragment. So we pin exact counts.
+// both a `held` and a `held_standing`), and the rewrite arms + standing base
+// appear once PER CLOSURE. Counting (not mere containment) catches divergence in
+// one of two closures.
 //
-//   - wantClosures    : rewrite-arm block AND standing base arm count (one each
-//     per forward-closure in the const).
-//   - wantUserGroups  : the user_groups CTE is a single top-level CTE per const → 1.
-//   - wantGrantArms   : active-grant base arm — one per `held` closure, and a
-//     `held_standing` closure never carries it. heldCTE has one
-//     `held`; each requestable const has one `held` (+ one
-//     `held_standing`) → 1 everywhere.
-type heldConst struct {
+//   - wantClosures   : rewrite-arm block AND standing base arm count (one each
+//     per forward-closure).
+//   - wantUserGroups : the user_groups CTE is a single top-level CTE per const → 1.
+//   - wantGrantArms  : active-grant base arm — one per `held` closure; a
+//     `held_standing` closure never carries it → 1 everywhere.
+type composedConst struct {
 	name           string
 	sql            string
 	wantClosures   int
@@ -147,8 +88,8 @@ type heldConst struct {
 	wantGrantArms  int
 }
 
-func heldConsts() []heldConst {
-	return []heldConst{
+func composedConsts() []composedConst {
+	return []composedConst{
 		{
 			name: "heldCTE (internal/authz/sql_authorizer.go)",
 			sql:  heldCTE, wantClosures: 1, wantUserGroups: 1, wantGrantArms: 1,
@@ -164,59 +105,88 @@ func heldConsts() []heldConst {
 	}
 }
 
-const resyncHint = "The duplicated held-closure CTE copies have DIVERGED. Re-sync " +
-	"heldCTE (internal/authz/sql_authorizer.go), requestableRolesCTE and " +
-	"visibleRequestableCTE (internal/authz/requestable.go) so every held / " +
-	"held_standing closure shares the same user_groups CTE, rewrite arms, and " +
-	"standing base. If the change was INTENTIONAL, update the canonical fragment " +
-	"in heldclosure_sync_test.go too (which forces updating ALL copies)."
-
-// TestHeldClosureSharedFragments asserts every duplicated const carries the
-// shared user_groups CTE, the three-arm role_grants rewrite block, and the
+// TestComposedFromSharedFragments asserts every query const carries the shared
+// user_groups CTE, the three-arm role_grants rewrite block, and the
 // standing-binding base arm — with the EXACT per-const occurrence count (once
 // per embedded closure for the arms, once for the top-level user_groups CTE).
-// Divergence here splits Requestable eligibility from Check — a security-critical
-// bug. Counting (not containment) catches divergence in one of two closures.
-func TestHeldClosureSharedFragments(t *testing.T) {
-	for _, c := range heldConsts() {
+// This catches a future edit that bypasses heldClosureSQL and hand-inlines a
+// closure that omits (or subtly alters) a shared fragment.
+func TestComposedFromSharedFragments(t *testing.T) {
+	for _, c := range composedConsts() {
 		fragments := []struct {
 			what     string
 			fragment string
 			want     int
 		}{
-			{"user_groups recursive CTE", canonicalUserGroups, c.wantUserGroups},
-			{"three-arm role_grants rewrite block (same_object + two parent arms)", canonicalRewriteArms, c.wantClosures},
-			{"standing role_bindings base arm", canonicalStandingBase, c.wantClosures},
+			{"user_groups recursive CTE (cteUserGroups)", cteUserGroups, c.wantUserGroups},
+			{"three-arm role_grants rewrite block (cteRewriteArms)", cteRewriteArms, c.wantClosures},
+			{"standing role_bindings base arm (cteStandingBase)", cteStandingBase, c.wantClosures},
 		}
 		for _, f := range fragments {
 			if got := countNorm(c.sql, f.fragment); got != f.want {
-				t.Errorf("%s carries the canonical %s %d time(s), want %d.\n%s",
-					c.name, f.what, got, f.want, resyncHint)
+				t.Errorf("%s carries the shared %s %d time(s), want %d.\n%s",
+					c.name, f.what, got, f.want, bypassHint)
 			}
 		}
 	}
 }
 
-// TestHeldClosureGrantArmInvariant asserts the active-grant base arm appears
-// EXACTLY once per const: carried by each `held` closure and NEVER by a
-// `held_standing` closure. heldCTE has one held closure; each requestable const
-// has one `held` (+ one `held_standing`), so the count is one everywhere. A
-// grant arm leaking into a held_standing closure would let a JIT grant confer
-// request-eligibility (governance) — a security-critical bug.
-func TestHeldClosureGrantArmInvariant(t *testing.T) {
-	for _, c := range heldConsts() {
-		got := countNorm(c.sql, canonicalGrantArm)
+// TestComposedGrantArmCount asserts the active-grant base arm appears EXACTLY
+// once per const: carried by each `held` closure and NEVER by a `held_standing`
+// closure. A grant arm leaking into a held_standing closure would let a JIT
+// grant confer request-eligibility (governance) — a security-critical bug.
+func TestComposedGrantArmCount(t *testing.T) {
+	for _, c := range composedConsts() {
+		got := countNorm(c.sql, cteGrantArm)
 		if got != c.wantGrantArms {
-			t.Errorf("%s carries the active-grant base arm %d time(s), want %d "+
+			t.Errorf("%s carries the active-grant base arm (cteGrantArm) %d time(s), want %d "+
 				"(one per `held` closure; a `held_standing` closure must NEVER carry it).\n%s",
-				c.name, got, c.wantGrantArms, resyncHint)
+				c.name, got, c.wantGrantArms, bypassHint)
 		}
 	}
 }
 
-// TestHeldStandingHasNoGrantArm pins the held_standing invariant directly: the
-// standing-only closures in the requestable consts must NOT contain the grant
-// arm. Extract each held_standing(...) body and assert absence.
+// TestHeldClosureBuilderGrantArm pins the grant-arm invariant at its structural
+// source: heldClosureSQL(withGrants=true) MUST contain the grant arm and
+// heldClosureSQL(withGrants=false) MUST NOT. Both variants must always carry the
+// shared standing base and rewrite arms. This is the guarantee that makes
+// "held_standing has no grant arm" impossible to get wrong: the builder simply
+// omits cteGrantArm when withGrants is false, so no reviewer vigilance is needed.
+func TestHeldClosureBuilderGrantArm(t *testing.T) {
+	withGrants := heldClosureSQL("held", true)
+	standingOnly := heldClosureSQL("held_standing", false)
+
+	if !containsNorm(withGrants, cteGrantArm) {
+		t.Errorf("heldClosureSQL(withGrants=true) is missing the grant arm — the `held` closure must carry it.")
+	}
+	if containsNorm(standingOnly, cteGrantArm) {
+		t.Errorf("heldClosureSQL(withGrants=false) contains the grant arm — a `held_standing` closure must NEVER carry it (a JIT grant would wrongly confer request-eligibility).")
+	}
+	for _, tc := range []struct {
+		name string
+		sql  string
+	}{
+		{"held (withGrants=true)", withGrants},
+		{"held_standing (withGrants=false)", standingOnly},
+	} {
+		if !containsNorm(tc.sql, cteStandingBase) {
+			t.Errorf("%s is missing the shared standing base arm.", tc.name)
+		}
+		if !containsNorm(tc.sql, cteRewriteArms) {
+			t.Errorf("%s is missing the shared rewrite arms.", tc.name)
+		}
+		// The recursive arm must alias the closure by its own name so cteRewriteArms'
+		// `h` reference resolves; a name-substitution bug would break the recursion.
+		if tc.name[:4] == "held" && !strings.Contains(tc.sql, "FROM held") {
+			t.Errorf("%s recursive arm does not reference the closure by name.", tc.name)
+		}
+	}
+}
+
+// TestHeldStandingHasNoGrantArm pins the held_standing invariant on the actual
+// composed query consts: the standing-only closure embedded in each requestable
+// const must NOT contain the grant arm, but must still carry the shared rewrite
+// arms and standing base (proving it is a real, correctly-composed closure).
 func TestHeldStandingHasNoGrantArm(t *testing.T) {
 	cases := []struct {
 		name string
@@ -229,21 +199,19 @@ func TestHeldStandingHasNoGrantArm(t *testing.T) {
 		body, ok := heldStandingBody(c.sql)
 		if !ok {
 			t.Fatalf("%s: could not locate the held_standing(...) closure body — "+
-				"the closure was renamed or removed.\n%s", c.name, resyncHint)
+				"the closure was renamed or removed.\n%s", c.name, bypassHint)
 		}
-		if containsNorm(body, canonicalGrantArm) {
+		if containsNorm(body, cteGrantArm) {
 			t.Errorf("%s: the held_standing closure carries the active-grant base "+
-				"arm — a JIT grant would wrongly confer request-eligibility.\n%s", c.name, resyncHint)
+				"arm — a JIT grant would wrongly confer request-eligibility.\n%s", c.name, bypassHint)
 		}
-		// Sanity: held_standing must still carry the shared rewrite arms and
-		// standing base (i.e. it's a real closure, not an empty match).
-		if !containsNorm(body, canonicalRewriteArms) {
+		if !containsNorm(body, cteRewriteArms) {
 			t.Errorf("%s: extracted held_standing body is missing the rewrite arms — "+
-				"extraction is wrong or the closure diverged.\n%s", c.name, resyncHint)
+				"extraction is wrong or the closure diverged.\n%s", c.name, bypassHint)
 		}
-		if !containsNorm(body, canonicalStandingBase) {
+		if !containsNorm(body, cteStandingBase) {
 			t.Errorf("%s: extracted held_standing body is missing the standing base arm.\n%s",
-				c.name, resyncHint)
+				c.name, bypassHint)
 		}
 	}
 }

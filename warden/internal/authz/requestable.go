@@ -37,85 +37,15 @@ import (
 //     downstream roles Requestable. This is the governance/eligibility membership,
 //     dual to RoleResolver.HoldsRoleStanding.
 //
-// SECURITY — KEEP IN SYNC: the `user_groups` body and the THREE recursive rewrite
-// arms (same_object + two parent arms) must be IDENTICAL across `held`,
-// `held_standing`, heldCTE (sql_authorizer.go), and visibleRequestableCTE below.
-// The two closures differ ONLY in their base: `held` adds the active-grant arm,
-// `held_standing` does not. The active-grant arm must stay byte-for-byte identical
-// wherever it appears. Divergence in the rewrite arms would make Requestable
-// eligibility disagree with Check's grant decision (or with HoldsRoleStanding).
-const requestableRolesCTE = `
-WITH RECURSIVE
-user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
--- grant-augmented closure (base = bindings ∪ active grants) → active-exclusion.
-held(role_id, object_kind, object_id) AS (
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
-    -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
-    SELECT g.role_id, 'asset'::text, g.scope_asset_id
-    FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    SELECT x.role_id, x.object_kind, x.object_id
-    FROM held h,
-    LATERAL (
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x
-),
--- standing-only closure (base = bindings ONLY, no grant arm) → requester predicate.
--- Governance membership: a JIT-granted role must NOT confer request eligibility.
-held_standing(role_id, object_kind, object_id) AS (
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    SELECT x.role_id, x.object_kind, x.object_id
-    FROM held_standing h,
-    LATERAL (
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x
-),
+// SINGLE SOURCE OF TRUTH: the `user_groups` CTE and the `held` /
+// `held_standing` closures are COMPOSED from the shared fragments in
+// heldclosure.go (requestableClosuresPrefix) — the same fragments heldCTE
+// (sql_authorizer.go) composes from — so Requestable eligibility CANNOT diverge
+// from Check's grant decision (or from HoldsRoleStanding). The two closures
+// differ ONLY in their base: `held` adds the active-grant arm, `held_standing`
+// does not (structural via heldClosureSQL's withGrants). Only the per-query
+// trailing CTEs (below) are specific to this query.
+var requestableRolesCTE = requestableClosuresPrefix + `,
 -- roles the user already holds Active on asset A (grants count → active-exclusion).
 held_on_asset(role_id) AS (
     SELECT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
@@ -175,85 +105,13 @@ WHERE
 // semantics are identical; the ancestor/candidate/effective computation is
 // generalized per-asset (keyed on the asset id) rather than pinned to one asset.
 //
-// SECURITY — KEEP IN SYNC: like requestableRolesCTE above, this query carries TWO
-// forward-closures: `held` (grant-augmented, base = `role_bindings ∪ active
-// access_grants`) for ACTIVE-EXCLUSION, and `held_standing` (standing-only, base =
-// `role_bindings` ONLY) for the REQUESTER PREDICATE. The `user_groups` body and the
-// three recursive rewrite arms must be IDENTICAL across `held`, `held_standing`,
-// heldCTE (sql_authorizer.go), and requestableRolesCTE above; the closures differ
-// ONLY in their base. The active-grant arm must stay byte-for-byte identical
-// wherever it appears.
-const visibleRequestableCTE = `
-WITH RECURSIVE
-user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-),
--- grant-augmented closure (base = bindings ∪ active grants) → active-exclusion.
-held(role_id, object_kind, object_id) AS (
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    -- base: active JIT access_grants (user-subject + asset-scope). SECURITY —
-    -- KEEP THIS ARM IDENTICAL across all held-style copies (sql_authorizer.go).
-    SELECT g.role_id, 'asset'::text, g.scope_asset_id
-    FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    SELECT x.role_id, x.object_kind, x.object_id
-    FROM held h,
-    LATERAL (
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x
-),
--- standing-only closure (base = bindings ONLY, no grant arm) → requester predicate.
-held_standing(role_id, object_kind, object_id) AS (
-    SELECT rb.role_id,
-           (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
-           COALESCE(rb.scope_asset_id, rb.scope_folder_id)
-    FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
-  UNION
-    SELECT x.role_id, x.object_kind, x.object_id
-    FROM held_standing h,
-    LATERAL (
-        SELECT rg.role_id, h.object_kind, h.object_id
-        FROM role_grants rg
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
-      UNION ALL
-        SELECT rg.role_id, 'folder'::text, cf.id
-        FROM role_grants rg
-        JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-      UNION ALL
-        SELECT rg.role_id, 'asset'::text, ca.id
-        FROM role_grants rg
-        JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
-        WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
-    ) x
-),
+// SINGLE SOURCE OF TRUTH: like requestableRolesCTE above, the `user_groups` CTE
+// and the `held` (grant-augmented, for ACTIVE-EXCLUSION) / `held_standing`
+// (standing-only, for the REQUESTER PREDICATE) closures are COMPOSED from the
+// shared fragments in heldclosure.go (requestableClosuresPrefix) — the same
+// fragments heldCTE (sql_authorizer.go) composes from — so this cannot diverge
+// from Check. Only the per-query trailing CTEs (below) are specific here.
+var visibleRequestableCTE = requestableClosuresPrefix + `,
 held_on_asset(asset_id, role_id) AS (
     SELECT object_id, role_id FROM held WHERE object_kind = 'asset'
 ),
