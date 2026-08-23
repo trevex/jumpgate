@@ -12,6 +12,7 @@ import {
   LogOut,
   ShieldCheck,
   Search,
+  Menu,
 } from "lucide-react";
 import { logout } from "../gen/jumpgate/auth/v1/auth-AuthService_connectquery";
 import { listPendingApprovals } from "../gen/jumpgate/accessrequest/v1/accessrequest-AccessRequestService_connectquery";
@@ -23,6 +24,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../com
 import { ThemeToggle } from "../components/theme-toggle";
 import { SearchPalette, useCommandK } from "../components/search-palette";
 import { Logo } from "../components/brand/logo";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "../components/ui/sheet";
 import { cn } from "../lib/utils";
 
 // ─── Pending-approvals badge count ──────────────────────────────────────────
@@ -53,9 +59,11 @@ interface NavItem {
 interface SideNavLinkProps {
   item: NavItem;
   caps: string[];
+  /** Invoked after the link is clicked (used to dismiss the mobile drawer). */
+  onNavigate?: () => void;
 }
 
-function SideNavLink({ item, caps }: SideNavLinkProps) {
+function SideNavLink({ item, caps, onNavigate }: SideNavLinkProps) {
   const pendingCount = usePendingCount();
 
   if (item.requiresCap != null && !capsCover(caps, item.requiresCap)) {
@@ -73,6 +81,7 @@ function SideNavLink({ item, caps }: SideNavLinkProps) {
     <NavLink
       to={item.to}
       end={item.to === "/"}
+      onClick={onNavigate}
       className={({ isActive }) =>
         cn(
           "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
@@ -160,12 +169,87 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+// ─── Sidebar body ─────────────────────────────────────────────────────────────
+//
+// Shared between the static desktop `<aside>` (md+) and the mobile slide-in
+// drawer (<md). `onNavigate` closes the drawer when a nav link is clicked; it is
+// undefined on desktop where there is nothing to close.
+
+interface SidebarBodyProps {
+  caps: string[];
+  email: string;
+  isLoggingOut: boolean;
+  onLogout: () => void;
+  onNavigate?: () => void;
+}
+
+function SidebarBody({
+  caps,
+  email,
+  isLoggingOut,
+  onLogout,
+  onNavigate,
+}: SidebarBodyProps) {
+  return (
+    <>
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        <ul className="flex flex-col gap-0.5" role="list">
+          {NAV_ITEMS.map((item) => (
+            <li key={item.to}>
+              <SideNavLink item={item} caps={caps} onNavigate={onNavigate} />
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {/* User footer */}
+      <div className="border-t border-border px-2 py-3">
+        <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
+          <UserInitials email={email} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex-1 truncate text-xs text-muted-foreground cursor-default"
+                aria-label={`Signed in as ${email}`}
+              >
+                {email}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              {email}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={onLogout}
+                disabled={isLoggingOut}
+                aria-label="Sign out"
+              >
+                <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              Sign out
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function AppShell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: whoAmI } = useWhoAmI();
   const caps = useCapabilities();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useCommandK(() => setSearchOpen(true));
 
   const { mutate: doLogout, isPending: isLoggingOut } = useMutation(logout, {
@@ -187,10 +271,33 @@ export function AppShell() {
         Skip to main content
       </a>
 
+      {/* ── Mobile navigation drawer (<md) ── */}
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent
+          side="left"
+          className="flex w-64 flex-col gap-0 border-r border-border bg-sidebar p-0 md:hidden"
+          aria-label="Primary navigation"
+        >
+          {/* Brand */}
+          <div className="flex h-14 items-center border-b border-border px-4">
+            <SheetTitle asChild>
+              <Logo markClassName="h-5 w-5" wordmarkClassName="text-sm" />
+            </SheetTitle>
+          </div>
+          <SidebarBody
+            caps={caps}
+            email={email}
+            isLoggingOut={isLoggingOut}
+            onLogout={() => doLogout({})}
+            onNavigate={() => setDrawerOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex h-screen overflow-hidden bg-background">
-        {/* ── Sidebar ── */}
+        {/* ── Sidebar (static, md+ only) ── */}
         <aside
-          className="flex w-56 shrink-0 flex-col border-r border-border bg-sidebar"
+          className="hidden w-56 shrink-0 flex-col border-r border-border bg-sidebar md:flex"
           aria-label="Primary navigation"
         >
           {/* Brand */}
@@ -198,63 +305,40 @@ export function AppShell() {
             <Logo markClassName="h-5 w-5" wordmarkClassName="text-sm" />
           </div>
 
-          {/* Nav */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3">
-            <ul className="flex flex-col gap-0.5" role="list">
-              {NAV_ITEMS.map((item) => (
-                <li key={item.to}>
-                  <SideNavLink item={item} caps={caps} />
-                </li>
-              ))}
-            </ul>
-          </nav>
-
-          {/* User footer */}
-          <div className="border-t border-border px-2 py-3">
-            <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
-              <UserInitials email={email} />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="flex-1 truncate text-xs text-muted-foreground cursor-default"
-                    aria-label={`Signed in as ${email}`}
-                  >
-                    {email}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">
-                  {email}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => doLogout({})}
-                    disabled={isLoggingOut}
-                    aria-label="Sign out"
-                  >
-                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">
-                  Sign out
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
+          <SidebarBody
+            caps={caps}
+            email={email}
+            isLoggingOut={isLoggingOut}
+            onLogout={() => doLogout({})}
+          />
         </aside>
 
         {/* ── Main content ── */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Top bar */}
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
-            {/* Page title injected by child route via context / future enhancement */}
-            <span className="text-sm text-muted-foreground">
-              Privileged access management
-            </span>
+          {/* Top bar — at md+ this is exactly as before (title + right cluster).
+              Below md the title is replaced by a hamburger + brand; the search
+              and theme controls stay in the right cluster (single instance, so
+              they remain reachable at every width without duplicate labels). */}
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4 md:px-6">
+            {/* Left: hamburger + brand (<md) / page title (md+) */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground md:hidden"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open navigation"
+              >
+                <Menu className="h-5 w-5" aria-hidden="true" />
+              </Button>
+              <span className="md:hidden">
+                <Logo markClassName="h-5 w-5" wordmarkClassName="text-sm" />
+              </span>
+              {/* Page title injected by child route via context / future enhancement */}
+              <span className="hidden text-sm text-muted-foreground md:inline">
+                Privileged access management
+              </span>
+            </div>
             {/* Right cluster — catalog search + theme toggle */}
             <div className="flex items-center gap-2">
               <button

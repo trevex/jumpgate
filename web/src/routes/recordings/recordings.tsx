@@ -634,17 +634,19 @@ export function RecordingsPage() {
         </p>
       </header>
 
-      {/* Split: list | player */}
+      {/* Split: list | player — stacks below md, side-by-side at md+ */}
       <div
         className={cn(
-          "flex flex-1 min-h-0 overflow-hidden",
+          "flex flex-1 min-h-0 flex-col overflow-hidden md:flex-row",
         )}
       >
-        {/* Recordings list — narrows when a recording is selected */}
+        {/* Recordings list — narrows when a recording is selected (md+ only) */}
         <div
           className={cn(
             "flex flex-col transition-all duration-200 min-w-0",
-            selectedId ? "w-[45%] border-r border-border" : "flex-1",
+            selectedId
+              ? "min-h-0 flex-1 border-b border-border md:h-auto md:w-[45%] md:flex-none md:border-b-0 md:border-r"
+              : "flex-1",
           )}
         >
           <RecordingsList selectedId={selectedId} onSelect={handleSelect} />
@@ -652,7 +654,7 @@ export function RecordingsPage() {
 
         {/* Player panel — only shown when a recording is selected */}
         {selectedId && (
-          <div className="flex-1 min-w-0">
+          <div className="min-h-0 flex-1 min-w-0">
             <PlayerPanel sessionId={selectedId} onClose={handleClose} />
           </div>
         )}

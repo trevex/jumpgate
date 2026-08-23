@@ -98,11 +98,11 @@ export function CatalogPage() {
   }, [setSearchParams]);
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col md:flex-row">
       {/* ── Left: tree pane ── */}
       <aside
         className={cn(
-          "flex w-64 shrink-0 flex-col border-r border-border bg-sidebar",
+          "flex max-h-[50vh] w-full shrink-0 flex-col border-b border-border bg-sidebar md:max-h-none md:w-64 md:border-b-0 md:border-r",
           "overflow-hidden",
         )}
         aria-label="Catalog tree"
