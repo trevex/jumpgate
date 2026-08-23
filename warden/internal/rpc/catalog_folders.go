@@ -105,7 +105,7 @@ func (s *CatalogServer) resolveParentFolder(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if len(folders) > 0 {
+	if len(authz.FolderIDsOf(folders)) > 0 {
 		return id, nil
 	}
 	return uuid.Nil, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
@@ -124,10 +124,13 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, err
 	}
-	ids, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, req.Msg.Cascade)
+	visible, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	// Slice B ignores the per-folder Governed intent; a proto field surfaces it in a
+	// later slice. Here we keep the existing behavior and consume only the id set.
+	ids := authz.FolderIDsOf(visible)
 	out := &catalogv1.ListFoldersResponse{}
 	if len(ids) == 0 {
 		return connect.NewResponse(out), nil

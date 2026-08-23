@@ -389,39 +389,40 @@ func TestVisibleAssetsUnder(t *testing.T) {
 	idSet(t, "assets admin root(nil) no-cascade", got, nil)
 
 	// ── VisibleFoldersUnder ───────────────────────────────────────────────────
-	// bob: f1 visible because its subtree (f2) holds bob's accessible a2. f2 is not
-	// a child of root, so it does not appear at the root level.
+	// bob: f1 visible because it is an ancestor of bob's accessible asset a2 (in f2),
+	// i.e. a path-reveal ancestor. f2 is not a child of root, so it does not appear at
+	// the root level.
 	gotF, err := s.VisibleFoldersUnder(ctx, bob, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "folders bob root no-cascade", gotF, []uuid.UUID{f1})
+	idSet(t, "folders bob root no-cascade", FolderIDsOf(gotF), []uuid.UUID{f1})
 
 	// admin holds catalog:folder:read globally → all level folders.
 	gotF, err = s.VisibleFoldersUnder(ctx, admin, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "folders admin root no-cascade", gotF, []uuid.UUID{f1})
+	idSet(t, "folders admin root no-cascade", FolderIDsOf(gotF), []uuid.UUID{f1})
 	gotF, err = s.VisibleFoldersUnder(ctx, admin, f1, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "folders admin f1 no-cascade", gotF, []uuid.UUID{f2})
+	idSet(t, "folders admin f1 no-cascade", FolderIDsOf(gotF), []uuid.UUID{f2})
 
-	// alice: a1 in f1 → f1 visible via the access arm.
+	// alice: a1 in f1 → f1 visible as an ancestor-or-self of her accessible asset.
 	gotF, err = s.VisibleFoldersUnder(ctx, alice, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "folders alice root no-cascade", gotF, []uuid.UUID{f1})
+	idSet(t, "folders alice root no-cascade", FolderIDsOf(gotF), []uuid.UUID{f1})
 
-	// stranger: nothing → no folders.
+	// stranger: no anchors → no folders.
 	gotF, err = s.VisibleFoldersUnder(ctx, stranger.ID, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "folders stranger root no-cascade", gotF, nil)
+	idSet(t, "folders stranger root no-cascade", FolderIDsOf(gotF), nil)
 }
 
 // TestVisibleScopedNonGlobalAdmin pins that a user whose catalog read caps are
@@ -482,12 +483,13 @@ func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
 	}
 	idSet(t, "scoped admin: assets under f1 no-cascade", got, []uuid.UUID{a1})
 
-	// Folders directly under f1 (non-cascade): only f2.
+	// Folders directly under f1 (non-cascade): only f2 (governed, inside the f1 mgmt
+	// subtree; also an anchor ancestor-or-self of a2's folder f2).
 	gotF, err := s.VisibleFoldersUnder(ctx, u, f1, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "scoped admin: folders under f1 no-cascade", gotF, []uuid.UUID{f2})
+	idSet(t, "scoped admin: folders under f1 no-cascade", FolderIDsOf(gotF), []uuid.UUID{f2})
 
 	// Caps must NOT leak to the sibling branch f3/a3: assets under f3 (cascade).
 	got, err = s.VisibleAssetsUnder(ctx, u, f3, true)
@@ -503,13 +505,15 @@ func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// f1 is visible (scoped cap on f1 ⇒ CapabilitiesOnScope(FolderScope(f1)) hits
-	// it directly); f3 is a sibling with no matching binding.
-	if set := toSet(gotF); !contains(set, f1) {
-		t.Fatalf("scoped admin: f1 must be visible under root; got %v", gotF)
+	// f1 is visible: it is a mgmt anchor (scoped cap on f1) and an ancestor-or-self of
+	// the anchors {f1, f2}. f3 is a sibling with no matching binding and no anchor at
+	// or under it → not visible (scoped caps do not leak sideways).
+	gotFIDs := FolderIDsOf(gotF)
+	if set := toSet(gotFIDs); !contains(set, f1) {
+		t.Fatalf("scoped admin: f1 must be visible under root; got %v", gotFIDs)
 	}
-	if set := toSet(gotF); contains(set, f3) {
-		t.Fatalf("scoped admin: f3 must NOT be visible under root (no binding); got %v", gotF)
+	if set := toSet(gotFIDs); contains(set, f3) {
+		t.Fatalf("scoped admin: f3 must NOT be visible under root (no binding); got %v", gotFIDs)
 	}
 }
 
@@ -543,7 +547,7 @@ func TestVisibleManageOnlyEmptyFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "manage-only empty folder: admin sees f1 and fe under root", gotF, []uuid.UUID{f1, fe})
+	idSet(t, "manage-only empty folder: admin sees f1 and fe under root", FolderIDsOf(gotF), []uuid.UUID{f1, fe})
 }
 
 // TestVisibleNonexistentParent pins that passing a random uuid as the parent id
@@ -566,7 +570,7 @@ func TestVisibleNonexistentParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VisibleFoldersUnder nonexistent parent: %v", err)
 	}
-	idSet(t, "folders nonexistent parent no-cascade", gotF, nil)
+	idSet(t, "folders nonexistent parent no-cascade", FolderIDsOf(gotF), nil)
 }
 
 // TestVisibleLeafFolderHasNoChildren pins that VisibleFoldersUnder on a leaf
@@ -582,7 +586,7 @@ func TestVisibleLeafFolderHasNoChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VisibleFoldersUnder leaf f2: %v", err)
 	}
-	idSet(t, "folders leaf f2 no-cascade", gotF, nil)
+	idSet(t, "folders leaf f2 no-cascade", FolderIDsOf(gotF), nil)
 }
 
 // TestVisibleCascadeNoDuplicates pins that VisibleAssetsUnder with cascade=true
@@ -887,12 +891,12 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	}
 	idSet(t, "pre-deactivation: assets under f1", got, []uuid.UUID{a1})
 
-	// f1 is also visible (browse path to a1).
+	// f1 is also visible (path-reveal ancestor of a1's folder).
 	gotF, err := s.VisibleFoldersUnder(ctx, u.ID, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "pre-deactivation: folders under root", gotF, []uuid.UUID{f1})
+	idSet(t, "pre-deactivation: folders under root", FolderIDsOf(gotF), []uuid.UUID{f1})
 
 	// Deactivate: all visibility must vanish immediately (no reaper needed).
 	deactivateUser(t, pool, u.ID)
@@ -907,7 +911,7 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idSet(t, "deactivated: folders under root", gotF, nil)
+	idSet(t, "deactivated: folders under root", FolderIDsOf(gotF), nil)
 }
 
 // TestIsMember verifies IsMember: direct member returns true; transitive

@@ -42,7 +42,7 @@ func (stubAuthorizer) VisibleAssets(context.Context, uuid.UUID) ([]authz.AssetVi
 func (stubAuthorizer) RolesOnAsset(context.Context, uuid.UUID, uuid.UUID) (authz.AssetRoles, error) {
 	return authz.AssetRoles{}, nil
 }
-func (stubAuthorizer) VisibleFoldersUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {
+func (stubAuthorizer) VisibleFoldersUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]authz.VisibleFolder, error) {
 	return nil, nil
 }
 func (stubAuthorizer) VisibleAssetsUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {

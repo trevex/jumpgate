@@ -30,6 +30,13 @@ type AssetRoles struct {
 	Requestable []uuid.UUID
 }
 
+// VisibleFolder is one visible folder plus whether the caller governs it (holds a
+// management cap at/under it) vs sees it only as a breadcrumb on the path to an anchor.
+type VisibleFolder struct {
+	ID       uuid.UUID
+	Governed bool
+}
+
 // Authorizer answers relationship-based access questions for a user.
 type Authorizer interface {
 	// Check reports whether the user has the given capability on the asset via any
@@ -55,16 +62,18 @@ type Authorizer interface {
 	// RolesOnAsset returns the user's active and requestable roles on one asset.
 	RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error)
 
-	// VisibleFoldersUnder returns the ids of the folders directly under `parent`
-	// (parent == uuid.Nil is the tree root: folders with parent_id IS NULL) that
-	// the user may SEE, unioning the management axis with the access axis. A folder
-	// is visible when the user holds "catalog:folder:read" on it (management) OR its
-	// subtree contains an asset the user can reach — either in VisibleAssets or
-	// CONNECT-visible (a folder/global ssh:login cascade entitling ≥1 of the asset's
-	// own logins), so the browse path down to a connect-visible asset is not hidden.
-	// With cascade, the whole subtree under `parent` is considered as candidate
-	// folders, not just the immediate children.
-	VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error)
+	// VisibleFoldersUnder returns the folders directly under `parent` (parent ==
+	// uuid.Nil is the tree root: folders with parent_id IS NULL) the user may SEE,
+	// each with a `Governed` flag. Visibility is path-reveal: a folder is visible iff
+	// it is an ANCESTOR-OR-SELF of an anchor (reveal the browse PATH to anything the
+	// user can see or administer) OR it is INSIDE a folder the user manages (cascade
+	// down). Anchors are the union of: folders where the user holds a management cap;
+	// the home folders of roles/groups visible to the user; and the folders of assets
+	// visible to the user (access ∪ management ∪ connect). `Governed` is true iff the
+	// folder is at/under a folder the user manages — a revealed ancestor is visible
+	// but NOT governed (no capability is conferred on it). With cascade, the whole
+	// subtree under `parent` is the candidate level, not just the immediate children.
+	VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error)
 
 	// VisibleAssetsUnder returns the ids of the assets under `parent` (a folder;
 	// uuid.Nil is the root) the user may SEE, unioning management with access and

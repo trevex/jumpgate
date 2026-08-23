@@ -28,7 +28,7 @@ func (scopeStub) VisibleAssets(context.Context, uuid.UUID) ([]authz.AssetVisibil
 func (scopeStub) RolesOnAsset(context.Context, uuid.UUID, uuid.UUID) (authz.AssetRoles, error) {
 	return authz.AssetRoles{}, nil
 }
-func (scopeStub) VisibleFoldersUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {
+func (scopeStub) VisibleFoldersUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]authz.VisibleFolder, error) {
 	return nil, nil
 }
 func (scopeStub) VisibleAssetsUnder(context.Context, uuid.UUID, uuid.UUID, bool) ([]uuid.UUID, error) {

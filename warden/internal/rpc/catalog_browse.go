@@ -167,10 +167,11 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 	out := &catalogv1.ListFolderContentsResponse{}
 
 	// ── folders ───────────────────────────────────────────────────────────────
-	folderIDs, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, false)
+	visibleFolders, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, parent, false)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 {
 		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{
 			Ids: folderIDs,
@@ -359,10 +360,11 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 	}
 
 	// ── folders ────────────────────────────────────────────────────────────────
-	folderIDs, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, uuid.Nil, true)
+	visibleFolders, err := s.authorizer.VisibleFoldersUnder(ctx, u.ID, uuid.Nil, true)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 && !full() {
 		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{Ids: folderIDs, Lim: int32Len(folderIDs)})
 		if err != nil {

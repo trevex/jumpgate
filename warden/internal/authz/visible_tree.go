@@ -323,110 +323,176 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 	return out, nil
 }
 
-// VisibleFoldersUnder returns the folder ids under `parent` the user may see. See
-// the Authorizer interface for the visibility predicate.
+// VisibleFoldersUnder returns the folders under `parent` the user may see, each
+// with a `Governed` flag. See the Authorizer interface for the visibility model.
 //
-// Management arm: a folder is manageable iff the user holds "catalog:folder:read"
-// on it. A GLOBAL hold short-circuits to "all level folders" (one query).
+// The predicate is PATH-REVEAL. A folder is visible iff it is an ancestor-or-self
+// of an ANCHOR (reveal the browse path to anything the user can see/administer) OR
+// it is inside a folder the user manages (cascade down). `Governed` is the latter:
+// the user holds a management cap at/under the folder — a revealed ancestor is
+// visible but NOT governed (no capability is conferred on it).
 //
-// Access arm: a folder is access-visible iff its subtree (inclusive) contains an
-// asset the user can reach — either VisibleAssets (active/requestable) OR an asset
-// the caller is CONNECT-visible on (folder+global ssh:login cascade entitling ≥1
-// of the asset's own logins). So the browse path down to a connect-visible asset
-// is never hidden.
-func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
-	levelFolders, err := s.childCandidateFolderIDs(ctx, parent, cascade)
-	if err != nil {
-		return nil, err
-	}
-	if len(levelFolders) == 0 {
-		return nil, nil
-	}
-
-	// Management arm: global short-circuit.
+// Anchors = the union of four bounded helper sets (already implemented):
+//   - mgmtScopeFolders:        folders where the user holds a management cap;
+//   - visibleRoleHomeFolders:  home folders of roles visible to the user;
+//   - visibleGroupHomeFolders: home folders of groups visible to the user;
+//   - visibleAssetFolders:     folders of assets visible to the user (access ∪
+//     management ∪ connect).
+//
+// A user with a GLOBAL catalog:folder:read (or `**`) governs and sees the whole
+// tree; that case short-circuits to every folder at the level with governed=true.
+func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
+	// Global management short-circuit: a global catalog:folder:read (or **) holder
+	// governs and sees the whole tree.
 	global, err := s.globalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	if global.Allows("catalog:folder:read") {
-		return levelFolders, nil
+		return s.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
 	}
 
-	accessible, err := s.accessibleAssetSet(ctx, userID)
+	// Pass 1 — anchors (bounded work; each helper already implemented).
+	mgmt, err := s.mgmtScopeFolders(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Memoized connect-visibility for a single asset (fetch logins + AssetScope caps
-	// once per asset). Only consulted for subtree assets not already in `accessible`,
-	// so a `**` / catalog:folder:read caller short-circuits above and never pays this.
-	connectMemo := map[uuid.UUID]bool{}
-	assetConnectVisible := func(assetID uuid.UUID) (bool, error) {
-		if v, ok := connectMemo[assetID]; ok {
-			return v, nil
-		}
-		byID, err := s.assetLoginsFor(ctx, []uuid.UUID{assetID})
-		if err != nil {
-			return false, err
-		}
-		logins := byID[assetID]
-		if len(logins) == 0 {
-			connectMemo[assetID] = false
-			return false, nil
-		}
-		caps, err := s.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
-		if err != nil {
-			return false, err
-		}
-		v := len(caps.EntitledLogins(logins)) > 0
-		connectMemo[assetID] = v
-		return v, nil
+	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
+	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	assetHomes, err := s.visibleAssetFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	anchors := unionKeys(mgmt, roleHomes, groupHomes, assetHomes)
+	if len(anchors) == 0 {
+		return nil, nil
+	}
+	mgmtIDs := mapKeys(mgmt)
 
-	var out []uuid.UUID
-	for _, folderID := range levelFolders {
-		// Management arm (per folder).
-		caps, err := s.CapabilitiesOnScope(ctx, userID, FolderScope(folderID))
-		if err != nil {
-			return nil, err
+	// Pass 2 — one ltree query. Level predicate mirrors childCandidateFolderIDs:
+	//   cascade=false -> direct children of parent (NULL-safe);
+	//   cascade=true  -> the subtree under parent (root => whole tree).
+	// A folder is visible if it is an ancestor-or-self of an anchor (path reveal)
+	// OR inside a folder the user manages (cascade down). governed = the latter.
+	sql, args := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
+	rows, err := s.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("visible folders (ltree): %w", err)
+	}
+	defer rows.Close()
+	var out []VisibleFolder
+	for rows.Next() {
+		var vf VisibleFolder
+		if err := rows.Scan(&vf.ID, &vf.Governed); err != nil {
+			return nil, fmt.Errorf("scan visible folder: %w", err)
 		}
-		if caps.Allows("catalog:folder:read") {
-			out = append(out, folderID)
-			continue
-		}
-		// Access/connect arm: does the subtree hold a reachable asset?
-		// TODO(perf): in cascade mode this issues O(F) overlapping subtree/asset
-		// queries (one folderSubtreeIDs + one assetIDsInFolders per non-manageable
-		// folder). A single level-wide asset→ancestor map hoisted before the loop
-		// would reduce that to two queries total.
-		subtree, err := s.folderSubtreeIDs(ctx, []uuid.UUID{folderID})
-		if err != nil {
-			return nil, err
-		}
-		assetIDs, err := s.assetIDsInFolders(ctx, subtree)
-		if err != nil {
-			return nil, err
-		}
-		visible := false
-		for _, assetID := range assetIDs {
-			if _, ok := accessible[assetID]; ok {
-				visible = true
-				break
-			}
-			cv, err := assetConnectVisible(assetID)
-			if err != nil {
-				return nil, err
-			}
-			if cv {
-				visible = true
-				break
-			}
-		}
-		if visible {
-			out = append(out, folderID)
-		}
+		out = append(out, vf)
+	}
+	return out, rows.Err()
+}
+
+// visibleFoldersQuery builds the single-query, two-anchor-set path-reveal SELECT
+// used by VisibleFoldersUnder. `anchors` are the folders whose path must be
+// revealed (ancestor-or-self); `mgmtIDs` are the folders the user manages (their
+// subtrees are visible AND governed). The `<LEVEL>` predicate is inlined per the
+// (parent, cascade) case exactly as childCandidateFolderIDs computes the browse
+// level; a nil `parent` is bound as SQL NULL via `parent_id IS NOT DISTINCT FROM`
+// (matching childFolderIDs) or, for cascade, means the whole tree (no predicate).
+func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, []any) {
+	// $1 anchors, $2 mgmtIDs; $3 (when present) is the parent binding.
+	args := []any{anchors, mgmtIDs}
+	var level string
+	switch {
+	case cascade && parent == uuid.Nil:
+		// Whole tree: every folder is at the level.
+		level = "TRUE"
+	case cascade:
+		// Subtree under parent (inclusive).
+		args = append(args, parent)
+		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $3)"
+	case parent == uuid.Nil:
+		// Direct children of the root (parent_id IS NULL), bound NULL-safe.
+		args = append(args, (*uuid.UUID)(nil))
+		level = "f.parent_id IS NOT DISTINCT FROM $3"
+	default:
+		// Direct children of parent.
+		args = append(args, parent)
+		level = "f.parent_id IS NOT DISTINCT FROM $3"
+	}
+	sql := `
+WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY($1::uuid[])),
+     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[]))
+SELECT f.id,
+       EXISTS (SELECT 1 FROM mgmt_paths m WHERE f.path_ids <@ m.path_ids) AS governed
+FROM folders f
+WHERE ` + level + `
+  AND ( EXISTS (SELECT 1 FROM anchor_paths a WHERE f.path_ids @> a.path_ids)
+     OR EXISTS (SELECT 1 FROM mgmt_paths  m WHERE f.path_ids <@ m.path_ids) )
+ORDER BY f.name, f.id`
+	return sql, args
+}
+
+// allFoldersAtLevel returns every folder at the browse level under `parent`
+// (reusing childCandidateFolderIDs), each with the given `governed` flag. It backs
+// the global-management short-circuit in VisibleFoldersUnder, where the caller sees
+// (and governs) the whole tree without per-folder anchor work.
+func (s *sqlAuthorizer) allFoldersAtLevel(ctx context.Context, parent uuid.UUID, cascade, governed bool) ([]VisibleFolder, error) {
+	ids, err := s.childCandidateFolderIDs(ctx, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	out := make([]VisibleFolder, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, VisibleFolder{ID: id, Governed: governed})
 	}
 	return out, nil
+}
+
+// FolderIDsOf projects the ids out of a []VisibleFolder (preserving order), for
+// callers/tests that only need the visible id set.
+func FolderIDsOf(v []VisibleFolder) []uuid.UUID {
+	if len(v) == 0 {
+		return nil
+	}
+	out := make([]uuid.UUID, 0, len(v))
+	for _, f := range v {
+		out = append(out, f.ID)
+	}
+	return out
+}
+
+// unionKeys collects the union of the keys of the given sets into a slice.
+func unionKeys(maps ...map[uuid.UUID]struct{}) []uuid.UUID {
+	seen := map[uuid.UUID]struct{}{}
+	var out []uuid.UUID
+	for _, m := range maps {
+		for k := range m {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// mapKeys returns the keys of a set as a slice (order-independent).
+func mapKeys(m map[uuid.UUID]struct{}) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // ── Role / group visibility ────────────────────────────────────────────────
@@ -808,7 +874,13 @@ func (s *sqlAuthorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid
 
 // isManagementCap reports whether a capability pattern grants management (as
 // opposed to pure connect). Management = anything under catalog:/access:/identity:
-// or the ** / * wildcard. A bare ssh:* is connect and does NOT anchor a folder.
+// or the broad `**` wildcard (the admin cap, which matches every capability at any
+// depth). A bare ssh:* is connect and does NOT anchor a folder.
+//
+// A bare `*` is matched here defensively but is inert in practice: `*` matches
+// exactly ONE segment and never crosses a `:` (docs/capabilities.md), so it never
+// matches a concrete management capability like `catalog:folder:read`, and it is
+// rejected as a stored pattern at CreateRole. `**` is the real broad wildcard.
 func isManagementCap(pat string) bool {
 	if pat == "**" || pat == "*" {
 		return true
@@ -821,8 +893,9 @@ func isManagementCap(pat string) bool {
 // mgmtScopeFolders returns the folder scopes at which the user holds a role that
 // grants a management capability (folder/asset/role/group admin). Bounded by the
 // user's held folder-bindings (the held closure, object_kind='folder'); glob
-// classification is done in Go over that small set. These folders anchor
-// path-reveal AND set the `governed` flag used by the catalog browse.
+// classification is done in Go over that small set. These folders are both a
+// path-reveal anchor source and the set whose subtrees VisibleFoldersUnder marks
+// `governed`: a folder is governed iff it is at/under one of these scopes.
 //
 // roles.capabilities is a jsonb pattern array, so — exactly as scanCapabilities /
 // capsOnFolders do — it is scanned as raw bytes and json-unmarshaled into the

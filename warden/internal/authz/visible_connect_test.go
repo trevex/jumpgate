@@ -110,11 +110,13 @@ func TestConnectCascadeVisible(t *testing.T) {
 	}
 
 	// The cascade folder must surface so the browse path down to cbox exists. Query
-	// the level under root (cf is a child of root).
-	folders, err := s.VisibleFoldersUnder(ctx, alice, root, false)
+	// the level under root (cf is a child of root). cf is visible because it is an
+	// ancestor-or-self of the anchor cbox's folder (path-reveal).
+	vf, err := s.VisibleFoldersUnder(ctx, alice, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	folders := FolderIDsOf(vf)
 	if _, ok := toSet(folders)[cf]; !ok {
 		t.Fatalf("alice: cf ancestor folder not visible under root: %v", folders)
 	}
@@ -134,10 +136,11 @@ func TestConnectCascadeAdminSeesAll(t *testing.T) {
 	if _, ok := toSet(assets)[cbox]; !ok {
 		t.Fatalf("admin(**): cbox not visible: %v", assets)
 	}
-	folders, err := s.VisibleFoldersUnder(ctx, admin, root, false)
+	vf, err := s.VisibleFoldersUnder(ctx, admin, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	folders := FolderIDsOf(vf)
 	if _, ok := toSet(folders)[cf]; !ok {
 		t.Fatalf("admin(**): cf not visible: %v", folders)
 	}
@@ -158,11 +161,13 @@ func TestConnectCascadeNoEntitledLogin(t *testing.T) {
 	if _, ok := toSet(assets)[cbox]; ok {
 		t.Fatalf("carol: cbox unexpectedly visible with no entitled login: %v", assets)
 	}
-	// With no visible asset in the subtree, the cascade folder must stay hidden too.
-	folders, err := s.VisibleFoldersUnder(ctx, carol, root, false)
+	// With no visible asset in the subtree and no other anchor, the cascade folder
+	// must stay hidden too (carol has no path-reveal anchor at/under cf).
+	vf, err := s.VisibleFoldersUnder(ctx, carol, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	folders := FolderIDsOf(vf)
 	if _, ok := toSet(folders)[cf]; ok {
 		t.Fatalf("carol: cf unexpectedly visible: %v", folders)
 	}
@@ -182,10 +187,11 @@ func TestConnectCascadeNobody(t *testing.T) {
 	if len(assets) != 0 {
 		t.Fatalf("nobody: expected no assets, got %v", assets)
 	}
-	folders, err := s.VisibleFoldersUnder(ctx, nobody, root, false)
+	vf, err := s.VisibleFoldersUnder(ctx, nobody, root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	folders := FolderIDsOf(vf)
 	if len(folders) != 0 {
 		t.Fatalf("nobody: expected no folders, got %v", folders)
 	}
