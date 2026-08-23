@@ -158,6 +158,36 @@ func (q *Queries) InsertLiveSession(ctx context.Context, arg InsertLiveSessionPa
 	return i, err
 }
 
+const listDistinctAssetsByUserAndWorkers = `-- name: ListDistinctAssetsByUserAndWorkers :many
+SELECT DISTINCT asset_id FROM live_sessions
+WHERE user_id = $1 AND worker_id = ANY($2::text[])
+`
+
+type ListDistinctAssetsByUserAndWorkersParams struct {
+	UserID  uuid.UUID `json:"user_id"`
+	Column2 []string  `json:"column_2"`
+}
+
+func (q *Queries) ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listDistinctAssetsByUserAndWorkers, arg.UserID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var asset_id uuid.UUID
+		if err := rows.Scan(&asset_id); err != nil {
+			return nil, err
+		}
+		items = append(items, asset_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDistinctUserAssetsByWorkers = `-- name: ListDistinctUserAssetsByWorkers :many
 SELECT DISTINCT user_id, asset_id FROM live_sessions WHERE worker_id = ANY($1::text[])
 `

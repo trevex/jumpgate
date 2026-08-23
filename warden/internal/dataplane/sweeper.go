@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -49,6 +50,32 @@ func (s *Sweeper) SweepOwned(ctx context.Context) error {
 	for _, p := range pairs {
 		if err := s.terminator.Reevaluate(ctx, p.UserID, p.AssetID); err != nil {
 			slog.Error("sweep reevaluate failed", "user", p.UserID, "asset", p.AssetID, "err", err)
+		}
+	}
+	return nil
+}
+
+// SweepOwnedForUser is the narrowed sweep: it re-evaluates the connect predicate for
+// only the given user's live sessions whose worker is connected to this replica, and
+// tears down those that lost their login. It restricts WHICH (user,asset) pairs are
+// evaluated but uses the SAME per-pair Terminator.Reevaluate as SweepOwned — never a
+// different teardown decision. Used when an authz_changed notification identifies a
+// single affected user (see the always-safe-to-full-sweep invariant in the trigger).
+func (s *Sweeper) SweepOwnedForUser(ctx context.Context, userID uuid.UUID) error {
+	workers := s.registry.ConnectedWorkers()
+	if len(workers) == 0 {
+		return nil
+	}
+	assets, err := gen.New(s.pool).ListDistinctAssetsByUserAndWorkers(ctx, gen.ListDistinctAssetsByUserAndWorkersParams{
+		UserID:  userID,
+		Column2: workers,
+	})
+	if err != nil {
+		return fmt.Errorf("list owned sessions for user: %w", err)
+	}
+	for _, assetID := range assets {
+		if err := s.terminator.Reevaluate(ctx, userID, assetID); err != nil {
+			slog.Error("sweep reevaluate failed", "user", userID, "asset", assetID, "err", err)
 		}
 	}
 	return nil
@@ -109,13 +136,23 @@ func (s *Sweeper) RunGC(ctx context.Context, interval, orphanGrace, teardownGrac
 
 const authzChangedChannel = "authz_changed"
 
-// RunAuthzSweeper LISTENs on authz_changed and runs a debounced SweepOwned on each
-// notification, plus SweepOwned on a periodic ticker (the pull-sweep backstop).
-// Coalesces a burst into a single sweep; at most one sweep runs at a time, with one
-// follow-up if a change arrives mid-sweep. Exits on ctx cancellation, waiting for the
-// listener goroutine to unwind before returning so callers can safely close the pool.
+// RunAuthzSweeper LISTENs on authz_changed and runs a debounced sweep on each
+// notification, plus a full SweepOwned on a periodic ticker (the pull-sweep backstop).
+//
+// The notification payload identifies the affected subject: an empty payload means a
+// full sweep is required (the change had a transitive/broad blast radius); a payload
+// that parses as a user UUID means only that user's sessions need re-evaluation.
+//
+// A burst is coalesced into a single sweep over the debounce window. The window
+// accumulates the union of specific affected users, BUT if ANY empty-payload (or any
+// unparseable payload) arrives, the whole batch escalates to a full sweep — a full
+// sweep supersedes any set of narrow ones, so this is always at least as much work as
+// each narrow sweep would have done (never less). At most one sweep runs at a time,
+// with one follow-up if a change arrives mid-sweep. Exits on ctx cancellation, waiting
+// for the listener goroutine to unwind before returning so callers can safely close
+// the pool.
 func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.Duration) {
-	trigger := make(chan struct{}, 1)
+	trigger := make(chan string, 64)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -131,7 +168,8 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 			return
 		case <-ticker.C:
 			s.sweepOwnedLogged(ctx)
-		case <-trigger:
+		case payload := <-trigger:
+			full, users := s.accumulate(payload, nil)
 			t := time.NewTimer(debounce)
 			coalesce := true
 			for coalesce {
@@ -139,7 +177,11 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 				case <-ctx.Done():
 					t.Stop()
 					return
-				case <-trigger:
+				case p := <-trigger:
+					full, users = s.accumulate(p, users)
+					if full {
+						users = nil // no need to track specifics once escalated
+					}
 					if !t.Stop() {
 						<-t.C
 					}
@@ -148,7 +190,42 @@ func (s *Sweeper) RunAuthzSweeper(ctx context.Context, interval, debounce time.D
 					coalesce = false
 				}
 			}
-			s.sweepOwnedLogged(ctx)
+			s.runBatch(ctx, full, users)
+		}
+	}
+}
+
+// accumulate folds one notification payload into the running batch state. Returns the
+// updated (fullSweepRequired, affectedUsers). An empty or unparseable payload escalates
+// the batch to a full sweep (the always-safe fallback); a parseable user UUID adds that
+// user to the set. Once full is true it stays true — a full sweep supersedes narrows.
+func (s *Sweeper) accumulate(payload string, users map[uuid.UUID]struct{}) (bool, map[uuid.UUID]struct{}) {
+	if payload == "" {
+		return true, nil
+	}
+	id, err := uuid.Parse(payload)
+	if err != nil {
+		// Unrecognized payload: fail safe to a full sweep.
+		return true, nil
+	}
+	if users == nil {
+		users = make(map[uuid.UUID]struct{})
+	}
+	users[id] = struct{}{}
+	return false, users
+}
+
+// runBatch executes the coalesced sweep: a full SweepOwned if required, otherwise a
+// narrowed SweepOwnedForUser per accumulated user. An empty batch (no users, not full)
+// cannot happen — the loop is only entered after at least one payload is accumulated.
+func (s *Sweeper) runBatch(ctx context.Context, full bool, users map[uuid.UUID]struct{}) {
+	if full || len(users) == 0 {
+		s.sweepOwnedLogged(ctx)
+		return
+	}
+	for id := range users {
+		if err := s.SweepOwnedForUser(ctx, id); err != nil && ctx.Err() == nil {
+			slog.Error("authz sweep for user failed", "user", id, "err", err)
 		}
 	}
 }
@@ -159,7 +236,7 @@ func (s *Sweeper) sweepOwnedLogged(ctx context.Context) {
 	}
 }
 
-func (s *Sweeper) listenAuthz(ctx context.Context, trigger chan<- struct{}) {
+func (s *Sweeper) listenAuthz(ctx context.Context, trigger chan<- string) {
 	for ctx.Err() == nil {
 		if err := s.listenAuthzLoop(ctx, trigger); err != nil && ctx.Err() == nil {
 			slog.Error("authz listener error; retrying", "err", err)
@@ -171,7 +248,7 @@ func (s *Sweeper) listenAuthz(ctx context.Context, trigger chan<- struct{}) {
 	}
 }
 
-func (s *Sweeper) listenAuthzLoop(ctx context.Context, trigger chan<- struct{}) error {
+func (s *Sweeper) listenAuthzLoop(ctx context.Context, trigger chan<- string) error {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
 		return err
@@ -180,17 +257,29 @@ func (s *Sweeper) listenAuthzLoop(ctx context.Context, trigger chan<- struct{}) 
 	if _, err := conn.Exec(ctx, "LISTEN "+authzChangedChannel); err != nil {
 		return err
 	}
-	select {
-	case trigger <- struct{}{}:
-	default:
-	}
+	// On (re)connect, force a full sweep to reconcile anything missed while detached.
+	sendTrigger(ctx, trigger, "")
 	for {
-		if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
+		n, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
 			return err
 		}
+		sendTrigger(ctx, trigger, n.Payload)
+	}
+}
+
+// sendTrigger delivers a payload to the debounce loop. The channel is buffered; if it
+// is momentarily full (a large burst faster than the loop drains), block briefly rather
+// than drop — dropping a specific-user payload while keeping others could miss a user.
+// Coalescing still happens in the debounce window; this only bounds memory. On ctx
+// cancel it gives up (the loop is exiting anyway).
+func sendTrigger(ctx context.Context, trigger chan<- string, payload string) {
+	select {
+	case trigger <- payload:
+	default:
 		select {
-		case trigger <- struct{}{}:
-		default:
+		case trigger <- payload:
+		case <-ctx.Done():
 		}
 	}
 }

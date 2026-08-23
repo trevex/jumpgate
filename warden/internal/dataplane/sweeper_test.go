@@ -374,6 +374,73 @@ func TestSweepOwnedTearsDownDeauthorizedOwnedSession(t *testing.T) {
 	}
 }
 
+// TestSweepOwnedForUserTearsDownDeauthorizedSession: the narrowed sweep for the
+// affected user re-evaluates only that user's owned sessions and tears down the one
+// that lost its sole standing login — same teardown decision as the full SweepOwned.
+func TestSweepOwnedForUserTearsDownDeauthorizedSession(t *testing.T) {
+	f := setupSweep(t)
+	f.registerWorker("w1")
+	f.bindStanding(t)
+	sess := f.seedSession(t, "w1")
+
+	f.deleteBinding(t)
+
+	if err := f.swp.SweepOwnedForUser(f.ctx, f.user); err != nil {
+		t.Fatalf("SweepOwnedForUser: %v", err)
+	}
+
+	if !f.terminateRequestedAt(t, sess).Valid {
+		t.Fatal("narrowed sweep: deauthorized session must be torn down")
+	}
+	if n := f.sessionTerminatedCount(t); n != 1 {
+		t.Fatalf("session.terminated events = %d, want 1", n)
+	}
+	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestSweepOwnedForUserIgnoresOtherUsers: a narrowed sweep for some OTHER user must
+// not touch the fixture user's deauthorized session — narrowing restricts WHICH pairs
+// are evaluated. (The correct user's sweep, or the empty→full fallback, or the periodic
+// backstop is what tears this one down; this test pins the narrowing scope.)
+func TestSweepOwnedForUserIgnoresOtherUsers(t *testing.T) {
+	f := setupSweep(t)
+	f.registerWorker("w1")
+	f.bindStanding(t)
+	sess := f.seedSession(t, "w1")
+
+	f.deleteBinding(t)
+
+	other := uuid.New() // a different, unrelated user id
+	if err := f.swp.SweepOwnedForUser(f.ctx, other); err != nil {
+		t.Fatalf("SweepOwnedForUser(other): %v", err)
+	}
+
+	if f.terminateRequestedAt(t, sess).Valid {
+		t.Fatal("narrowed sweep for another user must not tear down this user's session")
+	}
+	if n := f.sessionTerminatedCount(t); n != 0 {
+		t.Fatalf("session.terminated events = %d, want 0", n)
+	}
+}
+
+// TestSweepOwnedForUserNoWorkers: with no connected workers the narrowed sweep is a
+// no-op and must not error or tear anything down.
+func TestSweepOwnedForUserNoWorkers(t *testing.T) {
+	f := setupSweep(t)
+	f.bindStanding(t)
+	sess := f.seedSession(t, "w1") // owned by w1, but w1 is NOT registered
+	f.deleteBinding(t)
+
+	if err := f.swp.SweepOwnedForUser(f.ctx, f.user); err != nil {
+		t.Fatalf("SweepOwnedForUser: %v", err)
+	}
+	if f.terminateRequestedAt(t, sess).Valid {
+		t.Fatal("no connected workers: terminate_requested_at must stay NULL")
+	}
+}
+
 // TestSweepOwnedSkipsUnownedSessions: a session owned by a worker NOT connected to
 // this replica must be left untouched, even when deauthorized.
 func TestSweepOwnedSkipsUnownedSessions(t *testing.T) {

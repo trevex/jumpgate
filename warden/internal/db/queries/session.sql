@@ -37,6 +37,10 @@ ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now();
 -- name: ListDistinctUserAssetsByWorkers :many
 SELECT DISTINCT user_id, asset_id FROM live_sessions WHERE worker_id = ANY($1::text[]);
 
+-- name: ListDistinctAssetsByUserAndWorkers :many
+SELECT DISTINCT asset_id FROM live_sessions
+WHERE user_id = $1 AND worker_id = ANY($2::text[]);
+
 -- name: ListStaleWorkerSessions :many
 SELECT ls.id FROM live_sessions ls
 JOIN worker_presence wp ON wp.worker_id = ls.worker_id
