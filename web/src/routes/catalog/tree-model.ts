@@ -13,6 +13,8 @@ export interface FolderNode {
   name: string;
   path: string;
   parentId: string;
+  /** true = caller holds a management capability here; false = path-only breadcrumb */
+  governed: boolean;
 }
 
 export interface AssetNode {
@@ -62,6 +64,7 @@ export function folderContentsToNodes(
       name: f.name,
       path: f.path,
       parentId: f.parentId,
+      governed: f.governed,
     })),
     assets: res.assets.map((a) => ({
       id: a.id,

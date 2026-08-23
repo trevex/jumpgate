@@ -24,15 +24,15 @@ describe("folderContentsToNodes", () => {
   it("maps folders to FolderNode array", () => {
     const res = makeResponse({
       folders: [
-        { id: "f1", name: "prod", path: "prod", parentId: "" } as never,
-        { id: "f2", name: "staging", path: "staging", parentId: "" } as never,
+        { id: "f1", name: "prod", path: "prod", parentId: "", governed: true } as never,
+        { id: "f2", name: "staging", path: "staging", parentId: "", governed: false } as never,
       ],
       foldersHasMore: false,
     });
     const { folders, hasMore } = folderContentsToNodes(res);
     expect(folders).toHaveLength(2);
-    expect(folders[0]).toEqual({ id: "f1", name: "prod", path: "prod", parentId: "" });
-    expect(folders[1]).toEqual({ id: "f2", name: "staging", path: "staging", parentId: "" });
+    expect(folders[0]).toEqual({ id: "f1", name: "prod", path: "prod", parentId: "", governed: true });
+    expect(folders[1]).toEqual({ id: "f2", name: "staging", path: "staging", parentId: "", governed: false });
     expect(hasMore.folders).toBe(false);
   });
 

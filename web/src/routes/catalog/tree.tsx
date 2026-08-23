@@ -273,7 +273,7 @@ function ShowAllFolders({ folderId, onSelect, selected, filter }: ShowAllFolders
       {folders.map((f) => (
         <FolderTreeNode
           key={f.id}
-          folder={{ id: f.id, name: f.name, path: f.path, parentId: f.parentId }}
+          folder={{ id: f.id, name: f.name, path: f.path, parentId: f.parentId, governed: f.governed }}
           depth={1}
           selected={selected}
           onSelect={onSelect}
@@ -532,6 +532,7 @@ function FolderTreeNode({ folder, depth, selected, onSelect, filter }: FolderNod
               : "text-foreground hover:bg-accent hover:text-foreground",
           )}
           aria-label={`${expanded ? "Collapse" : "Expand"} folder ${folder.name}`}
+          title={folder.governed ? undefined : "Path only — you don't administer this folder"}
         >
           <ChevronRight
             className={cn(
@@ -545,7 +546,7 @@ function FolderTreeNode({ folder, depth, selected, onSelect, filter }: FolderNod
           ) : (
             <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" aria-hidden="true" />
           )}
-          <span className="flex-1 truncate">{folder.name}</span>
+          <span className={cn("flex-1 truncate", !folder.governed && "text-muted-foreground")}>{folder.name}</span>
         </button>
       </FolderContextMenu>
 
