@@ -49,6 +49,7 @@ import { canCreatePolicy } from "../../access-control/policy-actions";
 import { NewBindingDialog } from "../../access-control/new-binding-dialog";
 import { NewPolicyDialog } from "../../access-control/new-policy-dialog";
 import { ScopeBindings } from "./scope-bindings";
+import { AssetPolicies } from "./asset-policies";
 import { RenameDialog } from "../rename-dialog";
 import { MoveDialog } from "../move-dialog";
 import { DeleteNode } from "../delete-node";
@@ -496,6 +497,11 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           assetId={id}
           emptyMessage="No roles bound directly to this asset."
         />
+      </DetailSection>
+
+      {/* Requestable via — request policies scoped to this asset (read-only) */}
+      <DetailSection title="Requestable via">
+        <AssetPolicies assetId={id} />
       </DetailSection>
 
       {mayBind && (

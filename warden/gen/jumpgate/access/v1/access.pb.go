@@ -2107,6 +2107,230 @@ func (x *ListRequestPoliciesResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ListPoliciesForAssetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesForAssetRequest) Reset() {
+	*x = ListPoliciesForAssetRequest{}
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesForAssetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesForAssetRequest) ProtoMessage() {}
+
+func (x *ListPoliciesForAssetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesForAssetRequest.ProtoReflect.Descriptor instead.
+func (*ListPoliciesForAssetRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ListPoliciesForAssetRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *ListPoliciesForAssetRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPoliciesForAssetRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListPoliciesForAssetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Policies      []*RequestPolicy       `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesForAssetResponse) Reset() {
+	*x = ListPoliciesForAssetResponse{}
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesForAssetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesForAssetResponse) ProtoMessage() {}
+
+func (x *ListPoliciesForAssetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesForAssetResponse.ProtoReflect.Descriptor instead.
+func (*ListPoliciesForAssetResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ListPoliciesForAssetResponse) GetPolicies() []*RequestPolicy {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+func (x *ListPoliciesForAssetResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type ListPoliciesForGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupId       string                 `protobuf:"bytes,1,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesForGroupRequest) Reset() {
+	*x = ListPoliciesForGroupRequest{}
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesForGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesForGroupRequest) ProtoMessage() {}
+
+func (x *ListPoliciesForGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesForGroupRequest.ProtoReflect.Descriptor instead.
+func (*ListPoliciesForGroupRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ListPoliciesForGroupRequest) GetGroupId() string {
+	if x != nil {
+		return x.GroupId
+	}
+	return ""
+}
+
+func (x *ListPoliciesForGroupRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPoliciesForGroupRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListPoliciesForGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Policies      []*RequestPolicy       `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesForGroupResponse) Reset() {
+	*x = ListPoliciesForGroupResponse{}
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesForGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesForGroupResponse) ProtoMessage() {}
+
+func (x *ListPoliciesForGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesForGroupResponse.ProtoReflect.Descriptor instead.
+func (*ListPoliciesForGroupResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *ListPoliciesForGroupResponse) GetPolicies() []*RequestPolicy {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+func (x *ListPoliciesForGroupResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 type PolicySubject struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -2120,7 +2344,7 @@ type PolicySubject struct {
 
 func (x *PolicySubject) Reset() {
 	*x = PolicySubject{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[37]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2132,7 +2356,7 @@ func (x *PolicySubject) String() string {
 func (*PolicySubject) ProtoMessage() {}
 
 func (x *PolicySubject) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[37]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2145,7 +2369,7 @@ func (x *PolicySubject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PolicySubject.ProtoReflect.Descriptor instead.
 func (*PolicySubject) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{37}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PolicySubject) GetId() string {
@@ -2195,7 +2419,7 @@ type ResolvePolicyRequest struct {
 
 func (x *ResolvePolicyRequest) Reset() {
 	*x = ResolvePolicyRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[38]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2207,7 +2431,7 @@ func (x *ResolvePolicyRequest) String() string {
 func (*ResolvePolicyRequest) ProtoMessage() {}
 
 func (x *ResolvePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[38]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2220,7 +2444,7 @@ func (x *ResolvePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvePolicyRequest.ProtoReflect.Descriptor instead.
 func (*ResolvePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{38}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ResolvePolicyRequest) GetName() string {
@@ -2246,7 +2470,7 @@ type ResolvePolicyResponse struct {
 
 func (x *ResolvePolicyResponse) Reset() {
 	*x = ResolvePolicyResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[39]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2258,7 +2482,7 @@ func (x *ResolvePolicyResponse) String() string {
 func (*ResolvePolicyResponse) ProtoMessage() {}
 
 func (x *ResolvePolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[39]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2271,7 +2495,7 @@ func (x *ResolvePolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvePolicyResponse.ProtoReflect.Descriptor instead.
 func (*ResolvePolicyResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{39}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ResolvePolicyResponse) GetPolicyId() string {
@@ -2293,7 +2517,7 @@ type AddPolicySubjectRequest struct {
 
 func (x *AddPolicySubjectRequest) Reset() {
 	*x = AddPolicySubjectRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[40]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2305,7 +2529,7 @@ func (x *AddPolicySubjectRequest) String() string {
 func (*AddPolicySubjectRequest) ProtoMessage() {}
 
 func (x *AddPolicySubjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[40]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2318,7 +2542,7 @@ func (x *AddPolicySubjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddPolicySubjectRequest.ProtoReflect.Descriptor instead.
 func (*AddPolicySubjectRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{40}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *AddPolicySubjectRequest) GetPolicyId() string {
@@ -2358,7 +2582,7 @@ type AddPolicySubjectResponse struct {
 
 func (x *AddPolicySubjectResponse) Reset() {
 	*x = AddPolicySubjectResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[41]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2370,7 +2594,7 @@ func (x *AddPolicySubjectResponse) String() string {
 func (*AddPolicySubjectResponse) ProtoMessage() {}
 
 func (x *AddPolicySubjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[41]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2383,7 +2607,7 @@ func (x *AddPolicySubjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddPolicySubjectResponse.ProtoReflect.Descriptor instead.
 func (*AddPolicySubjectResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{41}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *AddPolicySubjectResponse) GetId() string {
@@ -2402,7 +2626,7 @@ type RemovePolicySubjectRequest struct {
 
 func (x *RemovePolicySubjectRequest) Reset() {
 	*x = RemovePolicySubjectRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[42]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +2638,7 @@ func (x *RemovePolicySubjectRequest) String() string {
 func (*RemovePolicySubjectRequest) ProtoMessage() {}
 
 func (x *RemovePolicySubjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[42]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +2651,7 @@ func (x *RemovePolicySubjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemovePolicySubjectRequest.ProtoReflect.Descriptor instead.
 func (*RemovePolicySubjectRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{42}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *RemovePolicySubjectRequest) GetId() string {
@@ -2445,7 +2669,7 @@ type RemovePolicySubjectResponse struct {
 
 func (x *RemovePolicySubjectResponse) Reset() {
 	*x = RemovePolicySubjectResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[43]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2457,7 +2681,7 @@ func (x *RemovePolicySubjectResponse) String() string {
 func (*RemovePolicySubjectResponse) ProtoMessage() {}
 
 func (x *RemovePolicySubjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[43]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2470,7 +2694,7 @@ func (x *RemovePolicySubjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemovePolicySubjectResponse.ProtoReflect.Descriptor instead.
 func (*RemovePolicySubjectResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{43}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{47}
 }
 
 type ListPolicySubjectsRequest struct {
@@ -2484,7 +2708,7 @@ type ListPolicySubjectsRequest struct {
 
 func (x *ListPolicySubjectsRequest) Reset() {
 	*x = ListPolicySubjectsRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[44]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2496,7 +2720,7 @@ func (x *ListPolicySubjectsRequest) String() string {
 func (*ListPolicySubjectsRequest) ProtoMessage() {}
 
 func (x *ListPolicySubjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[44]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2509,7 +2733,7 @@ func (x *ListPolicySubjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPolicySubjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListPolicySubjectsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{44}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ListPolicySubjectsRequest) GetPolicyId() string {
@@ -2543,7 +2767,7 @@ type ListPolicySubjectsResponse struct {
 
 func (x *ListPolicySubjectsResponse) Reset() {
 	*x = ListPolicySubjectsResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[45]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2555,7 +2779,7 @@ func (x *ListPolicySubjectsResponse) String() string {
 func (*ListPolicySubjectsResponse) ProtoMessage() {}
 
 func (x *ListPolicySubjectsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[45]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2568,7 +2792,7 @@ func (x *ListPolicySubjectsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPolicySubjectsResponse.ProtoReflect.Descriptor instead.
 func (*ListPolicySubjectsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{45}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ListPolicySubjectsResponse) GetSubjects() []*PolicySubject {
@@ -2596,7 +2820,7 @@ type ExplainRoleRequest struct {
 
 func (x *ExplainRoleRequest) Reset() {
 	*x = ExplainRoleRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[46]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2608,7 +2832,7 @@ func (x *ExplainRoleRequest) String() string {
 func (*ExplainRoleRequest) ProtoMessage() {}
 
 func (x *ExplainRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[46]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2621,7 +2845,7 @@ func (x *ExplainRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRoleRequest.ProtoReflect.Descriptor instead.
 func (*ExplainRoleRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{46}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ExplainRoleRequest) GetUserId() string {
@@ -2657,7 +2881,7 @@ type RoleGrantPathStep struct {
 
 func (x *RoleGrantPathStep) Reset() {
 	*x = RoleGrantPathStep{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[47]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2669,7 +2893,7 @@ func (x *RoleGrantPathStep) String() string {
 func (*RoleGrantPathStep) ProtoMessage() {}
 
 func (x *RoleGrantPathStep) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[47]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2682,7 +2906,7 @@ func (x *RoleGrantPathStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleGrantPathStep.ProtoReflect.Descriptor instead.
 func (*RoleGrantPathStep) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{47}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RoleGrantPathStep) GetRoleId() string {
@@ -2724,7 +2948,7 @@ type ExplainRolePath struct {
 
 func (x *ExplainRolePath) Reset() {
 	*x = ExplainRolePath{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[48]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2736,7 +2960,7 @@ func (x *ExplainRolePath) String() string {
 func (*ExplainRolePath) ProtoMessage() {}
 
 func (x *ExplainRolePath) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[48]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2749,7 +2973,7 @@ func (x *ExplainRolePath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRolePath.ProtoReflect.Descriptor instead.
 func (*ExplainRolePath) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{48}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ExplainRolePath) GetSteps() []*RoleGrantPathStep {
@@ -2783,7 +3007,7 @@ type ExplainRoleResponse struct {
 
 func (x *ExplainRoleResponse) Reset() {
 	*x = ExplainRoleResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[49]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2795,7 +3019,7 @@ func (x *ExplainRoleResponse) String() string {
 func (*ExplainRoleResponse) ProtoMessage() {}
 
 func (x *ExplainRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[49]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2808,7 +3032,7 @@ func (x *ExplainRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRoleResponse.ProtoReflect.Descriptor instead.
 func (*ExplainRoleResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{49}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ExplainRoleResponse) GetHolds() bool {
@@ -2837,7 +3061,7 @@ type GetRoleAccessRequest struct {
 
 func (x *GetRoleAccessRequest) Reset() {
 	*x = GetRoleAccessRequest{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[50]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2849,7 +3073,7 @@ func (x *GetRoleAccessRequest) String() string {
 func (*GetRoleAccessRequest) ProtoMessage() {}
 
 func (x *GetRoleAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[50]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2862,7 +3086,7 @@ func (x *GetRoleAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoleAccessRequest.ProtoReflect.Descriptor instead.
 func (*GetRoleAccessRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{50}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *GetRoleAccessRequest) GetRoleId() string {
@@ -2881,7 +3105,7 @@ type GetRoleAccessResponse struct {
 
 func (x *GetRoleAccessResponse) Reset() {
 	*x = GetRoleAccessResponse{}
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[51]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2893,7 +3117,7 @@ func (x *GetRoleAccessResponse) String() string {
 func (*GetRoleAccessResponse) ProtoMessage() {}
 
 func (x *GetRoleAccessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_access_v1_access_proto_msgTypes[51]
+	mi := &file_jumpgate_access_v1_access_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2906,7 +3130,7 @@ func (x *GetRoleAccessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoleAccessResponse.ProtoReflect.Descriptor instead.
 func (*GetRoleAccessResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{51}
+	return file_jumpgate_access_v1_access_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetRoleAccessResponse) GetCapabilities() []string {
@@ -3056,6 +3280,22 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"\x84\x01\n" +
 	"\x1bListRequestPoliciesResponse\x12=\n" +
 	"\bpolicies\x18\x01 \x03(\v2!.jumpgate.access.v1.RequestPolicyR\bpolicies\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x89\x01\n" +
+	"\x1bListPoliciesForAssetRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x85\x01\n" +
+	"\x1cListPoliciesForAssetResponse\x12=\n" +
+	"\bpolicies\x18\x01 \x03(\v2!.jumpgate.access.v1.RequestPolicyR\bpolicies\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x89\x01\n" +
+	"\x1bListPoliciesForGroupRequest\x12#\n" +
+	"\bgroup_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\agroupId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x85\x01\n" +
+	"\x1cListPoliciesForGroupResponse\x12=\n" +
+	"\bpolicies\x18\x01 \x03(\v2!.jumpgate.access.v1.RequestPolicyR\bpolicies\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa2\x01\n" +
 	"\rPolicySubject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
@@ -3107,7 +3347,7 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x14GetRoleAccessRequest\x12!\n" +
 	"\arole_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\";\n" +
 	"\x15GetRoleAccessResponse\x12\"\n" +
-	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities2\xdf\x12\n" +
+	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities2\xd9\x14\n" +
 	"\rAccessService\x12]\n" +
 	"\n" +
 	"CreateRole\x12%.jumpgate.access.v1.CreateRoleRequest\x1a&.jumpgate.access.v1.CreateRoleResponse\"\x00\x12Z\n" +
@@ -3127,7 +3367,9 @@ const file_jumpgate_access_v1_access_proto_rawDesc = "" +
 	"\x13CreateRequestPolicy\x12..jumpgate.access.v1.CreateRequestPolicyRequest\x1a/.jumpgate.access.v1.CreateRequestPolicyResponse\"\x00\x12x\n" +
 	"\x13UpdateRequestPolicy\x12..jumpgate.access.v1.UpdateRequestPolicyRequest\x1a/.jumpgate.access.v1.UpdateRequestPolicyResponse\"\x00\x12x\n" +
 	"\x13DeleteRequestPolicy\x12..jumpgate.access.v1.DeleteRequestPolicyRequest\x1a/.jumpgate.access.v1.DeleteRequestPolicyResponse\"\x00\x12x\n" +
-	"\x13ListRequestPolicies\x12..jumpgate.access.v1.ListRequestPoliciesRequest\x1a/.jumpgate.access.v1.ListRequestPoliciesResponse\"\x00\x12o\n" +
+	"\x13ListRequestPolicies\x12..jumpgate.access.v1.ListRequestPoliciesRequest\x1a/.jumpgate.access.v1.ListRequestPoliciesResponse\"\x00\x12{\n" +
+	"\x14ListPoliciesForAsset\x12/.jumpgate.access.v1.ListPoliciesForAssetRequest\x1a0.jumpgate.access.v1.ListPoliciesForAssetResponse\"\x00\x12{\n" +
+	"\x14ListPoliciesForGroup\x12/.jumpgate.access.v1.ListPoliciesForGroupRequest\x1a0.jumpgate.access.v1.ListPoliciesForGroupResponse\"\x00\x12o\n" +
 	"\x10AddPolicySubject\x12+.jumpgate.access.v1.AddPolicySubjectRequest\x1a,.jumpgate.access.v1.AddPolicySubjectResponse\"\x00\x12f\n" +
 	"\rResolvePolicy\x12(.jumpgate.access.v1.ResolvePolicyRequest\x1a).jumpgate.access.v1.ResolvePolicyResponse\"\x00\x12x\n" +
 	"\x13RemovePolicySubject\x12..jumpgate.access.v1.RemovePolicySubjectRequest\x1a/.jumpgate.access.v1.RemovePolicySubjectResponse\"\x00\x12u\n" +
@@ -3146,60 +3388,64 @@ func file_jumpgate_access_v1_access_proto_rawDescGZIP() []byte {
 	return file_jumpgate_access_v1_access_proto_rawDescData
 }
 
-var file_jumpgate_access_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_jumpgate_access_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_jumpgate_access_v1_access_proto_goTypes = []any{
-	(*Role)(nil),                        // 0: jumpgate.access.v1.Role
-	(*CreateRoleRequest)(nil),           // 1: jumpgate.access.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),          // 2: jumpgate.access.v1.CreateRoleResponse
-	(*ListRolesRequest)(nil),            // 3: jumpgate.access.v1.ListRolesRequest
-	(*ListRolesResponse)(nil),           // 4: jumpgate.access.v1.ListRolesResponse
-	(*GetRoleRequest)(nil),              // 5: jumpgate.access.v1.GetRoleRequest
-	(*GetRoleResponse)(nil),             // 6: jumpgate.access.v1.GetRoleResponse
-	(*DeleteRoleRequest)(nil),           // 7: jumpgate.access.v1.DeleteRoleRequest
-	(*DeleteRoleResponse)(nil),          // 8: jumpgate.access.v1.DeleteRoleResponse
-	(*GetRoleDisplayRequest)(nil),       // 9: jumpgate.access.v1.GetRoleDisplayRequest
-	(*GetRoleDisplayResponse)(nil),      // 10: jumpgate.access.v1.GetRoleDisplayResponse
-	(*RoleDisplay)(nil),                 // 11: jumpgate.access.v1.RoleDisplay
-	(*ResolveRoleRequest)(nil),          // 12: jumpgate.access.v1.ResolveRoleRequest
-	(*ResolveRoleResponse)(nil),         // 13: jumpgate.access.v1.ResolveRoleResponse
-	(*RoleGrant)(nil),                   // 14: jumpgate.access.v1.RoleGrant
-	(*AddRoleGrantRequest)(nil),         // 15: jumpgate.access.v1.AddRoleGrantRequest
-	(*AddRoleGrantResponse)(nil),        // 16: jumpgate.access.v1.AddRoleGrantResponse
-	(*RemoveRoleGrantRequest)(nil),      // 17: jumpgate.access.v1.RemoveRoleGrantRequest
-	(*RemoveRoleGrantResponse)(nil),     // 18: jumpgate.access.v1.RemoveRoleGrantResponse
-	(*ListRoleGrantsRequest)(nil),       // 19: jumpgate.access.v1.ListRoleGrantsRequest
-	(*ListRoleGrantsResponse)(nil),      // 20: jumpgate.access.v1.ListRoleGrantsResponse
-	(*RoleBinding)(nil),                 // 21: jumpgate.access.v1.RoleBinding
-	(*CreateRoleBindingRequest)(nil),    // 22: jumpgate.access.v1.CreateRoleBindingRequest
-	(*CreateRoleBindingResponse)(nil),   // 23: jumpgate.access.v1.CreateRoleBindingResponse
-	(*DeleteRoleBindingRequest)(nil),    // 24: jumpgate.access.v1.DeleteRoleBindingRequest
-	(*DeleteRoleBindingResponse)(nil),   // 25: jumpgate.access.v1.DeleteRoleBindingResponse
-	(*ListRoleBindingsRequest)(nil),     // 26: jumpgate.access.v1.ListRoleBindingsRequest
-	(*ListRoleBindingsResponse)(nil),    // 27: jumpgate.access.v1.ListRoleBindingsResponse
-	(*RequestPolicy)(nil),               // 28: jumpgate.access.v1.RequestPolicy
-	(*CreateRequestPolicyRequest)(nil),  // 29: jumpgate.access.v1.CreateRequestPolicyRequest
-	(*CreateRequestPolicyResponse)(nil), // 30: jumpgate.access.v1.CreateRequestPolicyResponse
-	(*UpdateRequestPolicyRequest)(nil),  // 31: jumpgate.access.v1.UpdateRequestPolicyRequest
-	(*UpdateRequestPolicyResponse)(nil), // 32: jumpgate.access.v1.UpdateRequestPolicyResponse
-	(*DeleteRequestPolicyRequest)(nil),  // 33: jumpgate.access.v1.DeleteRequestPolicyRequest
-	(*DeleteRequestPolicyResponse)(nil), // 34: jumpgate.access.v1.DeleteRequestPolicyResponse
-	(*ListRequestPoliciesRequest)(nil),  // 35: jumpgate.access.v1.ListRequestPoliciesRequest
-	(*ListRequestPoliciesResponse)(nil), // 36: jumpgate.access.v1.ListRequestPoliciesResponse
-	(*PolicySubject)(nil),               // 37: jumpgate.access.v1.PolicySubject
-	(*ResolvePolicyRequest)(nil),        // 38: jumpgate.access.v1.ResolvePolicyRequest
-	(*ResolvePolicyResponse)(nil),       // 39: jumpgate.access.v1.ResolvePolicyResponse
-	(*AddPolicySubjectRequest)(nil),     // 40: jumpgate.access.v1.AddPolicySubjectRequest
-	(*AddPolicySubjectResponse)(nil),    // 41: jumpgate.access.v1.AddPolicySubjectResponse
-	(*RemovePolicySubjectRequest)(nil),  // 42: jumpgate.access.v1.RemovePolicySubjectRequest
-	(*RemovePolicySubjectResponse)(nil), // 43: jumpgate.access.v1.RemovePolicySubjectResponse
-	(*ListPolicySubjectsRequest)(nil),   // 44: jumpgate.access.v1.ListPolicySubjectsRequest
-	(*ListPolicySubjectsResponse)(nil),  // 45: jumpgate.access.v1.ListPolicySubjectsResponse
-	(*ExplainRoleRequest)(nil),          // 46: jumpgate.access.v1.ExplainRoleRequest
-	(*RoleGrantPathStep)(nil),           // 47: jumpgate.access.v1.RoleGrantPathStep
-	(*ExplainRolePath)(nil),             // 48: jumpgate.access.v1.ExplainRolePath
-	(*ExplainRoleResponse)(nil),         // 49: jumpgate.access.v1.ExplainRoleResponse
-	(*GetRoleAccessRequest)(nil),        // 50: jumpgate.access.v1.GetRoleAccessRequest
-	(*GetRoleAccessResponse)(nil),       // 51: jumpgate.access.v1.GetRoleAccessResponse
+	(*Role)(nil),                         // 0: jumpgate.access.v1.Role
+	(*CreateRoleRequest)(nil),            // 1: jumpgate.access.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),           // 2: jumpgate.access.v1.CreateRoleResponse
+	(*ListRolesRequest)(nil),             // 3: jumpgate.access.v1.ListRolesRequest
+	(*ListRolesResponse)(nil),            // 4: jumpgate.access.v1.ListRolesResponse
+	(*GetRoleRequest)(nil),               // 5: jumpgate.access.v1.GetRoleRequest
+	(*GetRoleResponse)(nil),              // 6: jumpgate.access.v1.GetRoleResponse
+	(*DeleteRoleRequest)(nil),            // 7: jumpgate.access.v1.DeleteRoleRequest
+	(*DeleteRoleResponse)(nil),           // 8: jumpgate.access.v1.DeleteRoleResponse
+	(*GetRoleDisplayRequest)(nil),        // 9: jumpgate.access.v1.GetRoleDisplayRequest
+	(*GetRoleDisplayResponse)(nil),       // 10: jumpgate.access.v1.GetRoleDisplayResponse
+	(*RoleDisplay)(nil),                  // 11: jumpgate.access.v1.RoleDisplay
+	(*ResolveRoleRequest)(nil),           // 12: jumpgate.access.v1.ResolveRoleRequest
+	(*ResolveRoleResponse)(nil),          // 13: jumpgate.access.v1.ResolveRoleResponse
+	(*RoleGrant)(nil),                    // 14: jumpgate.access.v1.RoleGrant
+	(*AddRoleGrantRequest)(nil),          // 15: jumpgate.access.v1.AddRoleGrantRequest
+	(*AddRoleGrantResponse)(nil),         // 16: jumpgate.access.v1.AddRoleGrantResponse
+	(*RemoveRoleGrantRequest)(nil),       // 17: jumpgate.access.v1.RemoveRoleGrantRequest
+	(*RemoveRoleGrantResponse)(nil),      // 18: jumpgate.access.v1.RemoveRoleGrantResponse
+	(*ListRoleGrantsRequest)(nil),        // 19: jumpgate.access.v1.ListRoleGrantsRequest
+	(*ListRoleGrantsResponse)(nil),       // 20: jumpgate.access.v1.ListRoleGrantsResponse
+	(*RoleBinding)(nil),                  // 21: jumpgate.access.v1.RoleBinding
+	(*CreateRoleBindingRequest)(nil),     // 22: jumpgate.access.v1.CreateRoleBindingRequest
+	(*CreateRoleBindingResponse)(nil),    // 23: jumpgate.access.v1.CreateRoleBindingResponse
+	(*DeleteRoleBindingRequest)(nil),     // 24: jumpgate.access.v1.DeleteRoleBindingRequest
+	(*DeleteRoleBindingResponse)(nil),    // 25: jumpgate.access.v1.DeleteRoleBindingResponse
+	(*ListRoleBindingsRequest)(nil),      // 26: jumpgate.access.v1.ListRoleBindingsRequest
+	(*ListRoleBindingsResponse)(nil),     // 27: jumpgate.access.v1.ListRoleBindingsResponse
+	(*RequestPolicy)(nil),                // 28: jumpgate.access.v1.RequestPolicy
+	(*CreateRequestPolicyRequest)(nil),   // 29: jumpgate.access.v1.CreateRequestPolicyRequest
+	(*CreateRequestPolicyResponse)(nil),  // 30: jumpgate.access.v1.CreateRequestPolicyResponse
+	(*UpdateRequestPolicyRequest)(nil),   // 31: jumpgate.access.v1.UpdateRequestPolicyRequest
+	(*UpdateRequestPolicyResponse)(nil),  // 32: jumpgate.access.v1.UpdateRequestPolicyResponse
+	(*DeleteRequestPolicyRequest)(nil),   // 33: jumpgate.access.v1.DeleteRequestPolicyRequest
+	(*DeleteRequestPolicyResponse)(nil),  // 34: jumpgate.access.v1.DeleteRequestPolicyResponse
+	(*ListRequestPoliciesRequest)(nil),   // 35: jumpgate.access.v1.ListRequestPoliciesRequest
+	(*ListRequestPoliciesResponse)(nil),  // 36: jumpgate.access.v1.ListRequestPoliciesResponse
+	(*ListPoliciesForAssetRequest)(nil),  // 37: jumpgate.access.v1.ListPoliciesForAssetRequest
+	(*ListPoliciesForAssetResponse)(nil), // 38: jumpgate.access.v1.ListPoliciesForAssetResponse
+	(*ListPoliciesForGroupRequest)(nil),  // 39: jumpgate.access.v1.ListPoliciesForGroupRequest
+	(*ListPoliciesForGroupResponse)(nil), // 40: jumpgate.access.v1.ListPoliciesForGroupResponse
+	(*PolicySubject)(nil),                // 41: jumpgate.access.v1.PolicySubject
+	(*ResolvePolicyRequest)(nil),         // 42: jumpgate.access.v1.ResolvePolicyRequest
+	(*ResolvePolicyResponse)(nil),        // 43: jumpgate.access.v1.ResolvePolicyResponse
+	(*AddPolicySubjectRequest)(nil),      // 44: jumpgate.access.v1.AddPolicySubjectRequest
+	(*AddPolicySubjectResponse)(nil),     // 45: jumpgate.access.v1.AddPolicySubjectResponse
+	(*RemovePolicySubjectRequest)(nil),   // 46: jumpgate.access.v1.RemovePolicySubjectRequest
+	(*RemovePolicySubjectResponse)(nil),  // 47: jumpgate.access.v1.RemovePolicySubjectResponse
+	(*ListPolicySubjectsRequest)(nil),    // 48: jumpgate.access.v1.ListPolicySubjectsRequest
+	(*ListPolicySubjectsResponse)(nil),   // 49: jumpgate.access.v1.ListPolicySubjectsResponse
+	(*ExplainRoleRequest)(nil),           // 50: jumpgate.access.v1.ExplainRoleRequest
+	(*RoleGrantPathStep)(nil),            // 51: jumpgate.access.v1.RoleGrantPathStep
+	(*ExplainRolePath)(nil),              // 52: jumpgate.access.v1.ExplainRolePath
+	(*ExplainRoleResponse)(nil),          // 53: jumpgate.access.v1.ExplainRoleResponse
+	(*GetRoleAccessRequest)(nil),         // 54: jumpgate.access.v1.GetRoleAccessRequest
+	(*GetRoleAccessResponse)(nil),        // 55: jumpgate.access.v1.GetRoleAccessResponse
 }
 var file_jumpgate_access_v1_access_proto_depIdxs = []int32{
 	0,  // 0: jumpgate.access.v1.CreateRoleResponse.role:type_name -> jumpgate.access.v1.Role
@@ -3212,58 +3458,64 @@ var file_jumpgate_access_v1_access_proto_depIdxs = []int32{
 	28, // 7: jumpgate.access.v1.CreateRequestPolicyResponse.policy:type_name -> jumpgate.access.v1.RequestPolicy
 	28, // 8: jumpgate.access.v1.UpdateRequestPolicyResponse.policy:type_name -> jumpgate.access.v1.RequestPolicy
 	28, // 9: jumpgate.access.v1.ListRequestPoliciesResponse.policies:type_name -> jumpgate.access.v1.RequestPolicy
-	37, // 10: jumpgate.access.v1.ListPolicySubjectsResponse.subjects:type_name -> jumpgate.access.v1.PolicySubject
-	47, // 11: jumpgate.access.v1.ExplainRolePath.steps:type_name -> jumpgate.access.v1.RoleGrantPathStep
-	48, // 12: jumpgate.access.v1.ExplainRoleResponse.paths:type_name -> jumpgate.access.v1.ExplainRolePath
-	1,  // 13: jumpgate.access.v1.AccessService.CreateRole:input_type -> jumpgate.access.v1.CreateRoleRequest
-	3,  // 14: jumpgate.access.v1.AccessService.ListRoles:input_type -> jumpgate.access.v1.ListRolesRequest
-	5,  // 15: jumpgate.access.v1.AccessService.GetRole:input_type -> jumpgate.access.v1.GetRoleRequest
-	9,  // 16: jumpgate.access.v1.AccessService.GetRoleDisplay:input_type -> jumpgate.access.v1.GetRoleDisplayRequest
-	12, // 17: jumpgate.access.v1.AccessService.ResolveRole:input_type -> jumpgate.access.v1.ResolveRoleRequest
-	50, // 18: jumpgate.access.v1.AccessService.GetRoleAccess:input_type -> jumpgate.access.v1.GetRoleAccessRequest
-	7,  // 19: jumpgate.access.v1.AccessService.DeleteRole:input_type -> jumpgate.access.v1.DeleteRoleRequest
-	15, // 20: jumpgate.access.v1.AccessService.AddRoleGrant:input_type -> jumpgate.access.v1.AddRoleGrantRequest
-	17, // 21: jumpgate.access.v1.AccessService.RemoveRoleGrant:input_type -> jumpgate.access.v1.RemoveRoleGrantRequest
-	19, // 22: jumpgate.access.v1.AccessService.ListRoleGrants:input_type -> jumpgate.access.v1.ListRoleGrantsRequest
-	22, // 23: jumpgate.access.v1.AccessService.CreateRoleBinding:input_type -> jumpgate.access.v1.CreateRoleBindingRequest
-	24, // 24: jumpgate.access.v1.AccessService.DeleteRoleBinding:input_type -> jumpgate.access.v1.DeleteRoleBindingRequest
-	26, // 25: jumpgate.access.v1.AccessService.ListRoleBindings:input_type -> jumpgate.access.v1.ListRoleBindingsRequest
-	29, // 26: jumpgate.access.v1.AccessService.CreateRequestPolicy:input_type -> jumpgate.access.v1.CreateRequestPolicyRequest
-	31, // 27: jumpgate.access.v1.AccessService.UpdateRequestPolicy:input_type -> jumpgate.access.v1.UpdateRequestPolicyRequest
-	33, // 28: jumpgate.access.v1.AccessService.DeleteRequestPolicy:input_type -> jumpgate.access.v1.DeleteRequestPolicyRequest
-	35, // 29: jumpgate.access.v1.AccessService.ListRequestPolicies:input_type -> jumpgate.access.v1.ListRequestPoliciesRequest
-	40, // 30: jumpgate.access.v1.AccessService.AddPolicySubject:input_type -> jumpgate.access.v1.AddPolicySubjectRequest
-	38, // 31: jumpgate.access.v1.AccessService.ResolvePolicy:input_type -> jumpgate.access.v1.ResolvePolicyRequest
-	42, // 32: jumpgate.access.v1.AccessService.RemovePolicySubject:input_type -> jumpgate.access.v1.RemovePolicySubjectRequest
-	44, // 33: jumpgate.access.v1.AccessService.ListPolicySubjects:input_type -> jumpgate.access.v1.ListPolicySubjectsRequest
-	46, // 34: jumpgate.access.v1.AccessService.ExplainRole:input_type -> jumpgate.access.v1.ExplainRoleRequest
-	2,  // 35: jumpgate.access.v1.AccessService.CreateRole:output_type -> jumpgate.access.v1.CreateRoleResponse
-	4,  // 36: jumpgate.access.v1.AccessService.ListRoles:output_type -> jumpgate.access.v1.ListRolesResponse
-	6,  // 37: jumpgate.access.v1.AccessService.GetRole:output_type -> jumpgate.access.v1.GetRoleResponse
-	10, // 38: jumpgate.access.v1.AccessService.GetRoleDisplay:output_type -> jumpgate.access.v1.GetRoleDisplayResponse
-	13, // 39: jumpgate.access.v1.AccessService.ResolveRole:output_type -> jumpgate.access.v1.ResolveRoleResponse
-	51, // 40: jumpgate.access.v1.AccessService.GetRoleAccess:output_type -> jumpgate.access.v1.GetRoleAccessResponse
-	8,  // 41: jumpgate.access.v1.AccessService.DeleteRole:output_type -> jumpgate.access.v1.DeleteRoleResponse
-	16, // 42: jumpgate.access.v1.AccessService.AddRoleGrant:output_type -> jumpgate.access.v1.AddRoleGrantResponse
-	18, // 43: jumpgate.access.v1.AccessService.RemoveRoleGrant:output_type -> jumpgate.access.v1.RemoveRoleGrantResponse
-	20, // 44: jumpgate.access.v1.AccessService.ListRoleGrants:output_type -> jumpgate.access.v1.ListRoleGrantsResponse
-	23, // 45: jumpgate.access.v1.AccessService.CreateRoleBinding:output_type -> jumpgate.access.v1.CreateRoleBindingResponse
-	25, // 46: jumpgate.access.v1.AccessService.DeleteRoleBinding:output_type -> jumpgate.access.v1.DeleteRoleBindingResponse
-	27, // 47: jumpgate.access.v1.AccessService.ListRoleBindings:output_type -> jumpgate.access.v1.ListRoleBindingsResponse
-	30, // 48: jumpgate.access.v1.AccessService.CreateRequestPolicy:output_type -> jumpgate.access.v1.CreateRequestPolicyResponse
-	32, // 49: jumpgate.access.v1.AccessService.UpdateRequestPolicy:output_type -> jumpgate.access.v1.UpdateRequestPolicyResponse
-	34, // 50: jumpgate.access.v1.AccessService.DeleteRequestPolicy:output_type -> jumpgate.access.v1.DeleteRequestPolicyResponse
-	36, // 51: jumpgate.access.v1.AccessService.ListRequestPolicies:output_type -> jumpgate.access.v1.ListRequestPoliciesResponse
-	41, // 52: jumpgate.access.v1.AccessService.AddPolicySubject:output_type -> jumpgate.access.v1.AddPolicySubjectResponse
-	39, // 53: jumpgate.access.v1.AccessService.ResolvePolicy:output_type -> jumpgate.access.v1.ResolvePolicyResponse
-	43, // 54: jumpgate.access.v1.AccessService.RemovePolicySubject:output_type -> jumpgate.access.v1.RemovePolicySubjectResponse
-	45, // 55: jumpgate.access.v1.AccessService.ListPolicySubjects:output_type -> jumpgate.access.v1.ListPolicySubjectsResponse
-	49, // 56: jumpgate.access.v1.AccessService.ExplainRole:output_type -> jumpgate.access.v1.ExplainRoleResponse
-	35, // [35:57] is the sub-list for method output_type
-	13, // [13:35] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	28, // 10: jumpgate.access.v1.ListPoliciesForAssetResponse.policies:type_name -> jumpgate.access.v1.RequestPolicy
+	28, // 11: jumpgate.access.v1.ListPoliciesForGroupResponse.policies:type_name -> jumpgate.access.v1.RequestPolicy
+	41, // 12: jumpgate.access.v1.ListPolicySubjectsResponse.subjects:type_name -> jumpgate.access.v1.PolicySubject
+	51, // 13: jumpgate.access.v1.ExplainRolePath.steps:type_name -> jumpgate.access.v1.RoleGrantPathStep
+	52, // 14: jumpgate.access.v1.ExplainRoleResponse.paths:type_name -> jumpgate.access.v1.ExplainRolePath
+	1,  // 15: jumpgate.access.v1.AccessService.CreateRole:input_type -> jumpgate.access.v1.CreateRoleRequest
+	3,  // 16: jumpgate.access.v1.AccessService.ListRoles:input_type -> jumpgate.access.v1.ListRolesRequest
+	5,  // 17: jumpgate.access.v1.AccessService.GetRole:input_type -> jumpgate.access.v1.GetRoleRequest
+	9,  // 18: jumpgate.access.v1.AccessService.GetRoleDisplay:input_type -> jumpgate.access.v1.GetRoleDisplayRequest
+	12, // 19: jumpgate.access.v1.AccessService.ResolveRole:input_type -> jumpgate.access.v1.ResolveRoleRequest
+	54, // 20: jumpgate.access.v1.AccessService.GetRoleAccess:input_type -> jumpgate.access.v1.GetRoleAccessRequest
+	7,  // 21: jumpgate.access.v1.AccessService.DeleteRole:input_type -> jumpgate.access.v1.DeleteRoleRequest
+	15, // 22: jumpgate.access.v1.AccessService.AddRoleGrant:input_type -> jumpgate.access.v1.AddRoleGrantRequest
+	17, // 23: jumpgate.access.v1.AccessService.RemoveRoleGrant:input_type -> jumpgate.access.v1.RemoveRoleGrantRequest
+	19, // 24: jumpgate.access.v1.AccessService.ListRoleGrants:input_type -> jumpgate.access.v1.ListRoleGrantsRequest
+	22, // 25: jumpgate.access.v1.AccessService.CreateRoleBinding:input_type -> jumpgate.access.v1.CreateRoleBindingRequest
+	24, // 26: jumpgate.access.v1.AccessService.DeleteRoleBinding:input_type -> jumpgate.access.v1.DeleteRoleBindingRequest
+	26, // 27: jumpgate.access.v1.AccessService.ListRoleBindings:input_type -> jumpgate.access.v1.ListRoleBindingsRequest
+	29, // 28: jumpgate.access.v1.AccessService.CreateRequestPolicy:input_type -> jumpgate.access.v1.CreateRequestPolicyRequest
+	31, // 29: jumpgate.access.v1.AccessService.UpdateRequestPolicy:input_type -> jumpgate.access.v1.UpdateRequestPolicyRequest
+	33, // 30: jumpgate.access.v1.AccessService.DeleteRequestPolicy:input_type -> jumpgate.access.v1.DeleteRequestPolicyRequest
+	35, // 31: jumpgate.access.v1.AccessService.ListRequestPolicies:input_type -> jumpgate.access.v1.ListRequestPoliciesRequest
+	37, // 32: jumpgate.access.v1.AccessService.ListPoliciesForAsset:input_type -> jumpgate.access.v1.ListPoliciesForAssetRequest
+	39, // 33: jumpgate.access.v1.AccessService.ListPoliciesForGroup:input_type -> jumpgate.access.v1.ListPoliciesForGroupRequest
+	44, // 34: jumpgate.access.v1.AccessService.AddPolicySubject:input_type -> jumpgate.access.v1.AddPolicySubjectRequest
+	42, // 35: jumpgate.access.v1.AccessService.ResolvePolicy:input_type -> jumpgate.access.v1.ResolvePolicyRequest
+	46, // 36: jumpgate.access.v1.AccessService.RemovePolicySubject:input_type -> jumpgate.access.v1.RemovePolicySubjectRequest
+	48, // 37: jumpgate.access.v1.AccessService.ListPolicySubjects:input_type -> jumpgate.access.v1.ListPolicySubjectsRequest
+	50, // 38: jumpgate.access.v1.AccessService.ExplainRole:input_type -> jumpgate.access.v1.ExplainRoleRequest
+	2,  // 39: jumpgate.access.v1.AccessService.CreateRole:output_type -> jumpgate.access.v1.CreateRoleResponse
+	4,  // 40: jumpgate.access.v1.AccessService.ListRoles:output_type -> jumpgate.access.v1.ListRolesResponse
+	6,  // 41: jumpgate.access.v1.AccessService.GetRole:output_type -> jumpgate.access.v1.GetRoleResponse
+	10, // 42: jumpgate.access.v1.AccessService.GetRoleDisplay:output_type -> jumpgate.access.v1.GetRoleDisplayResponse
+	13, // 43: jumpgate.access.v1.AccessService.ResolveRole:output_type -> jumpgate.access.v1.ResolveRoleResponse
+	55, // 44: jumpgate.access.v1.AccessService.GetRoleAccess:output_type -> jumpgate.access.v1.GetRoleAccessResponse
+	8,  // 45: jumpgate.access.v1.AccessService.DeleteRole:output_type -> jumpgate.access.v1.DeleteRoleResponse
+	16, // 46: jumpgate.access.v1.AccessService.AddRoleGrant:output_type -> jumpgate.access.v1.AddRoleGrantResponse
+	18, // 47: jumpgate.access.v1.AccessService.RemoveRoleGrant:output_type -> jumpgate.access.v1.RemoveRoleGrantResponse
+	20, // 48: jumpgate.access.v1.AccessService.ListRoleGrants:output_type -> jumpgate.access.v1.ListRoleGrantsResponse
+	23, // 49: jumpgate.access.v1.AccessService.CreateRoleBinding:output_type -> jumpgate.access.v1.CreateRoleBindingResponse
+	25, // 50: jumpgate.access.v1.AccessService.DeleteRoleBinding:output_type -> jumpgate.access.v1.DeleteRoleBindingResponse
+	27, // 51: jumpgate.access.v1.AccessService.ListRoleBindings:output_type -> jumpgate.access.v1.ListRoleBindingsResponse
+	30, // 52: jumpgate.access.v1.AccessService.CreateRequestPolicy:output_type -> jumpgate.access.v1.CreateRequestPolicyResponse
+	32, // 53: jumpgate.access.v1.AccessService.UpdateRequestPolicy:output_type -> jumpgate.access.v1.UpdateRequestPolicyResponse
+	34, // 54: jumpgate.access.v1.AccessService.DeleteRequestPolicy:output_type -> jumpgate.access.v1.DeleteRequestPolicyResponse
+	36, // 55: jumpgate.access.v1.AccessService.ListRequestPolicies:output_type -> jumpgate.access.v1.ListRequestPoliciesResponse
+	38, // 56: jumpgate.access.v1.AccessService.ListPoliciesForAsset:output_type -> jumpgate.access.v1.ListPoliciesForAssetResponse
+	40, // 57: jumpgate.access.v1.AccessService.ListPoliciesForGroup:output_type -> jumpgate.access.v1.ListPoliciesForGroupResponse
+	45, // 58: jumpgate.access.v1.AccessService.AddPolicySubject:output_type -> jumpgate.access.v1.AddPolicySubjectResponse
+	43, // 59: jumpgate.access.v1.AccessService.ResolvePolicy:output_type -> jumpgate.access.v1.ResolvePolicyResponse
+	47, // 60: jumpgate.access.v1.AccessService.RemovePolicySubject:output_type -> jumpgate.access.v1.RemovePolicySubjectResponse
+	49, // 61: jumpgate.access.v1.AccessService.ListPolicySubjects:output_type -> jumpgate.access.v1.ListPolicySubjectsResponse
+	53, // 62: jumpgate.access.v1.AccessService.ExplainRole:output_type -> jumpgate.access.v1.ExplainRoleResponse
+	39, // [39:63] is the sub-list for method output_type
+	15, // [15:39] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_access_v1_access_proto_init() }
@@ -3277,7 +3529,7 @@ func file_jumpgate_access_v1_access_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_access_v1_access_proto_rawDesc), len(file_jumpgate_access_v1_access_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   52,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

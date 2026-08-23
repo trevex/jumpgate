@@ -42,6 +42,9 @@ service AccessService {
   rpc UpdateRequestPolicy(UpdateRequestPolicyRequest) returns (UpdateRequestPolicyResponse) {}
   rpc DeleteRequestPolicy(DeleteRequestPolicyRequest) returns (DeleteRequestPolicyResponse) {}
   rpc ListRequestPolicies(ListRequestPoliciesRequest) returns (ListRequestPoliciesResponse) {}
+  // Reverse lookups: policies scoped to an asset, and policies a group is a subject of.
+  rpc ListPoliciesForAsset(ListPoliciesForAssetRequest) returns (ListPoliciesForAssetResponse) {}
+  rpc ListPoliciesForGroup(ListPoliciesForGroupRequest) returns (ListPoliciesForGroupResponse) {}
   rpc AddPolicySubject(AddPolicySubjectRequest) returns (AddPolicySubjectResponse) {}
   rpc ResolvePolicy(ResolvePolicyRequest) returns (ResolvePolicyResponse) {}
   rpc RemovePolicySubject(RemovePolicySubjectRequest) returns (RemovePolicySubjectResponse) {}
@@ -203,6 +206,20 @@ message ListRequestPoliciesRequest {
   string page_token = 3;
 }
 message ListRequestPoliciesResponse { repeated RequestPolicy policies = 1; string next_page_token = 2; }
+
+message ListPoliciesForAssetRequest {
+  string asset_id   = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+message ListPoliciesForAssetResponse { repeated RequestPolicy policies = 1; string next_page_token = 2; }
+
+message ListPoliciesForGroupRequest {
+  string group_id   = 1 [(buf.validate.field).string.uuid = true];
+  int32  page_size  = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+message ListPoliciesForGroupResponse { repeated RequestPolicy policies = 1; string next_page_token = 2; }
 
 message PolicySubject {
   string id = 1;

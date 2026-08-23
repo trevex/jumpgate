@@ -438,6 +438,14 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.access.ListRequestPolicies(ctx, withToken(connect.NewRequest(&accessv1.ListRequestPoliciesRequest{RoleId: f.roleID}), tok))
 			return err
 		}},
+		{"Access.ListPoliciesForAsset", PD, func() error {
+			_, err := cl.access.ListPoliciesForAsset(ctx, withToken(connect.NewRequest(&accessv1.ListPoliciesForAssetRequest{AssetId: f.assetID}), tok))
+			return err
+		}},
+		{"Access.ListPoliciesForGroup", PD, func() error {
+			_, err := cl.access.ListPoliciesForGroup(ctx, withToken(connect.NewRequest(&accessv1.ListPoliciesForGroupRequest{GroupId: f.groupID}), tok))
+			return err
+		}},
 		{"Access.ResolvePolicy", PD, func() error {
 			_, err := cl.access.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: f.policyName, AssetId: f.assetID}), tok))
 			return err

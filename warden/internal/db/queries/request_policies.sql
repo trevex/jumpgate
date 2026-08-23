@@ -31,6 +31,32 @@ WHERE role_id = sqlc.arg('role_id')
 ORDER BY created_at DESC, id
 LIMIT sqlc.arg('lim');
 
+-- name: ListPoliciesForAsset :many
+SELECT * FROM request_policies
+WHERE scope_asset_id = sqlc.arg('asset_id')
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR created_at < sqlc.narg('after_ts')
+    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT sqlc.arg('lim');
+
+-- name: ListPoliciesForSubjectGroup :many
+SELECT * FROM request_policies rp
+WHERE rp.id IN (SELECT policy_id FROM request_policy_subjects WHERE subject_group_id = sqlc.arg('group_id'))
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    sqlc.narg('after_ts')::timestamptz IS NULL
+    OR rp.created_at < sqlc.narg('after_ts')
+    OR (rp.created_at = sqlc.narg('after_ts') AND rp.id > sqlc.narg('after_id')::uuid)
+  )
+ORDER BY rp.created_at DESC, rp.id
+LIMIT sqlc.arg('lim');
+
 -- name: AddPolicySubject :one
 INSERT INTO request_policy_subjects (policy_id, kind, subject_user_id, subject_group_id)
 VALUES ($1, $2, $3, $4)

@@ -163,6 +163,76 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	return connect.NewResponse(out), nil
 }
 
+// ListPoliciesForAsset lists the request policies scoped to an asset (admin only),
+// ordered by (created_at DESC, id ASC). Same global read gate as ListRequestPolicies.
+func (s *AccessServer) ListPoliciesForAsset(ctx context.Context, req *connect.Request[accessv1.ListPoliciesForAssetRequest]) (*connect.Response[accessv1.ListPoliciesForAssetResponse], error) {
+	if err := s.requireCap(ctx, "access:policy:read", authz.GlobalScope()); err != nil {
+		return nil, err
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListPoliciesForAssetParams{AssetID: pgUUID(assetID), Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListPoliciesForAsset(ctx, params)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &accessv1.ListPoliciesForAssetResponse{}
+	for i := range rows {
+		out.Policies = append(out.Policies, toRequestPolicyMsg(rows[i]))
+	}
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ListPoliciesForGroup lists the request policies a group is a subject of (admin only),
+// ordered by (created_at DESC, id ASC). Same global read gate as ListRequestPolicies.
+func (s *AccessServer) ListPoliciesForGroup(ctx context.Context, req *connect.Request[accessv1.ListPoliciesForGroupRequest]) (*connect.Response[accessv1.ListPoliciesForGroupResponse], error) {
+	if err := s.requireCap(ctx, "access:policy:read", authz.GlobalScope()); err != nil {
+		return nil, err
+	}
+	groupID, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	limit := clampPageSize(req.Msg.PageSize)
+	k, err := decodePageToken(req.Msg.PageToken)
+	if err != nil {
+		return nil, err
+	}
+	params := gen.ListPoliciesForSubjectGroupParams{GroupID: pgUUID(groupID), Lim: limit}
+	if k != nil {
+		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
+		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
+	}
+	rows, err := s.q.ListPoliciesForSubjectGroup(ctx, params)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &accessv1.ListPoliciesForGroupResponse{}
+	for i := range rows {
+		out.Policies = append(out.Policies, toRequestPolicyMsg(rows[i]))
+	}
+	if len(rows) == int(limit) {
+		last := rows[len(rows)-1]
+		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+	}
+	return connect.NewResponse(out), nil
+}
+
 // ResolvePolicy maps a (name, asset scope) to a policy id (admin only). NotFound if
 // no policy of that name is scoped to that asset.
 func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {

@@ -18,6 +18,7 @@ import { Users } from "lucide-react";
 import { getGroupAccess } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import { GroupMembers } from "@/components/groups/group-members";
 import { GroupBindings } from "@/components/groups/group-bindings";
+import { GroupPolicies } from "@/components/groups/group-policies";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
 
 export interface GroupDetailProps {
@@ -60,6 +61,11 @@ export function GroupDetail({ id, name }: GroupDetailProps) {
       {/* Bound roles */}
       <DetailSection title="Bound roles">
         <GroupBindings groupId={id} />
+      </DetailSection>
+
+      {/* Requestable via — request policies this group is a subject of (read-only) */}
+      <DetailSection title="Requestable via">
+        <GroupPolicies groupId={id} />
       </DetailSection>
     </article>
   );

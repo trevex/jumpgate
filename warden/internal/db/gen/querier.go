@@ -175,6 +175,8 @@ type Querier interface {
 	ListPendingRequestsByRole(ctx context.Context, roleID uuid.UUID) ([]ListPendingRequestsByRoleRow, error)
 	// Keyset pagination for pending requests (created_at DESC, id ASC).
 	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
+	ListPoliciesForAsset(ctx context.Context, arg ListPoliciesForAssetParams) ([]RequestPolicy, error)
+	ListPoliciesForSubjectGroup(ctx context.Context, arg ListPoliciesForSubjectGroupParams) ([]RequestPolicy, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)

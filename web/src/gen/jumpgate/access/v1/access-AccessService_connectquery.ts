@@ -108,6 +108,18 @@ export const deleteRequestPolicy = AccessService.method.deleteRequestPolicy;
 export const listRequestPolicies = AccessService.method.listRequestPolicies;
 
 /**
+ * Reverse lookups: policies scoped to an asset, and policies a group is a subject of.
+ *
+ * @generated from rpc jumpgate.access.v1.AccessService.ListPoliciesForAsset
+ */
+export const listPoliciesForAsset = AccessService.method.listPoliciesForAsset;
+
+/**
+ * @generated from rpc jumpgate.access.v1.AccessService.ListPoliciesForGroup
+ */
+export const listPoliciesForGroup = AccessService.method.listPoliciesForGroup;
+
+/**
  * @generated from rpc jumpgate.access.v1.AccessService.AddPolicySubject
  */
 export const addPolicySubject = AccessService.method.addPolicySubject;

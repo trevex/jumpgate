@@ -209,6 +209,120 @@ func (q *Queries) GetRoleDefaultPolicy(ctx context.Context, roleID uuid.UUID) (R
 	return i, err
 }
 
+const listPoliciesForAsset = `-- name: ListPoliciesForAsset :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies
+WHERE scope_asset_id = $1
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    $2::timestamptz IS NULL
+    OR created_at < $2
+    OR (created_at = $2 AND id > $3::uuid)
+  )
+ORDER BY created_at DESC, id
+LIMIT $4
+`
+
+type ListPoliciesForAssetParams struct {
+	AssetID pgtype.UUID        `json:"asset_id"`
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
+}
+
+func (q *Queries) ListPoliciesForAsset(ctx context.Context, arg ListPoliciesForAssetParams) ([]RequestPolicy, error) {
+	rows, err := q.db.Query(ctx, listPoliciesForAsset,
+		arg.AssetID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequestPolicy
+	for rows.Next() {
+		var i RequestPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPoliciesForSubjectGroup = `-- name: ListPoliciesForSubjectGroup :many
+SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies rp
+WHERE rp.id IN (SELECT policy_id FROM request_policy_subjects WHERE subject_group_id = $1)
+  AND (
+    -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
+    -- time predicate so the id tiebreak is NOT inverted.
+    $2::timestamptz IS NULL
+    OR rp.created_at < $2
+    OR (rp.created_at = $2 AND rp.id > $3::uuid)
+  )
+ORDER BY rp.created_at DESC, rp.id
+LIMIT $4
+`
+
+type ListPoliciesForSubjectGroupParams struct {
+	GroupID pgtype.UUID        `json:"group_id"`
+	AfterTs pgtype.Timestamptz `json:"after_ts"`
+	AfterID pgtype.UUID        `json:"after_id"`
+	Lim     int32              `json:"lim"`
+}
+
+func (q *Queries) ListPoliciesForSubjectGroup(ctx context.Context, arg ListPoliciesForSubjectGroupParams) ([]RequestPolicy, error) {
+	rows, err := q.db.Query(ctx, listPoliciesForSubjectGroup,
+		arg.GroupID,
+		arg.AfterTs,
+		arg.AfterID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequestPolicy
+	for rows.Next() {
+		var i RequestPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPolicySubjects = `-- name: ListPolicySubjects :many
 SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects
 WHERE policy_id = $1

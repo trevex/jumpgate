@@ -82,6 +82,12 @@ const (
 	// AccessServiceListRequestPoliciesProcedure is the fully-qualified name of the AccessService's
 	// ListRequestPolicies RPC.
 	AccessServiceListRequestPoliciesProcedure = "/jumpgate.access.v1.AccessService/ListRequestPolicies"
+	// AccessServiceListPoliciesForAssetProcedure is the fully-qualified name of the AccessService's
+	// ListPoliciesForAsset RPC.
+	AccessServiceListPoliciesForAssetProcedure = "/jumpgate.access.v1.AccessService/ListPoliciesForAsset"
+	// AccessServiceListPoliciesForGroupProcedure is the fully-qualified name of the AccessService's
+	// ListPoliciesForGroup RPC.
+	AccessServiceListPoliciesForGroupProcedure = "/jumpgate.access.v1.AccessService/ListPoliciesForGroup"
 	// AccessServiceAddPolicySubjectProcedure is the fully-qualified name of the AccessService's
 	// AddPolicySubject RPC.
 	AccessServiceAddPolicySubjectProcedure = "/jumpgate.access.v1.AccessService/AddPolicySubject"
@@ -130,6 +136,9 @@ type AccessServiceClient interface {
 	UpdateRequestPolicy(context.Context, *connect.Request[v1.UpdateRequestPolicyRequest]) (*connect.Response[v1.UpdateRequestPolicyResponse], error)
 	DeleteRequestPolicy(context.Context, *connect.Request[v1.DeleteRequestPolicyRequest]) (*connect.Response[v1.DeleteRequestPolicyResponse], error)
 	ListRequestPolicies(context.Context, *connect.Request[v1.ListRequestPoliciesRequest]) (*connect.Response[v1.ListRequestPoliciesResponse], error)
+	// Reverse lookups: policies scoped to an asset, and policies a group is a subject of.
+	ListPoliciesForAsset(context.Context, *connect.Request[v1.ListPoliciesForAssetRequest]) (*connect.Response[v1.ListPoliciesForAssetResponse], error)
+	ListPoliciesForGroup(context.Context, *connect.Request[v1.ListPoliciesForGroupRequest]) (*connect.Response[v1.ListPoliciesForGroupResponse], error)
 	AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error)
 	ResolvePolicy(context.Context, *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error)
 	RemovePolicySubject(context.Context, *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error)
@@ -251,6 +260,18 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(accessServiceMethods.ByName("ListRequestPolicies")),
 			connect.WithClientOptions(opts...),
 		),
+		listPoliciesForAsset: connect.NewClient[v1.ListPoliciesForAssetRequest, v1.ListPoliciesForAssetResponse](
+			httpClient,
+			baseURL+AccessServiceListPoliciesForAssetProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("ListPoliciesForAsset")),
+			connect.WithClientOptions(opts...),
+		),
+		listPoliciesForGroup: connect.NewClient[v1.ListPoliciesForGroupRequest, v1.ListPoliciesForGroupResponse](
+			httpClient,
+			baseURL+AccessServiceListPoliciesForGroupProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("ListPoliciesForGroup")),
+			connect.WithClientOptions(opts...),
+		),
 		addPolicySubject: connect.NewClient[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse](
 			httpClient,
 			baseURL+AccessServiceAddPolicySubjectProcedure,
@@ -286,28 +307,30 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // accessServiceClient implements AccessServiceClient.
 type accessServiceClient struct {
-	createRole          *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
-	listRoles           *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
-	getRole             *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
-	getRoleDisplay      *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
-	resolveRole         *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
-	getRoleAccess       *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
-	deleteRole          *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
-	addRoleGrant        *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
-	removeRoleGrant     *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
-	listRoleGrants      *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
-	createRoleBinding   *connect.Client[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse]
-	deleteRoleBinding   *connect.Client[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse]
-	listRoleBindings    *connect.Client[v1.ListRoleBindingsRequest, v1.ListRoleBindingsResponse]
-	createRequestPolicy *connect.Client[v1.CreateRequestPolicyRequest, v1.CreateRequestPolicyResponse]
-	updateRequestPolicy *connect.Client[v1.UpdateRequestPolicyRequest, v1.UpdateRequestPolicyResponse]
-	deleteRequestPolicy *connect.Client[v1.DeleteRequestPolicyRequest, v1.DeleteRequestPolicyResponse]
-	listRequestPolicies *connect.Client[v1.ListRequestPoliciesRequest, v1.ListRequestPoliciesResponse]
-	addPolicySubject    *connect.Client[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse]
-	resolvePolicy       *connect.Client[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse]
-	removePolicySubject *connect.Client[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse]
-	listPolicySubjects  *connect.Client[v1.ListPolicySubjectsRequest, v1.ListPolicySubjectsResponse]
-	explainRole         *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
+	createRole           *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
+	listRoles            *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
+	getRole              *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
+	getRoleDisplay       *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
+	resolveRole          *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
+	getRoleAccess        *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
+	deleteRole           *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
+	addRoleGrant         *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
+	removeRoleGrant      *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
+	listRoleGrants       *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
+	createRoleBinding    *connect.Client[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse]
+	deleteRoleBinding    *connect.Client[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse]
+	listRoleBindings     *connect.Client[v1.ListRoleBindingsRequest, v1.ListRoleBindingsResponse]
+	createRequestPolicy  *connect.Client[v1.CreateRequestPolicyRequest, v1.CreateRequestPolicyResponse]
+	updateRequestPolicy  *connect.Client[v1.UpdateRequestPolicyRequest, v1.UpdateRequestPolicyResponse]
+	deleteRequestPolicy  *connect.Client[v1.DeleteRequestPolicyRequest, v1.DeleteRequestPolicyResponse]
+	listRequestPolicies  *connect.Client[v1.ListRequestPoliciesRequest, v1.ListRequestPoliciesResponse]
+	listPoliciesForAsset *connect.Client[v1.ListPoliciesForAssetRequest, v1.ListPoliciesForAssetResponse]
+	listPoliciesForGroup *connect.Client[v1.ListPoliciesForGroupRequest, v1.ListPoliciesForGroupResponse]
+	addPolicySubject     *connect.Client[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse]
+	resolvePolicy        *connect.Client[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse]
+	removePolicySubject  *connect.Client[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse]
+	listPolicySubjects   *connect.Client[v1.ListPolicySubjectsRequest, v1.ListPolicySubjectsResponse]
+	explainRole          *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
 }
 
 // CreateRole calls jumpgate.access.v1.AccessService.CreateRole.
@@ -395,6 +418,16 @@ func (c *accessServiceClient) ListRequestPolicies(ctx context.Context, req *conn
 	return c.listRequestPolicies.CallUnary(ctx, req)
 }
 
+// ListPoliciesForAsset calls jumpgate.access.v1.AccessService.ListPoliciesForAsset.
+func (c *accessServiceClient) ListPoliciesForAsset(ctx context.Context, req *connect.Request[v1.ListPoliciesForAssetRequest]) (*connect.Response[v1.ListPoliciesForAssetResponse], error) {
+	return c.listPoliciesForAsset.CallUnary(ctx, req)
+}
+
+// ListPoliciesForGroup calls jumpgate.access.v1.AccessService.ListPoliciesForGroup.
+func (c *accessServiceClient) ListPoliciesForGroup(ctx context.Context, req *connect.Request[v1.ListPoliciesForGroupRequest]) (*connect.Response[v1.ListPoliciesForGroupResponse], error) {
+	return c.listPoliciesForGroup.CallUnary(ctx, req)
+}
+
 // AddPolicySubject calls jumpgate.access.v1.AccessService.AddPolicySubject.
 func (c *accessServiceClient) AddPolicySubject(ctx context.Context, req *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error) {
 	return c.addPolicySubject.CallUnary(ctx, req)
@@ -451,6 +484,9 @@ type AccessServiceHandler interface {
 	UpdateRequestPolicy(context.Context, *connect.Request[v1.UpdateRequestPolicyRequest]) (*connect.Response[v1.UpdateRequestPolicyResponse], error)
 	DeleteRequestPolicy(context.Context, *connect.Request[v1.DeleteRequestPolicyRequest]) (*connect.Response[v1.DeleteRequestPolicyResponse], error)
 	ListRequestPolicies(context.Context, *connect.Request[v1.ListRequestPoliciesRequest]) (*connect.Response[v1.ListRequestPoliciesResponse], error)
+	// Reverse lookups: policies scoped to an asset, and policies a group is a subject of.
+	ListPoliciesForAsset(context.Context, *connect.Request[v1.ListPoliciesForAssetRequest]) (*connect.Response[v1.ListPoliciesForAssetResponse], error)
+	ListPoliciesForGroup(context.Context, *connect.Request[v1.ListPoliciesForGroupRequest]) (*connect.Response[v1.ListPoliciesForGroupResponse], error)
 	AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error)
 	ResolvePolicy(context.Context, *connect.Request[v1.ResolvePolicyRequest]) (*connect.Response[v1.ResolvePolicyResponse], error)
 	RemovePolicySubject(context.Context, *connect.Request[v1.RemovePolicySubjectRequest]) (*connect.Response[v1.RemovePolicySubjectResponse], error)
@@ -568,6 +604,18 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(accessServiceMethods.ByName("ListRequestPolicies")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accessServiceListPoliciesForAssetHandler := connect.NewUnaryHandler(
+		AccessServiceListPoliciesForAssetProcedure,
+		svc.ListPoliciesForAsset,
+		connect.WithSchema(accessServiceMethods.ByName("ListPoliciesForAsset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessServiceListPoliciesForGroupHandler := connect.NewUnaryHandler(
+		AccessServiceListPoliciesForGroupProcedure,
+		svc.ListPoliciesForGroup,
+		connect.WithSchema(accessServiceMethods.ByName("ListPoliciesForGroup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	accessServiceAddPolicySubjectHandler := connect.NewUnaryHandler(
 		AccessServiceAddPolicySubjectProcedure,
 		svc.AddPolicySubject,
@@ -634,6 +682,10 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceDeleteRequestPolicyHandler.ServeHTTP(w, r)
 		case AccessServiceListRequestPoliciesProcedure:
 			accessServiceListRequestPoliciesHandler.ServeHTTP(w, r)
+		case AccessServiceListPoliciesForAssetProcedure:
+			accessServiceListPoliciesForAssetHandler.ServeHTTP(w, r)
+		case AccessServiceListPoliciesForGroupProcedure:
+			accessServiceListPoliciesForGroupHandler.ServeHTTP(w, r)
 		case AccessServiceAddPolicySubjectProcedure:
 			accessServiceAddPolicySubjectHandler.ServeHTTP(w, r)
 		case AccessServiceResolvePolicyProcedure:
@@ -719,6 +771,14 @@ func (UnimplementedAccessServiceHandler) DeleteRequestPolicy(context.Context, *c
 
 func (UnimplementedAccessServiceHandler) ListRequestPolicies(context.Context, *connect.Request[v1.ListRequestPoliciesRequest]) (*connect.Response[v1.ListRequestPoliciesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ListRequestPolicies is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) ListPoliciesForAsset(context.Context, *connect.Request[v1.ListPoliciesForAssetRequest]) (*connect.Response[v1.ListPoliciesForAssetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ListPoliciesForAsset is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) ListPoliciesForGroup(context.Context, *connect.Request[v1.ListPoliciesForGroupRequest]) (*connect.Response[v1.ListPoliciesForGroupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ListPoliciesForGroup is not implemented"))
 }
 
 func (UnimplementedAccessServiceHandler) AddPolicySubject(context.Context, *connect.Request[v1.AddPolicySubjectRequest]) (*connect.Response[v1.AddPolicySubjectResponse], error) {
