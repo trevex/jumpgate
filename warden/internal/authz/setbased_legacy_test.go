@@ -311,6 +311,127 @@ func (s *sqlAuthorizer) visibleAssetsUnderLegacy(ctx context.Context, userID, pa
 	return out, nil
 }
 
+// visibleFoldersUnderLegacy is the VERBATIM pre-C2 VisibleFoldersUnder body: the
+// multi-step anchor orchestration (mgmtScopeFolders + visibleRoleHomeFolders +
+// visibleGroupHomeFolders + visibleAssetFolders, each re-running overlapping
+// closures) followed by ONE visibleFoldersQuery ltree path-reveal. It is the
+// differential oracle for the collapsed set-based rewrite in visible_tree.go — the
+// two must return the same []VisibleFolder (including the Governed flag) for every
+// probe. It keeps calling the still-in-production helpers globalHeldCapabilities /
+// allFoldersAtLevel / mgmtScopeFolders / visibleRoleHomeFolders /
+// visibleGroupHomeFolders / visibleAssetFolders / unionKeys / mapKeys /
+// visibleFoldersQuery.
+func (s *sqlAuthorizer) visibleFoldersUnderLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
+	// Global management short-circuit: a global catalog:folder:read (or **) holder
+	// governs and sees the whole tree.
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if global.Allows("catalog:folder:read") {
+		return s.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
+	}
+
+	// Pass 1 — anchors (bounded work; each helper already implemented).
+	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	assetHomes, err := s.visibleAssetFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	anchors := unionKeys(mgmt, roleHomes, groupHomes, assetHomes)
+	if len(anchors) == 0 {
+		return nil, nil
+	}
+	mgmtIDs := mapKeys(mgmt)
+
+	// Pass 2 — one ltree query.
+	sql, args := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
+	rows, err := s.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("visible folders (ltree): %w", err)
+	}
+	defer rows.Close()
+	var out []VisibleFolder
+	for rows.Next() {
+		var vf VisibleFolder
+		if err := rows.Scan(&vf.ID, &vf.Governed); err != nil {
+			return nil, fmt.Errorf("scan visible folder: %w", err)
+		}
+		out = append(out, vf)
+	}
+	return out, rows.Err()
+}
+
+// folderPathVisibleLegacy is the VERBATIM pre-C2 FolderPathVisible body: the global
+// short-circuit, then the asset arm (VisibleAssetsUnder cascade), then (if empty)
+// the mgmt+role+group anchor arm + one ltree EXISTS query. It is the differential
+// oracle for the collapsed rewrite in visible_tree.go — the two must return the same
+// bool for every probe.
+func (s *sqlAuthorizer) folderPathVisibleLegacy(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if global.Allows("catalog:folder:read") {
+		var exists bool
+		if err := s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM folders WHERE id = $1)`, folderID).Scan(&exists); err != nil {
+			return false, fmt.Errorf("folder exists: %w", err)
+		}
+		return exists, nil
+	}
+
+	assets, err := s.VisibleAssetsUnder(ctx, userID, folderID, true)
+	if err != nil {
+		return false, err
+	}
+	if len(assets) > 0 {
+		return true, nil
+	}
+
+	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	anchors := unionKeys(mgmt, roleHomes, groupHomes)
+	if len(anchors) == 0 {
+		return false, nil
+	}
+	mgmtIDs := mapKeys(mgmt)
+
+	var vis bool
+	err = s.pool.QueryRow(ctx, `
+WITH f  AS (SELECT path_ids FROM folders WHERE id = $1),
+     ap AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[])),
+     mp AS (SELECT path_ids FROM folders WHERE id = ANY($3::uuid[]))
+SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
+    OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids)`,
+		folderID, anchors, mgmtIDs).Scan(&vis)
+	if err != nil {
+		return false, fmt.Errorf("folder path visible: %w", err)
+	}
+	return vis, nil
+}
+
 // legacyMethods binds the frozen `*Legacy` references into an authzMethods struct.
 // It starts from newMethods (the exported, set-based-target methods) and OVERRIDES
 // only the fields rewritten so far — B2 overrides capsOnScope, B3 overrides check,
@@ -319,10 +440,12 @@ func (s *sqlAuthorizer) visibleAssetsUnderLegacy(ctx context.Context, userID, pa
 // method(s), focusing the differential diff on the rewrite.
 func legacyMethods(s *sqlAuthorizer) authzMethods {
 	m := newMethods(s)
-	m.capsOnScope = s.capabilitiesOnScopeLegacy // B2
-	m.check = s.checkLegacy                     // B3
-	m.visRoles = s.visibleRolesUnderLegacy      // C1a
-	m.visGroups = s.visibleGroupsUnderLegacy    // C1a
-	m.visAssets = s.visibleAssetsUnderLegacy    // C1b
+	m.capsOnScope = s.capabilitiesOnScopeLegacy     // B2
+	m.check = s.checkLegacy                         // B3
+	m.visRoles = s.visibleRolesUnderLegacy          // C1a
+	m.visGroups = s.visibleGroupsUnderLegacy        // C1a
+	m.visAssets = s.visibleAssetsUnderLegacy        // C1b
+	m.visFolders = s.visibleFoldersUnderLegacy      // C2
+	m.folderPathVisible = s.folderPathVisibleLegacy // C2
 	return m
 }

@@ -295,30 +295,8 @@ WHERE (` + level + `)
         -- FULL asset-scope cascade (global_held ∪ held-on-asset ∪ held-on-ancestor
         -- folders). A ** cap normalizes to (*,*,*) and matches ssh:login:L via the
         -- column-match, so it is retained — matching EntitledLogins on raw
-        -- CapabilitiesOnScope.
-     OR EXISTS (
-            SELECT 1 FROM ssh_asset_login sal
-            WHERE sal.asset_id = a.id
-              AND EXISTS (
-                  SELECT 1 FROM role_capabilities rc
-                  WHERE rc.role_id IN (
-                        SELECT role_id FROM global_held
-                      UNION
-                        SELECT h.role_id FROM held h
-                        WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
-                           OR (h.object_kind = 'folder'
-                               AND h.object_id IN (
-                                   SELECT f.id FROM folders f
-                                   WHERE f.path_ids @> (
-                                       SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id
-                                   )
-                               ))
-                  )
-                  AND (rc.scope = 'ssh' OR rc.scope = '*')
-                  AND (rc.action = 'login' OR rc.action = '*')
-                  AND (rc.qualifier = sal.login OR rc.qualifier = '*')
-              )
-        )
+        -- CapabilitiesOnScope. Shared with anchorHomeFolders via connectArmExists.
+     ` + connectArmExists + `
       )
 ORDER BY a.id`
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -358,30 +336,17 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 		return s.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
 	}
 
-	// Pass 1 — anchors (bounded work; each helper already implemented).
-	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	// Anchors (path-reveal sources) + the governed (managed) folder set, computed
+	// with the shared closures evaluated once each (folderAnchors).
+	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	assetHomes, err := s.visibleAssetFolders(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	anchors := unionKeys(mgmt, roleHomes, groupHomes, assetHomes)
 	if len(anchors) == 0 {
 		return nil, nil
 	}
-	mgmtIDs := mapKeys(mgmt)
 
-	// Pass 2 — one ltree query. Level predicate mirrors childCandidateFolderIDs:
+	// One ltree query. Level predicate mirrors childCandidateFolderIDs:
 	//   cascade=false -> direct children of parent (NULL-safe);
 	//   cascade=true  -> the subtree under parent (root => whole tree).
 	// A folder is visible if it is an ancestor-or-self of an anchor (path reveal)
@@ -424,39 +389,16 @@ func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID 
 		return exists, nil
 	}
 
-	// Asset arm first (cheap, scoped to this folder's subtree): the folder is
-	// visible if its subtree holds a visible asset — F is then an ancestor-or-self
-	// of that asset's folder. This is the common case (a user browsing to an asset
-	// they can reach) and avoids the pricier whole-tree anchor closures below.
-	assets, err := s.VisibleAssetsUnder(ctx, userID, folderID, true)
+	// Anchors (path-reveal sources) + the governed (managed) folder set, computed
+	// with the shared closures evaluated once each (folderAnchors). The same anchor
+	// logic backs VisibleFoldersUnder, so the two path-reveal predicates cannot drift.
+	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	if len(assets) > 0 {
-		return true, nil
-	}
-
-	// Folder / role / group arm: F is an ancestor-or-self of a folder the user
-	// manages, or that homes a role/group they can see. Only reached when the
-	// subtree holds no visible asset (e.g. a delegate viewing the ancestors above
-	// an empty folder they govern).
-	mgmt, err := s.mgmtScopeFolders(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	roleHomes, err := s.visibleRoleHomeFolders(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	groupHomes, err := s.visibleGroupHomeFolders(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	anchors := unionKeys(mgmt, roleHomes, groupHomes)
 	if len(anchors) == 0 {
 		return false, nil
 	}
-	mgmtIDs := mapKeys(mgmt)
 
 	// Visible iff folderID is an ancestor-or-self of an anchor (path reveal) OR
 	// inside a folder the user manages (cascade down) — mirrors visibleFoldersQuery.
@@ -472,6 +414,228 @@ SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
 		return false, fmt.Errorf("folder path visible: %w", err)
 	}
 	return vis, nil
+}
+
+// heldRolesAndAssets scans the grant-augmented held closure ONCE and projects both
+// arms of the ACCESS axis it carries: the set of role ids the user holds (object
+// dimension dropped — held on ANY object) and the set of asset ids the user holds a
+// role on directly (object_kind='asset'). Folding both projections into a single
+// `held` scan avoids the two separate closure round-trips (heldRoleIDs + the
+// VisibleAssets active tier) the legacy anchor path issued.
+func (s *sqlAuthorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
+	rows, err := s.pool.Query(ctx, heldCTE+`
+SELECT DISTINCT object_kind, object_id, role_id FROM held`, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("held roles and assets: %w", err)
+	}
+	defer rows.Close()
+	roles = map[uuid.UUID]struct{}{}
+	assets = map[uuid.UUID]struct{}{}
+	for rows.Next() {
+		var (
+			kind     string
+			objectID uuid.UUID
+			roleID   uuid.UUID
+		)
+		if err := rows.Scan(&kind, &objectID, &roleID); err != nil {
+			return nil, nil, fmt.Errorf("scan held row: %w", err)
+		}
+		roles[roleID] = struct{}{}
+		if kind == "asset" {
+			assets[objectID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return roles, assets, nil
+}
+
+// folderAnchors computes, in a small constant number of round-trips, the two folder
+// sets that drive the catalog path-reveal (VisibleFoldersUnder / FolderPathVisible):
+//
+//   - anchors: the union of the four anchor sources (management-scope folders ∪ home
+//     folders of visible roles ∪ home folders of visible groups ∪ folders of visible
+//     assets) — the folders whose browse PATH must be revealed (ancestor-or-self).
+//   - mgmtIDs: the folders the user MANAGES (holds a management cap at) — the set
+//     whose subtrees VisibleFoldersUnder marks `governed`. mgmtIDs ⊆ anchors.
+//
+// The redundant closure work the legacy orchestration incurred (visibleRequestable
+// re-run for roles AND assets; held/member recomputed across helpers) is eliminated:
+// each shared closure is evaluated ONCE here (held roles+assets in one scan,
+// visibleRequestable once for both requestable-role and requestable-asset arms,
+// member groups once), and the role/group/asset home-folder anchors + connect-arm
+// asset folders are resolved by ONE combined set-based query. The management-cap
+// classification for the governed set (a) stays in Go over mgmtScopeFolders' single
+// held-folder-rows query — its isManagementCap glob predicate (which admits a bare
+// `*`/`**` but NOT a scope='*' connect pattern like `*:connect`) is subtler than a
+// naive SQL scope predicate, so it is kept where CapMatch-equivalence is not at risk.
+//
+// Round-trips (non-admin): heldRolesAndAssets (1) + visibleRequestable (1) +
+// memberGroupIDs (1) + mgmtScopeFolders (1) + the combined anchor query (1) = 5.
+func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (anchors, mgmtIDs []uuid.UUID, err error) {
+	// ── Shared ACCESS closures, each evaluated once ──────────────────────────
+	// held: role ids (any object) + asset ids held directly — one closure scan.
+	heldRoles, heldAssets, err := s.heldRolesAndAssets(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// requestable: (asset, role) pairs across all assets — one closure. Feeds BOTH
+	// the requestable-role arm (role home anchors) and the requestable-asset arm
+	// (asset home anchors), so it is not re-run per kind as the legacy path did.
+	req, err := s.visibleRequestable(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// member: transitive group membership — one closure.
+	member, err := s.memberGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Role ACCESS set = held ∪ requestable roles; Asset ACCESS set = held ∪
+	// requestable assets (VisibleAssets = the active tier ∪ the requestable tier).
+	roleAccess := make(map[uuid.UUID]struct{}, len(heldRoles)+len(req))
+	for id := range heldRoles {
+		roleAccess[id] = struct{}{}
+	}
+	assetAccess := make(map[uuid.UUID]struct{}, len(heldAssets)+len(req))
+	for id := range heldAssets {
+		assetAccess[id] = struct{}{}
+	}
+	for _, ra := range req {
+		roleAccess[ra.RoleID] = struct{}{}
+		assetAccess[ra.AssetID] = struct{}{}
+	}
+
+	// ── Governed set (a): management-scope folders, isManagementCap in Go ─────
+	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	mgmtIDs = mapKeys(mgmt)
+
+	// ── Combined anchor query: role/group/asset home-folder anchors in ONE go ──
+	// Anchor sources (b)+(c)+(d): the home folders of visible roles/groups and the
+	// folders of visible assets, where visibility on each kind is (ACCESS set passed
+	// as a uuid[] param) ∪ (MANAGEMENT via the kind's read cap, folded set-based over
+	// the shared held/global_held closures) — and, for assets, ∪ (CONNECT via an
+	// ssh:login the user entitles over the full asset-scope cascade). The mgmt read
+	// caps are 3-segment concrete (access:role:read / identity:group:read /
+	// catalog:asset:read), so their columns are literals; the three-column glob
+	// predicate ((col = literal OR col = '*')) is the same one proven ≡ Go CapMatch by
+	// TestSQLCapMatchMatchesGo.
+	//
+	// $1 user (bound by the closure prefix); $2 role-access ids; $3 group-access ids;
+	// $4 asset-access ids.
+	anchorFolders, err := s.anchorHomeFolders(ctx, userID, mapKeys(roleAccess), mapKeys(member), mapKeys(assetAccess))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// anchors = mgmt (a) ∪ role/group/asset home folders (b+c+d).
+	seen := map[uuid.UUID]struct{}{}
+	for id := range mgmt {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			anchors = append(anchors, id)
+		}
+	}
+	for _, id := range anchorFolders {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			anchors = append(anchors, id)
+		}
+	}
+	return anchors, mgmtIDs, nil
+}
+
+// anchorHomeFolders resolves, in ONE set-based query, the union of the three
+// folder-id anchor sources that hang off folder-homed nodes: the home folders of
+// roles/groups visible to the user and the folders of assets visible to the user.
+// Visibility per kind is (the pre-computed ACCESS id set, passed as a uuid[]) ∪
+// (MANAGEMENT via the kind's read cap over the shared held/global_held closures) —
+// plus, for assets, the CONNECT arm (an ssh:login the user entitles over the full
+// asset-scope cascade). It reuses heldPlusGlobalHeldPrefix (user_groups + held +
+// global_held) so held/global_held cannot drift from Check / CapabilitiesOnScope;
+// deactivated users are excluded by those closures and by the ACCESS closures that
+// produced the id params.
+//
+//   - $1 user (bound by the closure prefix);
+//   - $2 role-access ids; $3 group-access ids; $4 asset-access ids.
+func (s *sqlAuthorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
+	query := heldPlusGlobalHeldPrefix + `,
+-- held FOLDER objects carrying their capability columns (the mgmt-cascade anchor
+-- source, generalized to any cap via the carried columns). Management cascades DOWN
+-- from a folder F where a cap is held to every folder at/under F (ltree <@).
+held_folder_caps(folder_id, scope, action, qualifier) AS (
+    SELECT h.object_id, rc.scope, rc.action, rc.qualifier
+    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+),
+-- capabilities held GLOBALLY (the mgmt short-circuit arm; covers every folder).
+global_caps(scope, action, qualifier) AS (
+    SELECT rc.scope, rc.action, rc.qualifier
+    FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+)
+-- (b) role home folders: role visible via ACCESS (held ∪ requestable) OR MANAGEMENT
+-- (access:role:read on the home-folder scope). Folder-less (NULL home) roles never
+-- anchor a folder and are excluded by the NOT NULL join to folders.
+SELECT DISTINCT r.folder_id AS folder_id
+FROM roles r
+JOIN folders nf ON nf.id = r.folder_id
+WHERE r.id = ANY($2::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'access' OR c.scope = '*')
+                AND (c.action = 'role' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
+              WHERE nf.path_ids <@ mf.path_ids
+                AND (hf.scope = 'access' OR hf.scope = '*')
+                AND (hf.action = 'role' OR hf.action = '*')
+                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+UNION
+-- (c) group home folders: group visible via ACCESS (transitive membership) OR
+-- MANAGEMENT (identity:group:read on the home-folder scope).
+SELECT DISTINCT g.folder_id AS folder_id
+FROM groups g
+JOIN folders nf ON nf.id = g.folder_id
+WHERE g.id = ANY($3::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'identity' OR c.scope = '*')
+                AND (c.action = 'group' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
+              WHERE nf.path_ids <@ mf.path_ids
+                AND (hf.scope = 'identity' OR hf.scope = '*')
+                AND (hf.action = 'group' OR hf.action = '*')
+                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+UNION
+-- (d) asset folders: asset visible via ACCESS (held ∪ requestable) OR MANAGEMENT
+-- (catalog:asset:read on the asset's folder scope) OR CONNECT (an ssh:login on the
+-- asset the user entitles over the full asset-scope cascade: global_held ∪ held on
+-- the asset object ∪ held on an ancestor-or-self folder). A ** cap normalizes to
+-- (*,*,*) and matches ssh:login:L via the column-match, so ** is RETAINED here —
+-- matching EntitledLogins on raw CapabilitiesOnScope, exactly as VisibleAssetsUnder.
+SELECT DISTINCT a.folder_id AS folder_id
+FROM assets a
+WHERE a.id = ANY($4::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'catalog' OR c.scope = '*')
+                AND (c.action = 'asset' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
+              WHERE (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id) <@ mf.path_ids
+                AND (hf.scope = 'catalog' OR hf.scope = '*')
+                AND (hf.action = 'asset' OR hf.action = '*')
+                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+   ` + connectArmExists
+	rows, err := s.pool.Query(ctx, query, userID, roleAccess, groupAccess, assetAccess)
+	if err != nil {
+		return nil, fmt.Errorf("anchor home folders: %w", err)
+	}
+	defer rows.Close()
+	return scanUUIDs(rows)
 }
 
 // visibleFoldersQuery builds the single-query, two-anchor-set path-reveal SELECT
@@ -850,6 +1014,46 @@ global_mgmt AS (
           AND (rc.qualifier = $4 OR rc.qualifier = '*')
     ) AS ok
 )`
+
+// connectArmExists is the SHARED SSH-connect-visibility arm: an asset is
+// connect-visible iff it declares an ssh_asset_login whose login the user is
+// entitled over the FULL asset-scope cascade (global_held ∪ held on the asset
+// object ∪ held on an ancestor-or-self folder, via the folders.path_ids @> join).
+// It is a bare `OR EXISTS ( ... )` boolean arm and depends only on the asset
+// alias `a` (a.id / a.folder_id) being in scope and on the global_held/held CTEs
+// from heldPlusGlobalHeldPrefix — it takes NO query params of its own, so both
+// call sites (which already provide `a` and the prefix) compose it cleanly.
+//
+// A `**` cap normalizes to (*,*,*) and matches ssh:login:L via the three-column
+// glob predicate, so `**` is deliberately RETAINED here — this mirrors
+// EntitledLogins on the RAW CapabilitiesOnScope(AssetScope), NOT ConnectCapabilities.
+//
+// This is the single source of truth shared by VisibleAssetsUnder and
+// anchorHomeFolders so the two security-critical fragments cannot drift — the same
+// drift-guard rationale as mgmtCascadeCTEs above.
+const connectArmExists = `OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM global_held
+                  UNION
+                    SELECT h.role_id FROM held h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (
+                                   SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id
+                               )
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+   )`
 
 // visibleHomedSetBased is the reusable set-based core behind visibleRolesHomed and
 // visibleGroupsHomed (and, via them, the four call sites in the file header). It

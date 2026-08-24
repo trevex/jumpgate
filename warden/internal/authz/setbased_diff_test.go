@@ -751,6 +751,29 @@ func TestSetbasedVisibleAssetsDiff(t *testing.T) {
 	requireMatrixEqual(t, old, got)
 }
 
+// TestSetbasedVisibleFoldersDiff (C2) gates the collapsed set-based rewrite of the
+// folder visibility predicate (VisibleFoldersUnder + FolderPathVisible): it captures
+// the probe matrix twice over the SAME authorizer — once with legacyMethods
+// (visFolders/folderPathVisible = the frozen multi-step-anchor
+// visibleFoldersUnderLegacy / folderPathVisibleLegacy) and once with newMethods
+// (visFolders/folderPathVisible = the collapsed folderAnchors-backed queries) — and
+// asserts they are identical. legacyMethods also overrides capsOnScope (B2), check
+// (B3), visRoles/visGroups (C1a), and visAssets (C1b), all independently gated, so any
+// divergence here localizes to the folder visibility rewrite. The captured
+// folderResult includes the Governed flag, so governed correctness is checked. A
+// mismatch means the SQL is wrong; fix the SQL, not the test.
+func TestSetbasedVisibleFoldersDiff(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := seedMatrix(t, pool)
+	a := &sqlAuthorizer{pool: pool}
+	probes := defaultProbes(s)
+
+	old := captureAuthzMatrix(ctx, t, legacyMethods(a), s, probes)
+	got := captureAuthzMatrix(ctx, t, newMethods(a), s, probes)
+	requireMatrixEqual(t, old, got)
+}
+
 // isEmptyResult reports whether a captured result string denotes "nothing"
 // (empty id set / empty caps set / false), i.e. the value a user who sees
 // nothing must produce for EVERY method. Never treats an ERR: value as empty.
