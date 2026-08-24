@@ -59,3 +59,18 @@ func TestGenerateDeepSubjectHoldsRoleViaClosure(t *testing.T) {
 		t.Fatal("no approver generated")
 	}
 }
+
+func TestGenerateLiveSessions(t *testing.T) {
+	pool, _ := sharedDB(t)
+	w := Generate(t, tinyProfile)
+	var n int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM live_sessions").Scan(&n); err != nil {
+		t.Fatalf("count live_sessions: %v", err)
+	}
+	if n != tinyProfile.LiveSessions {
+		t.Fatalf("live_sessions = %d, want %d", n, tinyProfile.LiveSessions)
+	}
+	if len(w.LivePairs) != tinyProfile.LiveSessions || len(w.Workers) == 0 {
+		t.Fatalf("world live fixtures: pairs=%d workers=%d", len(w.LivePairs), len(w.Workers))
+	}
+}

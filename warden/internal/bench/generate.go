@@ -114,6 +114,21 @@ func Generate(tb testing.TB, p Profile) *World {
 	insertApproverSubject(ctx, tb, pool, policy, w.Approver)
 	w.PendingReq = insertOpenRequest(ctx, tb, pool, w.DeepSubject, deepRole, w.LeafAsset)
 
+	// Live sessions: LiveSessions rows for DeepSubject on LeafAsset, spread over a
+	// small worker set, all recorded present in worker_presence. The revocation
+	// benches re-evaluate these.
+	if p.LiveSessions > 0 {
+		w.Workers = []string{"worker-a", "worker-b"}
+		for _, wk := range w.Workers {
+			upsertWorkerPresence(ctx, tb, pool, wk)
+		}
+		for i := 0; i < p.LiveSessions; i++ {
+			wk := w.Workers[i%len(w.Workers)]
+			insertLiveSession(ctx, tb, pool, w.DeepSubject, w.LeafAsset, wk)
+			w.LivePairs = append(w.LivePairs, UserAsset{User: w.DeepSubject, Asset: w.LeafAsset})
+		}
+	}
+
 	return w
 }
 
@@ -296,6 +311,29 @@ func insertApproverSubject(ctx context.Context, tb testing.TB, pool *pgxpool.Poo
 		`INSERT INTO request_policy_subjects(policy_id, kind, subject_user_id) VALUES($1,'approver',$2)`,
 		policy, user); err != nil {
 		tb.Fatalf("insert approver subject: %v", err)
+	}
+}
+
+// insertLiveSession writes an active live_sessions row (unique id per row; id is the
+// token jti / replay guard). protocol/principals/client_key_fp are NOT NULL.
+func insertLiveSession(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, user, asset uuid.UUID, worker string) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO live_sessions(id, user_id, asset_id, worker_id, protocol, principals, client_key_fp)
+		 VALUES(gen_random_uuid(), $1, $2, $3, 'ssh', ARRAY['deploy'], 'SHA256:benchfp')`,
+		user, asset, worker); err != nil {
+		tb.Fatalf("insert live session: %v", err)
+	}
+}
+
+// upsertWorkerPresence records a worker as present now (presence column is last_seen_at).
+func upsertWorkerPresence(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, worker string) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO worker_presence(worker_id) VALUES($1)
+		 ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now()`,
+		worker); err != nil {
+		tb.Fatalf("upsert worker presence: %v", err)
 	}
 }
 
