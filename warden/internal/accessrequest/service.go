@@ -468,30 +468,99 @@ func (s *Service) ListMyRequests(ctx context.Context, requester uuid.UUID) ([]Re
 // eligible approver, excluding the caller's own requests). The pending set is
 // small; filter in Go via IsApprover for correctness over cleverness.
 func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([]Request, error) {
-	q := gen.New(s.pool)
-	rows, err := q.ListPendingRequests(ctx)
+	return s.approvablePending(ctx, caller, nil)
+}
+
+// approvablePending resolves, in ONE set-based query, the pending access requests the
+// caller may approve (with their current approve-count) — reproducing IsApprover over
+// the whole candidate set instead of per row (which was an N+1: EffectiveRule +
+// subject check + optional HoldsRoleStanding + CountApprovals, all per request). A
+// candidate is included when the caller is neither its requester nor deactivated AND,
+// for the request's EFFECTIVE policy (most-specific of asset / folder-ancestor /
+// global by the same precedence as EffectiveRule), the caller is either an explicit
+// `approver` subject (direct or via a nested group) OR holds the policy's approver_role
+// STANDING on the asset. The standing arm reuses authz.StandingHeldClosurePrefix()'s
+// held_standing closure — the same relation HoldsRoleStanding checks — so governance
+// semantics cannot drift. restrict limits the candidate set to those request ids (a
+// keyset page); a nil slice (SQL NULL) considers all pending requests. Results are
+// ordered created_at DESC, id, matching the paged SQL page order.
+func (s *Service) approvablePending(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Request, error) {
+	const body = `,
+pending AS (
+    SELECT id, requester_user_id, role_id, asset_id, reason, required_approvals, status, created_at, resolved_at
+    FROM access_requests
+    WHERE status = 'pending' AND requester_user_id <> $1
+      AND ($2::uuid[] IS NULL OR id = ANY($2))
+),
+pa AS (SELECT DISTINCT role_id, asset_id FROM pending),
+-- effective policy per pending (role, asset), via the EffectiveRule precedence:
+-- asset-scoped override (spec 0) < folder-scoped by ancestor depth < global default.
+ancestors(role_id, asset_id, folder_id, depth) AS (
+    SELECT pa.role_id, pa.asset_id, a.folder_id, 0 FROM pa JOIN assets a ON a.id = pa.asset_id
+  UNION ALL
+    SELECT an.role_id, an.asset_id, f.parent_id, an.depth + 1
+    FROM folders f JOIN ancestors an ON f.id = an.folder_id WHERE f.parent_id IS NOT NULL
+),
+candidates(role_id, asset_id, policy_id, approver_role_id, spec) AS (
+    SELECT pa.role_id, pa.asset_id, rp.id, rp.approver_role_id, 0
+    FROM pa JOIN request_policies rp ON rp.role_id = pa.role_id AND rp.scope_asset_id = pa.asset_id
+  UNION ALL
+    SELECT an.role_id, an.asset_id, rp.id, rp.approver_role_id, an.depth + 1
+    FROM ancestors an JOIN request_policies rp ON rp.role_id = an.role_id AND rp.scope_folder_id = an.folder_id
+  UNION ALL
+    SELECT pa.role_id, pa.asset_id, rp.id, rp.approver_role_id, 1000000
+    FROM pa JOIN request_policies rp ON rp.role_id = pa.role_id AND rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
+),
+eff AS (
+    SELECT DISTINCT ON (role_id, asset_id) role_id, asset_id, policy_id, approver_role_id
+    FROM candidates ORDER BY role_id, asset_id, spec ASC
+),
+approve_counts AS (
+    SELECT request_id, count(*) AS n FROM access_request_approvals
+    WHERE decision = 'approve' AND request_id IN (SELECT id FROM pending)
+    GROUP BY request_id
+)
+SELECT p.id, p.requester_user_id, p.role_id, p.asset_id, p.reason,
+       p.required_approvals, p.status, p.created_at, p.resolved_at,
+       COALESCE(c.n, 0)::bigint AS approvals
+FROM pending p
+JOIN eff e ON e.role_id = p.role_id AND e.asset_id = p.asset_id
+LEFT JOIN approve_counts c ON c.request_id = p.id
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+  AND (
+    EXISTS (
+        SELECT 1 FROM request_policy_subjects sub
+        WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+          AND (sub.subject_user_id = $1 OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
+    )
+    OR (
+        e.approver_role_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM held_standing hs
+            WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = p.asset_id
+        )
+    )
+  )
+ORDER BY p.created_at DESC, p.id`
+
+	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body, caller, restrict)
 	if err != nil {
-		return nil, fmt.Errorf("list pending requests: %w", err)
+		return nil, fmt.Errorf("approvable pending: %w", err)
 	}
+	defer rows.Close()
 	out := make([]Request, 0)
-	for _, r := range rows {
-		if r.RequesterUserID == caller {
-			continue
-		}
-		ok, err := s.resolver.IsApprover(ctx, caller, r.RoleID, r.AssetID)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		count, err := q.CountApprovals(ctx, r.ID)
-		if err != nil {
-			return nil, fmt.Errorf("count approvals: %w", err)
+	for rows.Next() {
+		var (
+			r     gen.AccessRequest
+			count int64
+		)
+		if err := rows.Scan(&r.ID, &r.RequesterUserID, &r.RoleID, &r.AssetID, &r.Reason,
+			&r.RequiredApprovals, &r.Status, &r.CreatedAt, &r.ResolvedAt, &count); err != nil {
+			return nil, fmt.Errorf("scan approvable pending: %w", err)
 		}
 		out = append(out, toRequest(r, int(count), uuid.Nil))
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // ReqEntityKind selects which entity a request-party read is about.
@@ -901,24 +970,19 @@ func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUI
 		last := rows[len(rows)-1]
 		next = &PageCursor{Ts: last.CreatedAt, ID: last.ID}
 	}
+	if len(rows) == 0 {
+		return make([]Request, 0), next, nil
+	}
 
-	out := make([]Request, 0)
-	for _, r := range rows {
-		if r.RequesterUserID == caller {
-			continue
-		}
-		ok, err := s.resolver.IsApprover(ctx, caller, r.RoleID, r.AssetID)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !ok {
-			continue
-		}
-		count, err := q.CountApprovals(ctx, r.ID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("count approvals: %w", err)
-		}
-		out = append(out, toRequest(r, int(count), uuid.Nil))
+	// Approvability is resolved set-based over just this page's request ids (one
+	// query), preserving the page order (created_at DESC, id) and the SQL-page cursor.
+	ids := make([]uuid.UUID, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	out, err := s.approvablePending(ctx, caller, ids)
+	if err != nil {
+		return nil, nil, err
 	}
 	return out, next, nil
 }

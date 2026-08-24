@@ -127,6 +127,21 @@ func heldClosureSQL(name string, withGrants bool) string {
 var heldCTEPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
 	heldClosureSQL("held", true)
 
+// StandingHeldClosurePrefix returns the `WITH RECURSIVE user_groups(...),
+// held_standing(...)` prefix: the caller's transitive group closure plus the
+// STANDING-ONLY forward held closure (no JIT grants), binding $1 = user. It is
+// exported so other packages can resolve standing governance eligibility over a
+// SET of objects in one query — the caller's groups feed explicit-subject checks
+// (request_policy_subjects) and held_standing(role_id, object_kind, object_id) feeds
+// the approver/requester-role arm (equivalent to HoldsRoleStanding, which the
+// requestable closures already rely on). Single-sourced from the same fragments as
+// Check / HoldsRoleStanding, so it cannot drift. Callers append their own CTEs with
+// a leading comma and a trailing SELECT.
+func StandingHeldClosurePrefix() string {
+	return "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
+		heldClosureSQL("held_standing", false)
+}
+
 // requestableClosuresPrefix is the shared `WITH RECURSIVE user_groups(...),
 // held(...), held_standing(...)` prefix for requestable.go. It carries BOTH the
 // grant-augmented `held` closure (for active-exclusion) and the standing-only

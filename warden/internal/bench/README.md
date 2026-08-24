@@ -44,11 +44,11 @@ drives how many targets are seeded.
 ## Reading the output
 
 - **`queries/op`** is the N+1 detector. It should stay roughly constant as a profile
-  scales; a value that climbs means a per-item query loop. Most operations hold a
-  constant count, but `ListPendingApprovals` visibly does NOT: its `queries/op` is
-  `≈ 3 × PendingRequests + 1` (per-request approver resolution — a known N+1). The
-  `PendingRequests` profile knob exists precisely to surface it; a fix should flatten
-  that to a constant.
+  scales; a value that climbs means a per-item query loop. Every operation now holds a
+  constant count. `ListPendingApprovals` used to be the exception (`≈ 3 × PendingRequests
+  + 1` from a per-request approver resolution); it was rewritten set-based to a single
+  query (1 query/op) and the `PendingRequests` profile knob now serves as its regression
+  guard — if that count ever climbs with pending volume again, the N+1 is back.
 - **`ns/op`** is wall-clock per operation. A high ns/op with a *constant* query count
   points at row materialization/allocation cost rather than an N+1 (visible in the
   `B/op` / `allocs/op` columns from `-benchmem`).
