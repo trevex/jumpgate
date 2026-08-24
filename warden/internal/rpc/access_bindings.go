@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
-	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
 
@@ -86,12 +85,13 @@ func (s *AccessServer) DeleteRoleBinding(ctx context.Context, req *connect.Reque
 	return connect.NewResponse(&accessv1.DeleteRoleBindingResponse{}), nil
 }
 
-// ListRoleBindings lists bindings matching the (all-optional) filters (admin only).
-// Results are ordered by (created_at DESC, id) with keyset pagination.
+// ListRoleBindings lists bindings matching the (all-optional) filters. It is
+// authorized by access:binding:read at the QUERIED scope: when the caller pins a
+// scope_asset_id / scope_folder_id (as the catalog detail panes do), the cap is
+// checked at that object scope — so a folder-delegated admin can read the bindings
+// in their subtree — while an unscoped "list all" query still requires the cap
+// globally. Results are ordered by (created_at DESC, id) with keyset pagination.
 func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Request[accessv1.ListRoleBindingsRequest]) (*connect.Response[accessv1.ListRoleBindingsResponse], error) {
-	if err := s.requireCap(ctx, "access:binding:read", authz.GlobalScope()); err != nil {
-		return nil, err
-	}
 	roleID, _, err := optUUID(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -103,6 +103,10 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	scopeAsset, _, err := optUUID(req.Msg.ScopeAssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
+	}
+	// Scope the cap check to the pinned object (asset > folder > global).
+	if err := s.requireCap(ctx, "access:binding:read", scopeOfObject(scopeFolder, scopeAsset)); err != nil {
+		return nil, err
 	}
 	subjUser, _, err := optUUID(req.Msg.SubjectUserId)
 	if err != nil {
