@@ -620,6 +620,7 @@ test("walkthrough 3 — delegated administration", async ({
       "access:role:create",
       "access:role:read",
       "access:binding:create",
+      "access:binding:read",
       "identity:group:create",
       "identity:group:read",
       "identity:group:add-member",
