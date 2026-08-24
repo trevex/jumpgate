@@ -484,6 +484,21 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 // semantics cannot drift. restrict limits the candidate set to those request ids (a
 // keyset page); a nil slice (SQL NULL) considers all pending requests. Results are
 // ordered created_at DESC, id, matching the paged SQL page order.
+// pendingRow is approvablePending's final SELECT, scanned by column NAME
+// (pgx.RowToStructByNameLax) so a SELECT-list reorder cannot misbind.
+type pendingRow struct {
+	ID                uuid.UUID          `db:"id"`
+	RequesterUserID   uuid.UUID          `db:"requester_user_id"`
+	RoleID            uuid.UUID          `db:"role_id"`
+	AssetID           uuid.UUID          `db:"asset_id"`
+	Reason            string             `db:"reason"`
+	RequiredApprovals int32              `db:"required_approvals"`
+	Status            string             `db:"status"`
+	CreatedAt         pgtype.Timestamptz `db:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `db:"resolved_at"`
+	Approvals         int64              `db:"approvals"`
+}
+
 func (s *Service) approvablePending(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Request, error) {
 	const body = `,
 pending AS (
@@ -547,20 +562,19 @@ ORDER BY p.created_at DESC, p.id`
 	if err != nil {
 		return nil, fmt.Errorf("approvable pending: %w", err)
 	}
-	defer rows.Close()
-	out := make([]Request, 0)
-	for rows.Next() {
-		var (
-			r     gen.AccessRequest
-			count int64
-		)
-		if err := rows.Scan(&r.ID, &r.RequesterUserID, &r.RoleID, &r.AssetID, &r.Reason,
-			&r.RequiredApprovals, &r.Status, &r.CreatedAt, &r.ResolvedAt, &count); err != nil {
-			return nil, fmt.Errorf("scan approvable pending: %w", err)
-		}
-		out = append(out, toRequest(r, int(count), uuid.Nil))
+	prows, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[pendingRow])
+	if err != nil {
+		return nil, fmt.Errorf("approvable pending scan: %w", err)
 	}
-	return out, rows.Err()
+	out := make([]Request, 0, len(prows))
+	for _, r := range prows {
+		out = append(out, toRequest(gen.AccessRequest{
+			ID: r.ID, RequesterUserID: r.RequesterUserID, RoleID: r.RoleID, AssetID: r.AssetID,
+			Reason: r.Reason, RequiredApprovals: r.RequiredApprovals, Status: r.Status,
+			CreatedAt: r.CreatedAt.Time, ResolvedAt: r.ResolvedAt,
+		}, int(r.Approvals), uuid.Nil))
+	}
+	return out, nil
 }
 
 // ReqEntityKind selects which entity a request-party read is about.
