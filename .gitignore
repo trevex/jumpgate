@@ -44,3 +44,7 @@ jumpgate-mesh-ca.pem
 
 # Local git worktrees for isolated task execution
 .claude/worktrees/
+
+# API/DB benchmark suite run artifacts
+warden/internal/bench/bench-explain/
+warden/internal/bench/bench-summary.md

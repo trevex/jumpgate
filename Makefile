@@ -8,7 +8,7 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
-.PHONY: help gen sqlc build test lint fmt ci e2e-ssh web rust-deny \
+.PHONY: help gen sqlc build test bench lint fmt ci e2e-ssh web rust-deny \
         kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
         ui-dev ui-dev-reset ui-build
 
@@ -42,6 +42,9 @@ test: ## Run Go + Rust tests
 	cd warden && go test ./...
 	cd cli && go test ./...
 	cargo nextest run --workspace
+
+bench: ## Run the API/DB benchmark suite (opt-in; needs devshell postgres tooling)
+	cd warden && go test -tags bench -run '^$$' -bench . -benchmem ./internal/bench/...
 
 lint: ## Run formatters/linters
 	gofmt -l warden cli 2>/dev/null | (! grep .) || (echo "gofmt needed"; exit 1)
