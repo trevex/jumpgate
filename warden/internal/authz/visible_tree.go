@@ -521,6 +521,40 @@ held_folder_caps(folder_id, scope, action, qualifier) AS (
 global_caps(scope, action, qualifier) AS (
     SELECT rc.scope, rc.action, rc.qualifier
     FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+),
+-- management-visible folder sets, computed ONCE (not re-derived per role/group/
+-- asset row). A folder is management-visible on an axis iff it is descendant-or-self
+-- (ltree <@) of a folder where the user holds that axis' read cap. Driving from the
+-- small held_folder_caps set through the path_ids GiST index makes this
+-- O(held-caps × descendants) rather than the previous per-row correlated re-scan
+-- (O(rows × folders)), which caused a multi-second catalog browse on large
+-- role/folder counts. Semantically identical to the per-row EXISTS it replaces.
+mgmt_role_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'access' OR hf.scope = '*')
+      AND (hf.action = 'role' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_group_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'identity' OR hf.scope = '*')
+      AND (hf.action = 'group' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_asset_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'catalog' OR hf.scope = '*')
+      AND (hf.action = 'asset' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
 )
 -- (b) role home folders: role visible via ACCESS (held ∪ requestable) OR MANAGEMENT
 -- (access:role:read on the home-folder scope). Folder-less (NULL home) roles never
@@ -533,11 +567,7 @@ WHERE r.id = ANY($2::uuid[])
               WHERE (c.scope = 'access' OR c.scope = '*')
                 AND (c.action = 'role' OR c.action = '*')
                 AND (c.qualifier = 'read' OR c.qualifier = '*'))
-   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
-              WHERE nf.path_ids <@ mf.path_ids
-                AND (hf.scope = 'access' OR hf.scope = '*')
-                AND (hf.action = 'role' OR hf.action = '*')
-                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_role_folders)
 UNION
 -- (c) group home folders: group visible via ACCESS (transitive membership) OR
 -- MANAGEMENT (identity:group:read on the home-folder scope).
@@ -549,11 +579,7 @@ WHERE g.id = ANY($3::uuid[])
               WHERE (c.scope = 'identity' OR c.scope = '*')
                 AND (c.action = 'group' OR c.action = '*')
                 AND (c.qualifier = 'read' OR c.qualifier = '*'))
-   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
-              WHERE nf.path_ids <@ mf.path_ids
-                AND (hf.scope = 'identity' OR hf.scope = '*')
-                AND (hf.action = 'group' OR hf.action = '*')
-                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_group_folders)
 UNION
 -- (d) asset folders: asset visible via ACCESS (held ∪ requestable) OR MANAGEMENT
 -- (catalog:asset:read on the asset's folder scope) OR CONNECT (an ssh:login on the
@@ -568,11 +594,7 @@ WHERE a.id = ANY($4::uuid[])
               WHERE (c.scope = 'catalog' OR c.scope = '*')
                 AND (c.action = 'asset' OR c.action = '*')
                 AND (c.qualifier = 'read' OR c.qualifier = '*'))
-   OR EXISTS (SELECT 1 FROM held_folder_caps hf JOIN folders mf ON mf.id = hf.folder_id
-              WHERE (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id) <@ mf.path_ids
-                AND (hf.scope = 'catalog' OR hf.scope = '*')
-                AND (hf.action = 'asset' OR hf.action = '*')
-                AND (hf.qualifier = 'read' OR hf.qualifier = '*'))
+   OR a.folder_id IN (SELECT folder_id FROM mgmt_asset_folders)
    ` + connectArmExists
 	rows, err := s.pool.Query(ctx, query, userID, roleAccess, groupAccess, assetAccess)
 	if err != nil {
