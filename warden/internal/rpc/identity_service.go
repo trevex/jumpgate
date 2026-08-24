@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -34,6 +35,7 @@ type sessionEvictor interface {
 // IdentityServer implements identityv1connect.IdentityServiceHandler.
 type IdentityServer struct {
 	q       *gen.Queries
+	pool    *pgxpool.Pool
 	tokens  *auth.TokenService
 	revoker grantRevoker
 	evictor sessionEvictor
@@ -44,8 +46,8 @@ type IdentityServer struct {
 // used by DeactivateUser to cascade grant revocation and evictor to force-evict
 // the user's remaining live sessions; either may be nil in tests that don't
 // exercise deactivation teardown.
-func NewIdentityServer(q *gen.Queries, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
-	return &IdentityServer{q: q, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{authz: a, q: q}}
+func NewIdentityServer(q *gen.Queries, pool *pgxpool.Pool, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
+	return &IdentityServer{q: q, pool: pool, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{authz: a, q: q}}
 }
 
 func toUserMsg(u gen.User) *identityv1.User {
@@ -359,6 +361,25 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 	mid, err := uuid.Parse(req.Msg.MemberGroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
+	}
+	// Acyclicity: making mid a member of gid closes a cycle iff gid is ALREADY a
+	// transitive member of mid (mid is a supergroup of gid). Refuse it so group
+	// nesting stays a DAG — the recursive closures are cycle-safe via UNION dedup,
+	// but a cycle makes membership results surprising. Mirrors the folder-move
+	// acyclicity guard; the no_self_member CHECK covers the direct mid == gid case.
+	var cyclic bool
+	if err := s.pool.QueryRow(ctx, `
+WITH RECURSIVE supergroups(gid) AS (
+    SELECT group_id FROM group_memberships WHERE member_group_id = $1
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN supergroups sg ON gm.member_group_id = sg.gid
+)
+SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = $2)`, gid, mid).Scan(&cyclic); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	if cyclic {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("group nesting cycle: this group is already a transitive member of the group being added"))
 	}
 	if err := s.q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)

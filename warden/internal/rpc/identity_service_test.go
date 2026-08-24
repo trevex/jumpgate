@@ -1324,3 +1324,55 @@ func TestGetGroupAccess(t *testing.T) {
 		t.Fatalf("stranger GetGroupAccess = %v, want NotFound", connect.CodeOf(err))
 	}
 }
+
+// TestAddGroupToGroupRejectsCycle pins that group nesting stays acyclic: adding a
+// member edge that would close a transitive cycle (A∈B∈C∈A) or a direct back-edge
+// (A∈B, then B∈A) is rejected with FailedPrecondition. The recursive membership
+// closure is cycle-safe (UNION dedup), but a cycle makes membership results
+// surprising, so the write is refused — mirroring the folder-move acyclicity guard.
+func TestAddGroupToGroupRejectsCycle(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	atok := adminToken(t, url)
+	id := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
+	ctx := context.Background()
+
+	mk := func(name string) string {
+		g, err := id.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: name}), atok))
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		return g.Msg.Group.Id
+	}
+	// add makes `member` a member of `group` (group_id=group, member_group_id=member).
+	add := func(group, member string) error {
+		_, err := id.AddGroupToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddGroupToGroupRequest{
+			GroupId: group, MemberGroupId: member,
+		}), atok))
+		return err
+	}
+
+	a, b, c := mk("a"), mk("b"), mk("c")
+
+	// Build the valid chain a ∈ b ∈ c (no cycle) — both must succeed.
+	if err := add(b, a); err != nil {
+		t.Fatalf("add a∈b: %v", err)
+	}
+	if err := add(c, b); err != nil {
+		t.Fatalf("add b∈c: %v", err)
+	}
+
+	// Closing the transitive loop (c ∈ a, giving a∈b∈c∈a) must be refused.
+	if err := add(a, c); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("add c∈a (transitive cycle) = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+
+	// A direct back-edge is also a cycle: d ∈ e, then e ∈ d.
+	d, e := mk("d"), mk("e")
+	if err := add(e, d); err != nil {
+		t.Fatalf("add d∈e: %v", err)
+	}
+	if err := add(d, e); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("add e∈d (direct cycle) = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+}

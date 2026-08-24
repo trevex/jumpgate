@@ -72,7 +72,7 @@ func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 	// side is fine) lets DeactivateUser synchronously evict a user's live
 	// sessions as part of the API call.
 	terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
-	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, tokens, arSvc, terminator, authorizer), opts)
+	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, pool, tokens, arSvc, terminator, authorizer), opts)
 	mux.Handle(idPath, idHandler)
 
 	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, pool, authorizer, arSvc, sealer, terminator), opts)
