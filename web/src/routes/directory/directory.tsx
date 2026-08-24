@@ -8,18 +8,15 @@
  */
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { capsCover, useCapabilities } from "@/lib/capabilities";
 import { UsersTab } from "./users-tab";
 import { GroupsTab } from "./groups-tab";
 
 export function DirectoryPage() {
-  const caps = useCapabilities();
-  const canReadUsers = capsCover(caps, "identity:user:read");
-  const canReadGroups = capsCover(caps, "identity:group:read");
-
-  // Default to whichever tab the caller can actually see.
-  const defaultTab = canReadUsers ? "users" : "groups";
-
+  // The directory is a universal READ view: user display info is readable by any
+  // authenticated caller, and groups are folder-homed so the list is scoped to what
+  // the caller can see (ListGroups → VisibleGroupsUnder). Both tabs therefore always
+  // render — their content is filtered per-scope by the RPCs, and the management
+  // affordances inside (New user / New group / deactivate …) stay capability-gated.
   return (
     <div className="flex h-full flex-col gap-0">
       {/* Page header */}
@@ -31,43 +28,31 @@ export function DirectoryPage() {
       </header>
 
       {/* Tabs */}
-      <Tabs
-        defaultValue={defaultTab}
-        className="flex flex-1 flex-col overflow-hidden"
-      >
+      <Tabs defaultValue="users" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border px-6 pt-4">
           <TabsList className="h-8 gap-0 rounded-none border-b-0 bg-transparent p-0">
-            {canReadUsers && (
-              <TabsTrigger value="users" variant="underline">
-                Users
-              </TabsTrigger>
-            )}
-            {canReadGroups && (
-              <TabsTrigger value="groups" variant="underline">
-                Groups
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="users" variant="underline">
+              Users
+            </TabsTrigger>
+            <TabsTrigger value="groups" variant="underline">
+              Groups
+            </TabsTrigger>
           </TabsList>
         </div>
 
-        {canReadUsers && (
-          <TabsContent
-            value="users"
-            className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
-          >
-            {/* Header action seam — "New user" lands here in a later task. */}
-            <UsersTab />
-          </TabsContent>
-        )}
+        <TabsContent
+          value="users"
+          className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
+        >
+          <UsersTab />
+        </TabsContent>
 
-        {canReadGroups && (
-          <TabsContent
-            value="groups"
-            className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
-          >
-            <GroupsTab />
-          </TabsContent>
-        )}
+        <TabsContent
+          value="groups"
+          className="mt-0 flex-1 overflow-y-auto data-[state=inactive]:hidden"
+        >
+          <GroupsTab />
+        </TabsContent>
       </Tabs>
     </div>
   );

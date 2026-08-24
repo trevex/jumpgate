@@ -66,12 +66,11 @@ const router = createBrowserRouter([
       { path: "access", element: <MyAccessPage /> },
       { path: "approvals", element: <ApprovalsPage /> },
       {
+        // Universal READ view: user display is universally readable and groups are
+        // folder-scoped-visible, so any authenticated user may open the directory
+        // (content is filtered per-scope by the RPCs; management stays cap-gated).
         path: "directory",
-        element: (
-          <RequireAnyCap caps={["identity:user:read", "identity:group:read"]}>
-            <DirectoryPage />
-          </RequireAnyCap>
-        ),
+        element: <DirectoryPage />,
       },
       {
         path: "access-control",

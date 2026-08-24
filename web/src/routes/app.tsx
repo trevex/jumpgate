@@ -146,10 +146,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardCheck,
   },
   {
+    // The directory is a universal READ view (user display is universally
+    // readable; groups are folder-scoped-visible), so any authenticated user may
+    // open it — management affordances inside stay capability-gated.
     label: "Directory",
     to: "/directory",
     icon: UsersRound,
-    requiresAnyCap: ["identity:user:read", "identity:group:read"],
   },
   {
     label: "Access control",
