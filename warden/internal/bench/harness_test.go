@@ -66,6 +66,7 @@ func TestMain(m *testing.M) {
 	}
 
 	code := m.Run()
+	writeSummary()
 	pkgPool.Close()
 	stop()
 	os.Exit(code)

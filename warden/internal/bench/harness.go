@@ -69,7 +69,3 @@ func runAcross(b *testing.B, fn func(b *testing.B, w *World)) {
 		})
 	}
 }
-
-// recordSummary is replaced by the real implementation in explain.go (a later
-// task); this placeholder keeps the package buildable until then.
-func recordSummary(op, profile string, nsPerOp, queriesPerOp float64) {}
