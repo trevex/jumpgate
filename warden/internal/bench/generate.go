@@ -76,6 +76,44 @@ func Generate(tb testing.TB, p Profile) *World {
 
 	insertUserBinding(ctx, tb, pool, deepRole, deepFolder, w.DeepSubject)
 
+	// Opt-in data-plane inheritance self-edge: role_grants(deepRole, deepRole,
+	// 'parent') lets the held closure descend a deepRole binding held on
+	// deepFolder onto that folder's child assets (the leaf). Without it a
+	// folder-scoped binding never reaches a contained asset, so DeepSubject
+	// could not ssh:connect to LeafAsset.
+	insertRoleGrant(ctx, tb, pool, deepRole, deepRole, "parent")
+
+	// Group-nesting chain: DeepSubject ∈ g0 ∈ g1 ∈ … ∈ g[depth]; bind the top group
+	// to deepRole on deepFolder so the held closure traverses the chain.
+	if p.GroupChainDepth > 0 {
+		chain := make([]uuid.UUID, p.GroupChainDepth)
+		for i := range chain {
+			chain[i] = insertGroup(ctx, tb, pool, fmt.Sprintf("g%d-%s", i, short(deepFolder)), deepFolder)
+		}
+		addUserToGroup(ctx, tb, pool, chain[0], w.DeepSubject)
+		for i := 0; i+1 < len(chain); i++ {
+			addGroupToGroup(ctx, tb, pool, chain[i+1], chain[i]) // chain[i] is a member of chain[i+1]
+		}
+		insertGroupBinding(ctx, tb, pool, deepRole, deepFolder, chain[len(chain)-1])
+	}
+
+	// Role-rewrite cascade: a chain of source roles feeding deepRole, so holding the
+	// tail role confers deepRole through RoleGrantDepth rewrite edges.
+	prev := deepRole
+	for i := 0; i < p.RoleGrantDepth; i++ {
+		src := insertRole(ctx, tb, pool, fmt.Sprintf("src-%d-%s", i, short(deepFolder)), deepFolder)
+		seedRoleCaps(ctx, tb, pool, src, p.CapsPerRole)
+		insertRoleGrant(ctx, tb, pool, prev, src, viaFor(p.RoleGrantVia, i)) // holding src ⇒ prev
+		prev = src
+	}
+
+	// Request policy on the leaf asset with an approver subject, plus one open access
+	// request from DeepSubject (for the approval/list benches).
+	policy := insertRequestPolicy(ctx, tb, pool, deepRole, w.LeafAsset)
+	w.Approver = insertUser(ctx, tb, pool, "approver@bench.test")
+	insertApproverSubject(ctx, tb, pool, policy, w.Approver)
+	w.PendingReq = insertOpenRequest(ctx, tb, pool, w.DeepSubject, deepRole, w.LeafAsset)
+
 	return w
 }
 
@@ -182,4 +220,95 @@ func insertUserBinding(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, r
 		role, folder, user); err != nil {
 		tb.Fatalf("insert binding: %v", err)
 	}
+}
+
+func insertGroup(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, name string, folder uuid.UUID) uuid.UUID {
+	tb.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO groups(name, folder_id) VALUES($1,$2) RETURNING id`, name, folder).Scan(&id); err != nil {
+		tb.Fatalf("insert group: %v", err)
+	}
+	return id
+}
+
+func addUserToGroup(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, group, user uuid.UUID) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx, `INSERT INTO group_memberships(group_id, member_user_id) VALUES($1,$2)`, group, user); err != nil {
+		tb.Fatalf("add user to group: %v", err)
+	}
+}
+
+func addGroupToGroup(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, group, member uuid.UUID) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx, `INSERT INTO group_memberships(group_id, member_group_id) VALUES($1,$2)`, group, member); err != nil {
+		tb.Fatalf("add group to group: %v", err)
+	}
+}
+
+// insertGroupBinding creates a STANDING role binding (role_bindings is standing-only,
+// no kind column) of role on folder for a group subject.
+func insertGroupBinding(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, role, folder, group uuid.UUID) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO role_bindings(role_id, scope_folder_id, subject_group_id) VALUES($1,$2,$3)`,
+		role, folder, group); err != nil {
+		tb.Fatalf("insert group binding: %v", err)
+	}
+}
+
+// viaFor alternates edge kinds for the "mixed" setting; otherwise returns the
+// configured via verbatim ("parent" or "same_object").
+func viaFor(mode string, i int) string {
+	if mode != "mixed" {
+		return mode
+	}
+	if i%2 == 0 {
+		return "parent"
+	}
+	return "same_object"
+}
+
+func insertRoleGrant(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, role, source uuid.UUID, via string) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO role_grants(role_id, source_role_id, via) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
+		role, source, via); err != nil {
+		tb.Fatalf("insert role grant: %v", err)
+	}
+}
+
+// insertRequestPolicy makes `role` requestable on `asset` (scope_asset_id set,
+// required_approvals defaults to 1). name must match ^[a-z0-9_-]+$.
+func insertRequestPolicy(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, role, asset uuid.UUID) uuid.UUID {
+	tb.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO request_policies(role_id, scope_asset_id, name) VALUES($1,$2,$3) RETURNING id`,
+		role, asset, "bench-policy-"+short(asset)).Scan(&id); err != nil {
+		tb.Fatalf("insert request policy: %v", err)
+	}
+	return id
+}
+
+func insertApproverSubject(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, policy, user uuid.UUID) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO request_policy_subjects(policy_id, kind, subject_user_id) VALUES($1,'approver',$2)`,
+		policy, user); err != nil {
+		tb.Fatalf("insert approver subject: %v", err)
+	}
+}
+
+// insertOpenRequest inserts a pending access_request. requested_duration,
+// granted_duration (interval) and required_approvals (int) are all NOT NULL.
+func insertOpenRequest(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, requester, role, asset uuid.UUID) uuid.UUID {
+	tb.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO access_requests(requester_user_id, role_id, asset_id, requested_duration, required_approvals, granted_duration, status)
+		 VALUES($1,$2,$3, interval '1 hour', 1, interval '1 hour', 'pending') RETURNING id`,
+		requester, role, asset).Scan(&id); err != nil {
+		tb.Fatalf("insert open request: %v", err)
+	}
+	return id
 }

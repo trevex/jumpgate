@@ -5,6 +5,9 @@ package bench
 import (
 	"context"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 )
 
 // tinyProfile is a fast profile for generator unit tests (not a bench profile).
@@ -35,5 +38,24 @@ func TestGenerateProducesReachableDeepSubject(t *testing.T) {
 	}
 	if len(w.LeafLogins) == 0 {
 		t.Fatal("leaf asset has no configured logins")
+	}
+}
+
+func TestGenerateDeepSubjectHoldsRoleViaClosure(t *testing.T) {
+	pool, _ := sharedDB(t)
+	w := Generate(t, tinyProfile)
+	a := authz.NewSQLAuthorizer(pool)
+	ok, err := a.Check(context.Background(), w.DeepSubject, w.LeafAsset, "ssh:connect")
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if !ok {
+		t.Fatal("deep subject cannot ssh:connect to leaf asset — closure fixture is empty")
+	}
+	if w.PendingReq == uuid.Nil {
+		t.Fatal("no pending request generated for approval benches")
+	}
+	if w.Approver == uuid.Nil {
+		t.Fatal("no approver generated")
 	}
 }
