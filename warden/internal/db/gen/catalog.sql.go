@@ -937,6 +937,164 @@ func (q *Queries) PoliciesScopedToFoldersOrAssets(ctx context.Context, arg Polic
 	return items, nil
 }
 
+const searchAssetsByIDs = `-- name: SearchAssetsByIDs :many
+SELECT id, folder_id, name, labels, created_at, kind FROM assets
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3
+`
+
+type SearchAssetsByIDsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Name    string      `json:"name"`
+	Limit   int32       `json:"limit"`
+}
+
+func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, searchAssetsByIDs, arg.Column1, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.FolderID,
+			&i.Name,
+			&i.Labels,
+			&i.CreatedAt,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchFoldersByIDs = `-- name: SearchFoldersByIDs :many
+SELECT id, name, parent_id, created_at, path_ids FROM folders
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3
+`
+
+type SearchFoldersByIDsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Name    string      `json:"name"`
+	Limit   int32       `json:"limit"`
+}
+
+// Name-matching folders within a visible-id set. The `name ILIKE` predicate is
+// served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
+// name in the database instead of materializing the whole visible catalog.
+func (q *Queries) SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]Folder, error) {
+	rows, err := q.db.Query(ctx, searchFoldersByIDs, arg.Column1, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Folder
+	for rows.Next() {
+		var i Folder
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ParentID,
+			&i.CreatedAt,
+			&i.PathIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchGroupsByIDs = `-- name: SearchGroupsByIDs :many
+SELECT id, name, folder_id, created_at FROM groups
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3
+`
+
+type SearchGroupsByIDsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Name    string      `json:"name"`
+	Limit   int32       `json:"limit"`
+}
+
+func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]Group, error) {
+	rows, err := q.db.Query(ctx, searchGroupsByIDs, arg.Column1, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var i Group
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchRolesByIDs = `-- name: SearchRolesByIDs :many
+SELECT id, name, folder_id, created_at FROM roles
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3
+`
+
+type SearchRolesByIDsParams struct {
+	Column1 []uuid.UUID `json:"column_1"`
+	Name    string      `json:"name"`
+	Limit   int32       `json:"limit"`
+}
+
+func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]Role, error) {
+	rows, err := q.db.Query(ctx, searchRolesByIDs, arg.Column1, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.FolderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertSSHAssetConfig = `-- name: UpsertSSHAssetConfig :one
 INSERT INTO ssh_asset_config (asset_id, host_public_key, target_address)
 VALUES ($1, $2, $3)

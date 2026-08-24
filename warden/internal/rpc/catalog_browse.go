@@ -331,6 +331,17 @@ const (
 // kind's entities loaded name-ordered, and the whole result is capped at the clamped
 // limit (a best-effort search; truncation is acceptable). An empty query returns no
 // hits rather than dumping the whole visible catalog.
+// likeEscaper escapes the LIKE metacharacters so a user query matches as a literal
+// substring (preserving the previous strings.Contains semantics); backslash is the
+// default ILIKE escape character.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// likePattern wraps q as a case-insensitive substring ILIKE pattern.
+func likePattern(q string) string { return "%" + likeEscaper.Replace(q) + "%" }
+
+// SearchCatalog returns visibility-filtered catalog hits (folders, assets, roles,
+// groups) whose name matches the query substring, up to the requested limit. Name
+// matching runs in SQL via the pg_trgm-indexed ILIKE within each kind's visible set.
 func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[catalogv1.SearchCatalogRequest]) (*connect.Response[catalogv1.SearchCatalogResponse], error) {
 	u, ok := auth.UserFromContext(ctx)
 	if !ok {
@@ -351,8 +362,13 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return connect.NewResponse(out), nil
 	}
 
-	matches := func(name string) bool { return strings.Contains(strings.ToLower(name), q) }
+	// Name matching happens in SQL via a pg_trgm-indexed ILIKE (see likePattern),
+	// so search fetches only the name-matching rows within the visible set rather
+	// than materializing the whole visible catalog and substring-filtering in Go.
+	pattern := likePattern(q)
 	full := func() bool { return len(out.Hits) >= int(limit) }
+	// len(out.Hits) is bounded by limit (<= searchMaxLimit), so the conversion cannot overflow.
+	remaining := func() int32 { return limit - int32(len(out.Hits)) } //nolint:gosec // bounded by searchMaxLimit
 
 	// Home-folder path lookup, memoized across kinds (roles/groups reuse it).
 	pathByFolder := map[uuid.UUID]string{}
@@ -375,27 +391,17 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 	}
 	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 && !full() {
-		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{Ids: folderIDs, Lim: int32Len(folderIDs)})
+		rows, err := s.q.SearchFoldersByIDs(ctx, gen.SearchFoldersByIDsParams{Column1: folderIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		allPaths, err := s.q.FolderPaths(ctx)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		pathByID := make(map[string]string, len(allPaths))
-		for _, p := range allPaths {
-			pathByID[p.ID.String()] = p.Path
 		}
 		for i := range rows {
-			if full() {
-				break
-			}
-			if !matches(rows[i].Name) {
-				continue
+			fp, err := folderPath(rows[i].ID)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInternal, err)
 			}
 			out.Hits = append(out.Hits, &catalogv1.SearchHit{
-				Kind: "folder", Id: rows[i].ID.String(), Name: rows[i].Name, Path: pathByID[rows[i].ID.String()],
+				Kind: "folder", Id: rows[i].ID.String(), Name: rows[i].Name, Path: fp,
 			})
 		}
 	}
@@ -406,17 +412,11 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(assetIDs) > 0 && !full() {
-		rows, err := s.q.ListAssetsByIDsPaged(ctx, gen.ListAssetsByIDsPagedParams{Ids: assetIDs, Lim: int32Len(assetIDs)})
+		rows, err := s.q.SearchAssetsByIDs(ctx, gen.SearchAssetsByIDsParams{Column1: assetIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		for i := range rows {
-			if full() {
-				break
-			}
-			if !matches(rows[i].Name) {
-				continue
-			}
 			fp, err := folderPath(rows[i].FolderID)
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInternal, err)
@@ -433,17 +433,11 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(roleIDs) > 0 && !full() {
-		rows, err := s.q.ListRolesByIDsPaged(ctx, gen.ListRolesByIDsPagedParams{Column1: roleIDs, Lim: int32Len(roleIDs)})
+		rows, err := s.q.SearchRolesByIDs(ctx, gen.SearchRolesByIDsParams{Column1: roleIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		for i := range rows {
-			if full() {
-				break
-			}
-			if !matches(rows[i].Name) {
-				continue
-			}
 			// A folder-scoped role is addressed "<role>.<folder-path>"; a global role is
 			// just its name.
 			path := rows[i].Name
@@ -466,17 +460,11 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(groupIDs) > 0 && !full() {
-		rows, err := s.q.ListGroupsByIDsPaged(ctx, gen.ListGroupsByIDsPagedParams{Column1: groupIDs, Lim: int32Len(groupIDs)})
+		rows, err := s.q.SearchGroupsByIDs(ctx, gen.SearchGroupsByIDsParams{Column1: groupIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		for i := range rows {
-			if full() {
-				break
-			}
-			if !matches(rows[i].Name) {
-				continue
-			}
 			// A folder-homed group is addressed "<group>@<folder-path>"; a global group
 			// is just its name.
 			path := rows[i].Name

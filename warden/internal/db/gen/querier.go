@@ -219,6 +219,13 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
+	SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error)
+	// Name-matching folders within a visible-id set. The `name ILIKE` predicate is
+	// served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
+	// name in the database instead of materializing the whole visible catalog.
+	SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]Folder, error)
+	SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]Group, error)
+	SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]Role, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error

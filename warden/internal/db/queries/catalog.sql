@@ -201,3 +201,30 @@ WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);
 DELETE FROM asset_secrets s
 WHERE s.asset_id = $1
   AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL);
+
+-- name: SearchFoldersByIDs :many
+-- Name-matching folders within a visible-id set. The `name ILIKE` predicate is
+-- served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
+-- name in the database instead of materializing the whole visible catalog.
+SELECT * FROM folders
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3;
+
+-- name: SearchAssetsByIDs :many
+SELECT * FROM assets
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3;
+
+-- name: SearchRolesByIDs :many
+SELECT * FROM roles
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3;
+
+-- name: SearchGroupsByIDs :many
+SELECT * FROM groups
+WHERE id = ANY($1::uuid[]) AND name ILIKE $2
+ORDER BY name, id
+LIMIT $3;

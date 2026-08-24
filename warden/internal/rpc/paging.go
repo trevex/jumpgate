@@ -4,22 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"math"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 )
-
-// int32Len returns len(s) as an int32, clamped to math.MaxInt32 so an oversized
-// slice can never overflow the conversion (a bounded LIMIT for the *ByIDsPaged
-// queries, whose id sets are already visibility-scoped).
-func int32Len[T any](s []T) int32 {
-	if len(s) > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	return int32(len(s)) //nolint:gosec // guarded above: len(s) <= math.MaxInt32
-}
 
 // pageKey is the decoded keyset cursor. Exactly one of Name/Time is meaningful,
 // matching the list's sort order; ID is always the unique tiebreak.
