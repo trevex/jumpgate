@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 )
 
@@ -16,7 +18,7 @@ var tinyProfile = Profile{
 	GroupChainDepth: 2, GroupsPerFolder: 1, UsersPerLeafGrp: 1,
 	RolesPerFolder: 1, RoleGrantDepth: 2, RoleGrantVia: "parent",
 	BindingsPerFolder: 1, PoliciesPerFolder: 1, LiveSessions: 2,
-	Users: 5, CapsPerRole: 2,
+	PendingRequests: 3, Users: 5, CapsPerRole: 2,
 }
 
 func TestGenerateProducesReachableDeepSubject(t *testing.T) {
@@ -57,6 +59,38 @@ func TestGenerateDeepSubjectHoldsRoleViaClosure(t *testing.T) {
 	}
 	if w.Approver == uuid.Nil {
 		t.Fatal("no approver generated")
+	}
+}
+
+func TestGenerateRequesterFixtures(t *testing.T) {
+	pool, _ := sharedDB(t)
+	w := Generate(t, tinyProfile)
+	if w.RequesterGroup == uuid.Nil {
+		t.Fatal("requester group not set")
+	}
+	if len(w.PendingReqs) != tinyProfile.PendingRequests {
+		t.Fatalf("PendingReqs = %d, want %d", len(w.PendingReqs), tinyProfile.PendingRequests)
+	}
+	var pending int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM access_requests WHERE status = 'pending'").Scan(&pending); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pending != tinyProfile.PendingRequests {
+		t.Fatalf("pending access_requests = %d, want %d", pending, tinyProfile.PendingRequests)
+	}
+	// A freshly-added member of the requester group must be an eligible requester
+	// (the whole point of the fixture) and must NOT already hold the role.
+	ctx := context.Background()
+	ru := insertUser(ctx, t, pool, "eligibility-probe@bench.test")
+	addUserToGroup(ctx, t, pool, w.RequesterGroup, ru)
+	r := approvals.New(pool)
+	eligible, err := r.IsEligibleRequester(ctx, ru, w.RequestRole, w.RequestAsset)
+	if err != nil {
+		t.Fatalf("IsEligibleRequester: %v", err)
+	}
+	if !eligible {
+		t.Fatal("requester-group member is not an eligible requester")
 	}
 }
 

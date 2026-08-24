@@ -30,6 +30,12 @@ type Profile struct {
 	// Session-runtime fixtures.
 	LiveSessions int
 
+	// Approval fixtures: how many distinct pending access requests to seed (each
+	// from a distinct eligible requester). Feeds the ListPendingApprovals N+1
+	// sentinel — its queries/op should climb with this count if the per-request
+	// approver resolution is not batched.
+	PendingRequests int
+
 	// Flat counts.
 	Users       int
 	CapsPerRole int
@@ -46,10 +52,13 @@ type World struct {
 	RootParent  uuid.UUID // uuid.Nil — the tree root, for root-level browse
 
 	// Requestability / approvals fixtures.
-	RequestRole  uuid.UUID // a role the deep subject may request on RequestAsset
-	RequestAsset uuid.UUID
-	Approver     uuid.UUID // a user who is an approver for (RequestRole, RequestAsset)
-	PendingReq   uuid.UUID // an open access request (for Approve/ListPendingApprovals)
+	RequestRole    uuid.UUID // a role the deep subject may request on RequestAsset
+	RequestAsset   uuid.UUID
+	Approver       uuid.UUID // a user who is an approver for (RequestRole, RequestAsset)
+	RequesterGroup uuid.UUID // a group that is a `requester` subject on the policy;
+	// its members are eligible to RequestAccess RequestRole
+	PendingReq  uuid.UUID   // one open access request (back-compat single handle)
+	PendingReqs []uuid.UUID // all seeded pending requests (for ListPendingApprovals)
 
 	// Revocation fixtures: live (user,asset) pairs whose workers are "connected".
 	LivePairs []UserAsset
@@ -69,28 +78,28 @@ var Profiles = []Profile{
 		GroupChainDepth: 2, GroupsPerFolder: 2, UsersPerLeafGrp: 3,
 		RolesPerFolder: 2, RoleGrantDepth: 2, RoleGrantVia: "parent",
 		BindingsPerFolder: 3, PoliciesPerFolder: 2, LiveSessions: 50,
-		Users: 200, CapsPerRole: 3,
+		PendingRequests: 30, Users: 200, CapsPerRole: 3,
 	},
 	{
 		Name: "deep", FolderFanout: 2, FolderDepth: 8,
 		GroupChainDepth: 6, GroupsPerFolder: 1, UsersPerLeafGrp: 2,
 		RolesPerFolder: 1, RoleGrantDepth: 6, RoleGrantVia: "mixed",
 		BindingsPerFolder: 1, PoliciesPerFolder: 1, LiveSessions: 50,
-		Users: 200, CapsPerRole: 3,
+		PendingRequests: 15, Users: 200, CapsPerRole: 3,
 	},
 	{
 		Name: "dense-inheritance", FolderFanout: 4, FolderDepth: 4,
 		GroupChainDepth: 4, GroupsPerFolder: 3, UsersPerLeafGrp: 3,
 		RolesPerFolder: 3, RoleGrantDepth: 4, RoleGrantVia: "mixed",
 		BindingsPerFolder: 3, PoliciesPerFolder: 3, LiveSessions: 100,
-		Users: 300, CapsPerRole: 4,
+		PendingRequests: 20, Users: 300, CapsPerRole: 4,
 	},
 	{
 		Name: "balanced", FolderFanout: 4, FolderDepth: 3,
 		GroupChainDepth: 3, GroupsPerFolder: 2, UsersPerLeafGrp: 2,
 		RolesPerFolder: 2, RoleGrantDepth: 3, RoleGrantVia: "parent",
 		BindingsPerFolder: 2, PoliciesPerFolder: 2, LiveSessions: 50,
-		Users: 200, CapsPerRole: 3,
+		PendingRequests: 15, Users: 200, CapsPerRole: 3,
 	},
 }
 

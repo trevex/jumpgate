@@ -107,12 +107,29 @@ func Generate(tb testing.TB, p Profile) *World {
 		prev = src
 	}
 
-	// Request policy on the leaf asset with an approver subject, plus one open access
-	// request from DeepSubject (for the approval/list benches).
+	// Request policy on the leaf asset with an approver subject and a requester group.
 	policy := insertRequestPolicy(ctx, tb, pool, deepRole, w.LeafAsset)
 	w.Approver = insertUser(ctx, tb, pool, "approver@bench.test")
 	insertApproverSubject(ctx, tb, pool, policy, w.Approver)
-	w.PendingReq = insertOpenRequest(ctx, tb, pool, w.DeepSubject, deepRole, w.LeafAsset)
+
+	// Requester eligibility: a group that is a `requester` subject on the policy. Its
+	// members may RequestAccess deepRole on the leaf asset — they hold no role, so they
+	// are eligible AND not already-active. The write benches add members per iteration.
+	w.RequesterGroup = insertGroup(ctx, tb, pool, fmt.Sprintf("req-grp-%s", short(deepFolder)), deepFolder)
+	insertRequesterSubject(ctx, tb, pool, policy, w.RequesterGroup)
+
+	// Seed PendingRequests distinct pending requests, each from a distinct eligible
+	// requester user (satisfying uq_pending_request(requester,role,asset)). This feeds
+	// the ListPendingApprovals N+1 sentinel: the approver can approve all of them, so a
+	// per-request approver resolution shows up as queries/op climbing with the count.
+	for i := 0; i < p.PendingRequests; i++ {
+		ru := insertUser(ctx, tb, pool, fmt.Sprintf("pending-req-%d@bench.test", i))
+		addUserToGroup(ctx, tb, pool, w.RequesterGroup, ru)
+		w.PendingReqs = append(w.PendingReqs, insertOpenRequest(ctx, tb, pool, ru, deepRole, w.LeafAsset))
+	}
+	if len(w.PendingReqs) > 0 {
+		w.PendingReq = w.PendingReqs[0]
+	}
 
 	// Live sessions: LiveSessions rows for DeepSubject on LeafAsset, spread over a
 	// small worker set, all recorded present in worker_presence. The revocation
@@ -311,6 +328,17 @@ func insertApproverSubject(ctx context.Context, tb testing.TB, pool *pgxpool.Poo
 		`INSERT INTO request_policy_subjects(policy_id, kind, subject_user_id) VALUES($1,'approver',$2)`,
 		policy, user); err != nil {
 		tb.Fatalf("insert approver subject: %v", err)
+	}
+}
+
+// insertRequesterSubject adds a group as a `requester` subject on the policy, making
+// its members eligible to RequestAccess the policy's role.
+func insertRequesterSubject(ctx context.Context, tb testing.TB, pool *pgxpool.Pool, policy, group uuid.UUID) {
+	tb.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO request_policy_subjects(policy_id, kind, subject_group_id) VALUES($1,'requester',$2)`,
+		policy, group); err != nil {
+		tb.Fatalf("insert requester subject: %v", err)
 	}
 }
 

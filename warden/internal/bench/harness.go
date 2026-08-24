@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -61,6 +62,39 @@ func runAcross(b *testing.B, fn func(b *testing.B, w *World)) {
 			counter.reset()
 			b.ResetTimer()
 			fn(b, w)
+			b.StopTimer()
+			qpo := float64(counter.load()) / float64(b.N)
+			b.ReportMetric(qpo, "queries/op")
+			nsPerOp := float64(b.Elapsed().Nanoseconds()) / float64(b.N)
+			recordSummary(b.Name(), p.Name, nsPerOp, qpo)
+		})
+	}
+}
+
+// runWriteBench drives a MUTATING benchmark whose operation cannot be repeated on
+// the same target (the write path guards against duplicate/already-active state).
+// For each profile it generates the graph, then seeds b.N disposable items via seed
+// — OUTSIDE the timer and BEFORE the counter reset, so seeding counts toward neither
+// ns/op nor queries/op — then times b.N calls to op, each consuming a distinct
+// pre-seeded item. The measured operation therefore runs against a stable graph and
+// never trips a uniqueness guard. Run with a fixed -benchtime (e.g. 50x): b.N drives
+// how many items are seeded, so an open-ended benchtime seeds a very large graph.
+func runWriteBench(b *testing.B, seed func(b *testing.B, w *World, n int) []uuid.UUID, op func(ctx context.Context, w *World, item uuid.UUID) error) {
+	for _, p := range benchProfiles() {
+		p := p
+		b.Run(p.Name, func(b *testing.B) {
+			w := Generate(b, p)
+			_, counter := sharedDB(b)
+			items := seed(b, w, b.N)
+			b.ReportAllocs()
+			counter.reset()
+			b.ResetTimer()
+			ctx := context.Background()
+			for i := 0; i < b.N; i++ {
+				if err := op(ctx, w, items[i]); err != nil {
+					b.Fatal(err)
+				}
+			}
 			b.StopTimer()
 			qpo := float64(counter.load()) / float64(b.N)
 			b.ReportMetric(qpo, "queries/op")

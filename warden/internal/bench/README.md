@@ -27,17 +27,28 @@ Environment knobs:
   isolates SQL + closure cost. Covers Check, CapabilitiesOnAsset/OnScope,
   VisibleFolders/Assets/Roles/GroupsUnder, EntitledLogins, HoldsRole(+Standing),
   IsApprover, IsEligibleRequester.
-- **Macro** (`macro_test.go`, `macro_session_test.go`) — real ConnectRPC service
-  structs / internal services called in-process (the full handler → authz → SQL
-  path). Covers catalog browse (BrowseFolder, GetAssetAccess, SearchCatalog),
-  pending-approvals list, and the session-runtime/revocation paths (CreateSession,
-  Reevaluate, SweepOwned).
+- **Macro** (`macro_test.go`, `macro_session_test.go`, `macro_write_test.go`) — real
+  ConnectRPC service structs / internal services called in-process (the full handler →
+  authz → SQL path). Covers catalog browse (BrowseFolder, GetAssetAccess,
+  SearchCatalog), pending-approvals list, the session-runtime/revocation paths
+  (CreateSession, Reevaluate, SweepOwned), and the mutating request/approval paths
+  (RequestAccess, ApproveRequest).
+
+Mutating benchmarks use `runWriteBench`: it pre-seeds `b.N` disposable targets (a
+distinct eligible requester per RequestAccess, a distinct pending request per
+ApproveRequest) OUTSIDE the timer and resets the query counter after seeding, so the
+write path never trips a uniqueness/already-active guard and seeding never inflates
+the metrics. Run these with a fixed `-benchtime` (e.g. `-benchtime=50x`) — `b.N`
+drives how many targets are seeded.
 
 ## Reading the output
 
 - **`queries/op`** is the N+1 detector. It should stay roughly constant as a profile
-  scales; a value that climbs with profile size means a per-item query loop —
-  investigate. Every current operation holds a constant query count across profiles.
+  scales; a value that climbs means a per-item query loop. Most operations hold a
+  constant count, but `ListPendingApprovals` visibly does NOT: its `queries/op` is
+  `≈ 3 × PendingRequests + 1` (per-request approver resolution — a known N+1). The
+  `PendingRequests` profile knob exists precisely to surface it; a fix should flatten
+  that to a constant.
 - **`ns/op`** is wall-clock per operation. A high ns/op with a *constant* query count
   points at row materialization/allocation cost rather than an N+1 (visible in the
   `B/op` / `allocs/op` columns from `-benchmem`).
@@ -53,10 +64,14 @@ hot query from the timings, then call it with that query (or run the statement u
 ## Profiles
 
 Four named profiles (see `profile.go`) stress the folder tree, group nesting,
-role-rewrite cascade, binding/policy fan-out, and live-session count independently.
+role-rewrite cascade, binding/policy fan-out, live-session count, and pending-request
+count independently.
 
 ## Not yet covered
 
-`SetupSession` (the worker-side data-plane admission with the SSH-CA/broker/minted-
-token/active-grant fixture) is not yet benched; the session-runtime layer currently
-covers `CreateSession` (client-side admission) plus the revocation paths.
+`SetupSession` (the worker↔gateway/proxy data-plane admission) is not yet benched.
+Its fixture is heavy (SSH-CA/broker/minted-token/active-grant) and it also performs
+CA key-signing work that is better benched in isolation than folded into the RPC
+timing; the intent is to bench the warden↔worker RPC specifically. The
+session-runtime layer currently covers `CreateSession` (client-side admission) plus
+the revocation paths.
