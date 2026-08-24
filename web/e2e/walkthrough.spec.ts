@@ -618,7 +618,9 @@ test("walkthrough 3 — delegated administration", async ({
       "catalog:asset:read",
       "catalog:asset:update",
       "access:role:create",
+      "access:role:read",
       "access:binding:create",
+      "identity:user:read",
       "identity:group:create",
       "identity:group:read",
       "identity:group:add-member",
@@ -714,8 +716,9 @@ test("walkthrough 3 — delegated administration", async ({
     const wtArticleDana = dana.getByRole("article", { name: "Folder: wt" });
     await expect(wtArticleDana).toBeVisible();
     await expect(wtArticleDana.getByRole("button", { name: "Create…" })).toHaveCount(0);
-    // She also can't bind a role at `wt` (access:binding:create is global; she
-    // lacks it) — the Bind affordance is absent.
+    // She also can't bind a role at `wt`: her delegation is scoped to `team`, and
+    // management caps cascade DOWN (not up), so she holds no access:binding:create
+    // at the `wt` scope — the Bind affordance is absent.
     await expect(
       wtArticleDana.getByRole("button", { name: "Bind a role to this folder" }),
     ).toHaveCount(0);
