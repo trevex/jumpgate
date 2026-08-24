@@ -33,8 +33,20 @@ import (
 //
 // Termination is by UNION dedup over the finite role set (no depth column needed),
 // exactly as in heldCTE. The final relation is `global_held(role_id)`.
-var globalHeldCTE = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + `
-global_held(role_id) AS (
+//
+// SINGLE SOURCE OF TRUTH: the closure BODY is the shared cteGlobalHeld fragment
+// below, so callers that need `global_held` in a combined WITH RECURSIVE prefix
+// (e.g. CapabilitiesOnScope's single set-based query) compose from the same
+// fragment rather than duplicating the body.
+var globalHeldCTE = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" + cteGlobalHeld
+
+// cteGlobalHeld is the shared `global_held(role_id) AS (...)` closure definition
+// (see globalHeldCTE for the semantics). It references only the user id ($1) and
+// the user_groups CTE, so it can follow either a lone user_groups CTE or the
+// user_groups + held prefix in one WITH RECURSIVE block. The block ends with its
+// own closing paren and no trailing comma, so callers concatenate closures with
+// `,\n`.
+const cteGlobalHeld = `global_held(role_id) AS (
     -- base: scopeless standing bindings for the user or a (nested) group.
     SELECT rb.role_id
     FROM role_bindings rb
@@ -50,6 +62,17 @@ global_held(role_id) AS (
     JOIN role_grants rg ON rg.source_role_id = gh.role_id
     WHERE rg.via IN ('same_object', 'parent')
 )`
+
+// heldPlusGlobalHeldPrefix is the combined `WITH RECURSIVE user_groups(...),
+// held(...), global_held(...)` prefix used by CapabilitiesOnScope's single
+// set-based query. It COMPOSES from the same shared fragments as heldCTEPrefix
+// (cteUserGroups + the grant-augmented `held` closure via heldClosureSQL) and the
+// same cteGlobalHeld fragment as globalHeldCTE, so neither closure can drift from
+// its single source. Callers append their own trailing SELECT (which may
+// reference $2, …).
+var heldPlusGlobalHeldPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
+	heldClosureSQL("held", true) + ",\n" +
+	cteGlobalHeld
 
 // globalHeldCapabilities returns the capability patterns the user holds GLOBALLY
 // via scopeless standing bindings closed over role_grants (see globalHeldCTE).

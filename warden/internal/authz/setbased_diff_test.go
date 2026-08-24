@@ -661,6 +661,25 @@ func TestSetbasedMatrixHarness(t *testing.T) {
 	requireNotContains(t, gaGroups, s.globalGroup)
 }
 
+// TestSetbasedCapabilitiesOnScopeDiff (B2) gates the set-based CapabilitiesOnScope
+// rewrite: it captures the probe matrix twice over the SAME authorizer — once with
+// legacyMethods (capsOnScope = the frozen 3–5-round-trip capabilitiesOnScopeLegacy)
+// and once with newMethods (capsOnScope = the single set-based query) — and asserts
+// they are identical. Because only capsOnScope differs between the two method sets,
+// any divergence localizes to the rewrite. A mismatch means the SQL is wrong; fix
+// the SQL, not the test.
+func TestSetbasedCapabilitiesOnScopeDiff(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := seedMatrix(t, pool)
+	a := &sqlAuthorizer{pool: pool}
+	probes := defaultProbes(s)
+
+	old := captureAuthzMatrix(ctx, t, legacyMethods(a), s, probes)
+	got := captureAuthzMatrix(ctx, t, newMethods(a), s, probes)
+	requireMatrixEqual(t, old, got)
+}
+
 // isEmptyResult reports whether a captured result string denotes "nothing"
 // (empty id set / empty caps set / false), i.e. the value a user who sees
 // nothing must produce for EVERY method. Never treats an ERR: value as empty.

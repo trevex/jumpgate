@@ -2,7 +2,6 @@ package authz
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -201,58 +200,84 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 // CASCADES STRUCTURALLY down the folder tree: a capability held on folder F
 // applies to F, every sub-folder of F, and every asset beneath them — with NO
 // per-role parent self-grant (unlike the OPT-IN data-plane heldCTE inheritance,
-// which requires a role_grants(R,R,parent) self-edge). We realize the cascade by
-// walking the folder ancestor chain (FolderAncestorsAndSelf) and unioning the
-// caps held on any ancestor-or-self folder. The result sets are concatenated
-// (glob matching in Go via Allows dedups semantically, so duplicates are
-// harmless).
+// which requires a role_grants(R,R,parent) self-edge).
+//
+// SINGLE SET-BASED QUERY. Rather than fanning out into globalHeldCapabilities +
+// folderAncestorsAndSelf + capsOnFolders (+ CapabilitiesOnObject + assetFolderID
+// for assets) — 3–5 round-trips per call — the folder/asset arms issue ONE query
+// off the combined heldPlusGlobalHeldPrefix (user_groups + held + global_held,
+// all composed from the shared closure fragments). The trailing SELECT unions
+// the role ids from:
+//
+//   - global_held — the ALWAYS-applies global caps; and
+//   - held rows on the in-scope objects: the asset itself (asset scope) and every
+//     ancestor-or-self folder, realizing the structural down-tree cascade via the
+//     ltree `@>` operator keyed off the scope folder (folder scope) or the asset's
+//     containing folder (asset scope).
+//
+// GLOBAL-VS-HELD SUBTLETY: global caps are sourced from the global_held closure,
+// NOT from held rows with object_id IS NULL. A scopeless binding appears in the
+// held closure as (role,'folder',NULL), but held's `parent` rewrite arm cannot
+// fire for a NULL object, whereas global_held collapses BOTH rewrite arms to plain
+// source→target edges — so the two closures differ and only global_held is the
+// faithful global source.
+//
+// EXISTENCE-HIDING: for a nonexistent asset the `@>` ancestor subselect (keyed off
+// the asset's folder via a JOIN on assets) is naturally empty and the asset itself
+// matches no held row, so the query yields exactly the global caps with no error —
+// preserving the legacy pgx.ErrNoRows→global-only behaviour.
 func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
-	global, err := s.globalHeldCapabilities(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
 	switch scope.Kind {
 	case ScopeGlobal:
-		return global, nil
+		// Global-only: no object dimension, so the lone global_held closure suffices.
+		return s.globalHeldCapabilities(ctx, userID)
 	case ScopeFolder:
-		ancestors, err := s.folderAncestorsAndSelf(ctx, scope.ID)
-		if err != nil {
-			return nil, fmt.Errorf("folder ancestors: %w", err)
-		}
-		fcaps, err := s.capsOnFolders(ctx, userID, ancestors)
-		if err != nil {
-			return nil, err
-		}
-		return append(global, fcaps...), nil
+		return s.scopeCapabilities(ctx, userID, `
+    SELECT h.role_id FROM held h
+    WHERE h.object_kind = 'folder'
+      AND h.object_id IN (
+          SELECT f.id FROM folders f
+          WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = $2)
+      )`, scope.ID)
 	case ScopeAsset:
-		obj, err := s.CapabilitiesOnObject(ctx, userID, scope.ID, "asset")
-		if err != nil {
-			return nil, err
-		}
-		out := append(global, obj...)
-		folderID, err := s.assetFolderID(ctx, scope.ID)
-		if err != nil {
-			// A nonexistent asset resolves to no folder caps (existence-hiding:
-			// the handler performs the NotFound check after the cap gate, and
-			// CapabilitiesOnObject above already returns empty for it). Any other
-			// error is a real failure.
-			if errors.Is(err, pgx.ErrNoRows) {
-				return out, nil
-			}
-			return nil, fmt.Errorf("get asset: %w", err)
-		}
-		ancestors, err := s.folderAncestorsAndSelf(ctx, folderID)
-		if err != nil {
-			return nil, fmt.Errorf("folder ancestors: %w", err)
-		}
-		fcaps, err := s.capsOnFolders(ctx, userID, ancestors)
-		if err != nil {
-			return nil, err
-		}
-		return append(out, fcaps...), nil
+		return s.scopeCapabilities(ctx, userID, `
+    SELECT h.role_id FROM held h
+    WHERE (h.object_kind = 'asset' AND h.object_id = $2)
+       OR (h.object_kind = 'folder'
+           AND h.object_id IN (
+               SELECT f.id FROM folders f
+               WHERE f.path_ids @> (
+                   SELECT af.path_ids FROM folders af
+                   JOIN assets a ON a.folder_id = af.id
+                   WHERE a.id = $2
+               )
+           ))`, scope.ID)
 	default:
 		return nil, fmt.Errorf("unknown scope kind %d", scope.Kind)
 	}
+}
+
+// scopeCapabilities runs the single set-based CapabilitiesOnScope query for a
+// folder/asset scope: the DISTINCT capability patterns of every role in
+// global_held UNION the held roles selected by objectSelect (which references the
+// scoped object id as $2). Shared by the ScopeFolder / ScopeAsset arms above so
+// the global-caps-always-apply union and the combined closure prefix live in one
+// place; only the in-scope-object predicate differs. Existence-hiding is
+// upheld here: for a nonexistent object the objectSelect matches nothing, so the
+// result is global-only with no error.
+func (s *sqlAuthorizer) scopeCapabilities(ctx context.Context, userID uuid.UUID, objectSelect string, objectID uuid.UUID) (Capabilities, error) {
+	rows, err := s.pool.Query(ctx, heldPlusGlobalHeldPrefix+`
+SELECT DISTINCT rc.scope, rc.action, rc.qualifier
+FROM role_capabilities rc
+WHERE rc.role_id IN (
+    SELECT role_id FROM global_held
+  UNION`+objectSelect+`
+)`, userID, objectID)
+	if err != nil {
+		return nil, fmt.Errorf("capabilities on scope: %w", err)
+	}
+	defer rows.Close()
+	return scanCapabilities(rows)
 }
 
 // capsOnFolders returns the union of the capability patterns the user holds on
