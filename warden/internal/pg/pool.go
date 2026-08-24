@@ -25,8 +25,20 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg.MaxConnLifetime = time.Hour
 	cfg.MaxConnIdleTime = 30 * time.Minute
 	cfg.HealthCheckPeriod = time.Minute
-	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		pgxuuid.Register(conn.TypeMap())
+		// Disable JIT for this connection. Warden is an OLTP control-plane: every
+		// query runs over small data, so LLVM JIT compilation is pure overhead that
+		// never pays off. Worse, the authz hot paths are recursive-CTE closures whose
+		// row counts Postgres grossly over-estimates (a tiny held/requestable closure
+		// is costed in the tens of millions), tripping jit_above_cost and triggering a
+		// full inline+optimize compile (~500ms of code generation) on every browse —
+		// dwarfing the ~6ms of actual execution. Turning JIT off keeps these queries at
+		// their real cost. Set on the connection so it holds regardless of the server's
+		// jit setting (warden may run against a managed Postgres we don't configure).
+		if _, err := conn.Exec(ctx, "SET jit = off"); err != nil {
+			return fmt.Errorf("disable jit: %w", err)
+		}
 		return nil
 	}
 	// Bound dead-peer detection for long-lived LISTEN connections: a session that
