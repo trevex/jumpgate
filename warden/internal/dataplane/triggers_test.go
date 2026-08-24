@@ -63,7 +63,7 @@ func TestAuthzChangedTriggerFires(t *testing.T) {
 	q := gen.New(pool)
 
 	// FK graph: a role, a folder+asset scope, and a user to bind.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "db_admin", Capabilities: capsJSON()})
+	role, err := createRoleCaps(ctx, q, "db_admin")
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	ctx := context.Background()
 	q := gen.New(pool)
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "r-" + uuid.NewString(), Capabilities: capsJSON()})
+	role, err := createRoleCaps(ctx, q, "r-"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	}
 
 	// (4) A role_grants edge change is transitive (affects all holders) → empty payload.
-	srcRole, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "src-" + uuid.NewString(), Capabilities: capsJSON()})
+	srcRole, err := createRoleCaps(ctx, q, "src-"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("CreateRole src: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	}
 
 	// (5) A roles rewrite is transitive (affects all holders) → empty payload.
-	if _, err := pool.Exec(ctx, `UPDATE roles SET capabilities = $1 WHERE id = $2`, capsJSON("ssh:login:deploy"), role.ID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE roles SET name = $1 WHERE id = $2`, "db_admin-renamed", role.ID); err != nil {
 		t.Fatalf("UPDATE roles: %v", err)
 	}
 	if got := expectNotify(t, conn, "roles UPDATE"); got != "" {

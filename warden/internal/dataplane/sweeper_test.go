@@ -60,7 +60,7 @@ func setupSweep(t *testing.T) *sweepFixture {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:deploy")})
+	role, err := createRoleCaps(ctx, q, "ssh-deploy", "ssh:login:deploy")
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}

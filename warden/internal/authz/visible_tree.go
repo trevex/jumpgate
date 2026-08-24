@@ -1092,9 +1092,10 @@ func isManagementCap(pat string) bool {
 // path-reveal anchor source and the set whose subtrees VisibleFoldersUnder marks
 // `governed`: a folder is governed iff it is at/under one of these scopes.
 //
-// roles.capabilities is a jsonb pattern array, so — exactly as scanCapabilities /
-// capsOnFolders do — it is scanned as raw bytes and json-unmarshaled into the
-// Capabilities ([]string) set (it has no pgx codec for a direct scan).
+// Capabilities come from the role_capabilities (scope, action, qualifier) columns
+// joined to the held closure; each row is reconstructed via ReconstructCap and
+// classified by isManagementCap in Go (the `*`/`**`-yes-but-`*:connect`-no rule is
+// too subtle to translate into a column predicate).
 func (s *sqlAuthorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT h.object_id, rc.scope, rc.action, rc.qualifier

@@ -126,7 +126,7 @@ func seedRealGrant(t *testing.T, pool *pgxpool.Pool, subject uuid.UUID) (grantID
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rev-role-" + uuid.NewString()[:8], Capabilities: []byte("[]")})
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rev-role-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -194,13 +194,17 @@ func seedUserWithCap(t *testing.T, pool *pgxpool.Pool, lookup auth.Lookup, email
 
 	if withCap {
 		// Create a global role with recording:read and bind it to this user.
-		capsJSON := []byte(`["recording:read"]`)
 		role, err := q.CreateRole(ctx, gen.CreateRoleParams{
-			Name:         "rec-reader-" + u.ID.String()[:8],
-			Capabilities: capsJSON,
+			Name: "rec-reader-" + u.ID.String()[:8],
 		})
 		if err != nil {
 			t.Fatalf("create role: %v", err)
+		}
+		sc, ac, qu := authz.NormalizeCap("recording:read")
+		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+			RoleID: role.ID, Scope: sc, Action: ac, Qualifier: qu,
+		}); err != nil {
+			t.Fatalf("insert role capability: %v", err)
 		}
 		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 			RoleID:        role.ID,

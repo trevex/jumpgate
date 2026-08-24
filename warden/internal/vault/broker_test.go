@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -28,7 +27,20 @@ import (
 
 func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
-func caps(xs ...string) []byte { b, _ := json.Marshal(xs); return b }
+// insertRoleCaps populates a role's capabilities in the role_capabilities table
+// (the jsonb roles.capabilities column was dropped in favour of the normalized
+// (scope, action, qualifier) rows), mirroring the production role-creation path.
+func insertRoleCaps(ctx context.Context, t *testing.T, q *gen.Queries, roleID uuid.UUID, patterns ...string) {
+	t.Helper()
+	for _, pat := range patterns {
+		sc, ac, qu := authz.NormalizeCap(pat)
+		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+			RoleID: roleID, Scope: sc, Action: ac, Qualifier: qu,
+		}); err != nil {
+			t.Fatalf("insert role capability %q: %v", pat, err)
+		}
+	}
+}
 
 func newPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -130,10 +142,11 @@ func mkUser(t *testing.T, q *gen.Queries) uuid.UUID {
 func bindRole(t *testing.T, q *gen.Queries, user, asset uuid.UUID, name string, capsList ...string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8], Capabilities: caps(capsList...)})
+	r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatal(err)
 	}
+	insertRoleCaps(ctx, t, q, r.ID, capsList...)
 	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
 		RoleID: r.ID, ScopeAssetID: pgUUID(asset), SubjectUserID: pgUUID(user),
 	}); err != nil {
@@ -474,10 +487,11 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	setSSHConfig(t, q, asset)
 	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	// A role carrying ssh:login:root, but NOT standing-bound to anyone.
-	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant", Capabilities: caps("ssh:login:root")})
+	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	insertRoleCaps(ctx, t, q, sshRoot.ID, "ssh:login:root")
 
 	b := newBroker(pool, sealer)
 

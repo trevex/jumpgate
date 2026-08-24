@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -116,9 +115,25 @@ func TestBootstrapProvisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRoleByNameGlobal(admin): %v", err)
 	}
+	// Capabilities now live in role_capabilities as normalized (scope, action,
+	// qualifier) rows (the jsonb roles.capabilities column was dropped).
+	rows, err := pool.Query(ctx,
+		`SELECT scope, action, qualifier FROM role_capabilities WHERE role_id = $1`, adminRole.ID)
+	if err != nil {
+		t.Fatalf("query admin role capabilities: %v", err)
+	}
 	var roleCaps []string
-	if err := json.Unmarshal(adminRole.Capabilities, &roleCaps); err != nil {
-		t.Fatalf("unmarshal admin role capabilities: %v", err)
+	for rows.Next() {
+		var sc, ac, qu string
+		if err := rows.Scan(&sc, &ac, &qu); err != nil {
+			rows.Close()
+			t.Fatalf("scan admin role capability: %v", err)
+		}
+		roleCaps = append(roleCaps, authz.ReconstructCap(sc, ac, qu))
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("admin role capabilities rows: %v", err)
 	}
 	if len(roleCaps) != 1 || roleCaps[0] != "**" {
 		t.Fatalf("admin role capabilities = %v, want [**]", roleCaps)

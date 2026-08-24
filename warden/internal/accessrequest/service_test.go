@@ -101,10 +101,9 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 	pool := newPool(t)
 	ctx := context.Background()
 	q := gen.New(pool)
-	caps := []byte("[]")
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, Capabilities: caps})
+		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
 		if err != nil {
 			t.Fatalf("CreateRole(%s): %v", name, err)
 		}

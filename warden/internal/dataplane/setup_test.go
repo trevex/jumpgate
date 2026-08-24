@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -32,7 +31,25 @@ import (
 
 func pg(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
-func capsJSON(xs ...string) []byte { b, _ := json.Marshal(xs); return b }
+// createRoleCaps creates a role and populates its capabilities in the
+// role_capabilities table (the jsonb roles.capabilities column was dropped in
+// favour of the normalized (scope, action, qualifier) rows). It mirrors the
+// production role-creation path (authz.NormalizeCap + InsertRoleCapability).
+func createRoleCaps(ctx context.Context, q *gen.Queries, name string, capsList ...string) (gen.Role, error) {
+	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
+	if err != nil {
+		return gen.Role{}, err
+	}
+	for _, pat := range capsList {
+		sc, ac, qu := authz.NormalizeCap(pat)
+		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+			RoleID: role.ID, Scope: sc, Action: ac, Qualifier: qu,
+		}); err != nil {
+			return gen.Role{}, err
+		}
+	}
+	return role, nil
+}
 
 func newPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -159,7 +176,7 @@ func setup(t *testing.T) *fixture {
 	}
 
 	// Role carrying ssh:login:deploy, standing-bound to the user on the asset.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:deploy")})
+	role, err := createRoleCaps(ctx, q, "ssh-deploy", "ssh:login:deploy")
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
@@ -493,9 +510,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 
 	// Exempt scenario: bind a role carrying ssh:record:exempt to the same user on
 	// the same asset, then drive a fresh Setup (new token/session).
-	exemptRole, err := f.q.CreateRole(f.ctx, gen.CreateRoleParams{
-		Name: "ssh-record-exempt", Capabilities: capsJSON("ssh:record:exempt"),
-	})
+	exemptRole, err := createRoleCaps(f.ctx, f.q, "ssh-record-exempt", "ssh:record:exempt")
 	if err != nil {
 		t.Fatalf("CreateRole(exempt): %v", err)
 	}
