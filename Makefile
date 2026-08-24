@@ -8,7 +8,7 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
-.PHONY: help gen build test lint fmt ci e2e-ssh web rust-deny \
+.PHONY: help gen sqlc build test lint fmt ci e2e-ssh web rust-deny \
         kind-images kind-up kind-down kind-demo kind-e2e ui-e2e \
         ui-dev ui-dev-reset ui-build
 
@@ -26,8 +26,12 @@ help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "} {printf "  %-12s %s\n", $$1, $$2}'
 
-gen: ## Generate protobuf stubs (Go + Rust)
+gen: ## Generate protobuf stubs (Go + Rust) and sqlc database code
 	buf generate
+	sqlc generate
+
+sqlc: ## Generate sqlc database access code (warden/internal/db)
+	sqlc generate
 
 build: ## Build all binaries
 	cd warden && go build ./...
