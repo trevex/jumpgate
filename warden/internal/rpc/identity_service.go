@@ -362,11 +362,16 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
 	}
-	// Acyclicity: making mid a member of gid closes a cycle iff gid is ALREADY a
-	// transitive member of mid (mid is a supergroup of gid). Refuse it so group
-	// nesting stays a DAG — the recursive closures are cycle-safe via UNION dedup,
-	// but a cycle makes membership results surprising. Mirrors the folder-move
-	// acyclicity guard; the no_self_member CHECK covers the direct mid == gid case.
+	// Acyclicity: group nesting must stay a DAG (the recursive closures are cycle-safe
+	// via UNION dedup, but a cycle makes membership results surprising). A group can't
+	// be a member of itself, and making mid a member of gid closes a longer cycle iff
+	// gid is ALREADY a transitive member of mid (mid is a supergroup of gid). Both are
+	// refused with FailedPrecondition — a uniform error mirroring the folder-move
+	// acyclicity guard (the no_self_member DB CHECK is defense-in-depth behind this).
+	if gid == mid {
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("group nesting cycle: a group cannot be a member of itself"))
+	}
 	var cyclic bool
 	if err := s.pool.QueryRow(ctx, `
 WITH RECURSIVE supergroups(gid) AS (

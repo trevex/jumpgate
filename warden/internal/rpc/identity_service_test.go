@@ -1375,4 +1375,10 @@ func TestAddGroupToGroupRejectsCycle(t *testing.T) {
 	if err := add(d, e); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("add e∈d (direct cycle) = %v, want FailedPrecondition", connect.CodeOf(err))
 	}
+
+	// A group cannot be a member of itself — same FailedPrecondition as any cycle.
+	f := mk("f")
+	if err := add(f, f); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("add f∈f (self) = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
 }
