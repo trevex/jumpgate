@@ -19,7 +19,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { useCapabilities } from "@/lib/capabilities";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
 import { canUpdateFolder, canDeleteFolder } from "../catalog-actions";
 import { canCreateBinding } from "../../access-control/binding-actions";
@@ -39,12 +38,6 @@ export interface FolderDetailProps {
 }
 
 export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
-  // Binding creation is a GLOBAL `access:*` action, so it's gated on the
-  // caller's own global capabilities (as the Access-control tabs do), not the
-  // per-folder management caps from getFolderAccess. The server re-checks.
-  const globalCaps = useCapabilities();
-  const mayBind = canCreateBinding(globalCaps);
-
   const { data, isLoading, isError, error } = useQuery(
     getFolderAccess,
     { folderId: id },
@@ -62,6 +55,12 @@ export function FolderDetail({ id, name, path, onCleared }: FolderDetailProps) {
   const caps = data.capabilities;
   const mayUpdate = canUpdateFolder(caps);
   const mayDelete = canDeleteFolder(caps);
+  // Binding is a MANAGEMENT action scoped to THIS folder: a delegated admin holds
+  // access:binding:create at this folder (or an ancestor) which getFolderAccess
+  // returns in `caps`, so gate on the folder's scoped caps — not the caller's
+  // global caps, which would hide the control from a delegated admin. Server
+  // re-checks at the bind scope.
+  const mayBind = canCreateBinding(caps);
   // The "…" menu holds only rename/move/delete now; creation lives in CreateMenu.
   const hasActions = mayUpdate || mayDelete;
 

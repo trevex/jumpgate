@@ -292,11 +292,10 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   const [bindOpen, setBindOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
 
-  // Binding/policy creation are GLOBAL `access:*` actions, gated on the caller's
-  // own global capabilities (as the Access-control tabs do). The server re-checks.
+  // The caller's own global capability set — used only for the broad-`**` connect
+  // hint below. (Binding / make-requestable are gated on the asset's management
+  // capabilities instead; see below.)
   const globalCaps = useCapabilities();
-  const mayBind = canCreateBinding(globalCaps);
-  const mayMakeRequestable = canCreatePolicy(globalCaps);
 
   const { data, isLoading, isError, error } = useQuery(
     getAssetAccess,
@@ -323,6 +322,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   // `**` and so would hide these controls from an admin.
   const canEdit = canUpdateAsset(data.managementCapabilities);
   const canDelete = canDeleteAsset(data.managementCapabilities);
+  // Binding / make-requestable are MANAGEMENT actions scoped to THIS asset. A
+  // folder-delegated admin holds access:binding:create / access:policy:create at a
+  // folder scope that cascades down to the asset, so gate on the asset's management
+  // capability set (like canEdit/canDelete) — NOT the caller's global caps, which
+  // would wrongly hide these controls from a delegated admin. The server re-checks
+  // the capability at the bind/policy scope.
+  const mayBind = canCreateBinding(data.managementCapabilities);
+  const mayMakeRequestable = canCreatePolicy(data.managementCapabilities);
   // Session-review discovery: surface a jump to this asset's recordings for
   // anyone who can read them. `recording:read` cascades on the connect arm
   // (ConnectCapabilities), but a bare-`**` admin/auditor holds it only via the
