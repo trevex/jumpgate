@@ -706,6 +706,27 @@ func TestSetbasedCheckDiff(t *testing.T) {
 	requireMatrixEqual(t, old, got)
 }
 
+// TestSetbasedVisibleRolesGroupsDiff (C1a) gates the set-based rewrite of the
+// role/group visibility predicates: it captures the probe matrix twice over the
+// SAME authorizer — once with legacyMethods (visRoles/visGroups = the frozen
+// per-candidate-loop visibleRoles/GroupsUnderLegacy) and once with newMethods
+// (visRoles/visGroups = the single set-based visibleHomedSetBased query) — and
+// asserts they are identical. legacyMethods also overrides capsOnScope (B2) and
+// check (B3), both independently gated, so any divergence here localizes to the
+// role/group visibility rewrite. A mismatch means the SQL is wrong; fix the SQL,
+// not the test.
+func TestSetbasedVisibleRolesGroupsDiff(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := seedMatrix(t, pool)
+	a := &sqlAuthorizer{pool: pool}
+	probes := defaultProbes(s)
+
+	old := captureAuthzMatrix(ctx, t, legacyMethods(a), s, probes)
+	got := captureAuthzMatrix(ctx, t, newMethods(a), s, probes)
+	requireMatrixEqual(t, old, got)
+}
+
 // isEmptyResult reports whether a captured result string denotes "nothing"
 // (empty id set / empty caps set / false), i.e. the value a user who sees
 // nothing must produce for EVERY method. Never treats an ERR: value as empty.

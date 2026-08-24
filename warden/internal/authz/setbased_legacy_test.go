@@ -90,15 +90,129 @@ func (s *sqlAuthorizer) checkLegacy(ctx context.Context, userID, assetID uuid.UU
 	return caps.Allows(capability), nil
 }
 
+// visibleRolesHomedLegacy is the VERBATIM pre-C1a visibleRolesHomed body: the
+// per-candidate loop over nodesHomedUnder("roles", …) that unions the access axis
+// (held ∪ requestable, computed once) with a per-home-folder folderManageableFunc
+// management check. It is the differential oracle for the set-based rewrite in
+// visible_tree.go — the two must return the same roles for every probe.
+func (s *sqlAuthorizer) visibleRolesHomedLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+	nodes, err := s.nodesHomedUnder(ctx, "roles", parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
+	// Access axis: held ∪ requestable, computed once.
+	held, err := s.heldRoleIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	requestable, err := s.requestableRoleIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	manageable, err := s.folderManageableFunc(ctx, userID, "access:role:read")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []nodeFolder
+	for _, n := range nodes {
+		if _, ok := held[n.ID]; ok {
+			out = append(out, n)
+			continue
+		}
+		if _, ok := requestable[n.ID]; ok {
+			out = append(out, n)
+			continue
+		}
+		ok, err := manageable(n.Folder)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+// visibleGroupsHomedLegacy is the VERBATIM pre-C1a visibleGroupsHomed body: the
+// per-candidate loop over nodesHomedUnder("groups", …) that unions transitive
+// membership (computed once) with a per-home-folder folderManageableFunc
+// (identity:group:read) management check. Differential oracle for the set-based
+// rewrite in visible_tree.go.
+func (s *sqlAuthorizer) visibleGroupsHomedLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+	nodes, err := s.nodesHomedUnder(ctx, "groups", parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
+	// Access axis: transitive membership, computed once.
+	member, err := s.memberGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	manageable, err := s.folderManageableFunc(ctx, userID, "identity:group:read")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []nodeFolder
+	for _, n := range nodes {
+		if _, ok := member[n.ID]; ok {
+			out = append(out, n)
+			continue
+		}
+		ok, err := manageable(n.Folder)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+// visibleRolesUnderLegacy / visibleGroupsUnderLegacy project the frozen homed
+// references to id slices, matching VisibleRolesUnder / VisibleGroupsUnder, so the
+// differential harness (whose visRoles/visGroups fields return []uuid.UUID) can
+// target the legacy predicate directly.
+func (s *sqlAuthorizer) visibleRolesUnderLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.visibleRolesHomedLegacy(ctx, userID, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	return nodeIDs(nodes), nil
+}
+
+func (s *sqlAuthorizer) visibleGroupsUnderLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := s.visibleGroupsHomedLegacy(ctx, userID, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	return nodeIDs(nodes), nil
+}
+
 // legacyMethods binds the frozen `*Legacy` references into an authzMethods struct.
 // It starts from newMethods (the exported, set-based-target methods) and OVERRIDES
-// only the fields rewritten so far — B2 overrides capsOnScope, B3 overrides check.
-// captureAuthzMatrix over legacyMethods therefore differs from captureAuthzMatrix
-// over newMethods in exactly the rewritten method(s), focusing the differential
-// diff on the rewrite.
+// only the fields rewritten so far — B2 overrides capsOnScope, B3 overrides check,
+// C1a overrides visRoles/visGroups. captureAuthzMatrix over legacyMethods therefore
+// differs from captureAuthzMatrix over newMethods in exactly the rewritten
+// method(s), focusing the differential diff on the rewrite.
 func legacyMethods(s *sqlAuthorizer) authzMethods {
 	m := newMethods(s)
 	m.capsOnScope = s.capabilitiesOnScopeLegacy // B2
 	m.check = s.checkLegacy                     // B3
+	m.visRoles = s.visibleRolesUnderLegacy      // C1a
+	m.visGroups = s.visibleGroupsUnderLegacy    // C1a
 	return m
 }

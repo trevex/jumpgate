@@ -775,21 +775,149 @@ func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UU
 	}, nil
 }
 
+// homedLevelPredicate returns the SQL WHERE fragment (over the table alias `n`,
+// whose folder column is `folder_id`) that selects the nodes homed under `parent`
+// per the (parent, cascade) browse rules — the same four cases nodesHomedUnder
+// implements, re-expressed inline so the candidate selection folds into the
+// set-based visibility query (no separate round-trip). It appends any needed bind
+// value to `args` (starting from placeholder index `next`) and returns the updated
+// args plus the placeholder index the caller's own binds continue from.
+//
+//   - (uuid.Nil, !cascade): folder-less nodes only  → n.folder_id IS NULL.
+//   - (uuid.Nil, cascade):  every node              → TRUE.
+//   - (parent,   !cascade): homed directly in parent → n.folder_id = $k.
+//   - (parent,   cascade):  homed anywhere in the subtree rooted at parent → the
+//     node's home folder is a descendant-or-self of parent (ltree <@, GiST-indexed).
+func homedLevelPredicate(parent uuid.UUID, cascade bool, args []any, next int) (string, []any, int) {
+	switch {
+	case parent == uuid.Nil && !cascade:
+		return "n.folder_id IS NULL", args, next
+	case parent == uuid.Nil && cascade:
+		return "TRUE", args, next
+	case !cascade:
+		args = append(args, parent)
+		return fmt.Sprintf("n.folder_id = $%d", next), args, next + 1
+	default: // parent set, cascade: home folder in parent's subtree
+		args = append(args, parent)
+		pred := fmt.Sprintf(
+			"n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $%d))", next)
+		return pred, args, next + 1
+	}
+}
+
+// visibleHomedSetBased is the reusable set-based core behind visibleRolesHomed and
+// visibleGroupsHomed (and, via them, the four call sites in the file header). It
+// returns the (id, home-folder) rows of `table` homed under `parent` that are
+// visible to the user, in ONE query — no per-candidate management round-trip.
+//
+// `table` is a TRUSTED literal ("roles"/"groups"); `mgmtCap` is the management read
+// capability for that kind ("access:role:read" / "identity:group:read"), decomposed
+// with NormalizeCap into the ($1s/$1a/$1q) request columns and matched against
+// role_capabilities with the SAME three-column glob predicate proven ≡ Go CapMatch
+// by TestSQLCapMatchMatchesGo. `accessIDs` is the pre-computed ACCESS set for the
+// kind (roles: held ∪ requestable; groups: transitive membership) — passed as a
+// uuid[] so the closures that produce it stay one small constant query each rather
+// than being re-derived per candidate.
+//
+// A node is visible iff (union):
+//   - ACCESS:     its id is in accessIDs; OR
+//   - MANAGEMENT: the user holds mgmtCap on the node's home-folder scope, evaluated
+//     set-based via the management-cascade fragment below.
+//
+// ── Reusable management-cascade fragment (C1b will reuse this for assets) ──
+// Instead of a per-folder CapabilitiesOnScope, whether a node's home folder is
+// management-visible for cap C is a single set membership with two arms:
+//
+//   - GLOBAL arm: the user holds C globally → EXISTS over global_held ⋈
+//     role_capabilities with the column-match for C (`global_mgmt.ok`). This alone
+//     covers folder-less (folder_id NULL) nodes, which have no folder scope.
+//   - FOLDER-CASCADE arm: ∃ a folder F where the user holds C (held FOLDER closure ⋈
+//     role_capabilities column-match, → `mgmt_anchor_folders`) AND the node's home
+//     folder is a descendant-or-self of F (ltree <@ over the folders' path_ids).
+//     Management cascades DOWN the tree, so a cap held at F applies to every node
+//     homed at/under F. A NULL home folder matches no anchor → global-only, exactly
+//     as the legacy folderManageableFunc treated a nil folder.
+//
+// The closures come from heldPlusGlobalHeldPrefix (user_groups + held + global_held,
+// all composed from the shared closure fragments), so held/global_held here cannot
+// drift from Check / CapabilitiesOnScope. Deactivated users are excluded by those
+// closures (and by the accessIDs closures), so no extra guard is needed here.
+func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
+	reqScope, reqAction, reqQual := NormalizeCap(mgmtCap)
+	// $1 user (bound by the closure prefix), $2/$3/$4 the mgmtCap request columns,
+	// $5 the access-id set; the level predicate appends its parent bind from $6.
+	args := []any{userID, reqScope, reqAction, reqQual, accessIDs}
+	level, args, _ := homedLevelPredicate(parent, cascade, args, 6)
+
+	query := heldPlusGlobalHeldPrefix + `,
+-- folders where the user holds mgmtCap directly (held FOLDER closure + column-match).
+-- Management cascades DOWN from these anchors via the ltree <@ join below.
+mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = $2 OR rc.scope = '*')
+      AND (rc.action = $3 OR rc.action = '*')
+      AND (rc.qualifier = $4 OR rc.qualifier = '*')
+),
+-- does the user hold mgmtCap GLOBALLY? (covers folder-less nodes; short-circuit arm)
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = $2 OR rc.scope = '*')
+          AND (rc.action = $3 OR rc.action = '*')
+          AND (rc.qualifier = $4 OR rc.qualifier = '*')
+    ) AS ok
+)
+SELECT n.id, n.folder_id
+FROM ` + table + ` n
+WHERE (` + level + `)
+  AND (
+        -- ACCESS axis: pre-computed held ∪ requestable (roles) / membership (groups).
+        n.id = ANY($5::uuid[])
+        -- MANAGEMENT axis, global arm: mgmtCap held globally ⇒ manage every node.
+     OR (SELECT ok FROM global_mgmt)
+        -- MANAGEMENT axis, folder-cascade arm: node's home folder is at/under a
+        -- folder where the user holds mgmtCap (NULL home ⇒ no match ⇒ global-only).
+     OR EXISTS (
+            SELECT 1 FROM mgmt_anchor_folders m
+            JOIN folders mf ON mf.id = m.folder_id
+            JOIN folders nf ON nf.id = n.folder_id
+            WHERE nf.path_ids <@ mf.path_ids
+        )
+      )
+ORDER BY n.id`
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("visible homed (%s): %w", table, err)
+	}
+	defer rows.Close()
+	var out []nodeFolder
+	for rows.Next() {
+		var (
+			id     uuid.UUID
+			folder *uuid.UUID
+		)
+		if err := rows.Scan(&id, &folder); err != nil {
+			return nil, fmt.Errorf("scan visible homed (%s): %w", table, err)
+		}
+		out = append(out, nodeFolder{ID: id, Folder: folder})
+	}
+	return out, rows.Err()
+}
+
 // visibleRolesHomed returns the roles under `parent` the user may see, each with
 // its home folder, applying the full role-visibility predicate (held ∪
 // requestable ∪ manageable-via access:role:read). It is the single source of
 // truth for that predicate: VisibleRolesUnder maps it to ids, and the folder-anchor
 // helper reads its home folders — neither re-implements the predicate.
+//
+// Set-based: the ACCESS set (held ∪ requestable) is two small constant closure
+// queries; the management cascade + candidate selection + union are ONE query via
+// visibleHomedSetBased. Total is a small constant, independent of the candidate
+// count (no per-folder CapabilitiesOnScope loop).
 func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
-	nodes, err := s.nodesHomedUnder(ctx, "roles", parent, cascade)
-	if err != nil {
-		return nil, err
-	}
-	if len(nodes) == 0 {
-		return nil, nil
-	}
-
-	// Access axis: held ∪ requestable, computed once.
+	// Access axis: held ∪ requestable, computed once as a single id set.
 	held, err := s.heldRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -798,33 +926,8 @@ func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uu
 	if err != nil {
 		return nil, err
 	}
-
-	manageable, err := s.folderManageableFunc(ctx, userID, "access:role:read")
-	if err != nil {
-		return nil, err
-	}
-
-	var out []nodeFolder
-	for _, n := range nodes {
-		if _, ok := held[n.ID]; ok {
-			out = append(out, n)
-			continue
-		}
-		if _, ok := requestable[n.ID]; ok {
-			out = append(out, n)
-			continue
-		}
-		// Management axis (folder-less nodes handled inside manageable: nil folder
-		// ⇒ manageable only via the global cap, never a synthesized folder scope).
-		ok, err := manageable(n.Folder)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, n)
-		}
-	}
-	return out, nil
+	accessIDs := unionKeys(held, requestable)
+	return s.visibleHomedSetBased(ctx, userID, "roles", "access:role:read", parent, cascade, accessIDs)
 }
 
 // VisibleRolesUnder returns the role ids under `parent` the user may see. See the
@@ -843,40 +946,12 @@ func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uu
 // predicate: VisibleGroupsUnder maps it to ids and the folder-anchor helper reads
 // its home folders.
 func (s *sqlAuthorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
-	nodes, err := s.nodesHomedUnder(ctx, "groups", parent, cascade)
-	if err != nil {
-		return nil, err
-	}
-	if len(nodes) == 0 {
-		return nil, nil
-	}
-
-	// Access axis: transitive membership, computed once.
+	// Access axis: transitive membership, computed once as a single id set.
 	member, err := s.memberGroupIDs(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	manageable, err := s.folderManageableFunc(ctx, userID, "identity:group:read")
-	if err != nil {
-		return nil, err
-	}
-
-	var out []nodeFolder
-	for _, n := range nodes {
-		if _, ok := member[n.ID]; ok {
-			out = append(out, n)
-			continue
-		}
-		ok, err := manageable(n.Folder)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, n)
-		}
-	}
-	return out, nil
+	return s.visibleHomedSetBased(ctx, userID, "groups", "identity:group:read", parent, cascade, mapKeys(member))
 }
 
 // VisibleGroupsUnder returns the group ids under `parent` the user may see. See
