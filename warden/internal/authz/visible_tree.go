@@ -229,12 +229,7 @@ WHERE (` + level + `)
      OR (SELECT ok FROM global_mgmt)
         -- MANAGEMENT axis, folder-cascade arm: the asset's folder is at/under a
         -- folder where the user holds catalog:asset:read.
-     OR EXISTS (
-            SELECT 1 FROM mgmt_anchor_folders m
-            JOIN folders mf ON mf.id = m.folder_id
-            JOIN folders nf ON nf.id = a.folder_id
-            WHERE nf.path_ids <@ mf.path_ids
-        )
+     OR a.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
         -- CONNECT axis: the asset declares an SSH login the user entitles over the
         -- FULL asset-scope cascade (global_held ∪ held-on-asset ∪ held-on-ancestor
         -- folders). A ** cap normalizes to (*,*,*) and matches ssh:login:L via the
@@ -887,6 +882,17 @@ global_mgmt AS (
           AND (rc.action = $3 OR rc.action = '*')
           AND (rc.qualifier = $4 OR rc.qualifier = '*')
     ) AS ok
+),
+-- folders management-visible under mgmtCap, computed ONCE: every folder that is a
+-- descendant-or-self (ltree <@) of a mgmt_anchor_folder. Membership in this set
+-- replaces a per-node correlated EXISTS that seq-scanned the folders table once per
+-- node (O(nodes × folders)); driving from the small anchor set through the path_ids
+-- GiST index makes it O(anchors × descendants). Semantically identical to that EXISTS.
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
 )`
 
 // connectArmExists is the SHARED SSH-connect-visibility arm: an asset is
@@ -985,12 +991,7 @@ WHERE (` + level + `)
      OR (SELECT ok FROM global_mgmt)
         -- MANAGEMENT axis, folder-cascade arm: node's home folder is at/under a
         -- folder where the user holds mgmtCap (NULL home ⇒ no match ⇒ global-only).
-     OR EXISTS (
-            SELECT 1 FROM mgmt_anchor_folders m
-            JOIN folders mf ON mf.id = m.folder_id
-            JOIN folders nf ON nf.id = n.folder_id
-            WHERE nf.path_ids <@ mf.path_ids
-        )
+     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
       )
 ORDER BY n.id`
 	rows, err := s.pool.Query(ctx, query, args...)
