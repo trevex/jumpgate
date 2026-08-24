@@ -1060,22 +1060,101 @@ func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUI
 		next = &PageCursor{Ts: last.GrantedAt, ID: last.ID}
 	}
 
+	if len(rows) == 0 {
+		return make([]Grant, 0), next, nil
+	}
+
+	// Reviewability is resolved set-based over just this page's grant ids (one query),
+	// preserving the page order (granted_at DESC, id) and the SQL-page cursor.
+	ids := make([]uuid.UUID, len(rows))
+	for i, g := range rows {
+		ids[i] = g.ID
+	}
+	out, err := s.reviewableGrants(ctx, caller, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, next, nil
+}
+
+// reviewableGrants resolves, in ONE set-based query, the grants the caller may review
+// — reproducing CanReviewGrant over the whole candidate set instead of per row (the
+// per-grant IsApprover N+1). A grant is reviewable when the caller is its subject OR
+// (the caller is active AND, for the grant's (role, asset) EFFECTIVE policy — same
+// asset/folder-ancestor/global precedence as EffectiveRule — an explicit approver
+// subject, direct or via a nested group, OR the approver_role held STANDING on the
+// asset). The subject arm intentionally has no active-user check, matching
+// CanReviewGrant. The standing arm reuses authz.StandingHeldClosurePrefix()'s
+// held_standing closure, single-sourced with Check/HoldsRoleStanding. restrict limits
+// the candidate set to those grant ids (a keyset page); a nil slice (SQL NULL)
+// considers all grants. Ordered granted_at DESC, id to match the paged SQL page.
+func (s *Service) reviewableGrants(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Grant, error) {
+	const body = `,
+grants AS (
+    SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
+    FROM access_grants
+    WHERE ($2::uuid[] IS NULL OR id = ANY($2))
+),
+ga AS (SELECT DISTINCT role_id, scope_asset_id FROM grants),
+ancestors(role_id, asset_id, folder_id, depth) AS (
+    SELECT ga.role_id, ga.scope_asset_id, a.folder_id, 0 FROM ga JOIN assets a ON a.id = ga.scope_asset_id
+  UNION ALL
+    SELECT an.role_id, an.asset_id, f.parent_id, an.depth + 1
+    FROM folders f JOIN ancestors an ON f.id = an.folder_id WHERE f.parent_id IS NOT NULL
+),
+candidates(role_id, asset_id, policy_id, approver_role_id, spec) AS (
+    SELECT ga.role_id, ga.scope_asset_id, rp.id, rp.approver_role_id, 0
+    FROM ga JOIN request_policies rp ON rp.role_id = ga.role_id AND rp.scope_asset_id = ga.scope_asset_id
+  UNION ALL
+    SELECT an.role_id, an.asset_id, rp.id, rp.approver_role_id, an.depth + 1
+    FROM ancestors an JOIN request_policies rp ON rp.role_id = an.role_id AND rp.scope_folder_id = an.folder_id
+  UNION ALL
+    SELECT ga.role_id, ga.scope_asset_id, rp.id, rp.approver_role_id, 1000000
+    FROM ga JOIN request_policies rp ON rp.role_id = ga.role_id AND rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
+),
+eff AS (
+    SELECT DISTINCT ON (role_id, asset_id) role_id, asset_id, policy_id, approver_role_id
+    FROM candidates ORDER BY role_id, asset_id, spec ASC
+)
+SELECT g.id, g.role_id, g.scope_asset_id, g.subject_user_id, g.granted_at, g.expires_at, g.revoked_at, g.revoked_reason
+FROM grants g
+LEFT JOIN eff e ON e.role_id = g.role_id AND e.asset_id = g.scope_asset_id
+WHERE g.subject_user_id = $1
+   OR (
+       EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+       AND e.policy_id IS NOT NULL
+       AND (
+           EXISTS (
+               SELECT 1 FROM request_policy_subjects sub
+               WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+                 AND (sub.subject_user_id = $1 OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
+           )
+           OR (
+               e.approver_role_id IS NOT NULL
+               AND EXISTS (
+                   SELECT 1 FROM held_standing hs
+                   WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = g.scope_asset_id
+               )
+           )
+       )
+   )
+ORDER BY g.granted_at DESC, g.id`
+
+	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body, caller, restrict)
+	if err != nil {
+		return nil, fmt.Errorf("reviewable grants: %w", err)
+	}
+	defer rows.Close()
 	out := make([]Grant, 0)
-	for _, g := range rows {
-		if g.SubjectUserID != caller {
-			// Standing potential approver of the grant's originating (role, asset).
-			// IsApprover is standing-only and already excludes deactivated users.
-			ok, err := s.resolver.IsApprover(ctx, caller, g.RoleID, g.ScopeAssetID)
-			if err != nil {
-				return nil, nil, err
-			}
-			if !ok {
-				continue
-			}
+	for rows.Next() {
+		var g gen.AccessGrant
+		if err := rows.Scan(&g.ID, &g.RoleID, &g.ScopeAssetID, &g.SubjectUserID,
+			&g.GrantedAt, &g.ExpiresAt, &g.RevokedAt, &g.RevokedReason); err != nil {
+			return nil, fmt.Errorf("scan reviewable grant: %w", err)
 		}
 		out = append(out, toGrant(g))
 	}
-	return out, next, nil
+	return out, rows.Err()
 }
 
 // PageParams carries decoded keyset cursor fields for time-ordered lists.
