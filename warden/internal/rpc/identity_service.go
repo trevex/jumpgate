@@ -150,8 +150,15 @@ func (s *IdentityServer) ResolveUser(ctx context.Context, req *connect.Request[i
 
 // ListUsers returns a page of users (admin only), ordered by (email ASC, id ASC).
 func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[identityv1.ListUsersRequest]) (*connect.Response[identityv1.ListUsersResponse], error) {
-	if err := s.requireCap(ctx, "identity:user:read", authz.GlobalScope()); err != nil {
-		return nil, err
+	// User display info (id, email, display name, active flag) is a UNIVERSAL
+	// DIRECTORY READ: any authenticated caller may list it — the same rule as
+	// GetUserDisplay. It backs the subject/member pickers, request/approval
+	// attribution, and avatars, so a folder-delegated admin assigning access must be
+	// able to browse users WITHOUT holding a global identity:user:read. Management
+	// operations (CreateUser/DeactivateUser/…) remain capability-gated; only the
+	// display-safe read is open. toUserMsg exposes no sensitive fields.
+	if _, ok := auth.UserFromContext(ctx); !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
 	limit := clampPageSize(req.Msg.PageSize)
 	k, err := decodePageToken(req.Msg.PageToken)

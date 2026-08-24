@@ -249,6 +249,11 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 // legitimately read them, so they would (correctly) flip a capless-denied case to
 // OK — don't add them here. Their authorization is covered by their own unit tests
 // (TestGetUserDisplay / TestGetAssetDisplay / TestGetRoleDisplay).
+//
+// ListUsers is likewise a universal directory read: it returns only display-safe
+// user info (id/email/name/active) and backs the subject/member pickers, so any
+// authenticated caller may list it (management ops stay gated). It is therefore
+// also absent from this matrix.
 func TestAuthzGuardMatrix(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -281,10 +286,6 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		}},
 		{"Identity.ResolveUser", PD, func() error {
 			_, err := cl.identity.ResolveUser(ctx, withToken(connect.NewRequest(&identityv1.ResolveUserRequest{Email: "admin@x"}), tok))
-			return err
-		}},
-		{"Identity.ListUsers", PD, func() error {
-			_, err := cl.identity.ListUsers(ctx, withToken(connect.NewRequest(&identityv1.ListUsersRequest{PageSize: 10}), tok))
 			return err
 		}},
 		{"Identity.CreateGroup", PD, func() error {
