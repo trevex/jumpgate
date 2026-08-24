@@ -45,3 +45,31 @@ func sharedDB(tb testing.TB) (*pgxpool.Pool, *queryCounter) {
 	}
 	return pkgPool, pkgCounter
 }
+
+// runAcross runs fn once per selected profile as a sub-benchmark. It generates the
+// profile (outside the timer), resets the query counter, runs the timed loop (fn must
+// execute exactly b.N logical operations), then reports queries/op and records a
+// summary row. Each sub-benchmark reseeds a fresh graph so profiles never
+// cross-contaminate.
+func runAcross(b *testing.B, fn func(b *testing.B, w *World)) {
+	for _, p := range benchProfiles() {
+		p := p
+		b.Run(p.Name, func(b *testing.B) {
+			w := Generate(b, p)
+			_, counter := sharedDB(b)
+			b.ReportAllocs()
+			counter.reset()
+			b.ResetTimer()
+			fn(b, w)
+			b.StopTimer()
+			qpo := float64(counter.load()) / float64(b.N)
+			b.ReportMetric(qpo, "queries/op")
+			nsPerOp := float64(b.Elapsed().Nanoseconds()) / float64(b.N)
+			recordSummary(b.Name(), p.Name, nsPerOp, qpo)
+		})
+	}
+}
+
+// recordSummary is replaced by the real implementation in explain.go (a later
+// task); this placeholder keeps the package buildable until then.
+func recordSummary(op, profile string, nsPerOp, queriesPerOp float64) {}
