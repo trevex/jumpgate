@@ -81,43 +81,6 @@ func (s *sqlAuthorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
 	return scanUUIDs(rows)
 }
 
-// assetIDsInFolders returns the ids of assets whose folder_id is in folderIDs.
-func (s *sqlAuthorizer) assetIDsInFolders(ctx context.Context, folderIDs []uuid.UUID) ([]uuid.UUID, error) {
-	if len(folderIDs) == 0 {
-		return nil, nil
-	}
-	rows, err := s.pool.Query(ctx, `
-SELECT id FROM assets WHERE folder_id = ANY($1::uuid[])`, folderIDs)
-	if err != nil {
-		return nil, fmt.Errorf("assets in folders: %w", err)
-	}
-	defer rows.Close()
-	return scanUUIDs(rows)
-}
-
-// assetFolders returns the (assetID, folderID) pairs for the given folders, so the
-// caller can group assets by folder and run one management check per folder.
-func (s *sqlAuthorizer) assetFolders(ctx context.Context, folderIDs []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
-	if len(folderIDs) == 0 {
-		return map[uuid.UUID]uuid.UUID{}, nil
-	}
-	rows, err := s.pool.Query(ctx, `
-SELECT id, folder_id FROM assets WHERE folder_id = ANY($1::uuid[])`, folderIDs)
-	if err != nil {
-		return nil, fmt.Errorf("asset folders: %w", err)
-	}
-	defer rows.Close()
-	out := map[uuid.UUID]uuid.UUID{}
-	for rows.Next() {
-		var assetID, folderID uuid.UUID
-		if err := rows.Scan(&assetID, &folderID); err != nil {
-			return nil, fmt.Errorf("scan asset folder: %w", err)
-		}
-		out[assetID] = folderID
-	}
-	return out, rows.Err()
-}
-
 // assetLoginsFor returns, for each asset in assetIDs, the set of SSH login names
 // declared on it (ssh_asset_login.login). Assets with no logins are absent from
 // the map. Batched into a single query so the connect-visibility arm never issues
@@ -179,25 +142,6 @@ func (s *sqlAuthorizer) childCandidateFolderIDs(ctx context.Context, parent uuid
 		return children, nil
 	}
 	return s.folderSubtreeIDs(ctx, children)
-}
-
-// assetContainerFolderIDs computes the folders whose assets are IN SCOPE for a
-// browse under `parent` (used by VisibleAssetsUnder). Assets live directly in a
-// folder, so the immediate level is `parent` itself; a cascade is the whole
-// subtree rooted at `parent` (inclusive). parent == uuid.Nil is the root, which
-// holds no assets: without cascade the set is empty, with cascade it is the whole
-// tree.
-func (s *sqlAuthorizer) assetContainerFolderIDs(ctx context.Context, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
-	if parent == uuid.Nil {
-		if !cascade {
-			return nil, nil
-		}
-		return s.allFolderIDs(ctx)
-	}
-	if !cascade {
-		return []uuid.UUID{parent}, nil
-	}
-	return s.folderSubtreeIDs(ctx, []uuid.UUID{parent})
 }
 
 // accessibleAssetSet returns the set of asset ids the user can access (VisibleAssets:
@@ -765,58 +709,6 @@ type nodeFolder struct {
 	Folder *uuid.UUID
 }
 
-// nodesHomedUnder returns the (id, home-folder) rows of `table` homed under
-// `parent`. `table` is a TRUSTED literal — callers pass only "roles" or "groups";
-// it is interpolated into the query and must never be attacker-controlled.
-//
-// Four cases mirror the folder-candidate logic:
-//   - (uuid.Nil, !cascade): folder-less nodes only (folder_id IS NULL).
-//   - (uuid.Nil, cascade):  every node.
-//   - (parent,   !cascade): nodes homed directly in `parent`.
-//   - (parent,   cascade):  nodes homed anywhere in the subtree rooted at `parent`.
-func (s *sqlAuthorizer) nodesHomedUnder(ctx context.Context, table string, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
-	var (
-		query string
-		args  []any
-	)
-	switch {
-	case parent == uuid.Nil && !cascade:
-		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id IS NULL"
-	case parent == uuid.Nil && cascade:
-		query = "SELECT id, folder_id FROM " + table
-	case !cascade:
-		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id = $1"
-		args = []any{parent}
-	default: // parent set, cascade
-		subtree, err := s.folderSubtreeIDs(ctx, []uuid.UUID{parent})
-		if err != nil {
-			return nil, err
-		}
-		if len(subtree) == 0 {
-			return nil, nil
-		}
-		query = "SELECT id, folder_id FROM " + table + " WHERE folder_id = ANY($1::uuid[])"
-		args = []any{subtree}
-	}
-	rows, err := s.pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("nodes homed under (%s): %w", table, err)
-	}
-	defer rows.Close()
-	var out []nodeFolder
-	for rows.Next() {
-		var (
-			id     uuid.UUID
-			folder *uuid.UUID
-		)
-		if err := rows.Scan(&id, &folder); err != nil {
-			return nil, fmt.Errorf("scan node folder (%s): %w", table, err)
-		}
-		out = append(out, nodeFolder{ID: id, Folder: folder})
-	}
-	return out, rows.Err()
-}
-
 // heldRoleIDs returns the set of role ids the user holds (standing bindings +
 // active grants, closed over the role_grants rewrite graph) — one arm of the
 // role ACCESS axis. Object dimension is dropped: a role is "held" if held on ANY
@@ -904,46 +796,6 @@ func scanUUIDSet(rows interface {
 		out[id] = struct{}{}
 	}
 	return out, rows.Err()
-}
-
-// manageFn tests whether the user may manage a node given its home folder.
-// folderPtr is nil for a folder-less (global) node — manageable ONLY via the
-// global cap, since a nil home has no folder scope to fold an ancestor chain from.
-type manageFn func(folderPtr *uuid.UUID) (bool, error)
-
-// folderManageableFunc builds a memoized predicate "may the user manage a node
-// homed at this folder?" with the global short-circuit: if the user holds `cap`
-// GLOBALLY the predicate is always true (one query, no per-folder work);
-// otherwise it evaluates CapabilitiesOnScope(FolderScope(folder)) once per folder
-// (which already folds global ∪ the folder ancestor chain). A folder-less node
-// (nil folder) is manageable iff the global cap holds — never via a folder scope.
-func (s *sqlAuthorizer) folderManageableFunc(ctx context.Context, userID uuid.UUID, capability string) (manageFn, error) {
-	global, err := s.globalHeldCapabilities(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	globalManage := global.Allows(capability)
-	memo := map[uuid.UUID]bool{}
-	return func(folderPtr *uuid.UUID) (bool, error) {
-		if globalManage {
-			return true, nil
-		}
-		if folderPtr == nil {
-			// Folder-less (global) node: no folder scope, so only the global cap
-			// (already checked above and false here) could ever make it manageable.
-			return false, nil
-		}
-		if v, ok := memo[*folderPtr]; ok {
-			return v, nil
-		}
-		caps, err := s.CapabilitiesOnScope(ctx, userID, FolderScope(*folderPtr))
-		if err != nil {
-			return false, err
-		}
-		v := caps.Allows(capability)
-		memo[*folderPtr] = v
-		return v, nil
-	}, nil
 }
 
 // homedLevelPredicate returns the SQL WHERE fragment (over the table alias `n`,
@@ -1208,40 +1060,6 @@ func nodeIDs(nodes []nodeFolder) []uuid.UUID {
 	return out
 }
 
-// nodeHomeFolders collects the non-nil home folders of the given nodes into a set.
-// Folder-less (global) nodes contribute no anchor.
-func nodeHomeFolders(nodes []nodeFolder) map[uuid.UUID]struct{} {
-	out := map[uuid.UUID]struct{}{}
-	for _, n := range nodes {
-		if n.Folder != nil {
-			out[*n.Folder] = struct{}{}
-		}
-	}
-	return out
-}
-
-// visibleRoleHomeFolders returns the set of home folders of every role visible to
-// the user (whole-tree cascade). These folders anchor path-reveal so the browse
-// path down to a visible role is never hidden.
-func (s *sqlAuthorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	nodes, err := s.visibleRolesHomed(ctx, userID, uuid.Nil, true)
-	if err != nil {
-		return nil, err
-	}
-	return nodeHomeFolders(nodes), nil
-}
-
-// visibleGroupHomeFolders returns the set of home folders of every group visible to
-// the user (whole-tree cascade). These folders anchor path-reveal so the browse
-// path down to a visible group is never hidden.
-func (s *sqlAuthorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	nodes, err := s.visibleGroupsHomed(ctx, userID, uuid.Nil, true)
-	if err != nil {
-		return nil, err
-	}
-	return nodeHomeFolders(nodes), nil
-}
-
 // ── Folder anchors (catalog path-reveal) ───────────────────────────────────
 //
 // A folder is an "anchor" when the user has a relationship to a folder-homed node
@@ -1300,23 +1118,4 @@ WHERE h.object_kind = 'folder'`, userID)
 		}
 	}
 	return out, rows.Err()
-}
-
-// visibleAssetFolders returns the home folders of every asset visible to the user
-// (the full VisibleAssetsUnder union: access ∪ management ∪ connect, whole-tree
-// cascade). These folders anchor the path down to a reachable asset.
-func (s *sqlAuthorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	assetIDs, err := s.VisibleAssetsUnder(ctx, userID, uuid.Nil, true)
-	if err != nil {
-		return nil, err
-	}
-	if len(assetIDs) == 0 {
-		return map[uuid.UUID]struct{}{}, nil
-	}
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT folder_id FROM assets WHERE id = ANY($1::uuid[])`, assetIDs)
-	if err != nil {
-		return nil, fmt.Errorf("visible asset folders: %w", err)
-	}
-	defer rows.Close()
-	return scanUUIDSet(rows)
 }
