@@ -181,17 +181,37 @@ func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 }
 
 // Check reports whether the user holds a role on the asset whose capability set
-// grants the concrete `capability`. It fetches the roles' capability patterns held
-// on the asset (via CapabilitiesOnAsset) and matches each stored pattern against
-// the requested capability with CapMatch, so glob semantics ('*' / trailing '**')
-// live in one auditable Go function rather than embedded regex-in-SQL. `capability`
-// is internal (from workers) and assumed concrete — it is not proto-validated.
+// grants the concrete `capability`. It is the SINGLE-QUERY EXISTS form of the
+// asset-object held closure + a SQL column-match: the closure/object dimension is
+// the SAME one CapabilitiesOnAsset/CapabilitiesOnObject(asset) use (the held
+// closure over standing bindings, active JIT grants, and the role_grants rewrite
+// graph on that exact asset object), and the glob semantics ('*' / trailing '**')
+// are pushed into the three-column predicate proven equivalent to Go CapMatch by
+// TestSQLCapMatchMatchesGo. NormalizeCap decomposes the requested capability into
+// the ($3,$4,$5) request columns exactly as the differential-test harness does.
+//
+// This deliberately does NOT fold in the folder-management cascade or global
+// scopeless bindings — that is CapabilitiesOnScope's job (the management plane).
+// Check is the data-plane grant decision, keyed strictly to the asset object.
+//
+// A nonexistent asset matches no held row, so EXISTS is false with no error.
+// `capability` is internal (from workers) and assumed concrete — not proto-validated.
 func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
-	caps, err := s.CapabilitiesOnAsset(ctx, userID, assetID)
+	reqScope, reqAction, reqQual := NormalizeCap(capability)
+	var ok bool
+	err := s.pool.QueryRow(ctx, heldCTE+`
+SELECT EXISTS (
+    SELECT 1
+    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'asset' AND h.object_id = $2
+      AND (rc.scope = $3 OR rc.scope = '*')
+      AND (rc.action = $4 OR rc.action = '*')
+      AND (rc.qualifier = $5 OR rc.qualifier = '*')
+)`, userID, assetID, reqScope, reqAction, reqQual).Scan(&ok)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("check: %w", err)
 	}
-	return caps.Allows(capability), nil
+	return ok, nil
 }
 
 // CapabilitiesOnScope returns the capability patterns the user holds at a

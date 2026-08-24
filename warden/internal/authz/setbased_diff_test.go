@@ -349,6 +349,12 @@ func defaultProbes(s matrixSeed) matrixProbes {
 		"db:read",
 		"db:admin",
 		"ssh:login:deploy",
+		// db:read:extra is a 3-segment request that the requester's 2-segment
+		// db:read pattern must NOT grant (exercises the qualifier column of the
+		// EXISTS predicate: stored qualifier '' ≠ req 'extra' and ≠ '*'). Kept
+		// alongside the granted db:read on the same held role so the Check matrix
+		// carries a near-miss true/false pair, not just a definitely-absent cap.
+		"db:read:extra",
 		"nonexistent:cap:here", // definitely absent for everyone but a ** admin
 	}
 	parents := []labeledID{
@@ -669,6 +675,26 @@ func TestSetbasedMatrixHarness(t *testing.T) {
 // any divergence localizes to the rewrite. A mismatch means the SQL is wrong; fix
 // the SQL, not the test.
 func TestSetbasedCapabilitiesOnScopeDiff(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := seedMatrix(t, pool)
+	a := &sqlAuthorizer{pool: pool}
+	probes := defaultProbes(s)
+
+	old := captureAuthzMatrix(ctx, t, legacyMethods(a), s, probes)
+	got := captureAuthzMatrix(ctx, t, newMethods(a), s, probes)
+	requireMatrixEqual(t, old, got)
+}
+
+// TestSetbasedCheckDiff (B3) gates the single-query EXISTS Check rewrite: it
+// captures the probe matrix twice over the SAME authorizer — once with
+// legacyMethods (check = the frozen CapabilitiesOnAsset + Allows checkLegacy) and
+// once with newMethods (check = the single set-based EXISTS query) — and asserts
+// they are identical. Because legacyMethods overrides both capsOnScope (B2) and
+// check (B3), and B2 is independently gated by TestSetbasedCapabilitiesOnScopeDiff,
+// any divergence here localizes to the Check rewrite. A mismatch means the SQL is
+// wrong; fix the SQL, not the test.
+func TestSetbasedCheckDiff(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := seedMatrix(t, pool)

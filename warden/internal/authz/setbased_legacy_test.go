@@ -78,13 +78,27 @@ func (s *sqlAuthorizer) capabilitiesOnScopeLegacy(ctx context.Context, userID uu
 	}
 }
 
+// checkLegacy is the VERBATIM pre-B3 Check body: fetch the asset-object held
+// closure caps via CapabilitiesOnAsset, then glob-match in Go (CapMatch) via
+// Capabilities.Allows. It is the differential oracle for the single-query EXISTS
+// rewrite in sql_authorizer.go — the two must agree for every probe.
+func (s *sqlAuthorizer) checkLegacy(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
+	caps, err := s.CapabilitiesOnAsset(ctx, userID, assetID)
+	if err != nil {
+		return false, err
+	}
+	return caps.Allows(capability), nil
+}
+
 // legacyMethods binds the frozen `*Legacy` references into an authzMethods struct.
 // It starts from newMethods (the exported, set-based-target methods) and OVERRIDES
-// only the fields rewritten so far — B2 overrides capsOnScope. captureAuthzMatrix
-// over legacyMethods therefore differs from captureAuthzMatrix over newMethods in
-// exactly the rewritten method(s), focusing the differential diff on the rewrite.
+// only the fields rewritten so far — B2 overrides capsOnScope, B3 overrides check.
+// captureAuthzMatrix over legacyMethods therefore differs from captureAuthzMatrix
+// over newMethods in exactly the rewritten method(s), focusing the differential
+// diff on the rewrite.
 func legacyMethods(s *sqlAuthorizer) authzMethods {
 	m := newMethods(s)
 	m.capsOnScope = s.capabilitiesOnScopeLegacy // B2
+	m.check = s.checkLegacy                     // B3
 	return m
 }
