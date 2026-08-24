@@ -8,7 +8,9 @@ package authz
 // To keep that reference stable AFTER the production method is rewritten, this
 // file freezes a VERBATIM copy of the pre-rewrite body under a `*Legacy` name that
 // keeps calling the still-in-production helpers (globalHeldCapabilities,
-// folderAncestorsAndSelf, capsOnFolders, CapabilitiesOnObject, assetFolderID).
+// folderAncestorsAndSelf, capsOnFolders, CapabilitiesOnObject, assetFolderID,
+// assetContainerFolderIDs, assetFolders, accessibleAssetSet, assetIDsInFolders,
+// assetLoginsFor).
 //
 // legacyMethods wires these frozen references into the same authzMethods struct
 // the harness walks, overriding ONLY the fields a slice has rewritten so far; the
@@ -202,6 +204,113 @@ func (s *sqlAuthorizer) visibleGroupsUnderLegacy(ctx context.Context, userID, pa
 	return nodeIDs(nodes), nil
 }
 
+// visibleAssetsUnderLegacy is the VERBATIM pre-C1b VisibleAssetsUnder body: the
+// per-candidate-folder management loop (folderManageableFunc via
+// CapabilitiesOnScope(FolderScope)) plus the per-residual-asset connect loop
+// (CapabilitiesOnScope(AssetScope) + EntitledLogins). It is the differential
+// oracle for the set-based rewrite in visible_tree.go — the two must return the
+// same asset ids for every probe. It keeps calling the still-in-production helpers
+// assetContainerFolderIDs / assetFolders / accessibleAssetSet /
+// globalHeldCapabilities / CapabilitiesOnScope / assetIDsInFolders / assetLoginsFor.
+func (s *sqlAuthorizer) visibleAssetsUnderLegacy(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	candidateFolders, err := s.assetContainerFolderIDs(ctx, parent, cascade)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidateFolders) == 0 {
+		return nil, nil
+	}
+	assetFolder, err := s.assetFolders(ctx, candidateFolders)
+	if err != nil {
+		return nil, err
+	}
+	if len(assetFolder) == 0 {
+		return nil, nil
+	}
+
+	accessible, err := s.accessibleAssetSet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Management arm: global short-circuit, else one CapabilitiesOnScope per folder.
+	global, err := s.globalHeldCapabilities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	globalManage := global.Allows("catalog:asset:read")
+	manageableFolder := map[uuid.UUID]bool{}
+	folderManageable := func(folderID uuid.UUID) (bool, error) {
+		if globalManage {
+			return true, nil
+		}
+		if v, ok := manageableFolder[folderID]; ok {
+			return v, nil
+		}
+		caps, err := s.CapabilitiesOnScope(ctx, userID, FolderScope(folderID))
+		if err != nil {
+			return false, err
+		}
+		v := caps.Allows("catalog:asset:read")
+		manageableFolder[folderID] = v
+		return v, nil
+	}
+
+	// Iterate assets in the deterministic order of assetIDsInFolders so the output
+	// is stable (the handler re-sorts via the keyset query regardless).
+	assetIDs, err := s.assetIDsInFolders(ctx, candidateFolders)
+	if err != nil {
+		return nil, err
+	}
+
+	// Connect arm (folder+global data-plane cascade): an asset not visible on the
+	// access or management arm is still visible when the caller entitles ≥1 of its
+	// OWN SSH logins via the full CapabilitiesOnScope(AssetScope) cascade
+	// (ssh:login:<login> held globally / on an ancestor folder / on the asset). This
+	// is the residual work: we only fetch logins and per-asset caps for candidates
+	// that neither arm above already covered — a `**` / catalog:asset:read admin is
+	// fast-pathed via folderManageable and never reaches here. `residual` collects
+	// those, and we batch their login fetch into one query.
+	var residual []uuid.UUID
+	out := make([]uuid.UUID, 0, len(assetIDs))
+	for _, assetID := range assetIDs {
+		if _, ok := accessible[assetID]; ok {
+			out = append(out, assetID)
+			continue
+		}
+		manage, err := folderManageable(assetFolder[assetID])
+		if err != nil {
+			return nil, err
+		}
+		if manage {
+			out = append(out, assetID)
+			continue
+		}
+		residual = append(residual, assetID)
+	}
+
+	if len(residual) > 0 {
+		loginsByAsset, err := s.assetLoginsFor(ctx, residual)
+		if err != nil {
+			return nil, err
+		}
+		for _, assetID := range residual {
+			logins := loginsByAsset[assetID]
+			if len(logins) == 0 {
+				continue // no logins to entitle → not connect-visible
+			}
+			caps, err := s.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
+			if err != nil {
+				return nil, err
+			}
+			if len(caps.EntitledLogins(logins)) > 0 {
+				out = append(out, assetID)
+			}
+		}
+	}
+	return out, nil
+}
+
 // legacyMethods binds the frozen `*Legacy` references into an authzMethods struct.
 // It starts from newMethods (the exported, set-based-target methods) and OVERRIDES
 // only the fields rewritten so far — B2 overrides capsOnScope, B3 overrides check,
@@ -214,5 +323,6 @@ func legacyMethods(s *sqlAuthorizer) authzMethods {
 	m.check = s.checkLegacy                     // B3
 	m.visRoles = s.visibleRolesUnderLegacy      // C1a
 	m.visGroups = s.visibleGroupsUnderLegacy    // C1a
+	m.visAssets = s.visibleAssetsUnderLegacy    // C1b
 	return m
 }

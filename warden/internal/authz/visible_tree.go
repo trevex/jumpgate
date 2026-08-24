@@ -14,8 +14,9 @@ import (
 //   - the MANAGEMENT axis: a user who holds "catalog:folder:read" /
 //     "catalog:asset:read" at a scope may see the folder/asset as an
 //     administrator, independent of any access grant. Management authority
-//     cascades structurally down the folder tree (CapabilitiesOnScope already
-//     folds in the folder ancestor chain), so we evaluate it per candidate folder.
+//     cascades structurally down the folder tree; both queries evaluate it
+//     set-based (the shared mgmtCascadeCTEs fragment: a global-cap arm ∪ an
+//     ltree <@ folder-cascade arm), never per-candidate.
 //
 //   - the ACCESS axis: a user may see an asset they can actually reach —
 //     VisibleAssets(user) (active standing role OR requestable), OR an asset they
@@ -216,110 +217,116 @@ func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID
 // VisibleAssetsUnder returns the asset ids under `parent` the user may see. See the
 // Authorizer interface for the visibility predicate.
 //
-// Management arm: an asset is manageable iff the user holds "catalog:asset:read"
-// on its folder scope. If the user holds that capability GLOBALLY the arm is true
-// for every candidate asset (short-circuit, one query). Otherwise it is evaluated
-// once per candidate FOLDER via CapabilitiesOnScope(FolderScope(f)) — never per
-// asset — and every asset in a manageable folder is manageable.
+// SET-BASED: the ACCESS set (VisibleAssets = held asset-objects ∪ requestable) is
+// two small constant closure queries collapsed into a uuid[] param; the candidate
+// selection, management cascade, and connect cascade are ONE query off
+// heldPlusGlobalHeldPrefix. Total is a small constant — no per-folder and no
+// per-residual-asset CapabilitiesOnScope loop.
 //
-// Access arm: an asset is accessible iff it is in VisibleAssets(user).
+// An asset (whose folder is in scope under `parent`) is visible iff ANY of:
+//
+//   - ACCESS:     a.id ∈ VisibleAssets(user) (a.id = ANY($5)); OR
+//   - MANAGEMENT: the user holds "catalog:asset:read" on the asset's folder scope —
+//     GLOBAL (global_mgmt.ok) covers every asset, else the asset's folder is a
+//     descendant-or-self of a folder where the cap is held (mgmt_anchor_folders,
+//     the shared mgmtCascadeCTEs fragment with the asset's NOT-NULL folder as the
+//     node folder); OR
+//   - CONNECT:    the asset declares ≥1 SSH login L (ssh_asset_login) that the user
+//     entitles over the FULL asset-scope cascade — a role in global_held, held on
+//     the asset object, or held on an ancestor-or-self folder of the asset's folder
+//     carries a capability matching ssh:login:L. This reproduces
+//     EntitledLogins on the RAW CapabilitiesOnScope(AssetScope) result: `**`
+//     normalizes to (*,*,*) and the column-match makes it match ssh:login:L, so
+//     `**` IS RETAINED here (no ConnectCapabilities literal-`**` carve-out).
 func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
-	candidateFolders, err := s.assetContainerFolderIDs(ctx, parent, cascade)
-	if err != nil {
-		return nil, err
-	}
-	if len(candidateFolders) == 0 {
-		return nil, nil
-	}
-	assetFolder, err := s.assetFolders(ctx, candidateFolders)
-	if err != nil {
-		return nil, err
-	}
-	if len(assetFolder) == 0 {
+	// root + no-cascade holds no assets — short-circuit (also makes the level
+	// predicate below never need a FALSE arm).
+	if parent == uuid.Nil && !cascade {
 		return nil, nil
 	}
 
+	// ACCESS set: VisibleAssets (held asset-objects ∪ requestable), one small
+	// constant closure pair, collapsed into a uuid[] param ($5).
 	accessible, err := s.accessibleAssetSet(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+	accessIDs := make([]uuid.UUID, 0, len(accessible))
+	for id := range accessible {
+		accessIDs = append(accessIDs, id)
+	}
 
-	// Management arm: global short-circuit, else one CapabilitiesOnScope per folder.
-	global, err := s.globalHeldCapabilities(ctx, userID)
+	// $1 user (bound by the closure prefix); $2/$3/$4 the catalog:asset:read request
+	// columns (the mgmtCascadeCTEs fragment); $5 the access-id set. The container
+	// level predicate appends its parent bind from $6.
+	reqScope, reqAction, reqQual := NormalizeCap("catalog:asset:read")
+	args := []any{userID, reqScope, reqAction, reqQual, accessIDs}
+	level := "TRUE"
+	if parent != uuid.Nil {
+		if cascade {
+			// Asset's folder is a descendant-or-self of parent (whole subtree).
+			args = append(args, parent)
+			level = "a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $6))"
+		} else {
+			// Asset directly in parent.
+			args = append(args, parent)
+			level = "a.folder_id = $6"
+		}
+	}
+
+	query := heldPlusGlobalHeldPrefix + mgmtCascadeCTEs + `
+SELECT a.id
+FROM assets a
+WHERE (` + level + `)
+  AND (
+        -- ACCESS axis: pre-computed held asset-objects ∪ requestable.
+        a.id = ANY($5::uuid[])
+        -- MANAGEMENT axis, global arm: catalog:asset:read held globally.
+     OR (SELECT ok FROM global_mgmt)
+        -- MANAGEMENT axis, folder-cascade arm: the asset's folder is at/under a
+        -- folder where the user holds catalog:asset:read.
+     OR EXISTS (
+            SELECT 1 FROM mgmt_anchor_folders m
+            JOIN folders mf ON mf.id = m.folder_id
+            JOIN folders nf ON nf.id = a.folder_id
+            WHERE nf.path_ids <@ mf.path_ids
+        )
+        -- CONNECT axis: the asset declares an SSH login the user entitles over the
+        -- FULL asset-scope cascade (global_held ∪ held-on-asset ∪ held-on-ancestor
+        -- folders). A ** cap normalizes to (*,*,*) and matches ssh:login:L via the
+        -- column-match, so it is retained — matching EntitledLogins on raw
+        -- CapabilitiesOnScope.
+     OR EXISTS (
+            SELECT 1 FROM ssh_asset_login sal
+            WHERE sal.asset_id = a.id
+              AND EXISTS (
+                  SELECT 1 FROM role_capabilities rc
+                  WHERE rc.role_id IN (
+                        SELECT role_id FROM global_held
+                      UNION
+                        SELECT h.role_id FROM held h
+                        WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                           OR (h.object_kind = 'folder'
+                               AND h.object_id IN (
+                                   SELECT f.id FROM folders f
+                                   WHERE f.path_ids @> (
+                                       SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id
+                                   )
+                               ))
+                  )
+                  AND (rc.scope = 'ssh' OR rc.scope = '*')
+                  AND (rc.action = 'login' OR rc.action = '*')
+                  AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+              )
+        )
+      )
+ORDER BY a.id`
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("visible assets under: %w", err)
 	}
-	globalManage := global.Allows("catalog:asset:read")
-	manageableFolder := map[uuid.UUID]bool{}
-	folderManageable := func(folderID uuid.UUID) (bool, error) {
-		if globalManage {
-			return true, nil
-		}
-		if v, ok := manageableFolder[folderID]; ok {
-			return v, nil
-		}
-		caps, err := s.CapabilitiesOnScope(ctx, userID, FolderScope(folderID))
-		if err != nil {
-			return false, err
-		}
-		v := caps.Allows("catalog:asset:read")
-		manageableFolder[folderID] = v
-		return v, nil
-	}
-
-	// Iterate assets in the deterministic order of assetIDsInFolders so the output
-	// is stable (the handler re-sorts via the keyset query regardless).
-	assetIDs, err := s.assetIDsInFolders(ctx, candidateFolders)
-	if err != nil {
-		return nil, err
-	}
-
-	// Connect arm (folder+global data-plane cascade): an asset not visible on the
-	// access or management arm is still visible when the caller entitles ≥1 of its
-	// OWN SSH logins via the full CapabilitiesOnScope(AssetScope) cascade
-	// (ssh:login:<login> held globally / on an ancestor folder / on the asset). This
-	// is the residual work: we only fetch logins and per-asset caps for candidates
-	// that neither arm above already covered — a `**` / catalog:asset:read admin is
-	// fast-pathed via folderManageable and never reaches here. `residual` collects
-	// those, and we batch their login fetch into one query.
-	var residual []uuid.UUID
-	out := make([]uuid.UUID, 0, len(assetIDs))
-	for _, assetID := range assetIDs {
-		if _, ok := accessible[assetID]; ok {
-			out = append(out, assetID)
-			continue
-		}
-		manage, err := folderManageable(assetFolder[assetID])
-		if err != nil {
-			return nil, err
-		}
-		if manage {
-			out = append(out, assetID)
-			continue
-		}
-		residual = append(residual, assetID)
-	}
-
-	if len(residual) > 0 {
-		loginsByAsset, err := s.assetLoginsFor(ctx, residual)
-		if err != nil {
-			return nil, err
-		}
-		for _, assetID := range residual {
-			logins := loginsByAsset[assetID]
-			if len(logins) == 0 {
-				continue // no logins to entitle → not connect-visible
-			}
-			caps, err := s.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
-			if err != nil {
-				return nil, err
-			}
-			if len(caps.EntitledLogins(logins)) > 0 {
-				out = append(out, assetID)
-			}
-		}
-	}
-	return out, nil
+	defer rows.Close()
+	return scanUUIDs(rows)
 }
 
 // VisibleFoldersUnder returns the folders under `parent` the user may see, each
@@ -805,6 +812,45 @@ func homedLevelPredicate(parent uuid.UUID, cascade bool, args []any, next int) (
 	}
 }
 
+// mgmtCascadeCTEs is the SHARED management-cascade fragment appended to
+// heldPlusGlobalHeldPrefix (which already binds $2/$3/$4 to a mgmtCap's request
+// columns and $1 to the user via its closures). It defines two CTEs that decide,
+// set-based, whether a folder-homed node is management-visible for that cap — and
+// is reused VERBATIM by both visibleHomedSetBased (roles/groups) and
+// VisibleAssetsUnder (an asset's NOT-NULL folder is the node folder). Keeping the
+// SQL in ONE string is the drift-guard: the asset arm cannot diverge from the
+// role/group arm.
+//
+//   - mgmt_anchor_folders: folders where the user holds mgmtCap directly (held
+//     FOLDER closure ⋈ role_capabilities column-match). Management cascades DOWN
+//     from these anchors via an ltree <@ join at the call site.
+//   - global_mgmt(ok): does the user hold mgmtCap GLOBALLY? (global_held ⋈
+//     column-match) — covers folder-less nodes and short-circuits to "manage all".
+//
+// The three-column glob predicate ((col = $n OR col = '*')) is the same one proven
+// ≡ Go CapMatch by TestSQLCapMatchMatchesGo. Leads with `,` so it follows the
+// closure prefix; callers append their own `SELECT`.
+const mgmtCascadeCTEs = `,
+-- folders where the user holds mgmtCap directly (held FOLDER closure + column-match).
+-- Management cascades DOWN from these anchors via the ltree <@ join at the call site.
+mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = $2 OR rc.scope = '*')
+      AND (rc.action = $3 OR rc.action = '*')
+      AND (rc.qualifier = $4 OR rc.qualifier = '*')
+),
+-- does the user hold mgmtCap GLOBALLY? (covers folder-less nodes; short-circuit arm)
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = $2 OR rc.scope = '*')
+          AND (rc.action = $3 OR rc.action = '*')
+          AND (rc.qualifier = $4 OR rc.qualifier = '*')
+    ) AS ok
+)`
+
 // visibleHomedSetBased is the reusable set-based core behind visibleRolesHomed and
 // visibleGroupsHomed (and, via them, the four call sites in the file header). It
 // returns the (id, home-folder) rows of `table` homed under `parent` that are
@@ -824,9 +870,10 @@ func homedLevelPredicate(parent uuid.UUID, cascade bool, args []any, next int) (
 //   - MANAGEMENT: the user holds mgmtCap on the node's home-folder scope, evaluated
 //     set-based via the management-cascade fragment below.
 //
-// ── Reusable management-cascade fragment (C1b will reuse this for assets) ──
+// ── Reusable management-cascade fragment (mgmtCascadeCTEs; reused by assets) ──
 // Instead of a per-folder CapabilitiesOnScope, whether a node's home folder is
-// management-visible for cap C is a single set membership with two arms:
+// management-visible for cap C is a single set membership with two arms (the
+// shared mgmtCascadeCTEs fragment, also used by VisibleAssetsUnder):
 //
 //   - GLOBAL arm: the user holds C globally → EXISTS over global_held ⋈
 //     role_capabilities with the column-match for C (`global_mgmt.ok`). This alone
@@ -849,26 +896,7 @@ func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UU
 	args := []any{userID, reqScope, reqAction, reqQual, accessIDs}
 	level, args, _ := homedLevelPredicate(parent, cascade, args, 6)
 
-	query := heldPlusGlobalHeldPrefix + `,
--- folders where the user holds mgmtCap directly (held FOLDER closure + column-match).
--- Management cascades DOWN from these anchors via the ltree <@ join below.
-mgmt_anchor_folders AS (
-    SELECT DISTINCT h.object_id AS folder_id
-    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'folder'
-      AND (rc.scope = $2 OR rc.scope = '*')
-      AND (rc.action = $3 OR rc.action = '*')
-      AND (rc.qualifier = $4 OR rc.qualifier = '*')
-),
--- does the user hold mgmtCap GLOBALLY? (covers folder-less nodes; short-circuit arm)
-global_mgmt AS (
-    SELECT EXISTS (
-        SELECT 1 FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = $2 OR rc.scope = '*')
-          AND (rc.action = $3 OR rc.action = '*')
-          AND (rc.qualifier = $4 OR rc.qualifier = '*')
-    ) AS ok
-)
+	query := heldPlusGlobalHeldPrefix + mgmtCascadeCTEs + `
 SELECT n.id, n.folder_id
 FROM ` + table + ` n
 WHERE (` + level + `)
