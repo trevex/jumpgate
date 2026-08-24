@@ -245,3 +245,21 @@ func TestListPendingApprovalsPrecedenceMatchesLegacy(t *testing.T) {
 		t.Fatal("expected override approver to see the request")
 	}
 }
+
+// TestApprovablePendingNilRestrictReturnsAll locks the nil-restrict → SQL NULL → "all
+// pending" contract (see the RESTRICT CONTRACT note on approvablePending): a refactor
+// that routed an empty non-nil slice here would silently return zero rows.
+func TestApprovablePendingNilRestrictReturnsAll(t *testing.T) {
+	h := setup(t, 1, pgtype.Interval{})
+	req := h.mkUser(t, "n-req@x")
+	app := h.mkUser(t, "n-app@x")
+	h.bindStanding(t, req, h.requesterRole)
+	h.bindStanding(t, app, h.approverRole)
+	if _, err := h.svc.RequestAccess(h.ctx, req, h.role, h.asset, time.Hour, "x"); err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+	got, err := h.svc.ListPendingApprovals(h.ctx, app) // nil-restrict path
+	if err != nil || len(got) != 1 {
+		t.Fatalf("nil-restrict all: got %d err %v", len(got), err)
+	}
+}

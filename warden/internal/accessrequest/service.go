@@ -484,6 +484,11 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 // semantics cannot drift. restrict limits the candidate set to those request ids (a
 // keyset page); a nil slice (SQL NULL) considers all pending requests. Results are
 // ordered created_at DESC, id, matching the paged SQL page order.
+//
+// RESTRICT CONTRACT: pass nil for "all". A nil []uuid.UUID encodes as SQL NULL (the
+// `$2 IS NULL` all-arm); an EMPTY non-nil slice encodes as `'{}'` → `id = ANY('{}')`
+// → zero rows. Callers must never pass []uuid.UUID{} to mean "all" (the paged callers
+// guard this with a len(rows)==0 early return before building the id slice).
 // pendingRow is approvablePending's final SELECT, scanned by column NAME
 // (pgx.RowToStructByNameLax) so a SELECT-list reorder cannot misbind.
 type pendingRow struct {
