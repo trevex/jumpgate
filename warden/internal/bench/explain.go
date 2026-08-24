@@ -38,13 +38,30 @@ func recordSummary(op, profile string, nsPerOp, queriesPerOp float64) {
 }
 
 // renderSummary formats rows as a markdown table sorted by ns/op descending
-// (worst offender first).
+// (worst offender first). The benchmark framework re-invokes each sub-benchmark
+// body several times while converging on N, so recordSummary sees a given
+// (operation, profile) more than once; renderSummary keeps only the last row per
+// key (the converged, measured run) before sorting.
 func renderSummary(rows []summaryRow) string {
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].NsPerOp > rows[j].NsPerOp })
+	type key struct{ op, profile string }
+	latest := make(map[key]summaryRow, len(rows))
+	order := make([]key, 0, len(rows))
+	for _, r := range rows {
+		k := key{r.Op, r.Profile}
+		if _, seen := latest[k]; !seen {
+			order = append(order, k)
+		}
+		latest[k] = r
+	}
+	deduped := make([]summaryRow, 0, len(order))
+	for _, k := range order {
+		deduped = append(deduped, latest[k])
+	}
+	sort.SliceStable(deduped, func(i, j int) bool { return deduped[i].NsPerOp > deduped[j].NsPerOp })
 	var b strings.Builder
 	b.WriteString("| operation | profile | ns/op | queries/op |\n")
 	b.WriteString("|---|---|---:|---:|\n")
-	for _, r := range rows {
+	for _, r := range deduped {
 		fmt.Fprintf(&b, "| %s | %s | %.0f | %.1f |\n", r.Op, r.Profile, r.NsPerOp, r.QueriesPerOp)
 	}
 	return b.String()
