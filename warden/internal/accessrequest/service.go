@@ -1102,6 +1102,18 @@ func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUI
 // held_standing closure, single-sourced with Check/HoldsRoleStanding. restrict limits
 // the candidate set to those grant ids (a keyset page); a nil slice (SQL NULL)
 // considers all grants. Ordered granted_at DESC, id to match the paged SQL page.
+// reviewableGrantRow is reviewableGrants' final SELECT, scanned by column name.
+type reviewableGrantRow struct {
+	ID            uuid.UUID          `db:"id"`
+	RoleID        uuid.UUID          `db:"role_id"`
+	ScopeAssetID  uuid.UUID          `db:"scope_asset_id"`
+	SubjectUserID uuid.UUID          `db:"subject_user_id"`
+	GrantedAt     pgtype.Timestamptz `db:"granted_at"`
+	ExpiresAt     pgtype.Timestamptz `db:"expires_at"`
+	RevokedAt     pgtype.Timestamptz `db:"revoked_at"`
+	RevokedReason pgtype.Text        `db:"revoked_reason"`
+}
+
 func (s *Service) reviewableGrants(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Grant, error) {
 	const body = `,
 grants AS (
@@ -1158,17 +1170,18 @@ ORDER BY g.granted_at DESC, g.id`
 	if err != nil {
 		return nil, fmt.Errorf("reviewable grants: %w", err)
 	}
-	defer rows.Close()
-	out := make([]Grant, 0)
-	for rows.Next() {
-		var g gen.AccessGrant
-		if err := rows.Scan(&g.ID, &g.RoleID, &g.ScopeAssetID, &g.SubjectUserID,
-			&g.GrantedAt, &g.ExpiresAt, &g.RevokedAt, &g.RevokedReason); err != nil {
-			return nil, fmt.Errorf("scan reviewable grant: %w", err)
-		}
-		out = append(out, toGrant(g))
+	grows, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[reviewableGrantRow])
+	if err != nil {
+		return nil, fmt.Errorf("reviewable grants scan: %w", err)
 	}
-	return out, rows.Err()
+	out := make([]Grant, 0, len(grows))
+	for _, g := range grows {
+		out = append(out, toGrant(gen.AccessGrant{
+			ID: g.ID, RoleID: g.RoleID, ScopeAssetID: g.ScopeAssetID, SubjectUserID: g.SubjectUserID,
+			GrantedAt: g.GrantedAt.Time, ExpiresAt: g.ExpiresAt.Time, RevokedAt: g.RevokedAt, RevokedReason: g.RevokedReason,
+		}))
+	}
+	return out, nil
 }
 
 // PageParams carries decoded keyset cursor fields for time-ordered lists.
