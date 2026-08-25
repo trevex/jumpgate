@@ -14,6 +14,7 @@ import (
 )
 
 const teardownChannel = "session_teardown"
+const listenTeardownSQL = "LISTEN session_teardown"
 
 type teardownPayload struct {
 	SessionID string `json:"session_id"`
@@ -63,7 +64,7 @@ func (l *Listener) listenLoop(ctx context.Context) error {
 		return err
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, "LISTEN "+teardownChannel); err != nil {
+	if _, err := conn.Exec(ctx, listenTeardownSQL); err != nil {
 		return err
 	}
 	for {

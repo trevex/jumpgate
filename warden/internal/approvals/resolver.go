@@ -37,17 +37,17 @@ func New(pool *pgxpool.Pool) *Resolver { return &Resolver{pool: pool} }
 func (r *Resolver) EffectiveRule(ctx context.Context, roleID, assetID uuid.UUID) (*Rule, error) {
 	const sql = `
 WITH RECURSIVE ancestors(folder_id, depth) AS (
-    SELECT folder_id, 0 FROM assets WHERE id = $2
+    SELECT folder_id, 0 FROM assets WHERE id = @assetID
   UNION ALL
     SELECT f.parent_id, a.depth + 1 FROM folders f JOIN ancestors a ON f.id = a.folder_id WHERE f.parent_id IS NOT NULL
 ),
 candidates(id, required_approvals, approver_role_id, requester_role_id, max_duration, spec) AS (
-    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 0 FROM request_policies WHERE role_id = $1 AND scope_asset_id = $2
+    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 0 FROM request_policies WHERE role_id = @roleID AND scope_asset_id = @assetID
   UNION ALL
     SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, a.depth + 1
-    FROM request_policies rp JOIN ancestors a ON rp.scope_folder_id = a.folder_id WHERE rp.role_id = $1
+    FROM request_policies rp JOIN ancestors a ON rp.scope_folder_id = a.folder_id WHERE rp.role_id = @roleID
   UNION ALL
-    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 1000000 FROM request_policies WHERE role_id = $1 AND scope_folder_id IS NULL AND scope_asset_id IS NULL
+    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 1000000 FROM request_policies WHERE role_id = @roleID AND scope_folder_id IS NULL AND scope_asset_id IS NULL
 )
 SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration FROM candidates ORDER BY spec ASC LIMIT 1`
 	var id uuid.UUID
@@ -55,7 +55,7 @@ SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration
 	var approver pgtype.UUID
 	var requester pgtype.UUID
 	var maxDuration pgtype.Interval
-	err := r.pool.QueryRow(ctx, sql, roleID, assetID).Scan(&id, &req, &approver, &requester, &maxDuration)
+	err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"roleID": roleID, "assetID": assetID}).Scan(&id, &req, &approver, &requester, &maxDuration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -94,20 +94,20 @@ func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID
 	// to kind='approver' so requester subjects never count as approvers.
 	const sql = `
 WITH RECURSIVE user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @userID
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 )
 SELECT EXISTS (
     SELECT 1 FROM request_policy_subjects ara
-    WHERE ara.policy_id = $2
+    WHERE ara.policy_id = @policyID
       AND ara.kind = 'approver'
-      AND (ara.subject_user_id = $1 OR ara.subject_group_id IN (SELECT group_id FROM user_groups))
+      AND (ara.subject_user_id = @userID OR ara.subject_group_id IN (SELECT group_id FROM user_groups))
       -- a deactivated user counts for nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @userID AND u.deactivated_at IS NULL)
 )`
 	var explicit bool
-	if err := r.pool.QueryRow(ctx, sql, approverUserID, rule.ID).Scan(&explicit); err != nil {
+	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"userID": approverUserID, "policyID": rule.ID}).Scan(&explicit); err != nil {
 		return false, fmt.Errorf("is approver (explicit): %w", err)
 	}
 	if explicit {
@@ -152,20 +152,20 @@ func (r *Resolver) IsEligibleRequester(ctx context.Context, requesterUserID, req
 	// to kind='requester'.
 	const sql = `
 WITH RECURSIVE user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @userID
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 )
 SELECT EXISTS (
     SELECT 1 FROM request_policy_subjects rps
-    WHERE rps.policy_id = $2
+    WHERE rps.policy_id = @policyID
       AND rps.kind = 'requester'
-      AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+      AND (rps.subject_user_id = @userID OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
       -- a deactivated user counts for nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @userID AND u.deactivated_at IS NULL)
 )`
 	var explicit bool
-	if err := r.pool.QueryRow(ctx, sql, requesterUserID, rule.ID).Scan(&explicit); err != nil {
+	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"userID": requesterUserID, "policyID": rule.ID}).Scan(&explicit); err != nil {
 		return false, fmt.Errorf("is eligible requester (explicit): %w", err)
 	}
 	if explicit {

@@ -970,7 +970,14 @@ const connectArmExists = `OR EXISTS (
 // all composed from the shared closure fragments), so held/global_held here cannot
 // drift from Check / CapabilitiesOnScope. Deactivated users are excluded by those
 // closures (and by the accessIDs closures), so no extra guard is needed here.
-func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
+type homedTable string
+
+const (
+	rolesTable  homedTable = "roles"
+	groupsTable homedTable = "groups"
+)
+
+func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table homedTable, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(mgmtCap)
 	// @user (bound by the closure prefix), @capScope/@capAction/@capQual the mgmtCap
 	// request columns, @accessIDs the access-id set; the level predicate binds
@@ -980,7 +987,7 @@ func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UU
 
 	query := heldPlusGlobalHeldPrefix + mgmtCascadeCTEs + `
 SELECT n.id, n.folder_id
-FROM ` + table + ` n
+FROM ` + string(table) + ` n
 WHERE (` + level + `)
   AND (
         -- ACCESS axis: pre-computed held ∪ requestable (roles) / membership (groups).
@@ -1032,7 +1039,7 @@ func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uu
 		return nil, err
 	}
 	accessIDs := unionKeys(held, requestable)
-	return s.visibleHomedSetBased(ctx, userID, "roles", "access:role:read", parent, cascade, accessIDs)
+	return s.visibleHomedSetBased(ctx, userID, rolesTable, "access:role:read", parent, cascade, accessIDs)
 }
 
 // VisibleRolesUnder returns the role ids under `parent` the user may see. See the
@@ -1056,7 +1063,7 @@ func (s *sqlAuthorizer) visibleGroupsHomed(ctx context.Context, userID, parent u
 	if err != nil {
 		return nil, err
 	}
-	return s.visibleHomedSetBased(ctx, userID, "groups", "identity:group:read", parent, cascade, mapKeys(member))
+	return s.visibleHomedSetBased(ctx, userID, groupsTable, "identity:group:read", parent, cascade, mapKeys(member))
 }
 
 // VisibleGroupsUnder returns the group ids under `parent` the user may see. See

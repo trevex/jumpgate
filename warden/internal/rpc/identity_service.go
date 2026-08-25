@@ -375,11 +375,11 @@ func (s *IdentityServer) AddGroupToGroup(ctx context.Context, req *connect.Reque
 	var cyclic bool
 	if err := s.pool.QueryRow(ctx, `
 WITH RECURSIVE supergroups(gid) AS (
-    SELECT group_id FROM group_memberships WHERE member_group_id = $1
+    SELECT group_id FROM group_memberships WHERE member_group_id = @groupID
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN supergroups sg ON gm.member_group_id = sg.gid
 )
-SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = $2)`, gid, mid).Scan(&cyclic); err != nil {
+SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = @memberGroupID)`, pgx.NamedArgs{"groupID": gid, "memberGroupID": mid}).Scan(&cyclic); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if cyclic {
