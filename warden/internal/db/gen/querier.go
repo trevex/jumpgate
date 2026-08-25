@@ -24,7 +24,7 @@ type Querier interface {
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
 	AuditChainTip(ctx context.Context) (AuditChainTipRow, error)
-	AuditEntryHashAtSeq(ctx context.Context, seq pgtype.Int8) ([]byte, error)
+	AuditEntryHashAtSeq(ctx context.Context, seq int64) ([]byte, error)
 	BindingsScopedToFoldersOrAssets(ctx context.Context, arg BindingsScopedToFoldersOrAssetsParams) ([]RoleBinding, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)

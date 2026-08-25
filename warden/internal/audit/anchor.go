@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 )
@@ -63,10 +62,7 @@ func (l *Logger) AnchorTip(ctx context.Context, store AnchorStore, lastSeq int64
 	if err != nil {
 		return lastSeq, fmt.Errorf("read chain tip: %w", err)
 	}
-	if !tip.Seq.Valid {
-		return lastSeq, nil
-	}
-	seq := tip.Seq.Int64
+	seq := tip.Seq
 	if seq <= lastSeq {
 		// Tip has not advanced since the last anchor: no new anchor needed.
 		return lastSeq, nil
@@ -147,10 +143,10 @@ func (l *Logger) VerifyTipAtLeast(ctx context.Context, anchorSeq int64, anchorHa
 	if err != nil {
 		return fmt.Errorf("read chain tip: %w", err)
 	}
-	if !tip.Seq.Valid || tip.Seq.Int64 < anchorSeq {
+	if tip.Seq < anchorSeq {
 		return ErrTailTruncated
 	}
-	got, err := q.AuditEntryHashAtSeq(ctx, pgtype.Int8{Int64: anchorSeq, Valid: true})
+	got, err := q.AuditEntryHashAtSeq(ctx, anchorSeq)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrTailTruncated
 	}

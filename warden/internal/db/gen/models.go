@@ -65,7 +65,7 @@ type AssetSecret struct {
 
 type AuditLog struct {
 	ID          uuid.UUID   `json:"id"`
-	Seq         pgtype.Int8 `json:"seq"`
+	Seq         int64       `json:"seq"`
 	EventType   string      `json:"event_type"`
 	ActorUserID pgtype.UUID `json:"actor_user_id"`
 	Subject     string      `json:"subject"`
@@ -77,7 +77,7 @@ type AuditLog struct {
 
 type AuditOutbox struct {
 	ID          uuid.UUID   `json:"id"`
-	Seq         pgtype.Int8 `json:"seq"`
+	Seq         int64       `json:"seq"`
 	EventType   string      `json:"event_type"`
 	ActorUserID pgtype.UUID `json:"actor_user_id"`
 	Subject     string      `json:"subject"`

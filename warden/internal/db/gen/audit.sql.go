@@ -26,8 +26,8 @@ SELECT seq, entry_hash FROM audit_log ORDER BY seq DESC LIMIT 1
 `
 
 type AuditChainTipRow struct {
-	Seq       pgtype.Int8 `json:"seq"`
-	EntryHash []byte      `json:"entry_hash"`
+	Seq       int64  `json:"seq"`
+	EntryHash []byte `json:"entry_hash"`
 }
 
 func (q *Queries) AuditChainTip(ctx context.Context) (AuditChainTipRow, error) {
@@ -41,7 +41,7 @@ const auditEntryHashAtSeq = `-- name: AuditEntryHashAtSeq :one
 SELECT entry_hash FROM audit_log WHERE seq = $1
 `
 
-func (q *Queries) AuditEntryHashAtSeq(ctx context.Context, seq pgtype.Int8) ([]byte, error) {
+func (q *Queries) AuditEntryHashAtSeq(ctx context.Context, seq int64) ([]byte, error) {
 	row := q.db.QueryRow(ctx, auditEntryHashAtSeq, seq)
 	var entry_hash []byte
 	err := row.Scan(&entry_hash)
