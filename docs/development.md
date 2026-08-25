@@ -77,6 +77,9 @@ Makefile            Task entrypoints
 - **Composition root:** `warden/internal/app` constructs production dependencies.
   Transport registration accepts already-built services and must not create
   alternate authorizers, audit loggers, resolvers, or lifecycle components.
+- **Public Go API:** `warden/authz` contains the stable authorization contract,
+  scopes, and capability matching helpers. PostgreSQL query construction and
+  concrete executors remain under `warden/internal/authz`.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
 
