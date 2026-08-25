@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -35,13 +36,13 @@ func NewRoleResolver(pool *pgxpool.Pool) *RoleResolver { return &RoleResolver{po
 const holdsRoleGoalsCTE = `
 WITH RECURSIVE
 user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @user
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),
 goals(role_id, object_kind, object_id) AS (
     -- seed
-    SELECT $2::uuid, $3::text, $4::uuid
+    SELECT @roleID::uuid, @objectKind::text, @objectID::uuid
   UNION
     -- one reference to goals; three expansion branches combined before the UNION
     SELECT ng.next_role_id, ng.next_kind, ng.next_object_id
@@ -86,9 +87,9 @@ const holdsSatisfyBinding = `
     JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ( (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
          OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id) )
-      AND ( rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
+      AND ( rb.subject_user_id = @user OR rb.subject_group_id IN (SELECT group_id FROM user_groups) )
     -- a deactivated user holds nothing
-    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`
 
 // holdsSatisfyGrant is the active-JIT-grant satisfaction arm (access membership
 // only — NOT governance). SECURITY: mirror of the held-base grant arm (see
@@ -99,9 +100,9 @@ const holdsSatisfyGrant = `
     FROM goals g
     JOIN access_grants ag ON ag.role_id = g.role_id
       AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
-      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+      AND ag.subject_user_id = @user AND ag.revoked_at IS NULL AND ag.expires_at > now()
     -- a deactivated user holds nothing
-    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`
 
 // HoldsRole reports whether userID holds roleID on the given object (objectKind is
 // "asset" or "folder") — i.e. whether the user holds it via a standing role_binding
@@ -115,7 +116,7 @@ SELECT EXISTS (` + holdsSatisfyBinding + `
   UNION ALL` + holdsSatisfyGrant + `
 )`
 	var ok bool
-	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
+	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"user": userID, "roleID": roleID, "objectKind": objectKind, "objectID": objectID}).Scan(&ok); err != nil {
 		return false, fmt.Errorf("holds role: %w", err)
 	}
 	return ok, nil
@@ -133,7 +134,7 @@ func (r *RoleResolver) HoldsRoleStanding(ctx context.Context, userID, roleID uui
 SELECT EXISTS (` + holdsSatisfyBinding + `
 )`
 	var ok bool
-	if err := r.pool.QueryRow(ctx, sql, userID, roleID, objectKind, objectID).Scan(&ok); err != nil {
+	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"user": userID, "roleID": roleID, "objectKind": objectKind, "objectID": objectID}).Scan(&ok); err != nil {
 		return false, fmt.Errorf("holds role standing: %w", err)
 	}
 	return ok, nil
@@ -183,14 +184,14 @@ func (r *RoleResolver) ExplainRole(ctx context.Context, userID, roleID, assetID 
 	const sql = `
 WITH RECURSIVE
 user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @user
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),
 goals(role_id, object_kind, object_id, path) AS (
-    SELECT $2::uuid, 'asset'::text, $3::uuid,
+    SELECT @roleID::uuid, 'asset'::text, @assetID::uuid,
            jsonb_build_array(jsonb_build_object(
-             'role_id', $2::uuid, 'object_kind', 'asset', 'object_id', $3::uuid, 'via', 'direct'))
+             'role_id', @roleID::uuid, 'object_kind', 'asset', 'object_id', @assetID::uuid, 'via', 'direct'))
   UNION ALL
     SELECT x.role_id, x.object_kind, x.object_id,
            g.path || jsonb_build_object('role_id', x.role_id, 'object_kind', x.object_kind, 'object_id', x.object_id, 'via', x.via)
@@ -225,9 +226,9 @@ FROM (
     JOIN role_bindings rb ON rb.role_id = g.role_id
       AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
         OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
-      AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      AND (rb.subject_user_id = @user OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
     -- a deactivated user holds nothing
-    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)
   UNION ALL
     -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
     -- SECURITY: mirror of the held-base grant arm (see heldCTE). The grant id
@@ -237,16 +238,16 @@ FROM (
     FROM goals g
     JOIN access_grants ag ON ag.role_id = g.role_id
       AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
-      AND ag.subject_user_id = $1 AND ag.revoked_at IS NULL AND ag.expires_at > now()
+      AND ag.subject_user_id = @user AND ag.revoked_at IS NULL AND ag.expires_at > now()
     -- a deactivated user holds nothing
-    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+    WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)
 ) sat
 -- Defensive cap: role_grants is tiny/admin-curated, but bound worst-case result
 -- size. This caps explanation breadth only — holds (len(paths)>0) stays correct
 -- because the cap is ≥ 1 and never empties a non-empty result.
 LIMIT 500`
 
-	rows, err := r.pool.Query(ctx, sql, userID, roleID, assetID)
+	rows, err := r.pool.Query(ctx, sql, pgx.NamedArgs{"user": userID, "roleID": roleID, "assetID": assetID})
 	if err != nil {
 		return false, nil, fmt.Errorf("explain role: %w", err)
 	}

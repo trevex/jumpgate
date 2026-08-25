@@ -25,15 +25,16 @@ import "fmt"
 // access but not governance/request eligibility). That invariant is STRUCTURAL:
 // heldClosureSQL simply omits cteGrantArm when withGrants == false.
 //
-// Parameter placeholders: every fragment binds ONLY the user id ($1). Callers
-// are free to use $2, $3, … in their own trailing SELECT/CTEs.
+// Parameter placeholders: every fragment binds ONLY the user id (@user, a pgx
+// NamedArgs key). Callers are free to add their own @-named params in their own
+// trailing SELECT/CTEs.
 
 // cteUserGroups is the recursive group-membership CTE (group-aware, cycle-safe).
 // It is a single top-level CTE — emit it once per WITH RECURSIVE, before the
 // held closures. Trailing comma so it can be followed by the closure CTEs.
 const cteUserGroups = `
 user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @user
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 ),`
@@ -47,9 +48,9 @@ const cteStandingBase = `
            (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
            COALESCE(rb.scope_asset_id, rb.scope_folder_id)
     FROM role_bindings rb
-    WHERE (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+    WHERE (rb.subject_user_id = @user OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
       -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`
 
 // cteGrantArm is the active-JIT-grant base arm carried ONLY by `held` closures
 // (never by `held_standing`). now() enforces expiry/revocation at query time —
@@ -59,9 +60,9 @@ const cteGrantArm = `
     -- confers access (held) but NOT governance (held_standing omits this arm).
     SELECT g.role_id, 'asset'::text, g.scope_asset_id
     FROM access_grants g
-    WHERE g.subject_user_id = $1 AND g.revoked_at IS NULL AND g.expires_at > now()
+    WHERE g.subject_user_id = @user AND g.revoked_at IS NULL AND g.expires_at > now()
       -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`
 
 // cteRewriteArms is the three-arm role_grants rewrite LATERAL block (same_object
 // + parent→child-folders + parent→child-assets). PostgreSQL permits the
@@ -123,13 +124,13 @@ func heldClosureSQL(name string, withGrants bool) string {
 // heldCTEPrefix is the shared `WITH RECURSIVE user_groups(...), held(...)` prefix
 // used by sql_authorizer.go's Active-tier queries. It composes the user_groups
 // CTE and the grant-augmented `held` closure; callers append their own trailing
-// SELECT (which may reference $2, $3, …).
+// SELECT (which may reference their own @-named params).
 var heldCTEPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
 	heldClosureSQL("held", true)
 
 // StandingHeldClosurePrefix returns the `WITH RECURSIVE user_groups(...),
 // held_standing(...)` prefix: the caller's transitive group closure plus the
-// STANDING-ONLY forward held closure (no JIT grants), binding $1 = user. It is
+// STANDING-ONLY forward held closure (no JIT grants), binding @user. It is
 // exported so other packages can resolve standing governance eligibility over a
 // SET of objects in one query — the caller's groups feed explicit-subject checks
 // (request_policy_subjects) and held_standing(role_id, object_kind, object_id) feeds

@@ -1,5 +1,6 @@
 # Superpowers workflow artifacts (specs/plans) — temporal, not project docs
 docs/superpowers/
+AGENTS.md
 
 # direnv / nix
 .direnv/

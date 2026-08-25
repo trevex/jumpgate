@@ -486,7 +486,7 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 // ordered created_at DESC, id, matching the paged SQL page order.
 //
 // RESTRICT CONTRACT: pass nil for "all". A nil []uuid.UUID encodes as SQL NULL (the
-// `$2 IS NULL` all-arm); an EMPTY non-nil slice encodes as `'{}'` → `id = ANY('{}')`
+// `@restrict IS NULL` all-arm); an EMPTY non-nil slice encodes as `'{}'` → `id = ANY('{}')`
 // → zero rows. Callers must never pass []uuid.UUID{} to mean "all" (the paged callers
 // guard this with a len(rows)==0 early return before building the id slice).
 // pendingRow is approvablePending's final SELECT, scanned by column NAME
@@ -509,8 +509,8 @@ func (s *Service) approvablePending(ctx context.Context, caller uuid.UUID, restr
 pending AS (
     SELECT id, requester_user_id, role_id, asset_id, reason, required_approvals, status, created_at, resolved_at
     FROM access_requests
-    WHERE status = 'pending' AND requester_user_id <> $1
-      AND ($2::uuid[] IS NULL OR id = ANY($2))
+    WHERE status = 'pending' AND requester_user_id <> @caller
+      AND (@restrict::uuid[] IS NULL OR id = ANY(@restrict))
 ),
 pa AS (SELECT DISTINCT role_id, asset_id FROM pending),
 -- effective policy per pending (role, asset), via the EffectiveRule precedence:
@@ -546,12 +546,12 @@ SELECT p.id, p.requester_user_id, p.role_id, p.asset_id, p.reason,
 FROM pending p
 JOIN eff e ON e.role_id = p.role_id AND e.asset_id = p.asset_id
 LEFT JOIN approve_counts c ON c.request_id = p.id
-WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @caller AND u.deactivated_at IS NULL)
   AND (
     EXISTS (
         SELECT 1 FROM request_policy_subjects sub
         WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
-          AND (sub.subject_user_id = $1 OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
+          AND (sub.subject_user_id = @caller OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
     )
     OR (
         e.approver_role_id IS NOT NULL
@@ -563,7 +563,8 @@ WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL
   )
 ORDER BY p.created_at DESC, p.id`
 
-	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body, caller, restrict)
+	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body,
+		pgx.NamedArgs{"user": caller, "caller": caller, "restrict": restrict})
 	if err != nil {
 		return nil, fmt.Errorf("approvable pending: %w", err)
 	}
@@ -1124,7 +1125,7 @@ func (s *Service) reviewableGrants(ctx context.Context, caller uuid.UUID, restri
 grants AS (
     SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
     FROM access_grants
-    WHERE ($2::uuid[] IS NULL OR id = ANY($2))
+    WHERE (@restrict::uuid[] IS NULL OR id = ANY(@restrict))
 ),
 ga AS (SELECT DISTINCT role_id, scope_asset_id FROM grants),
 ancestors(role_id, asset_id, folder_id, depth) AS (
@@ -1150,15 +1151,15 @@ eff AS (
 SELECT g.id, g.role_id, g.scope_asset_id, g.subject_user_id, g.granted_at, g.expires_at, g.revoked_at, g.revoked_reason
 FROM grants g
 LEFT JOIN eff e ON e.role_id = g.role_id AND e.asset_id = g.scope_asset_id
-WHERE g.subject_user_id = $1
+WHERE g.subject_user_id = @caller
    OR (
-       EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+       EXISTS (SELECT 1 FROM users u WHERE u.id = @caller AND u.deactivated_at IS NULL)
        AND e.policy_id IS NOT NULL
        AND (
            EXISTS (
                SELECT 1 FROM request_policy_subjects sub
                WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
-                 AND (sub.subject_user_id = $1 OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
+                 AND (sub.subject_user_id = @caller OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
            )
            OR (
                e.approver_role_id IS NOT NULL
@@ -1171,7 +1172,8 @@ WHERE g.subject_user_id = $1
    )
 ORDER BY g.granted_at DESC, g.id`
 
-	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body, caller, restrict)
+	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body,
+		pgx.NamedArgs{"user": caller, "caller": caller, "restrict": restrict})
 	if err != nil {
 		return nil, fmt.Errorf("reviewable grants: %w", err)
 	}

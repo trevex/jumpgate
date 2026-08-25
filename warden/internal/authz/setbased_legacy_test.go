@@ -356,8 +356,8 @@ func (s *sqlAuthorizer) visibleFoldersUnderLegacy(ctx context.Context, userID, p
 	mgmtIDs := mapKeys(mgmt)
 
 	// Pass 2 — one ltree query.
-	sql, args := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
-	rows, err := s.pool.Query(ctx, sql, args...)
+	sql, na := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
+	rows, err := s.pool.Query(ctx, sql, na)
 	if err != nil {
 		return nil, fmt.Errorf("visible folders (ltree): %w", err)
 	}

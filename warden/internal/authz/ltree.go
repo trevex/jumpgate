@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // folderPathIDs returns the ltree path text of one folder. Propagates
 // pgx.ErrNoRows for a missing folder (callers decide how to treat "no folder").
 func (s *sqlAuthorizer) folderPathIDs(ctx context.Context, id uuid.UUID) (string, error) {
 	var p string
-	if err := s.pool.QueryRow(ctx, `SELECT path_ids::text FROM folders WHERE id = $1`, id).Scan(&p); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT path_ids::text FROM folders WHERE id = @id`, pgx.NamedArgs{"id": id}).Scan(&p); err != nil {
 		return "", err
 	}
 	return p, nil
@@ -27,7 +28,7 @@ func (s *sqlAuthorizer) folderSubtreeIDs(ctx context.Context, roots []uuid.UUID)
 	}
 	rows, err := s.pool.Query(ctx, `
 SELECT f.id FROM folders f
-WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY($1::uuid[]))`, roots)
+WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY(@roots::uuid[]))`, pgx.NamedArgs{"roots": roots})
 	if err != nil {
 		return nil, fmt.Errorf("folder subtree (ltree): %w", err)
 	}
@@ -42,7 +43,7 @@ WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY($1::uuid[])
 func (s *sqlAuthorizer) folderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := s.pool.Query(ctx, `
 SELECT f.id FROM folders f
-WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = $1)`, id)
+WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = @id)`, pgx.NamedArgs{"id": id})
 	if err != nil {
 		return nil, fmt.Errorf("folder ancestors (ltree): %w", err)
 	}

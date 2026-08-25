@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
-// requestableRolesCTE computes, for a user ($1) and asset ($2), the set of roles
-// that are REQUESTABLE on that asset under the request_policy model.
+// requestableRolesCTE computes, for a user (@user) and asset (@assetID), the set
+// of roles that are REQUESTABLE on that asset under the request_policy model.
 //
 // A role R is requestable on asset A iff:
 //  1. an effective request_policy for (R, A) resolves — most-specific by scope:
@@ -48,15 +49,15 @@ import (
 var requestableRolesCTE = requestableClosuresPrefix + `,
 -- roles the user already holds Active on asset A (grants count → active-exclusion).
 held_on_asset(role_id) AS (
-    SELECT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2
+    SELECT role_id FROM held WHERE object_kind = 'asset' AND object_id = @assetID
 ),
 -- roles the user holds STANDING on asset A (grants excluded → requester predicate).
 held_standing_on_asset(role_id) AS (
-    SELECT role_id FROM held_standing WHERE object_kind = 'asset' AND object_id = $2
+    SELECT role_id FROM held_standing WHERE object_kind = 'asset' AND object_id = @assetID
 ),
 -- ancestor folders of asset A (self-folder at depth 0, walking parent links).
 ancestors(folder_id, depth) AS (
-    SELECT folder_id, 0 FROM assets WHERE id = $2
+    SELECT folder_id, 0 FROM assets WHERE id = @assetID
   UNION ALL
     SELECT f.parent_id, a.depth + 1 FROM folders f JOIN ancestors a ON f.id = a.folder_id WHERE f.parent_id IS NOT NULL
 ),
@@ -65,7 +66,7 @@ ancestors(folder_id, depth) AS (
 -- role-default scope NULL (1000000).
 candidates(role_id, policy_id, requester_role_id, spec) AS (
     SELECT role_id, id, requester_role_id, 0
-    FROM request_policies WHERE scope_asset_id = $2
+    FROM request_policies WHERE scope_asset_id = @assetID
   UNION ALL
     SELECT rp.role_id, rp.id, rp.requester_role_id, a.depth + 1
     FROM request_policies rp JOIN ancestors a ON rp.scope_folder_id = a.folder_id
@@ -91,16 +92,16 @@ WHERE
         SELECT 1 FROM request_policy_subjects rps
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
-          AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          AND (rps.subject_user_id = @user OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
           -- a deactivated user counts for nothing
-          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).
   AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.role_id = e.role_id)`
 
 // visibleRequestableCTE is the all-assets analogue of requestableRolesCTE: for a
-// user ($1) it returns every (asset_id, role_id) pair that is requestable (and
+// user (@user) it returns every (asset_id, role_id) pair that is requestable (and
 // not already active) across ALL assets. The eligibility and active-exclusion
 // semantics are identical; the ancestor/candidate/effective computation is
 // generalized per-asset (keyed on the asset id) rather than pinned to one asset.
@@ -155,9 +156,9 @@ WHERE
         SELECT 1 FROM request_policy_subjects rps
         WHERE rps.policy_id = e.policy_id
           AND rps.kind = 'requester'
-          AND (rps.subject_user_id = $1 OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
+          AND (rps.subject_user_id = @user OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
           -- a deactivated user counts for nothing
-          AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)
     )
   )
   -- active excludes requestable (grants count — a granted-Active role is excluded).
@@ -166,7 +167,7 @@ WHERE
 // requestableRoles returns the roles requestable (but not already active) for the
 // user on the asset, per the request_policy eligibility model above.
 func (s *sqlAuthorizer) requestableRoles(ctx context.Context, userID, assetID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.pool.Query(ctx, requestableRolesCTE, userID, assetID)
+	rows, err := s.pool.Query(ctx, requestableRolesCTE, pgx.NamedArgs{"user": userID, "assetID": assetID})
 	if err != nil {
 		return nil, fmt.Errorf("requestable roles: %w", err)
 	}
@@ -194,7 +195,7 @@ type requestableAsset struct {
 // visibleRequestable returns every (asset, role) requestable pair for the user
 // across all assets, per the request_policy eligibility model above.
 func (s *sqlAuthorizer) visibleRequestable(ctx context.Context, userID uuid.UUID) ([]requestableAsset, error) {
-	rows, err := s.pool.Query(ctx, visibleRequestableCTE, userID)
+	rows, err := s.pool.Query(ctx, visibleRequestableCTE, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("visible requestable: %w", err)
 	}

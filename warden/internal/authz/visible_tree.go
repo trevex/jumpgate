@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // This file implements the two "visible under a parent" queries that back the
@@ -40,7 +41,7 @@ func (s *sqlAuthorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([
 		arg = &parent
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM $1 ORDER BY name, id`, arg)
+SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM @parent ORDER BY name, id`, pgx.NamedArgs{"parent": arg})
 	if err != nil {
 		return nil, fmt.Errorf("child folders: %w", err)
 	}
@@ -58,11 +59,11 @@ func (s *sqlAuthorizer) folderSubtreeIDsRecursive(ctx context.Context, roots []u
 	}
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE sub AS (
-    SELECT id FROM folders WHERE id = ANY($1::uuid[])
+    SELECT id FROM folders WHERE id = ANY(@roots::uuid[])
   UNION
     SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
 )
-SELECT id FROM sub`, roots)
+SELECT id FROM sub`, pgx.NamedArgs{"roots": roots})
 	if err != nil {
 		return nil, fmt.Errorf("folder subtree: %w", err)
 	}
@@ -90,7 +91,7 @@ func (s *sqlAuthorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID
 		return map[uuid.UUID][]string{}, nil
 	}
 	rows, err := s.pool.Query(ctx, `
-SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY($1::uuid[]) ORDER BY login`, assetIDs)
+SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY(@assetIDs::uuid[]) ORDER BY login`, pgx.NamedArgs{"assetIDs": assetIDs})
 	if err != nil {
 		return nil, fmt.Errorf("asset logins: %w", err)
 	}
@@ -169,7 +170,7 @@ func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID
 //
 // An asset (whose folder is in scope under `parent`) is visible iff ANY of:
 //
-//   - ACCESS:     a.id ∈ VisibleAssets(user) (a.id = ANY($5)); OR
+//   - ACCESS:     a.id ∈ VisibleAssets(user) (a.id = ANY(@accessIDs)); OR
 //   - MANAGEMENT: the user holds "catalog:asset:read" on the asset's folder scope —
 //     GLOBAL (global_mgmt.ok) covers every asset, else the asset's folder is a
 //     descendant-or-self of a folder where the cap is held (mgmt_anchor_folders,
@@ -190,7 +191,7 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 	}
 
 	// ACCESS set: VisibleAssets (held asset-objects ∪ requestable), one small
-	// constant closure pair, collapsed into a uuid[] param ($5).
+	// constant closure pair, collapsed into a uuid[] param (@accessIDs).
 	accessible, err := s.accessibleAssetSet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -200,21 +201,20 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 		accessIDs = append(accessIDs, id)
 	}
 
-	// $1 user (bound by the closure prefix); $2/$3/$4 the catalog:asset:read request
-	// columns (the mgmtCascadeCTEs fragment); $5 the access-id set. The container
-	// level predicate appends its parent bind from $6.
+	// @user (bound by the closure prefix); @capScope/@capAction/@capQual the
+	// catalog:asset:read request columns (the mgmtCascadeCTEs fragment); @accessIDs
+	// the access-id set. The container level predicate binds @parent when present.
 	reqScope, reqAction, reqQual := NormalizeCap("catalog:asset:read")
-	args := []any{userID, reqScope, reqAction, reqQual, accessIDs}
+	na := pgx.NamedArgs{"user": userID, "capScope": reqScope, "capAction": reqAction, "capQual": reqQual, "accessIDs": accessIDs}
 	level := "TRUE"
 	if parent != uuid.Nil {
+		na["parent"] = parent
 		if cascade {
 			// Asset's folder is a descendant-or-self of parent (whole subtree).
-			args = append(args, parent)
-			level = "a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $6))"
+			level = "a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = @parent))"
 		} else {
 			// Asset directly in parent.
-			args = append(args, parent)
-			level = "a.folder_id = $6"
+			level = "a.folder_id = @parent"
 		}
 	}
 
@@ -224,7 +224,7 @@ FROM assets a
 WHERE (` + level + `)
   AND (
         -- ACCESS axis: pre-computed held asset-objects ∪ requestable.
-        a.id = ANY($5::uuid[])
+        a.id = ANY(@accessIDs::uuid[])
         -- MANAGEMENT axis, global arm: catalog:asset:read held globally.
      OR (SELECT ok FROM global_mgmt)
         -- MANAGEMENT axis, folder-cascade arm: the asset's folder is at/under a
@@ -238,7 +238,7 @@ WHERE (` + level + `)
      ` + connectArmExists + `
       )
 ORDER BY a.id`
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, na)
 	if err != nil {
 		return nil, fmt.Errorf("visible assets under: %w", err)
 	}
@@ -290,8 +290,8 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 	//   cascade=true  -> the subtree under parent (root => whole tree).
 	// A folder is visible if it is an ancestor-or-self of an anchor (path reveal)
 	// OR inside a folder the user manages (cascade down). governed = the latter.
-	sql, args := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
-	rows, err := s.pool.Query(ctx, sql, args...)
+	sql, na := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
+	rows, err := s.pool.Query(ctx, sql, na)
 	if err != nil {
 		return nil, fmt.Errorf("visible folders (ltree): %w", err)
 	}
@@ -322,7 +322,7 @@ func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID 
 	if global.Allows("catalog:folder:read") {
 		var exists bool
 		if err := s.pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM folders WHERE id = $1)`, folderID).Scan(&exists); err != nil {
+			`SELECT EXISTS(SELECT 1 FROM folders WHERE id = @folderID)`, pgx.NamedArgs{"folderID": folderID}).Scan(&exists); err != nil {
 			return false, fmt.Errorf("folder exists: %w", err)
 		}
 		return exists, nil
@@ -343,12 +343,12 @@ func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID 
 	// inside a folder the user manages (cascade down) — mirrors visibleFoldersQuery.
 	var vis bool
 	err = s.pool.QueryRow(ctx, `
-WITH f  AS (SELECT path_ids FROM folders WHERE id = $1),
-     ap AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[])),
-     mp AS (SELECT path_ids FROM folders WHERE id = ANY($3::uuid[]))
+WITH f  AS (SELECT path_ids FROM folders WHERE id = @folderID),
+     ap AS (SELECT path_ids FROM folders WHERE id = ANY(@anchors::uuid[])),
+     mp AS (SELECT path_ids FROM folders WHERE id = ANY(@mgmtIDs::uuid[]))
 SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
     OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids)`,
-		folderID, anchors, mgmtIDs).Scan(&vis)
+		pgx.NamedArgs{"folderID": folderID, "anchors": anchors, "mgmtIDs": mgmtIDs}).Scan(&vis)
 	if err != nil {
 		return false, fmt.Errorf("folder path visible: %w", err)
 	}
@@ -363,7 +363,7 @@ SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
 // VisibleAssets active tier) the legacy anchor path issued.
 func (s *sqlAuthorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT object_kind, object_id, role_id FROM held`, userID)
+SELECT DISTINCT object_kind, object_id, role_id FROM held`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, nil, fmt.Errorf("held roles and assets: %w", err)
 	}
@@ -465,8 +465,8 @@ func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (an
 	// predicate ((col = literal OR col = '*')) is the same one proven ≡ Go CapMatch by
 	// TestSQLCapMatchMatchesGo.
 	//
-	// $1 user (bound by the closure prefix); $2 role-access ids; $3 group-access ids;
-	// $4 asset-access ids.
+	// @user (bound by the closure prefix); @roleAccess role-access ids; @groupAccess
+	// group-access ids; @assetAccess asset-access ids.
 	anchorFolders, err := s.anchorHomeFolders(ctx, userID, mapKeys(roleAccess), mapKeys(member), mapKeys(assetAccess))
 	if err != nil {
 		return nil, nil, err
@@ -500,8 +500,8 @@ func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (an
 // deactivated users are excluded by those closures and by the ACCESS closures that
 // produced the id params.
 //
-//   - $1 user (bound by the closure prefix);
-//   - $2 role-access ids; $3 group-access ids; $4 asset-access ids.
+//   - @user (bound by the closure prefix);
+//   - @roleAccess role-access ids; @groupAccess group-access ids; @assetAccess asset-access ids.
 func (s *sqlAuthorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
 	query := heldPlusGlobalHeldPrefix + `,
 -- held FOLDER objects carrying their capability columns (the mgmt-cascade anchor
@@ -557,7 +557,7 @@ mgmt_asset_folders(folder_id) AS (
 SELECT DISTINCT r.folder_id AS folder_id
 FROM roles r
 JOIN folders nf ON nf.id = r.folder_id
-WHERE r.id = ANY($2::uuid[])
+WHERE r.id = ANY(@roleAccess::uuid[])
    OR EXISTS (SELECT 1 FROM global_caps c
               WHERE (c.scope = 'access' OR c.scope = '*')
                 AND (c.action = 'role' OR c.action = '*')
@@ -569,7 +569,7 @@ UNION
 SELECT DISTINCT g.folder_id AS folder_id
 FROM groups g
 JOIN folders nf ON nf.id = g.folder_id
-WHERE g.id = ANY($3::uuid[])
+WHERE g.id = ANY(@groupAccess::uuid[])
    OR EXISTS (SELECT 1 FROM global_caps c
               WHERE (c.scope = 'identity' OR c.scope = '*')
                 AND (c.action = 'group' OR c.action = '*')
@@ -584,14 +584,14 @@ UNION
 -- matching EntitledLogins on raw CapabilitiesOnScope, exactly as VisibleAssetsUnder.
 SELECT DISTINCT a.folder_id AS folder_id
 FROM assets a
-WHERE a.id = ANY($4::uuid[])
+WHERE a.id = ANY(@assetAccess::uuid[])
    OR EXISTS (SELECT 1 FROM global_caps c
               WHERE (c.scope = 'catalog' OR c.scope = '*')
                 AND (c.action = 'asset' OR c.action = '*')
                 AND (c.qualifier = 'read' OR c.qualifier = '*'))
    OR a.folder_id IN (SELECT folder_id FROM mgmt_asset_folders)
    ` + connectArmExists
-	rows, err := s.pool.Query(ctx, query, userID, roleAccess, groupAccess, assetAccess)
+	rows, err := s.pool.Query(ctx, query, pgx.NamedArgs{"user": userID, "roleAccess": roleAccess, "groupAccess": groupAccess, "assetAccess": assetAccess})
 	if err != nil {
 		return nil, fmt.Errorf("anchor home folders: %w", err)
 	}
@@ -606,9 +606,9 @@ WHERE a.id = ANY($4::uuid[])
 // (parent, cascade) case exactly as childCandidateFolderIDs computes the browse
 // level; a nil `parent` is bound as SQL NULL via `parent_id IS NOT DISTINCT FROM`
 // (matching childFolderIDs) or, for cascade, means the whole tree (no predicate).
-func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, []any) {
-	// $1 anchors, $2 mgmtIDs; $3 (when present) is the parent binding.
-	args := []any{anchors, mgmtIDs}
+func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, pgx.NamedArgs) {
+	// @anchors, @mgmtIDs; @parent (when present) is the parent binding.
+	na := pgx.NamedArgs{"anchors": anchors, "mgmtIDs": mgmtIDs}
 	var level string
 	switch {
 	case cascade && parent == uuid.Nil:
@@ -616,20 +616,20 @@ func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anch
 		level = "TRUE"
 	case cascade:
 		// Subtree strictly under parent (children only, parent excluded).
-		args = append(args, parent)
-		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $3) AND f.id <> $3"
+		na["parent"] = parent
+		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = @parent) AND f.id <> @parent"
 	case parent == uuid.Nil:
 		// Direct children of the root (parent_id IS NULL), bound NULL-safe.
-		args = append(args, (*uuid.UUID)(nil))
-		level = "f.parent_id IS NOT DISTINCT FROM $3"
+		na["parent"] = (*uuid.UUID)(nil)
+		level = "f.parent_id IS NOT DISTINCT FROM @parent"
 	default:
 		// Direct children of parent.
-		args = append(args, parent)
-		level = "f.parent_id IS NOT DISTINCT FROM $3"
+		na["parent"] = parent
+		level = "f.parent_id IS NOT DISTINCT FROM @parent"
 	}
 	sql := `
-WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY($1::uuid[])),
-     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[]))
+WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY(@anchors::uuid[])),
+     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY(@mgmtIDs::uuid[]))
 SELECT f.id,
        EXISTS (SELECT 1 FROM mgmt_paths m WHERE f.path_ids <@ m.path_ids) AS governed
 FROM folders f
@@ -637,7 +637,7 @@ WHERE ` + level + `
   AND ( EXISTS (SELECT 1 FROM anchor_paths a WHERE f.path_ids @> a.path_ids)
      OR EXISTS (SELECT 1 FROM mgmt_paths  m WHERE f.path_ids <@ m.path_ids) )
 ORDER BY f.name, f.id`
-	return sql, args
+	return sql, na
 }
 
 // allFoldersAtLevel returns every folder at the browse level under `parent`
@@ -732,7 +732,7 @@ type nodeFolder struct {
 // object.
 func (s *sqlAuthorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT role_id FROM held`, userID)
+SELECT DISTINCT role_id FROM held`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("held role ids: %w", err)
 	}
@@ -761,13 +761,13 @@ func (s *sqlAuthorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID)
 	err := s.pool.QueryRow(ctx, `
 WITH RECURSIVE
 user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @user
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 )
 SELECT EXISTS(
-    SELECT 1 FROM user_groups WHERE group_id = $2
-) AND EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`, userID, groupID).Scan(&ok)
+    SELECT 1 FROM user_groups WHERE group_id = @group
+) AND EXISTS(SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`, pgx.NamedArgs{"user": userID, "group": groupID}).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("is member: %w", err)
 	}
@@ -785,12 +785,12 @@ func (s *sqlAuthorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (m
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE
 user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = $1
+    SELECT group_id FROM group_memberships WHERE member_user_id = @user
   UNION
     SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
 )
 SELECT group_id FROM user_groups
-WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)`, userID)
+WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("member group ids: %w", err)
 	}
@@ -819,35 +819,32 @@ func scanUUIDSet(rows interface {
 // whose folder column is `folder_id`) that selects the nodes homed under `parent`
 // per the (parent, cascade) browse rules — the same four cases nodesHomedUnder
 // implements, re-expressed inline so the candidate selection folds into the
-// set-based visibility query (no separate round-trip). It appends any needed bind
-// value to `args` (starting from placeholder index `next`) and returns the updated
-// args plus the placeholder index the caller's own binds continue from.
+// set-based visibility query (no separate round-trip). When the predicate needs
+// the parent bind it sets the `@parent` key on `na`.
 //
 //   - (uuid.Nil, !cascade): folder-less nodes only  → n.folder_id IS NULL.
 //   - (uuid.Nil, cascade):  every node              → TRUE.
-//   - (parent,   !cascade): homed directly in parent → n.folder_id = $k.
+//   - (parent,   !cascade): homed directly in parent → n.folder_id = @parent.
 //   - (parent,   cascade):  homed anywhere in the subtree rooted at parent → the
 //     node's home folder is a descendant-or-self of parent (ltree <@, GiST-indexed).
-func homedLevelPredicate(parent uuid.UUID, cascade bool, args []any, next int) (string, []any, int) {
+func homedLevelPredicate(parent uuid.UUID, cascade bool, na pgx.NamedArgs) string {
 	switch {
 	case parent == uuid.Nil && !cascade:
-		return "n.folder_id IS NULL", args, next
+		return "n.folder_id IS NULL"
 	case parent == uuid.Nil && cascade:
-		return "TRUE", args, next
+		return "TRUE"
 	case !cascade:
-		args = append(args, parent)
-		return fmt.Sprintf("n.folder_id = $%d", next), args, next + 1
+		na["parent"] = parent
+		return "n.folder_id = @parent"
 	default: // parent set, cascade: home folder in parent's subtree
-		args = append(args, parent)
-		pred := fmt.Sprintf(
-			"n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $%d))", next)
-		return pred, args, next + 1
+		na["parent"] = parent
+		return "n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = @parent))"
 	}
 }
 
 // mgmtCascadeCTEs is the SHARED management-cascade fragment appended to
-// heldPlusGlobalHeldPrefix (which already binds $2/$3/$4 to a mgmtCap's request
-// columns and $1 to the user via its closures). It defines two CTEs that decide,
+// heldPlusGlobalHeldPrefix (which already binds @capScope/@capAction/@capQual to a
+// mgmtCap's request columns and @user via its closures). It defines two CTEs that decide,
 // set-based, whether a folder-homed node is management-visible for that cap — and
 // is reused VERBATIM by both visibleHomedSetBased (roles/groups) and
 // VisibleAssetsUnder (an asset's NOT-NULL folder is the node folder). Keeping the
@@ -860,7 +857,7 @@ func homedLevelPredicate(parent uuid.UUID, cascade bool, args []any, next int) (
 //   - global_mgmt(ok): does the user hold mgmtCap GLOBALLY? (global_held ⋈
 //     column-match) — covers folder-less nodes and short-circuits to "manage all".
 //
-// The three-column glob predicate ((col = $n OR col = '*')) is the same one proven
+// The three-column glob predicate ((col = @cap… OR col = '*')) is the same one proven
 // ≡ Go CapMatch by TestSQLCapMatchMatchesGo. Leads with `,` so it follows the
 // closure prefix; callers append their own `SELECT`.
 const mgmtCascadeCTEs = `,
@@ -870,17 +867,17 @@ mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = $2 OR rc.scope = '*')
-      AND (rc.action = $3 OR rc.action = '*')
-      AND (rc.qualifier = $4 OR rc.qualifier = '*')
+      AND (rc.scope = @capScope OR rc.scope = '*')
+      AND (rc.action = @capAction OR rc.action = '*')
+      AND (rc.qualifier = @capQual OR rc.qualifier = '*')
 ),
 -- does the user hold mgmtCap GLOBALLY? (covers folder-less nodes; short-circuit arm)
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = $2 OR rc.scope = '*')
-          AND (rc.action = $3 OR rc.action = '*')
-          AND (rc.qualifier = $4 OR rc.qualifier = '*')
+        WHERE (rc.scope = @capScope OR rc.scope = '*')
+          AND (rc.action = @capAction OR rc.action = '*')
+          AND (rc.qualifier = @capQual OR rc.qualifier = '*')
     ) AS ok
 ),
 -- folders management-visible under mgmtCap, computed ONCE: every folder that is a
@@ -942,8 +939,8 @@ const connectArmExists = `OR EXISTS (
 //
 // `table` is a TRUSTED literal ("roles"/"groups"); `mgmtCap` is the management read
 // capability for that kind ("access:role:read" / "identity:group:read"), decomposed
-// with NormalizeCap into the ($1s/$1a/$1q) request columns and matched against
-// role_capabilities with the SAME three-column glob predicate proven ≡ Go CapMatch
+// with NormalizeCap into the (@capScope/@capAction/@capQual) request columns and
+// matched against role_capabilities with the SAME three-column glob predicate proven ≡ Go CapMatch
 // by TestSQLCapMatchMatchesGo. `accessIDs` is the pre-computed ACCESS set for the
 // kind (roles: held ∪ requestable; groups: transitive membership) — passed as a
 // uuid[] so the closures that produce it stay one small constant query each rather
@@ -975,10 +972,11 @@ const connectArmExists = `OR EXISTS (
 // closures (and by the accessIDs closures), so no extra guard is needed here.
 func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(mgmtCap)
-	// $1 user (bound by the closure prefix), $2/$3/$4 the mgmtCap request columns,
-	// $5 the access-id set; the level predicate appends its parent bind from $6.
-	args := []any{userID, reqScope, reqAction, reqQual, accessIDs}
-	level, args, _ := homedLevelPredicate(parent, cascade, args, 6)
+	// @user (bound by the closure prefix), @capScope/@capAction/@capQual the mgmtCap
+	// request columns, @accessIDs the access-id set; the level predicate binds
+	// @parent when present.
+	na := pgx.NamedArgs{"user": userID, "capScope": reqScope, "capAction": reqAction, "capQual": reqQual, "accessIDs": accessIDs}
+	level := homedLevelPredicate(parent, cascade, na)
 
 	query := heldPlusGlobalHeldPrefix + mgmtCascadeCTEs + `
 SELECT n.id, n.folder_id
@@ -986,7 +984,7 @@ FROM ` + table + ` n
 WHERE (` + level + `)
   AND (
         -- ACCESS axis: pre-computed held ∪ requestable (roles) / membership (groups).
-        n.id = ANY($5::uuid[])
+        n.id = ANY(@accessIDs::uuid[])
         -- MANAGEMENT axis, global arm: mgmtCap held globally ⇒ manage every node.
      OR (SELECT ok FROM global_mgmt)
         -- MANAGEMENT axis, folder-cascade arm: node's home folder is at/under a
@@ -994,7 +992,7 @@ WHERE (` + level + `)
      OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
       )
 ORDER BY n.id`
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, na)
 	if err != nil {
 		return nil, fmt.Errorf("visible homed (%s): %w", table, err)
 	}
@@ -1123,7 +1121,7 @@ func (s *sqlAuthorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) 
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT h.object_id, rc.scope, rc.action, rc.qualifier
 FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-WHERE h.object_kind = 'folder'`, userID)
+WHERE h.object_kind = 'folder'`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("mgmt scope folders: %w", err)
 	}

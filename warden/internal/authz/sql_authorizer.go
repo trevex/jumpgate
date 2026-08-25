@@ -20,7 +20,7 @@ func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
 }
 
 // heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
-// a user ($1), every (role, object) the user holds via direct standing bindings,
+// a user (@user), every (role, object) the user holds via direct standing bindings,
 // active JIT access_grants, and the explicit role_grants rewrite graph
 // (same_object + parent). It is group-aware and cycle-safe.
 //
@@ -58,7 +58,7 @@ func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]
 
 	// Active tier: assets held via the explicit role-rewrite graph (standing).
 	activeRows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, userID)
+SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("visible assets (active): %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *sqlAuthorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.U
 
 	// Active: roles held on the asset via the explicit role-rewrite graph.
 	activeRows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = $2`, userID, assetID)
+SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = @assetID`, pgx.NamedArgs{"user": userID, "assetID": assetID})
 	if err != nil {
 		return AssetRoles{}, fmt.Errorf("roles on asset (active): %w", err)
 	}
@@ -153,7 +153,7 @@ func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, object
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT rc.scope, rc.action, rc.qualifier
 FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-WHERE h.object_kind = $3 AND h.object_id = $2`, userID, objectID, kind)
+WHERE h.object_kind = @objectKind AND h.object_id = @objectID`, pgx.NamedArgs{"user": userID, "objectID": objectID, "objectKind": kind})
 	if err != nil {
 		return nil, fmt.Errorf("capabilities on object: %w", err)
 	}
@@ -188,7 +188,8 @@ func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 // graph on that exact asset object), and the glob semantics ('*' / trailing '**')
 // are pushed into the three-column predicate proven equivalent to Go CapMatch by
 // TestSQLCapMatchMatchesGo. NormalizeCap decomposes the requested capability into
-// the ($3,$4,$5) request columns exactly as the differential-test harness does.
+// the (@capScope,@capAction,@capQual) request columns exactly as the
+// differential-test harness does.
 //
 // This deliberately does NOT fold in the folder-management cascade or global
 // scopeless bindings — that is CapabilitiesOnScope's job (the management plane).
@@ -203,11 +204,11 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 SELECT EXISTS (
     SELECT 1
     FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'asset' AND h.object_id = $2
-      AND (rc.scope = $3 OR rc.scope = '*')
-      AND (rc.action = $4 OR rc.action = '*')
-      AND (rc.qualifier = $5 OR rc.qualifier = '*')
-)`, userID, assetID, reqScope, reqAction, reqQual).Scan(&ok)
+    WHERE h.object_kind = 'asset' AND h.object_id = @assetID
+      AND (rc.scope = @capScope OR rc.scope = '*')
+      AND (rc.action = @capAction OR rc.action = '*')
+      AND (rc.qualifier = @capQual OR rc.qualifier = '*')
+)`, pgx.NamedArgs{"user": userID, "assetID": assetID, "capScope": reqScope, "capAction": reqAction, "capQual": reqQual}).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check: %w", err)
 	}
@@ -257,19 +258,19 @@ func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUI
     WHERE h.object_kind = 'folder'
       AND h.object_id IN (
           SELECT f.id FROM folders f
-          WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = $2)
+          WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = @scopeID)
       )`, scope.ID)
 	case ScopeAsset:
 		return s.scopeCapabilities(ctx, userID, `
     SELECT h.role_id FROM held h
-    WHERE (h.object_kind = 'asset' AND h.object_id = $2)
+    WHERE (h.object_kind = 'asset' AND h.object_id = @scopeID)
        OR (h.object_kind = 'folder'
            AND h.object_id IN (
                SELECT f.id FROM folders f
                WHERE f.path_ids @> (
                    SELECT af.path_ids FROM folders af
                    JOIN assets a ON a.folder_id = af.id
-                   WHERE a.id = $2
+                   WHERE a.id = @scopeID
                )
            ))`, scope.ID)
 	default:
@@ -280,7 +281,7 @@ func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUI
 // scopeCapabilities runs the single set-based CapabilitiesOnScope query for a
 // folder/asset scope: the DISTINCT capability patterns of every role in
 // global_held UNION the held roles selected by objectSelect (which references the
-// scoped object id as $2). Shared by the ScopeFolder / ScopeAsset arms above so
+// scoped object id as @scopeID). Shared by the ScopeFolder / ScopeAsset arms above so
 // the global-caps-always-apply union and the combined closure prefix live in one
 // place; only the in-scope-object predicate differs. Existence-hiding is
 // upheld here: for a nonexistent object the objectSelect matches nothing, so the
@@ -292,7 +293,7 @@ FROM role_capabilities rc
 WHERE rc.role_id IN (
     SELECT role_id FROM global_held
   UNION`+objectSelect+`
-)`, userID, objectID)
+)`, pgx.NamedArgs{"user": userID, "scopeID": objectID})
 	if err != nil {
 		return nil, fmt.Errorf("capabilities on scope: %w", err)
 	}
@@ -304,14 +305,15 @@ WHERE rc.role_id IN (
 // ANY of folderIDs via the held (standing + active-grant) closure. Callers pass
 // the full folder ancestor chain (FolderAncestorsAndSelf) so a capability held on
 // an ancestor folder cascades down to the scoped object. heldCTE binds the user
-// to $1; the folder-id array is $2 (heldCTE references only $1, so $2 is free).
+// to @user; the folder-id array is @folderIDs (heldCTE references only @user, so
+// @folderIDs is free).
 func (s *sqlAuthorizer) capsOnFolders(ctx context.Context, userID uuid.UUID, folderIDs []uuid.UUID) (Capabilities, error) {
 	if len(folderIDs) == 0 {
 		return nil, nil
 	}
 	rows, err := s.pool.Query(ctx, heldCTE+`
 SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-WHERE h.object_kind = 'folder' AND h.object_id = ANY($2::uuid[])`, userID, folderIDs)
+WHERE h.object_kind = 'folder' AND h.object_id = ANY(@folderIDs::uuid[])`, pgx.NamedArgs{"user": userID, "folderIDs": folderIDs})
 	if err != nil {
 		return nil, fmt.Errorf("caps on folders: %w", err)
 	}
@@ -327,11 +329,11 @@ WHERE h.object_kind = 'folder' AND h.object_id = ANY($2::uuid[])`, userID, folde
 func (s *sqlAuthorizer) folderAncestorsAndSelfRecursive(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE up AS (
-    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = $1
+    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = @id
     UNION ALL
     SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
 )
-SELECT up.id FROM up`, id)
+SELECT up.id FROM up`, pgx.NamedArgs{"id": id})
 	if err != nil {
 		return nil, err
 	}
@@ -350,6 +352,6 @@ SELECT up.id FROM up`, id)
 // assetFolderID returns the (NOT NULL) containing folder id of the asset.
 func (s *sqlAuthorizer) assetFolderID(ctx context.Context, assetID uuid.UUID) (uuid.UUID, error) {
 	var folderID uuid.UUID
-	err := s.pool.QueryRow(ctx, `SELECT folder_id FROM assets WHERE id = $1`, assetID).Scan(&folderID)
+	err := s.pool.QueryRow(ctx, `SELECT folder_id FROM assets WHERE id = @assetID`, pgx.NamedArgs{"assetID": assetID}).Scan(&folderID)
 	return folderID, err
 }

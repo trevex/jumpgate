@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // globalHeldCTE is the SCOPELESS analogue of heldCTE (sql_authorizer.go): it
-// computes every role a user ($1) holds GLOBALLY — i.e. via a scopeless standing
+// computes every role a user (@user) holds GLOBALLY — i.e. via a scopeless standing
 // role_binding (scope_folder_id IS NULL AND scope_asset_id IS NULL) for the user
 // or a (nested) group, closed over the role_grants rewrite graph.
 //
@@ -41,7 +42,7 @@ import (
 var globalHeldCTE = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" + cteGlobalHeld
 
 // cteGlobalHeld is the shared `global_held(role_id) AS (...)` closure definition
-// (see globalHeldCTE for the semantics). It references only the user id ($1) and
+// (see globalHeldCTE for the semantics). It references only the user id (@user) and
 // the user_groups CTE, so it can follow either a lone user_groups CTE or the
 // user_groups + held prefix in one WITH RECURSIVE block. The block ends with its
 // own closing paren and no trailing comma, so callers concatenate closures with
@@ -51,9 +52,9 @@ const cteGlobalHeld = `global_held(role_id) AS (
     SELECT rb.role_id
     FROM role_bindings rb
     WHERE rb.scope_folder_id IS NULL AND rb.scope_asset_id IS NULL
-      AND (rb.subject_user_id = $1 OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
+      AND (rb.subject_user_id = @user OR rb.subject_group_id IN (SELECT group_id FROM user_groups))
       -- a deactivated user holds nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.deactivated_at IS NULL)
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @user AND u.deactivated_at IS NULL)
   UNION
     -- closure: role_grants confers globally through BOTH rewrite arms (no object
     -- dimension → same_object and parent both collapse to a source→target edge).
@@ -69,7 +70,7 @@ const cteGlobalHeld = `global_held(role_id) AS (
 // (cteUserGroups + the grant-augmented `held` closure via heldClosureSQL) and the
 // same cteGlobalHeld fragment as globalHeldCTE, so neither closure can drift from
 // its single source. Callers append their own trailing SELECT (which may
-// reference $2, …).
+// reference their own @-named params).
 var heldPlusGlobalHeldPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
 	heldClosureSQL("held", true) + ",\n" +
 	cteGlobalHeld
@@ -78,7 +79,7 @@ var heldPlusGlobalHeldPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
 // via scopeless standing bindings closed over role_grants (see globalHeldCTE).
 func (s *sqlAuthorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {
 	rows, err := s.pool.Query(ctx, globalHeldCTE+`
-SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id`, userID)
+SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id`, pgx.NamedArgs{"user": userID})
 	if err != nil {
 		return nil, fmt.Errorf("global held: %w", err)
 	}
