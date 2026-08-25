@@ -865,7 +865,7 @@ func locateBinaries(t *testing.T, repoRoot string) binaries {
 	goBin := t.TempDir()
 	wardenBin := filepath.Join(goBin, "warden")
 	meshcertBin := filepath.Join(goBin, "warden-meshcert")
-	goBuild(t, repoRoot, wardenBin, "github.com/trevex/jumpgate/warden")
+	goBuild(t, repoRoot, wardenBin, "github.com/trevex/jumpgate/warden/cmd/warden")
 	goBuild(t, repoRoot, meshcertBin, "github.com/trevex/jumpgate/warden/cmd/warden-meshcert")
 
 	// Rust binaries: expect a prior `cargo build` (make e2e-ssh does it).

@@ -8,8 +8,8 @@ root = "."
   include_dir = ["warden"]
   exclude_dir  = ["warden/e2e", "warden/internal/db/migrate"]
 
-  # Build warden from the module root.
-  cmd     = "cd warden && go build -o /tmp/warden-dev ."
+  # Build the warden command explicitly.
+  cmd     = "cd warden && go build -o /tmp/warden-dev ./cmd/warden"
   bin     = "/tmp/warden-dev"
   delay   = 1000   # ms debounce
 

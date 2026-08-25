@@ -71,6 +71,9 @@ Makefile            Task entrypoints
 
 - **Go module path:** `github.com/trevex/jumpgate/warden` (matches the repo
   URL). Additional Go modules (e.g. `cli`) are added to `go.work`.
+- **Go commands:** executable entrypoints live under `warden/cmd/`; the primary
+  daemon is `warden/cmd/warden`. Process lifecycle and dependency wiring live in
+  `warden/internal/app`, keeping command packages limited to process concerns.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
 
@@ -153,7 +156,7 @@ Run it inside the Nix devshell (it uses `initdb`/`pg_ctl`, `silo`, `air`, and
 
 For production, the SPA is built (`web/dist`) and **embedded into the warden
 binary** behind the `embedui` build tag: the Docker image builds `web/dist` and
-compiles warden with `go build -tags embedui`, and warden serves the SPA
+compiles warden with `go build -tags embedui ./cmd/warden`, and warden serves the SPA
 same-origin alongside the API. The default `go build` (no tag) omits the SPA
 entirely, so Go builds and tests need no frontend toolchain — in development Vite
 serves the app instead.

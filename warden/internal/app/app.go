@@ -1,7 +1,5 @@
-// Command warden is the jumpgate control plane: identity, authorization,
-// JIT/approvals, vault, audit, and the API. M2a wires config, DB migrations, a
-// connection pool, and graceful shutdown; it serves /healthz.
-package main
+// Package app owns Warden's dependency graph and process lifecycle.
+package app
 
 import (
 	"context"
@@ -10,8 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,28 +35,9 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/webui"
 )
 
-func main() {
-	if err := run(); err != nil {
-		slog.Error("fatal", "err", err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
-		level = slog.LevelInfo
-	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-
+// Run constructs and runs the Warden application until ctx is cancelled or a
+// server fails. The caller owns process concerns such as signals and logging.
+func Run(ctx context.Context, cfg config.Config) error {
 	if err := migrate.Up(cfg.DatabaseURL); err != nil {
 		return err
 	}
