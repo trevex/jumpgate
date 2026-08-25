@@ -80,14 +80,16 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// expiry reaper must use the same terminator + audit instance. The terminator is
 	// the real grant-keyed dataplane.Terminator (stateless): grant revocation/expiry/
 	// deactivation now re-evaluates closures and tears down live sessions via
-	// LISTEN/NOTIFY. (A second instance in rpc.Register for DataplaneServer is fine.)
+	// LISTEN/NOTIFY. The same instance is injected into the user and mesh adapters.
 	authorizer := authz.NewSQLAuthorizer(pool)
+	roleResolver := authz.NewRoleResolver(pool)
+	approvalResolver := approvals.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := accessrequest.NewService(
 		pool,
 		auditLog,
-		approvals.New(pool),
-		authz.NewRoleResolver(pool),
+		approvalResolver,
+		roleResolver,
 		terminator,
 		cfg.MaxGrantTTL,
 	)
@@ -184,13 +186,24 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// User-facing (bearer) mux + server: Auth/Identity/Catalog/Access/AccessRequest/
 	// Session/Vault. The worker/gateway services live ONLY on the mesh listener below.
 	//
-	// Build the token lookup once here so it can be shared with both the RPC
-	// interceptor (via RegisterUserServices) and the httpapi cookie-auth middleware
-	// (via RouterDeps). RegisterUserServices builds its own internally — that is fine
-	// because auth.Lookup is stateless.
+	// Build the token lookup once here and share it with both the RPC interceptor
+	// and the HTTP cookie-auth middleware.
 	apiQ := gen.New(pool)
 	apiTokens := auth.NewTokenService(apiQ)
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
+	userServices := rpc.UserServices{
+		Lookup:        apiLookup,
+		Auth:          rpc.NewAuthServer(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
+		Identity:      rpc.NewIdentityServer(apiQ, pool, apiTokens, arSvc, terminator, authorizer),
+		Catalog:       rpc.NewCatalogServer(apiQ, pool, authorizer, arSvc, sealer, terminator),
+		Access:        rpc.NewAccessServer(apiQ, pool, roleResolver, authorizer, arSvc, arSvc),
+		AccessRequest: rpc.NewAccessRequestServer(approvalResolver, arSvc, authorizer, apiQ),
+		Vault:         rpc.NewVaultServer(apiQ, sealer, authorizer),
+		Recording:     rpc.NewRecordingServer(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
+	}
+	if sessionSvc != nil {
+		userServices.Session = rpc.NewSessionServer(sessionSvc)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool, httpapi.RouterDeps{
 		Queries:       apiQ,
@@ -200,9 +213,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Validate:      apiLookup.Validate,
 		Load:          apiLookup.Load,
 	})))
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, cfg.RecordingURLTTL, cfg.CookieSecure()); err != nil {
-		return err
-	}
+	rpc.RegisterUserServices(mux, userServices)
 
 	var protos http.Protocols
 	protos.SetHTTP1(true)
@@ -218,7 +229,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Peer identity is the mTLS client cert URI SAN (mesh.Middleware). Degraded boot:
 	// if MESH_LISTEN_ADDR is unset or the cert files are missing/unreadable, warden
 	// logs a warning and serves only the user API (workers/gateway cannot connect).
-	meshSrv := buildMeshServer(cfg, pool, auditLog, setupSvc, registry, sessionPubKey)
+	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -259,7 +270,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 // buildMeshServer constructs warden's mTLS mesh HTTP server (Dataplane + Gateway
 // behind mesh.Middleware), or returns nil for a degraded boot when the mesh
 // listener is disabled (MESH_LISTEN_ADDR unset) or its cert files cannot be loaded.
-func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey) *http.Server {
+func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey, terminator *dataplane.Terminator) *http.Server {
 	if cfg.MeshListenAddr == "" {
 		slog.Warn("mesh listener disabled: MESH_LISTEN_ADDR unset (workers/gateway cannot connect)")
 		return nil
@@ -278,10 +289,11 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, auditLog *audit.Logg
 	tlsCfg.NextProtos = []string{"h2", "http/1.1"}
 
 	meshMux := http.NewServeMux()
-	if err := rpc.RegisterMeshServices(meshMux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, sessionPubKey)); err != nil {
-		slog.Warn("mesh listener disabled: service registration failed", "err", err)
-		return nil
+	meshServices := rpc.MeshServices{Gateway: rpc.NewGatewayServer(registry, sessionPubKey)}
+	if setupSvc != nil {
+		meshServices.Dataplane = rpc.NewDataplaneServer(setupSvc, registry, pool, terminator)
 	}
+	rpc.RegisterMeshServices(meshMux, meshServices)
 	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /
 	// SetupSession) are gRPC and require h2. Advertising h2 in NextProtos alone is
 	// not enough — the server must also install the h2 handler, which the

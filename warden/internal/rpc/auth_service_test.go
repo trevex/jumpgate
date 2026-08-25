@@ -20,7 +20,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -39,7 +38,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	sealer := testSealer(t)
 	sessionSvc, _ := testSessionService(t, pool, sealer)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
+	if err := registerServices(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
@@ -64,7 +63,7 @@ func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKe
 	sealer := testSealer(t)
 	sessionSvc, pub := testSessionService(t, pool, sealer)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
+	if err := registerServices(mux, pool, testAccessRequestService(pool), sealer, audit.New(pool), sessionSvc, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)
@@ -86,7 +85,7 @@ func newServerNoVault(t *testing.T) (*pgxpool.Pool, string) {
 	}
 	t.Cleanup(pool.Close)
 	mux := http.NewServeMux()
-	if err := rpc.Register(mux, pool, testAccessRequestService(pool), nil, audit.New(pool), nil, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
+	if err := registerServices(mux, pool, testAccessRequestService(pool), nil, audit.New(pool), nil, nil, dataplane.NewRegistry(), &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	srv := httptest.NewServer(mux)

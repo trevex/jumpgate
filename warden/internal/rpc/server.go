@@ -3,11 +3,9 @@ package rpc
 
 import (
 	"net/http"
-	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
@@ -19,122 +17,74 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
-	"github.com/trevex/jumpgate/warden/internal/accessrequest"
-	"github.com/trevex/jumpgate/warden/internal/approvals"
-	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
-	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/secrets"
-	"github.com/trevex/jumpgate/warden/internal/session"
 )
 
-// RegisterUserServices mounts the USER-facing (bearer-authed) RPC services onto
-// mux with the auth + validation interceptors: Auth, Identity, Catalog, Access,
-// AccessRequest, Vault, and (when available) Session. These serve on warden's
-// existing HTTP bearer-token listener.
-//
-// arSvc is the shared access-request Service (its terminator + audit are also used
-// by the expiry reaper, so caller builds it ONCE and shares it).
-//
-// sealer is the vault sealer built once at startup; a nil sealer means the vault
-// is disabled (VaultService still mounts, but its sealing write paths fail
-// FailedPrecondition).
-//
-// sessionSvc is the CLI-facing data-plane admission service. It is nil when the
-// vault or the active session signing key is unavailable; in that case
-// SessionService is not mounted (CreateSession is disabled until initialized).
-//
-// recordingPresign issues short-lived presigned download URLs for session
-// recordings; a nil presigner makes RecordingService's download path fail closed
-// (FailedPrecondition). recordingURLTTL bounds the lifetime of an issued URL.
-//
-// cookieSecure controls the Secure flag on the session cookie set by Login when
-// cookie_only mode is requested. Pass cfg.CookieSecure() from the loaded Config;
-// false for plain-HTTP dev environments.
-func RegisterUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, sessionSvc *session.Service, recordingPresign Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
-	q := gen.New(pool)
-	tokens := auth.NewTokenService(q)
-	lookup := auth.Lookup{Tokens: tokens, Q: q}
+// UserServices is the complete set of already-constructed user-facing Connect
+// adapters. Application wiring belongs to internal/app; registration only mounts
+// handlers and transport interceptors.
+type UserServices struct {
+	Lookup        auth.Lookup
+	Auth          *AuthServer
+	Identity      *IdentityServer
+	Catalog       *CatalogServer
+	Access        *AccessServer
+	AccessRequest *AccessRequestServer
+	Vault         *VaultServer
+	Recording     *RecordingServer
+	Session       *SessionServer // optional when session admission is disabled
+}
 
+// RegisterUserServices mounts the bearer-authenticated user services.
+func RegisterUserServices(mux *http.ServeMux, services UserServices) {
 	validator := validate.NewInterceptor()
-	opts := connect.WithInterceptors(auth.NewInterceptor(lookup), validator)
+	opts := connect.WithInterceptors(auth.NewInterceptor(services.Lookup), validator)
 
-	roles := authz.NewRoleResolver(pool)
-	resolver := approvals.New(pool)
-	authorizer := authz.NewSQLAuthorizer(pool)
-
-	authPath, authHandler := authv1connect.NewAuthServiceHandler(NewAuthServer(q, tokens, authorizer, cookieSecure), opts)
+	authPath, authHandler := authv1connect.NewAuthServiceHandler(services.Auth, opts)
 	mux.Handle(authPath, authHandler)
 
-	// A standalone terminator (stateless; a second instance alongside the mesh
-	// side is fine) lets DeactivateUser synchronously evict a user's live
-	// sessions as part of the API call.
-	terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
-	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(NewIdentityServer(q, pool, tokens, arSvc, terminator, authorizer), opts)
+	idPath, idHandler := identityv1connect.NewIdentityServiceHandler(services.Identity, opts)
 	mux.Handle(idPath, idHandler)
 
-	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(NewCatalogServer(q, pool, authorizer, arSvc, sealer, terminator), opts)
+	catPath, catHandler := catalogv1connect.NewCatalogServiceHandler(services.Catalog, opts)
 	mux.Handle(catPath, catHandler)
 
-	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(NewAccessServer(q, pool, roles, authorizer, arSvc, arSvc), opts)
+	accessPath, accessHandler := accessv1connect.NewAccessServiceHandler(services.Access, opts)
 	mux.Handle(accessPath, accessHandler)
 
-	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(NewAccessRequestServer(resolver, arSvc, authorizer, q), opts)
+	arPath, arHandler := accessrequestv1connect.NewAccessRequestServiceHandler(services.AccessRequest, opts)
 	mux.Handle(arPath, arHandler)
 
-	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(NewVaultServer(q, sealer, authorizer), opts)
+	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(services.Vault, opts)
 	mux.Handle(vaultPath, vaultHandler)
 
-	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(NewRecordingServer(q, audit.New(pool), recordingPresign, recordingURLTTL, authorizer, arSvc), opts)
+	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(services.Recording, opts)
 	mux.Handle(recPath, recHandler)
 
-	if sessionSvc != nil {
-		sPath, sHandler := sessionv1connect.NewSessionServiceHandler(NewSessionServer(sessionSvc), opts)
+	if services.Session != nil {
+		sPath, sHandler := sessionv1connect.NewSessionServiceHandler(services.Session, opts)
 		mux.Handle(sPath, sHandler)
 	}
 
-	return nil
 }
 
-// RegisterMeshServices mounts the WORKER/GATEWAY-facing RPC services onto mux with
-// the validation interceptor ONLY: Dataplane + Gateway. These serve on warden's
-// second, mTLS "mesh" listener; there is no bearer auth here — peer identity comes
-// from the mTLS client cert's URI SAN (via mesh.Middleware) and the handlers derive
-// the authoritative worker_id from it.
-//
-// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream). If it is
-// nil (vault/active-key unavailable), DataplaneService is not mounted. registry is
-// the in-memory worker registry shared with the terminator/listener so teardown can
-// be pushed to the owning stream. gatewaySvc backs the gateway-facing roster +
-// verification-key RPCs and is always mounted.
-func RegisterMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, gatewaySvc *GatewayServer) error {
+// MeshServices is the complete set of already-constructed mesh-facing adapters.
+type MeshServices struct {
+	Gateway   *GatewayServer
+	Dataplane *DataplaneServer // optional when session setup is disabled
+}
+
+// RegisterMeshServices mounts the mTLS-authenticated worker/gateway services.
+func RegisterMeshServices(mux *http.ServeMux, services MeshServices) {
 	validator := validate.NewInterceptor()
 	opts := connect.WithInterceptors(validator)
 
-	gwPath, gwHandler := gatewayv1connect.NewGatewayServiceHandler(gatewaySvc, opts)
+	gwPath, gwHandler := gatewayv1connect.NewGatewayServiceHandler(services.Gateway, opts)
 	mux.Handle(gwPath, gwHandler)
 
-	if setupSvc != nil {
-		terminator := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), auditLog)
-		dPath, dHandler := dataplanev1connect.NewDataplaneServiceHandler(NewDataplaneServer(setupSvc, registry, pool, terminator), opts)
+	if services.Dataplane != nil {
+		dPath, dHandler := dataplanev1connect.NewDataplaneServiceHandler(services.Dataplane, opts)
 		mux.Handle(dPath, dHandler)
 	}
 
-	return nil
-}
-
-// Register mounts BOTH the user-facing and mesh-facing services onto a single mux.
-// It is a convenience for tests that only exercise the user (bearer) services and
-// do not need the mTLS identity split; production (main.go) and the mesh identity
-// tests use RegisterUserServices / RegisterMeshServices on separate muxes. The
-// GatewayServer here carries no session verification key (its GetSessionVerification
-// Key returns FailedPrecondition), which is acceptable for the user-only tests.
-// cookieSecure is passed through to RegisterUserServices; tests may pass true.
-func Register(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry, recordingPresign Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
-	if err := RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, recordingPresign, recordingURLTTL, cookieSecure); err != nil {
-		return err
-	}
-	return RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, NewGatewayServer(registry, nil))
 }

@@ -27,7 +27,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -184,7 +183,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	serverTLS.NextProtos = []string{"h2", "http/1.1"}
 
 	mux := http.NewServeMux()
-	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+	if err := registerMeshServices(mux, pool, auditLog, setupSvc, registry, pub); err != nil {
 		t.Fatalf("register mesh: %v", err)
 	}
 	srv := httptest.NewUnstartedServer(mesh.Middleware(mux))

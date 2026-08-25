@@ -74,6 +74,9 @@ Makefile            Task entrypoints
 - **Go commands:** executable entrypoints live under `warden/cmd/`; the primary
   daemon is `warden/cmd/warden`. Process lifecycle and dependency wiring live in
   `warden/internal/app`, keeping command packages limited to process concerns.
+- **Composition root:** `warden/internal/app` constructs production dependencies.
+  Transport registration accepts already-built services and must not create
+  alternate authorizers, audit loggers, resolvers, or lifecycle components.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
 

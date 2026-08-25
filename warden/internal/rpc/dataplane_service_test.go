@@ -27,7 +27,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -61,7 +60,7 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
-	if err := rpc.RegisterMeshServices(mux, p, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+	if err := registerMeshServices(mux, p, auditLog, setupSvc, registry, pub); err != nil {
 		t.Fatalf("register mesh: %v", err)
 	}
 
@@ -246,7 +245,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
-	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+	if err := registerMeshServices(mux, pool, auditLog, setupSvc, registry, pub); err != nil {
 		t.Fatalf("register mesh: %v", err)
 	}
 	var protos http.Protocols

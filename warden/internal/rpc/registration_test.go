@@ -1,0 +1,67 @@
+package rpc_test
+
+import (
+	"crypto/ed25519"
+	"net/http"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/approvals"
+	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/rpc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/session"
+)
+
+func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, presigner rpc.Presigner, recordingURLTTL time.Duration, cookieSecure bool) rpc.UserServices {
+	q := gen.New(pool)
+	tokens := auth.NewTokenService(q)
+	lookup := auth.Lookup{Tokens: tokens, Q: q}
+	authorizer := authz.NewSQLAuthorizer(pool)
+	roles := authz.NewRoleResolver(pool)
+	resolver := approvals.New(pool)
+	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
+	services := rpc.UserServices{
+		Lookup:        lookup,
+		Auth:          rpc.NewAuthServer(q, tokens, authorizer, cookieSecure),
+		Identity:      rpc.NewIdentityServer(q, pool, tokens, arSvc, terminator, authorizer),
+		Catalog:       rpc.NewCatalogServer(q, pool, authorizer, arSvc, sealer, terminator),
+		Access:        rpc.NewAccessServer(q, pool, roles, authorizer, arSvc, arSvc),
+		AccessRequest: rpc.NewAccessRequestServer(resolver, arSvc, authorizer, q),
+		Vault:         rpc.NewVaultServer(q, sealer, authorizer),
+		Recording:     rpc.NewRecordingServer(q, auditLog, presigner, recordingURLTTL, authorizer, arSvc),
+	}
+	if sessionSvc != nil {
+		services.Session = rpc.NewSessionServer(sessionSvc)
+	}
+	return services
+}
+
+func registerUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, presigner rpc.Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
+	rpc.RegisterUserServices(mux, testUserServices(pool, arSvc, sealer, auditLog, sessionSvc, presigner, recordingURLTTL, cookieSecure))
+	return nil
+}
+
+func registerMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, pubKey ed25519.PublicKey) error {
+	authorizer := authz.NewSQLAuthorizer(pool)
+	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
+	services := rpc.MeshServices{Gateway: rpc.NewGatewayServer(registry, pubKey)}
+	if setupSvc != nil {
+		services.Dataplane = rpc.NewDataplaneServer(setupSvc, registry, pool, terminator)
+	}
+	rpc.RegisterMeshServices(mux, services)
+	return nil
+}
+
+func registerServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *secrets.Sealer, auditLog *audit.Logger, sessionSvc *session.Service, setupSvc *dataplane.SetupService, registry *dataplane.Registry, presigner rpc.Presigner, recordingURLTTL time.Duration, cookieSecure bool) error {
+	if err := registerUserServices(mux, pool, arSvc, sealer, auditLog, sessionSvc, presigner, recordingURLTTL, cookieSecure); err != nil {
+		return err
+	}
+	return registerMeshServices(mux, pool, auditLog, setupSvc, registry, nil)
+}

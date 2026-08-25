@@ -31,7 +31,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/db/migrate"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -106,10 +105,10 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	// identity, which on this plain-h2c server is injected as a fixed "w1" worker (in
 	// production it comes from the mTLS cert SAN via mesh.Middleware).
 	mux := http.NewServeMux()
-	if err := rpc.RegisterUserServices(mux, pool, arSvc, sealer, sessionSvc, &fakePresigner{}, time.Minute, true); err != nil {
+	if err := registerUserServices(mux, pool, arSvc, sealer, auditLog, sessionSvc, &fakePresigner{}, time.Minute, true); err != nil {
 		t.Fatalf("register user: %v", err)
 	}
-	if err := rpc.RegisterMeshServices(mux, pool, auditLog, setupSvc, registry, rpc.NewGatewayServer(registry, pub)); err != nil {
+	if err := registerMeshServices(mux, pool, auditLog, setupSvc, registry, pub); err != nil {
 		t.Fatalf("register mesh: %v", err)
 	}
 
