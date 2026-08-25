@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Sweeper re-evaluates the connect predicate for live sessions and tears down those
@@ -43,7 +43,7 @@ func (s *Sweeper) SweepOwned(ctx context.Context) error {
 	if len(workers) == 0 {
 		return nil
 	}
-	pairs, err := gen.New(s.pool).ListDistinctUserAssetsByWorkers(ctx, workers)
+	pairs, err := sqlc.New(s.pool).ListDistinctUserAssetsByWorkers(ctx, workers)
 	if err != nil {
 		return fmt.Errorf("list owned sessions: %w", err)
 	}
@@ -66,7 +66,7 @@ func (s *Sweeper) SweepOwnedForUser(ctx context.Context, userID uuid.UUID) error
 	if len(workers) == 0 {
 		return nil
 	}
-	assets, err := gen.New(s.pool).ListDistinctAssetsByUserAndWorkers(ctx, gen.ListDistinctAssetsByUserAndWorkersParams{
+	assets, err := sqlc.New(s.pool).ListDistinctAssetsByUserAndWorkers(ctx, sqlc.ListDistinctAssetsByUserAndWorkersParams{
 		UserID:  userID,
 		Column2: workers,
 	})
@@ -87,7 +87,7 @@ func (s *Sweeper) SweepOwnedForUser(ctx context.Context, userID uuid.UUID) error
 // MarkEnded is idempotent (its delete is :execrows), so running this on every replica
 // concurrently produces no duplicate audit events.
 func (s *Sweeper) SweepGC(ctx context.Context, orphanGrace, teardownGrace time.Duration) error {
-	q := gen.New(s.pool)
+	q := sqlc.New(s.pool)
 	now := time.Now()
 
 	orphanCutoff := now.Add(-orphanGrace)

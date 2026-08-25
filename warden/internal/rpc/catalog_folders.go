@@ -14,7 +14,7 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // CreateFolder creates a folder (admin only). The folder row and its catalog_names
@@ -40,11 +40,11 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
 
-	f, err := qtx.CreateFolder(ctx, gen.CreateFolderParams{Name: name, ParentID: parent})
+	f, err := qtx.CreateFolder(ctx, sqlc.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad parent_id is InvalidArgument, not Internal
 	}
-	if err := qtx.InsertFolderName(ctx, gen.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
+	if err := qtx.InsertFolderName(ctx, sqlc.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
 		return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -142,7 +142,7 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListFoldersByIDsPagedParams{Ids: ids, Lim: limit}
+	params := sqlc.ListFoldersByIDsPagedParams{Ids: ids, Lim: limit}
 	if key != nil {
 		params.AfterName = pgText(key.Name)
 		params.AfterID = pgUUID(key.ID)
@@ -352,15 +352,15 @@ func (s *CatalogServer) UpdateFolder(ctx context.Context, req *connect.Request[c
 		if err := s.validateFolderMove(ctx, q, id, newParent); err != nil {
 			return nil, err
 		}
-		if err := q.UpdateFolderParent(ctx, gen.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
+		if err := q.UpdateFolderParent(ctx, sqlc.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
 			return nil, mapWriteErr(err)
 		}
 	}
 	if newName != cur.Name || moving {
-		if err := q.UpdateFolderName(ctx, gen.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
+		if err := q.UpdateFolderName(ctx, sqlc.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
 			return nil, mapWriteErr(err)
 		}
-		if err := q.UpdateFolderCatalogName(ctx, gen.UpdateFolderCatalogNameParams{FolderID: pgUUID(id), ParentID: newParent, Name: newName}); err != nil {
+		if err := q.UpdateFolderCatalogName(ctx, sqlc.UpdateFolderCatalogNameParams{FolderID: pgUUID(id), ParentID: newParent, Name: newName}); err != nil {
 			return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
 		}
 	}

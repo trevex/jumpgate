@@ -18,8 +18,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -96,8 +96,8 @@ func newServerNoVault(t *testing.T) (*pgxpool.Pool, string) {
 func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
+	q := sqlc.New(pool)
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,14 +105,14 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
 	// Mirror bootstrap.EnsureAdmin: an admin also holds `**` globally via a scopeless
 	// standing binding so the capability-gated management handlers admit it.
 	if admin {
 		role := createRoleWithCaps(t, ctx, q, "admin-"+uuid.NewString(), pgtype.UUID{}, `["**"]`)
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID:        role.ID,
 			SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
 		}); err != nil {

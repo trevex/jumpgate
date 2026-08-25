@@ -16,9 +16,9 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -61,7 +61,7 @@ func castServer(t *testing.T, getter httpapi.ObjectGetter) (*pgxpool.Pool, strin
 	}
 	t.Cleanup(pool.Close)
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
 	a := authz.NewSQLAuthorizer(pool)
@@ -92,7 +92,7 @@ func castServerWithReviewer(t *testing.T, getter httpapi.ObjectGetter, reviewer 
 	}
 	t.Cleanup(pool.Close)
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
 	a := authz.NewSQLAuthorizer(pool)
@@ -116,21 +116,21 @@ func castServerWithReviewer(t *testing.T, getter httpapi.ObjectGetter, reviewer 
 func seedRealGrant(t *testing.T, pool *pgxpool.Pool, subject uuid.UUID) (grantID, assetID uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rev-" + uuid.NewString()[:8]})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "rev-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "a-" + uuid.NewString()[:8], Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "a-" + uuid.NewString()[:8], Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "rev-role-" + uuid.NewString()[:8]})
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "rev-role-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	req, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID: subject, RoleID: role.ID, AssetID: asset.ID,
 		Reason: "review test", RequiredApprovals: 1, Status: "granted",
 		RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
@@ -139,7 +139,7 @@ func seedRealGrant(t *testing.T, pool *pgxpool.Pool, subject uuid.UUID) (grantID
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID,
 		SubjectUserID: subject, ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -155,7 +155,7 @@ func seedGrantRecording(t *testing.T, pool *pgxpool.Pool, userID, assetID, grant
 	t.Helper()
 	ctx := context.Background()
 	sessID := uuid.New()
-	if err := gen.New(pool).UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := sqlc.New(pool).UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sessID,
 		UserID:    userID,
 		AssetID:   assetID,
@@ -178,9 +178,9 @@ func seedGrantRecording(t *testing.T, pool *pgxpool.Pool, userID, assetID, grant
 func seedUserWithCap(t *testing.T, pool *pgxpool.Pool, lookup auth.Lookup, email string, withCap bool) (uuid.UUID, string) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -188,25 +188,25 @@ func seedUserWithCap(t *testing.T, pool *pgxpool.Pool, lookup auth.Lookup, email
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
 
 	if withCap {
 		// Create a global role with recording:read and bind it to this user.
-		role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+		role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
 			Name: "rec-reader-" + u.ID.String()[:8],
 		})
 		if err != nil {
 			t.Fatalf("create role: %v", err)
 		}
 		sc, ac, qu := authz.NormalizeCap("recording:read")
-		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+		if err := q.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{
 			RoleID: role.ID, Scope: sc, Action: ac, Qualifier: qu,
 		}); err != nil {
 			t.Fatalf("insert role capability: %v", err)
 		}
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID:        role.ID,
 			SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
 		}); err != nil {
@@ -227,7 +227,7 @@ func seedRecording(t *testing.T, pool *pgxpool.Pool, userID, assetID uuid.UUID) 
 	ctx := context.Background()
 	sessID := uuid.New()
 	key := fmt.Sprintf("recordings/%s.cast", sessID)
-	if err := gen.New(pool).UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := sqlc.New(pool).UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sessID,
 		UserID:    userID,
 		AssetID:   assetID,

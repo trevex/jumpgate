@@ -12,7 +12,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // ObjectGetter streams a recording object body from the object store.
@@ -37,19 +37,19 @@ type GrantReviewer interface {
 // applies existence-hiding: any auth or not-found condition returns 404 so that
 // denied callers cannot enumerate recording IDs. On any failure it writes the
 // error response and returns ok=false; on success it returns the row and ok=true.
-func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.SessionRecording, bool) {
+func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (sqlc.SessionRecording, bool) {
 	// 0. Defense-in-depth: required deps must be wired. Don't rely on the
 	//    Recoverer catching a nil-deref → 500; fail closed with 503.
 	if d.Queries == nil || d.Authorizer == nil {
 		http.Error(w, "recording retrieval not configured", http.StatusServiceUnavailable)
-		return gen.SessionRecording{}, false
+		return sqlc.SessionRecording{}, false
 	}
 
 	// 1. Authentication: user must be present (attached by CookieAuth middleware).
 	caller, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		http.Error(w, "authentication required", http.StatusUnauthorized)
-		return gen.SessionRecording{}, false
+		return sqlc.SessionRecording{}, false
 	}
 
 	// 2. Parse session ID.
@@ -57,7 +57,7 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.S
 	sessionID, err := uuid.Parse(rawID)
 	if err != nil {
 		http.NotFound(w, r)
-		return gen.SessionRecording{}, false
+		return sqlc.SessionRecording{}, false
 	}
 
 	// 3. Load the recording row — existence-hiding: treat DB not-found as 404.
@@ -65,10 +65,10 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.S
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.NotFound(w, r)
-			return gen.SessionRecording{}, false
+			return sqlc.SessionRecording{}, false
 		}
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return gen.SessionRecording{}, false
+		return sqlc.SessionRecording{}, false
 	}
 
 	// 4. Authorization: mirror GetRecordingDownload — require recording:read on
@@ -77,7 +77,7 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.S
 	caps, err := d.Authorizer.CapabilitiesOnScope(r.Context(), caller.ID, authz.AssetScope(row.AssetID))
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return gen.SessionRecording{}, false
+		return sqlc.SessionRecording{}, false
 	}
 	if !caps.Allows("recording:read") {
 		// Additive grant-scoped review: a grant-attributed recording is viewable
@@ -86,16 +86,16 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (gen.S
 		// recording still requires recording:read. Deny stays 404 (existence-hiding).
 		if !row.GrantID.Valid || d.GrantReviewer == nil {
 			http.NotFound(w, r)
-			return gen.SessionRecording{}, false
+			return sqlc.SessionRecording{}, false
 		}
 		reviewable, err := d.GrantReviewer.CanReviewGrant(r.Context(), caller.ID, uuid.UUID(row.GrantID.Bytes))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return gen.SessionRecording{}, false
+			return sqlc.SessionRecording{}, false
 		}
 		if !reviewable {
 			http.NotFound(w, r)
-			return gen.SessionRecording{}, false
+			return sqlc.SessionRecording{}, false
 		}
 	}
 
@@ -155,7 +155,7 @@ func castHeadHandler(d RouterDeps) http.HandlerFunc {
 type RouterDeps struct {
 	// Queries is used to load recording metadata. If nil, the cast route
 	// returns 503.
-	Queries *gen.Queries
+	Queries *sqlc.Queries
 	// Authorizer checks the caller's recording:read capability. If nil, the
 	// cast route returns 503.
 	Authorizer authz.Authorizer

@@ -11,21 +11,21 @@ import (
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 const tokenTTL = 12 * time.Hour
 
 // AuthServer implements authv1connect.AuthServiceHandler.
 type AuthServer struct {
-	q            *gen.Queries
+	q            *sqlc.Queries
 	tokens       *auth.TokenService
 	authorizer   authz.Authorizer
 	cookieSecure bool
 }
 
 // NewAuthServer constructs the AuthService implementation.
-func NewAuthServer(q *gen.Queries, tokens *auth.TokenService, authorizer authz.Authorizer, cookieSecure bool) *AuthServer {
+func NewAuthServer(q *sqlc.Queries, tokens *auth.TokenService, authorizer authz.Authorizer, cookieSecure bool) *AuthServer {
 	return &AuthServer{q: q, tokens: tokens, authorizer: authorizer, cookieSecure: cookieSecure}
 }
 

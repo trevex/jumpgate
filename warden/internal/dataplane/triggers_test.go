@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // listen acquires a dedicated pool connection and issues LISTEN authz_changed on
@@ -60,22 +60,22 @@ func expectNoNotify(t *testing.T, conn *pgxpool.Conn, what string) {
 func TestAuthzChangedTriggerFires(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// FK graph: a role, a folder+asset scope, and a user to bind.
 	role, err := createRoleCaps(ctx, q, "db_admin")
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestAuthzChangedTriggerFires(t *testing.T) {
 	conn := listen(t, pool)
 
 	// INSERT of a standing role_binding must NOT notify: only revoking writes do.
-	binding, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	binding, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pg(asset.ID), SubjectUserID: pg(user.ID),
 	})
 	if err != nil {
@@ -117,29 +117,29 @@ func TestAuthzChangedTriggerFires(t *testing.T) {
 func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	role, err := createRoleCaps(ctx, q, "r-"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "f-" + uuid.NewString()})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "f-" + uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "a", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "a", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	group, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "g-" + uuid.NewString(), FolderID: pg(folder.ID)})
+	group, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "g-" + uuid.NewString(), FolderID: pg(folder.ID)})
 	if err != nil {
 		t.Fatalf("CreateGroup: %v", err)
 	}
-	nested, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "g2-" + uuid.NewString(), FolderID: pg(folder.ID)})
+	nested, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "g2-" + uuid.NewString(), FolderID: pg(folder.ID)})
 	if err != nil {
 		t.Fatalf("CreateGroup nested: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	conn := listen(t, pool)
 
 	// (1) A GROUP-subject binding delete is transitive → empty payload (full sweep).
-	gBinding, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	gBinding, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pg(asset.ID), SubjectGroupID: pg(group.ID),
 	})
 	if err != nil {
@@ -187,7 +187,7 @@ func TestAuthzChangedPayloadNarrows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole src: %v", err)
 	}
-	grant, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: srcRole.ID, Via: "same_object"})
+	grant, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: srcRole.ID, Via: "same_object"})
 	if err != nil {
 		t.Fatalf("CreateRoleGrant: %v", err)
 	}

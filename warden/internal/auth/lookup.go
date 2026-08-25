@@ -6,13 +6,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Lookup adapts the token service + queries to the interceptor's userLookup.
 type Lookup struct {
 	Tokens *TokenService
-	Q      *gen.Queries
+	Q      *sqlc.Queries
 }
 
 // Validate resolves a raw token to a user ID.

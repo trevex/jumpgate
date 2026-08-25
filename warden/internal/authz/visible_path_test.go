@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // governedOf returns the Governed flag of the folder `id` in v, and whether it was
@@ -33,28 +33,28 @@ func governedOf(v []VisibleFolder, id uuid.UUID) (governed, present bool) {
 func seedPathReveal(t *testing.T, pool *pgxpool.Pool, roleName string, capabilities ...string) (user, root, team, other uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	rootF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: roleName + "-root"})
+	rootF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: roleName + "-root"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	teamF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: roleName + "-team", ParentID: pgUUID(rootF.ID)})
+	teamF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: roleName + "-team", ParentID: pgUUID(rootF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: roleName + "-other", ParentID: pgUUID(rootF.ID)})
+	otherF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: roleName + "-other", ParentID: pgUUID(rootF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: roleName + "-user@pr", DisplayName: "PRUser"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: roleName + "-user@pr", DisplayName: "PRUser"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, roleName, pgtype.UUID{}, caps(capabilities...))
 	// Bind the management role at team ONLY (folder scope), not globally.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeFolderID: pgUUID(teamF.ID), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestFolderPathVisible(t *testing.T) {
 	}
 
 	// A stranger with no bindings sees none of them.
-	stranger, err := gen.New(pool).CreateUser(ctx, gen.CreateUserParams{Email: "fpv-stranger@pr", DisplayName: "S"})
+	stranger, err := sqlc.New(pool).CreateUser(ctx, sqlc.CreateUserParams{Email: "fpv-stranger@pr", DisplayName: "S"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,33 +179,33 @@ func TestGovernedFalseForBreadcrumb(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Tree a ⊃ b ⊃ c, asset deep ∈ c.
-	aF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "bc-a"})
+	aF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "bc-a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "bc-b", ParentID: pgUUID(aF.ID)})
+	bF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "bc-b", ParentID: pgUUID(aF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "bc-c", ParentID: pgUUID(bF.ID)})
+	cF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "bc-c", ParentID: pgUUID(bF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	deep, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: cF.ID, Name: "bc-deep", Labels: []byte("{}"), Kind: "ssh"})
+	deep, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: cF.ID, Name: "bc-deep", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// User with a standing connect binding directly on the asset (access, no mgmt).
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bc-user@pr", DisplayName: "BCUser"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bc-user@pr", DisplayName: "BCUser"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	connectRole := createRoleWithCaps(t, ctx, q, "bc-connect", pgtype.UUID{}, caps("ssh:connect"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: connectRole.ID, ScopeAssetID: pgUUID(deep.ID), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -297,14 +297,14 @@ func TestGlobalFolderReadGovernsWholeTree(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// admin (from seedTree) holds catalog:folder:read globally; tree root ⊃ f1 ⊃ f2.
 	admin, _, _, root, f1, f2, _, _ := seedTree(t, pool)
 
 	// A second top-level branch with no relationship to admin's access arm, to prove
 	// the global cap governs it too (not just the access-reachable path).
-	otherF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "gt-other", ParentID: pgUUID(root)})
+	otherF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "gt-other", ParentID: pgUUID(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,25 +338,25 @@ func TestCascadeUnderParentExcludesSelf(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Tree: P (parent), Q (child of P).
-	pF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cep-p"})
+	pF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cep-p"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	qF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cep-q", ParentID: pgUUID(pF.ID)})
+	qF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cep-q", ParentID: pgUUID(pF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// User holding catalog:folder:read at P (folder scope), so P is a mgmt anchor.
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cep-user@pr", DisplayName: "CEPUser"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "cep-user@pr", DisplayName: "CEPUser"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "cep-role", pgtype.UUID{}, caps("catalog:folder:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeFolderID: pgUUID(pF.ID), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)

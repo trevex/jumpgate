@@ -11,7 +11,7 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestGetAssetAccessRoleNames verifies that discovery reads surface role NAMES and
@@ -21,14 +21,14 @@ import (
 func TestGetAssetAccessRoleNames(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Folder + asset: box.prod
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "box", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "box", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestGetAssetAccessRoleNames(t *testing.T) {
 	requesterRole := createRoleWithCaps(t, ctx, q, "requester", pgtype.UUID{}, "[]")
 
 	// Request policy: target is requestable by holders of requesterRole.
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: target.ID, RequiredApprovals: 1, RequesterRoleID: pgU(requesterRole.ID),
 	}); err != nil {
 		t.Fatalf("CreateRequestPolicy: %v", err)
@@ -53,7 +53,7 @@ func TestGetAssetAccessRoleNames(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "req@x").Scan(&uid); err != nil {
 		t.Fatalf("lookup user: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: requesterRole.ID, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(uid),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)

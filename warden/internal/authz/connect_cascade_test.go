@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestConnCascade pins the data-plane connect cascade over real Postgres:
@@ -18,7 +18,7 @@ import (
 func TestConnCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
 
 	// Roles: a concrete ssh:login:deploy role and the `**` super-role.
@@ -26,15 +26,15 @@ func TestConnCascade(t *testing.T) {
 	starRole := createRoleWithCaps(t, ctx, q, "cc-star", pgtype.UUID{}, caps("**"))
 
 	// Tree: folder F ⊃ asset A ; sibling folder G.
-	folderF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cc-f"})
+	folderF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cc-f"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sibling, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cc-sib"})
+	sibling, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cc-sib"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assetA, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folderF.ID, Name: "cc-a", Labels: []byte("{}"), Kind: "ssh"})
+	assetA, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folderF.ID, Name: "cc-a", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestConnCascade(t *testing.T) {
 
 	mkUser := func(t *testing.T, email string) uuid.UUID {
 		t.Helper()
-		u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: email, DisplayName: email})
+		u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: email, DisplayName: email})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,7 +59,7 @@ func TestConnCascade(t *testing.T) {
 
 	// --- folder-scoped ssh:login:deploy → entitled on the asset under F (NEW) ---
 	folderUser := mkUser(t, "cc-folder@x")
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: deployRole.ID, ScopeFolderID: pgUUID(folderF.ID), SubjectUserID: pgUUID(folderUser),
 	}); err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestConnCascade(t *testing.T) {
 
 	// --- same role bound on the SIBLING folder → NOT entitled on the asset ---
 	sibUser := mkUser(t, "cc-sib@x")
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: deployRole.ID, ScopeFolderID: pgUUID(sibling.ID), SubjectUserID: pgUUID(sibUser),
 	}); err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestConnCascade(t *testing.T) {
 
 	// --- ssh:login:deploy bound on the ASSET → entitled (regression) ---
 	assetUser := mkUser(t, "cc-asset@x")
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: deployRole.ID, ScopeAssetID: pgUUID(assetA.ID), SubjectUserID: pgUUID(assetUser),
 	}); err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestConnCascade(t *testing.T) {
 
 	// --- `**` bound on the ASSET → NOT entitled (carve-out at object scope too) ---
 	starAssetUser := mkUser(t, "cc-star-a@x")
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: starRole.ID, ScopeAssetID: pgUUID(assetA.ID), SubjectUserID: pgUUID(starAssetUser),
 	}); err != nil {
 		t.Fatal(err)

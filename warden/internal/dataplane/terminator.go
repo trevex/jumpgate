@@ -13,7 +13,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Terminator is the real GrantTerminator: it re-evaluates the connect predicate for
@@ -34,7 +34,7 @@ func NewTerminator(pool *pgxpool.Pool, a authz.Authorizer, log *audit.Logger) *T
 // (subject, asset) of the (now-revoked/expired) grant and tears down any of that
 // pair's live sessions that no longer pass the connect predicate.
 func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) error {
-	g, err := gen.New(t.pool).GetGrant(ctx, grantID)
+	g, err := sqlc.New(t.pool).GetGrant(ctx, grantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -49,8 +49,8 @@ func (t *Terminator) TerminateGrant(ctx context.Context, grantID uuid.UUID) erro
 // the periodic eligibility sweep can reuse it. Idempotent: safe to call repeatedly —
 // teardown of an already-terminating session is a no-op (see requestTeardown).
 func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) error {
-	q := gen.New(t.pool)
-	sessions, err := q.ListLiveSessionsByUserAsset(ctx, gen.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
+	q := sqlc.New(t.pool)
+	sessions, err := q.ListLiveSessionsByUserAsset(ctx, sqlc.ListLiveSessionsByUserAssetParams{UserID: userID, AssetID: assetID})
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (t *Terminator) MarkEnded(ctx context.Context, sessionID uuid.UUID, reason 
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 	n, err := q.DeleteLiveSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func (t *Terminator) MarkEnded(ctx context.Context, sessionID uuid.UUID, reason 
 // rather than waiting for the periodic re-evaluation to notice. Idempotent —
 // each teardown is safe to repeat. Returns the number of sessions signalled.
 func (t *Terminator) TerminateUser(ctx context.Context, userID uuid.UUID, reason string) (int, error) {
-	ids, err := gen.New(t.pool).ListLiveSessionsByUser(ctx, userID)
+	ids, err := sqlc.New(t.pool).ListLiveSessionsByUser(ctx, userID)
 	if err != nil {
 		return 0, fmt.Errorf("list live sessions for user: %w", err)
 	}
@@ -135,7 +135,7 @@ func (t *Terminator) TerminateUser(ctx context.Context, userID uuid.UUID, reason
 // NOTIFYs the workers, BEFORE the asset row (and its cascading live_sessions rows)
 // are deleted — otherwise the rows vanish and the teardown can't be routed.
 func (t *Terminator) TerminateAssetSessions(ctx context.Context, assetID uuid.UUID) error {
-	sessions, err := gen.New(t.pool).ListLiveSessionsByAsset(ctx, assetID)
+	sessions, err := sqlc.New(t.pool).ListLiveSessionsByAsset(ctx, assetID)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (t *Terminator) requestTeardown(ctx context.Context, sessionID uuid.UUID, r
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 	n, err := q.MarkLiveSessionTerminating(ctx, sessionID)
 	if err != nil {
 		return err

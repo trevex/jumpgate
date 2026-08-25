@@ -21,8 +21,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -35,17 +35,17 @@ func pg(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 // role_capabilities table (the jsonb roles.capabilities column was dropped in
 // favour of the normalized (scope, action, qualifier) rows). It mirrors the
 // production role-creation path (authz.NormalizeCap + InsertRoleCapability).
-func createRoleCaps(ctx context.Context, q *gen.Queries, name string, capsList ...string) (gen.Role, error) {
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
+func createRoleCaps(ctx context.Context, q *sqlc.Queries, name string, capsList ...string) (sqlc.Role, error) {
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name})
 	if err != nil {
-		return gen.Role{}, err
+		return sqlc.Role{}, err
 	}
 	for _, pat := range capsList {
 		sc, ac, qu := authz.NormalizeCap(pat)
-		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+		if err := q.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{
 			RoleID: role.ID, Scope: sc, Action: ac, Qualifier: qu,
 		}); err != nil {
-			return gen.Role{}, err
+			return sqlc.Role{}, err
 		}
 	}
 	return role, nil
@@ -97,7 +97,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := gen.New(pool).CreateCAKey(context.Background(), gen.CreateCAKeyParams{
+	if _, err := sqlc.New(pool).CreateCAKey(context.Background(), sqlc.CreateCAKeyParams{
 		Kind: "ssh", Sealed: sealed, PublicMaterial: line,
 	}); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 // fixture bundles a wired SetupService plus the seeded ids and a client keypair.
 type fixture struct {
 	pool *pgxpool.Pool
-	q    *gen.Queries
+	q    *sqlc.Queries
 	svc  *dataplane.SetupService
 	ctx  context.Context
 
@@ -145,31 +145,31 @@ func setup(t *testing.T) *fixture {
 	t.Helper()
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	initSSHCA(t, pool, sealer)
 
 	// User + asset.
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
 	// ssh_asset_config carries host/target; the deploy login is a ca kind.
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -180,7 +180,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pg(asset.ID), SubjectUserID: pg(user.ID),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -282,7 +282,7 @@ func (f *fixture) drainAudit(t *testing.T) {
 // terminator test's seed. Returns the grant id.
 func (f *fixture) insertActiveGrant(t *testing.T) uuid.UUID {
 	t.Helper()
-	req, err := f.q.CreateAccessRequest(f.ctx, gen.CreateAccessRequestParams{
+	req, err := f.q.CreateAccessRequest(f.ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   f.user,
 		RoleID:            f.role,
 		AssetID:           f.asset,
@@ -295,7 +295,7 @@ func (f *fixture) insertActiveGrant(t *testing.T) uuid.UUID {
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	g, err := f.q.CreateAccessGrant(f.ctx, gen.CreateAccessGrantParams{
+	g, err := f.q.CreateAccessGrant(f.ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: f.role, ScopeAssetID: f.asset, SubjectUserID: f.user,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -309,7 +309,7 @@ func (f *fixture) insertActiveGrant(t *testing.T) uuid.UUID {
 // the fixture's (user, asset), as its string form ("" when NULL).
 func (f *fixture) liveSessionGrantID(t *testing.T) string {
 	t.Helper()
-	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, gen.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
+	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, sqlc.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
 	if err != nil {
 		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestSetupSessionHappyPath(t *testing.T) {
 	}
 
 	// A live_sessions row exists with principals == [deploy].
-	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, gen.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
+	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, sqlc.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
 	if err != nil {
 		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole(exempt): %v", err)
 	}
-	if _, err := f.q.CreateRoleBinding(f.ctx, gen.CreateRoleBindingParams{
+	if _, err := f.q.CreateRoleBinding(f.ctx, sqlc.CreateRoleBindingParams{
 		RoleID: exemptRole.ID, ScopeAssetID: pg(f.asset), SubjectUserID: pg(f.user),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding(exempt): %v", err)
@@ -550,7 +550,7 @@ func TestSetupWebMode(t *testing.T) {
 	}
 
 	// The live session records the ticket-bound login as its principal.
-	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, gen.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
+	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, sqlc.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
 	if err != nil {
 		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
 	}

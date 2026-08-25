@@ -14,7 +14,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 func TestPerUserVisibilityCatalog(t *testing.T) {
@@ -66,7 +66,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	// readonly cascades down folders via an explicit parent self-rule; seed the
 	// cascade rule directly via the DB for test setup.
 	roleID := uuid.MustParse(role.Msg.Role.Id)
-	if _, err := gen.New(pool).CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: roleID, Via: "parent"}); err != nil {
+	if _, err := sqlc.New(pool).CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: roleID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	// STANDING binding: sre -> readonly on folder prod

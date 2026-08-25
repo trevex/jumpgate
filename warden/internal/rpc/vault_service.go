@@ -15,9 +15,9 @@ import (
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/pgerr"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/postgres/pgerr"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 )
@@ -33,14 +33,14 @@ const meshCertTTL = 90 * 24 * time.Hour
 // sealed value). A nil sealer means the vault is disabled: the write paths that
 // need to seal plaintext fail FailedPrecondition rather than storing anything.
 type VaultServer struct {
-	q      *gen.Queries
+	q      *sqlc.Queries
 	sealer *secrets.Sealer
 	capGuard
 }
 
 // NewVaultServer constructs the VaultService implementation. A nil sealer
 // disables the sealing write paths (vault disabled).
-func NewVaultServer(q *gen.Queries, sealer *secrets.Sealer, a authz.Authorizer) *VaultServer {
+func NewVaultServer(q *sqlc.Queries, sealer *secrets.Sealer, a authz.Authorizer) *VaultServer {
 	return &VaultServer{q: q, sealer: sealer, capGuard: capGuard{authz: a, q: q}}
 }
 
@@ -79,7 +79,7 @@ func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.I
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	row, err := s.q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: kind, Sealed: sealed, PublicMaterial: publicMaterial})
+	row, err := s.q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: kind, Sealed: sealed, PublicMaterial: publicMaterial})
 	if err != nil {
 		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
 	}
@@ -105,7 +105,7 @@ func (s *VaultServer) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if _, err := s.q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM)}); err != nil {
+	if _, err := s.q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM)}); err != nil {
 		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
 	}
 	return connect.NewResponse(&vaultv1.InitMeshCAResponse{CaCertPem: certPEM}), nil
@@ -213,7 +213,7 @@ func (s *VaultServer) SetAssetSecret(ctx context.Context, req *connect.Request[v
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	row, err := s.q.SetAssetSecret(ctx, gen.SetAssetSecretParams{AssetID: assetID, Name: req.Msg.Name, Sealed: sealed})
+	row, err := s.q.SetAssetSecret(ctx, sqlc.SetAssetSecretParams{AssetID: assetID, Name: req.Msg.Name, Sealed: sealed})
 	if err != nil {
 		return nil, mapWriteErr(err) // bad asset FK → InvalidArgument
 	}
@@ -267,7 +267,7 @@ func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListAssetSecretsParams{AssetID: assetID, Lim: limit}
+	params := sqlc.ListAssetSecretsParams{AssetID: assetID, Lim: limit}
 	if k != nil {
 		params.AfterName = pgtype.Text{String: k.Name, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}

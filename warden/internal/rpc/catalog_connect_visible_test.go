@@ -11,7 +11,7 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // seedFolderCascade wires an asset reachable ONLY via a FOLDER-scoped ssh:login
@@ -21,7 +21,7 @@ import (
 func seedFolderCascade(t *testing.T, pool *pgxpool.Pool) (aliceEmail, alicePass, boxID string) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	aliceEmail, alicePass = "fc-alice@x", "password123"
 	seedUser(t, pool, aliceEmail, alicePass, false)
@@ -30,20 +30,20 @@ func seedFolderCascade(t *testing.T, pool *pgxpool.Pool) (aliceEmail, alicePass,
 		t.Fatal(err)
 	}
 
-	fc, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "fc-cascade"})
+	fc, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "fc-cascade"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	box, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fc.ID, Name: "fc-box", Labels: []byte("{}"), Kind: "ssh"})
+	box, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: fc.ID, Name: "fc-box", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{AssetID: box.ID, Login: "demo", Kind: "ca"}); err != nil {
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{AssetID: box.ID, Login: "demo", Kind: "ca"}); err != nil {
 		t.Fatal(err)
 	}
 
 	role := createRoleWithCaps(t, ctx, q, "fc-demo", pgtype.UUID{}, `["ssh:login:demo"]`)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: fc.ID, Valid: true},
 		SubjectUserID: pgtype.UUID{Bytes: alice.ID, Valid: true},

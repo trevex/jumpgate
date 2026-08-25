@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // seedLiveSession creates the minimal FK graph (folder, ssh asset, user) and
@@ -17,23 +17,23 @@ import (
 func seedLiveSession(t *testing.T, pool *pgxpool.Pool, workerID string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-" + uuid.NewString()})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-" + uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
 	id := uuid.New()
-	if _, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+	if _, err := q.InsertLiveSession(ctx, sqlc.InsertLiveSessionParams{
 		ID:          id,
 		UserID:      user.ID,
 		AssetID:     asset.ID,

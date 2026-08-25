@@ -1,5 +1,5 @@
-// Package pg builds the control-plane's pgx connection pool.
-package pg
+// Package postgres provides the control-plane's PostgreSQL infrastructure.
+package postgres
 
 import (
 	"context"

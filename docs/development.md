@@ -92,8 +92,8 @@ Makefile            Task entrypoints
 
 ## Data layer
 
-- **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `warden/internal/db/queries`, generate typed Go into `warden/internal/db/gen` with `sqlc generate` (config: `sqlc.yaml`). Generated code is committed.
-- **Migrations** are goose SQL files in `warden/internal/db/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`). While Jumpgate is pre-production, `0001_schema.sql` is the canonical fresh-install schema and may be rewritten instead of carrying upgrade history. After a schema rewrite, reset local data with `make ui-dev-reset`; existing databases are not upgrade-compatible.
+- **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `warden/internal/postgres/queries`, generate typed Go into `warden/internal/postgres/sqlc` with `sqlc generate` (config: `sqlc.yaml`). Generated code is committed.
+- **Migrations** are goose SQL files in `warden/internal/postgres/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`). While Jumpgate is pre-production, `0001_schema.sql` is the canonical fresh-install schema and may be rewritten instead of carrying upgrade history. After a schema rewrite, reset local data with `make ui-dev-reset`; existing databases are not upgrade-compatible.
 - **Authorization** goes through the `internal/authz` `Authorizer` seam; the current backend resolves access with recursive SQL CTEs over Postgres.
 - **Integration tests** boot an ephemeral Postgres via `internal/testsupport` (uses the devshell's `initdb`/`pg_ctl`, no Docker). They `t.Skip` when that tooling isn't on PATH, so run them inside `nix develop`.
 - Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`, `SHUTDOWN_TIMEOUT`.

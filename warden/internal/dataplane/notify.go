@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 const teardownChannel = "session_teardown"
@@ -88,7 +88,7 @@ func (l *Listener) dispatch(ctx context.Context, p teardownPayload) {
 	if err != nil {
 		return
 	}
-	row, err := gen.New(l.pool).GetLiveSession(ctx, sid)
+	row, err := sqlc.New(l.pool).GetLiveSession(ctx, sid)
 	if err != nil {
 		return
 	}

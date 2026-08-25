@@ -12,7 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
@@ -25,7 +25,7 @@ func BenchmarkCreateSession(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	svc := session.NewService(gen.New(pool), authz.NewSQLAuthorizer(pool),
+	svc := session.NewService(sqlc.New(pool), authz.NewSQLAuthorizer(pool),
 		sessiontoken.NewMinter(priv), "gw.bench:8443", time.Minute)
 	ctx := context.Background()
 	runAcross(b, func(b *testing.B, w *World) {

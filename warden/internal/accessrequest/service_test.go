@@ -18,8 +18,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -80,7 +80,7 @@ func newPool(t *testing.T) *pgxpool.Pool {
 // harness bundles a service + the seeded fixture ids for a scenario.
 type harness struct {
 	pool  *pgxpool.Pool
-	q     *gen.Queries
+	q     *sqlc.Queries
 	svc   *accessrequest.Service
 	roles *authz.RoleResolver
 	term  *fakeTerminator
@@ -100,10 +100,10 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 	t.Helper()
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
+		r, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name})
 		if err != nil {
 			t.Fatalf("CreateRole(%s): %v", name, err)
 		}
@@ -113,16 +113,16 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 	requesterRole := mkRole("requester")
 	approverRole := mkRole("approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            target,
 		RequiredApprovals: requiredApprovals,
 		ApproverRoleID:    pg(approverRole),
@@ -146,7 +146,7 @@ func setup(t *testing.T, requiredApprovals int32, maxDuration pgtype.Interval) *
 
 func (h *harness) mkUser(t *testing.T, email string) uuid.UUID {
 	t.Helper()
-	u, err := h.q.CreateUser(h.ctx, gen.CreateUserParams{Email: email, DisplayName: email})
+	u, err := h.q.CreateUser(h.ctx, sqlc.CreateUserParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", email, err)
 	}
@@ -156,7 +156,7 @@ func (h *harness) mkUser(t *testing.T, email string) uuid.UUID {
 // bindStanding grants roleID to userID on the asset via a standing role_binding.
 func (h *harness) bindStanding(t *testing.T, userID, roleID uuid.UUID) {
 	t.Helper()
-	if _, err := h.q.CreateRoleBinding(h.ctx, gen.CreateRoleBindingParams{
+	if _, err := h.q.CreateRoleBinding(h.ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        roleID,
 		ScopeAssetID:  pg(h.asset),
 		SubjectUserID: pg(userID),
@@ -171,7 +171,7 @@ func (h *harness) bindStanding(t *testing.T, userID, roleID uuid.UUID) {
 func (h *harness) grantRole(t *testing.T, userID, roleID uuid.UUID) {
 	t.Helper()
 	// Create a dummy request to satisfy the grant's request_id FK.
-	req, err := h.q.CreateAccessRequest(h.ctx, gen.CreateAccessRequestParams{
+	req, err := h.q.CreateAccessRequest(h.ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   userID,
 		RoleID:            roleID,
 		AssetID:           h.asset,
@@ -184,7 +184,7 @@ func (h *harness) grantRole(t *testing.T, userID, roleID uuid.UUID) {
 	if err != nil {
 		t.Fatalf("seed grant request: %v", err)
 	}
-	if _, err := h.q.CreateAccessGrant(h.ctx, gen.CreateAccessGrantParams{
+	if _, err := h.q.CreateAccessGrant(h.ctx, sqlc.CreateAccessGrantParams{
 		RequestID:     req.ID,
 		RoleID:        roleID,
 		ScopeAssetID:  h.asset,
@@ -199,7 +199,7 @@ func (h *harness) grantRole(t *testing.T, userID, roleID uuid.UUID) {
 // returns its id (used to test revocation).
 func (h *harness) activeGrant(t *testing.T, userID uuid.UUID, expires time.Duration) uuid.UUID {
 	t.Helper()
-	req, err := h.q.CreateAccessRequest(h.ctx, gen.CreateAccessRequestParams{
+	req, err := h.q.CreateAccessRequest(h.ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   userID,
 		RoleID:            h.role,
 		AssetID:           h.asset,
@@ -212,7 +212,7 @@ func (h *harness) activeGrant(t *testing.T, userID uuid.UUID, expires time.Durat
 	if err != nil {
 		t.Fatalf("seed grant request: %v", err)
 	}
-	g, err := h.q.CreateAccessGrant(h.ctx, gen.CreateAccessGrantParams{
+	g, err := h.q.CreateAccessGrant(h.ctx, sqlc.CreateAccessGrantParams{
 		RequestID:     req.ID,
 		RoleID:        h.role,
 		ScopeAssetID:  h.asset,

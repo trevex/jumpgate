@@ -14,7 +14,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // AccessRequestServer implements accessrequestv1connect.AccessRequestServiceHandler:
@@ -28,7 +28,7 @@ type AccessRequestServer struct {
 }
 
 // NewAccessRequestServer constructs the AccessRequestService implementation.
-func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *gen.Queries) *AccessRequestServer {
+func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *sqlc.Queries) *AccessRequestServer {
 	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{authz: a, q: q}}
 }
 

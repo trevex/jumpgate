@@ -19,8 +19,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
@@ -30,11 +30,11 @@ func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: tru
 // insertRoleCaps populates a role's capabilities in the role_capabilities table
 // (the jsonb roles.capabilities column was dropped in favour of the normalized
 // (scope, action, qualifier) rows), mirroring the production role-creation path.
-func insertRoleCaps(ctx context.Context, t *testing.T, q *gen.Queries, roleID uuid.UUID, patterns ...string) {
+func insertRoleCaps(ctx context.Context, t *testing.T, q *sqlc.Queries, roleID uuid.UUID, patterns ...string) {
 	t.Helper()
 	for _, pat := range patterns {
 		sc, ac, qu := authz.NormalizeCap(pat)
-		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+		if err := q.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{
 			RoleID: roleID, Scope: sc, Action: ac, Qualifier: qu,
 		}); err != nil {
 			t.Fatalf("insert role capability %q: %v", pat, err)
@@ -90,7 +90,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := gen.New(pool).CreateCAKey(ctx, gen.CreateCAKeyParams{
+	if _, err := sqlc.New(pool).CreateCAKey(ctx, sqlc.CreateCAKeyParams{
 		Kind: "ssh", Sealed: sealed, PublicMaterial: line,
 	}); err != nil {
 		t.Fatal(err)
@@ -114,23 +114,23 @@ func clientKey(t *testing.T) []byte {
 }
 
 // mkAsset creates a folder + asset of the given kind and returns the asset id.
-func mkAsset(t *testing.T, q *gen.Queries, kind string) uuid.UUID {
+func mkAsset(t *testing.T, q *sqlc.Queries, kind string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	f, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "f-" + uuid.NewString()[:8]})
+	f, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "f-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: f.ID, Name: "a-" + uuid.NewString()[:8], Labels: []byte("{}"), Kind: kind})
+	a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: f.ID, Name: "a-" + uuid.NewString()[:8], Labels: []byte("{}"), Kind: kind})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return a.ID
 }
 
-func mkUser(t *testing.T, q *gen.Queries) uuid.UUID {
+func mkUser(t *testing.T, q *sqlc.Queries) uuid.UUID {
 	t.Helper()
-	u, err := q.CreateUser(context.Background(), gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	u, err := q.CreateUser(context.Background(), sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,15 +139,15 @@ func mkUser(t *testing.T, q *gen.Queries) uuid.UUID {
 
 // bindRole creates a role with the given capabilities and a STANDING binding of
 // it to the user on the asset.
-func bindRole(t *testing.T, q *gen.Queries, user, asset uuid.UUID, name string, capsList ...string) uuid.UUID {
+func bindRole(t *testing.T, q *sqlc.Queries, user, asset uuid.UUID, name string, capsList ...string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8]})
+	r, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name + "-" + uuid.NewString()[:8]})
 	if err != nil {
 		t.Fatal(err)
 	}
 	insertRoleCaps(ctx, t, q, r.ID, capsList...)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: r.ID, ScopeAssetID: pgUUID(asset), SubjectUserID: pgUUID(user),
 	}); err != nil {
 		t.Fatal(err)
@@ -156,9 +156,9 @@ func bindRole(t *testing.T, q *gen.Queries, user, asset uuid.UUID, name string, 
 }
 
 // setSSHConfig upserts the ssh_asset_config (host/target) for an asset.
-func setSSHConfig(t *testing.T, q *gen.Queries, asset uuid.UUID) {
+func setSSHConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 	t.Helper()
-	if _, err := q.UpsertSSHAssetConfig(context.Background(), gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(context.Background(), sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset, HostPublicKey: "", TargetAddress: "target:22",
 	}); err != nil {
 		t.Fatal(err)
@@ -166,9 +166,9 @@ func setSSHConfig(t *testing.T, q *gen.Queries, asset uuid.UUID) {
 }
 
 // setLogin upserts one ssh_asset_login row (kind ca has no secret).
-func setLogin(t *testing.T, q *gen.Queries, asset uuid.UUID, login, kind string, secret pgtype.UUID) {
+func setLogin(t *testing.T, q *sqlc.Queries, asset uuid.UUID, login, kind string, secret pgtype.UUID) {
 	t.Helper()
-	if _, err := q.UpsertSSHAssetLogin(context.Background(), gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(context.Background(), sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset, Login: login, Kind: kind, SecretID: secret,
 	}); err != nil {
 		t.Fatalf("upsert ssh asset login %q/%q: %v", login, kind, err)
@@ -179,7 +179,7 @@ func setLogin(t *testing.T, q *gen.Queries, asset uuid.UUID, login, kind string,
 // (login, asset): [login@<folder-path>.<asset-name>, login@<asset-id>]. Reading
 // the path back via the same FolderPath query the broker uses keeps the fixture
 // in step with randomized folder/asset names.
-func wantAssetPrincipals(t *testing.T, q *gen.Queries, assetID uuid.UUID, login string) []string {
+func wantAssetPrincipals(t *testing.T, q *sqlc.Queries, assetID uuid.UUID, login string) []string {
 	t.Helper()
 	ctx := context.Background()
 	a, err := q.GetAsset(ctx, assetID)
@@ -199,13 +199,13 @@ func wantAssetPrincipals(t *testing.T, q *gen.Queries, assetID uuid.UUID, login 
 
 // sealSecret seals the value under the sealer and stores it as an asset secret,
 // returning the secret id.
-func sealSecret(t *testing.T, q *gen.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
+func sealSecret(t *testing.T, q *sqlc.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
 	t.Helper()
 	sealed, err := sealer.Seal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sec, err := q.SetAssetSecret(context.Background(), gen.SetAssetSecretParams{AssetID: asset, Name: name, Sealed: sealed})
+	sec, err := q.SetAssetSecret(context.Background(), sqlc.SetAssetSecretParams{AssetID: asset, Name: name, Sealed: sealed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func newBroker(pool *pgxpool.Pool, sealer *secrets.Sealer) *Broker {
 func TestIssueCaHostScopedPrincipals(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	caLine := initSSHCA(t, pool, sealer)
 
@@ -330,7 +330,7 @@ func TestIssueCaHostScopedPrincipals(t *testing.T) {
 func TestIssuePassword(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
@@ -360,7 +360,7 @@ func TestIssuePassword(t *testing.T) {
 func TestIssueKey(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
@@ -392,7 +392,7 @@ func TestIssueKey(t *testing.T) {
 func TestIssueNoEntitlement(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
@@ -418,7 +418,7 @@ func TestIssueNoEntitlement(t *testing.T) {
 func TestIssueAbsentLogin(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	initSSHCA(t, pool, sealer)
 
@@ -443,7 +443,7 @@ func TestIssueAbsentLogin(t *testing.T) {
 func TestIssueSecretIsAssetScoped(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
@@ -479,7 +479,7 @@ func TestIssueSecretIsAssetScoped(t *testing.T) {
 func TestIssueViaActiveGrant(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	initSSHCA(t, pool, sealer)
 
@@ -487,7 +487,7 @@ func TestIssueViaActiveGrant(t *testing.T) {
 	setSSHConfig(t, q, asset)
 	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 	// A role carrying ssh:login:root, but NOT standing-bound to anyone.
-	sshRoot, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "ssh-root-grant"})
+	sshRoot, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "ssh-root-grant"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,7 +523,7 @@ func TestIssueViaActiveGrant(t *testing.T) {
 func TestIssueNoCA(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	// NOTE: no initSSHCA.
 
@@ -543,7 +543,7 @@ func TestIssueNoCA(t *testing.T) {
 func TestIssueVaultDisabled(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	alice := mkUser(t, q)
 	asset := mkAsset(t, q, "ssh")
@@ -560,7 +560,7 @@ func TestIssueVaultDisabled(t *testing.T) {
 func TestIssueUnsupportedKind(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
@@ -577,7 +577,7 @@ func TestIssueUnsupportedKind(t *testing.T) {
 func TestIssueAudit(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	sealer := newSealer(t)
 	initSSHCA(t, pool, sealer)
 
@@ -613,7 +613,7 @@ func TestIssueAudit(t *testing.T) {
 // assertNoCredentialAudit asserts no credential.issued entry exists.
 func assertNoCredentialAudit(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	rows, err := gen.New(pool).ListAuditEntries(context.Background())
+	rows, err := sqlc.New(pool).ListAuditEntries(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

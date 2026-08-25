@@ -14,7 +14,7 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // assetMsgWithPath sets msg.Path = "<asset name>.<folder path>" via a post-commit
@@ -30,7 +30,7 @@ func (s *CatalogServer) assetMsgWithPath(ctx context.Context, msg *catalogv1.Ass
 
 // toAssetMsgWithConfig builds an Asset carrying its typed SSH config (host/target
 // from the config row plus the per-login rows).
-func toAssetMsgWithConfig(a gen.Asset, cfg gen.SshAssetConfig, logins []gen.SshAssetLogin) *catalogv1.Asset {
+func toAssetMsgWithConfig(a sqlc.Asset, cfg sqlc.SshAssetConfig, logins []sqlc.SshAssetLogin) *catalogv1.Asset {
 	msg := toAssetMsg(a)
 	out := make([]*catalogv1.SSHLogin, 0, len(logins))
 	for _, l := range logins {
@@ -96,11 +96,11 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
 
-	a, err := qtx.CreateAsset(ctx, gen.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+	a, err := qtx.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
 	}
-	if err := qtx.InsertAssetName(ctx, gen.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
+	if err := qtx.InsertAssetName(ctx, sqlc.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
 		return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 	}
 
@@ -229,7 +229,7 @@ func (s *CatalogServer) ListAssets(ctx context.Context, req *connect.Request[cat
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListAssetsByIDsPagedParams{Ids: ids, Lim: limit}
+	params := sqlc.ListAssetsByIDsPagedParams{Ids: ids, Lim: limit}
 	if key != nil {
 		params.AfterName = pgText(key.Name)
 		params.AfterID = pgUUID(key.ID)
@@ -285,14 +285,14 @@ func (s *CatalogServer) ResolveAsset(ctx context.Context, req *connect.Request[c
 		var parent pgtype.UUID // NULL = top level
 		var fid uuid.UUID
 		for i := len(segs) - 1; i >= 1; i-- { // walk root→leaf (segs reversed: leaf is segs[0])
-			f, err := s.q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
+			f, err := s.q.FolderByParentName(ctx, sqlc.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
 			if err != nil {
 				return nil, notFoundOrInternal(err)
 			}
 			fid = f.ID
 			parent = pgUUID(f.ID)
 		}
-		a, err := s.q.AssetByFolderName(ctx, gen.AssetByFolderNameParams{FolderID: fid, Name: name})
+		a, err := s.q.AssetByFolderName(ctx, sqlc.AssetByFolderNameParams{FolderID: fid, Name: name})
 		if err != nil {
 			return nil, notFoundOrInternal(err)
 		}
@@ -452,15 +452,15 @@ func (s *CatalogServer) UpdateAsset(ctx context.Context, req *connect.Request[ca
 		if err := s.validateAssetMove(ctx, q, id, newFolder); err != nil {
 			return nil, err
 		}
-		if err := q.UpdateAssetFolder(ctx, gen.UpdateAssetFolderParams{ID: id, FolderID: newFolder}); err != nil {
+		if err := q.UpdateAssetFolder(ctx, sqlc.UpdateAssetFolderParams{ID: id, FolderID: newFolder}); err != nil {
 			return nil, mapWriteErr(err)
 		}
 	}
 	if newName != cur.Name || moving {
-		if err := q.UpdateAssetName(ctx, gen.UpdateAssetNameParams{ID: id, Name: newName}); err != nil {
+		if err := q.UpdateAssetName(ctx, sqlc.UpdateAssetNameParams{ID: id, Name: newName}); err != nil {
 			return nil, mapWriteErr(err)
 		}
-		if err := q.UpdateAssetCatalogName(ctx, gen.UpdateAssetCatalogNameParams{AssetID: pgUUID(id), ParentID: pgUUID(newFolder), Name: newName}); err != nil {
+		if err := q.UpdateAssetCatalogName(ctx, sqlc.UpdateAssetCatalogNameParams{AssetID: pgUUID(id), ParentID: pgUUID(newFolder), Name: newName}); err != nil {
 			return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 		}
 	}

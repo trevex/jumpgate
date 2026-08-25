@@ -15,7 +15,7 @@ import (
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // grantRevoker revokes a user's active JIT grants. Satisfied by
@@ -34,7 +34,7 @@ type sessionEvictor interface {
 
 // IdentityServer implements identityv1connect.IdentityServiceHandler.
 type IdentityServer struct {
-	q       *gen.Queries
+	q       *sqlc.Queries
 	pool    *pgxpool.Pool
 	tokens  *auth.TokenService
 	revoker grantRevoker
@@ -46,20 +46,20 @@ type IdentityServer struct {
 // used by DeactivateUser to cascade grant revocation and evictor to force-evict
 // the user's remaining live sessions; either may be nil in tests that don't
 // exercise deactivation teardown.
-func NewIdentityServer(q *gen.Queries, pool *pgxpool.Pool, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
+func NewIdentityServer(q *sqlc.Queries, pool *pgxpool.Pool, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
 	return &IdentityServer{q: q, pool: pool, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{authz: a, q: q}}
 }
 
-func toUserMsg(u gen.User) *identityv1.User {
+func toUserMsg(u sqlc.User) *identityv1.User {
 	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, Active: !u.DeactivatedAt.Valid}
 }
 
-func toGroupMsg(g gen.Group) *identityv1.Group {
+func toGroupMsg(g sqlc.Group) *identityv1.Group {
 	return &identityv1.Group{Id: g.ID.String(), Name: g.Name, FolderId: pgUUIDToString(g.FolderID)}
 }
 
 // groupMsgWithPath fills folder_path (empty for global) for single-group responses.
-func (s *IdentityServer) groupMsgWithPath(ctx context.Context, g gen.Group) (*identityv1.Group, error) {
+func (s *IdentityServer) groupMsgWithPath(ctx context.Context, g sqlc.Group) (*identityv1.Group, error) {
 	m := toGroupMsg(g)
 	if g.FolderID.Valid {
 		fp, err := s.q.FolderPath(ctx, uuidFromPg(g.FolderID))
@@ -84,13 +84,13 @@ func (s *IdentityServer) CreateUser(ctx context.Context, req *connect.Request[id
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	u, err := s.q.CreateUserFull(ctx, gen.CreateUserFullParams{
+	u, err := s.q.CreateUserFull(ctx, sqlc.CreateUserFullParams{
 		Email: req.Msg.Email, DisplayName: req.Msg.DisplayName,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("email already exists"))
 	}
-	if err := s.q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+	if err := s.q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&identityv1.CreateUserResponse{User: toUserMsg(u)}), nil
@@ -167,7 +167,7 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListUsersParams{Lim: limit}
+	params := sqlc.ListUsersParams{Lim: limit}
 	if k != nil {
 		params.AfterEmail = pgtype.Text{String: k.Name, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -199,7 +199,7 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 	if err := s.requireCap(ctx, "identity:group:create", scopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
-	g, err := s.q.CreateGroup(ctx, gen.CreateGroupParams{Name: req.Msg.Name, FolderID: folderID})
+	g, err := s.q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
 		return nil, mapWriteErr(err)
 	}
@@ -217,7 +217,7 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 // group exists outside their read scope. The canonical `path` is echoed.
 func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[identityv1.ResolveGroupRequest]) (*connect.Response[identityv1.ResolveGroupResponse], error) {
 	ref := req.Msg.Name
-	var grp gen.Group
+	var grp sqlc.Group
 	if id, perr := uuid.Parse(ref); perr == nil {
 		g, err := s.q.GetGroup(ctx, id)
 		if err != nil {
@@ -230,7 +230,7 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 		if err != nil {
 			return nil, groupNotFoundOrInternal(err)
 		}
-		g, err := s.q.GetGroupByFolderAndName(ctx, gen.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		g, err := s.q.GetGroupByFolderAndName(ctx, sqlc.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
 		if err != nil {
 			return nil, groupNotFoundOrInternal(err)
 		}
@@ -285,7 +285,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListGroupsByIDsPagedParams{Column1: ids, Lim: limit}
+	params := sqlc.ListGroupsByIDsPagedParams{Column1: ids, Lim: limit}
 	if key != nil {
 		params.AfterName = pgText(key.Name)
 		params.AfterID = pgUUID(key.ID)
@@ -339,7 +339,7 @@ func (s *IdentityServer) AddUserToGroup(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 	}
-	if err := s.q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
+	if err := s.q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&identityv1.AddUserToGroupResponse{}), nil
@@ -386,7 +386,7 @@ SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = $2)`, gid, mid).Scan(&cycli
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("group nesting cycle: this group is already a transitive member of the group being added"))
 	}
-	if err := s.q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
+	if err := s.q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&identityv1.AddGroupToGroupResponse{}), nil
@@ -409,7 +409,7 @@ func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.R
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 	}
-	if err := s.q.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
+	if err := s.q.RemoveUserFromGroup(ctx, sqlc.RemoveUserFromGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
 		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&identityv1.RemoveUserFromGroupResponse{}), nil
@@ -432,7 +432,7 @@ func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
 	}
-	if err := s.q.RemoveGroupFromGroup(ctx, gen.RemoveGroupFromGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
+	if err := s.q.RemoveGroupFromGroup(ctx, sqlc.RemoveGroupFromGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
 		return nil, mapWriteErr(err)
 	}
 	return connect.NewResponse(&identityv1.RemoveGroupFromGroupResponse{}), nil
@@ -459,7 +459,7 @@ func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListGroupMembersPagedParams{GroupID: gid, Lim: limit}
+	params := sqlc.ListGroupMembersPagedParams{GroupID: gid, Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}

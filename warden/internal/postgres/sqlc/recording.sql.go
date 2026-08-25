@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: recording.sql
 
-package gen
+package sqlc
 
 import (
 	"context"

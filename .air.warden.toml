@@ -6,7 +6,7 @@ root = "."
   # Files to watch — only warden Go sources.
   include_ext = ["go"]
   include_dir = ["warden"]
-  exclude_dir  = ["warden/e2e", "warden/internal/db/migrate"]
+  exclude_dir  = ["warden/e2e", "warden/internal/postgres/migrate"]
 
   # Build the warden command explicitly.
   cmd     = "cd warden && go build -o /tmp/warden-dev ./cmd/warden"

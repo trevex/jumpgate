@@ -38,7 +38,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
@@ -97,7 +97,7 @@ type Credential struct {
 
 // Broker mints credentials for (user, asset) pairs.
 type Broker struct {
-	q      *gen.Queries
+	q      *sqlc.Queries
 	sealer *secrets.Sealer
 	authz  authz.Authorizer
 	audit  *audit.Logger
@@ -107,7 +107,7 @@ type Broker struct {
 // ErrVaultNotConfigured (fail closed).
 func NewBroker(pool *pgxpool.Pool, sealer *secrets.Sealer, authorizer authz.Authorizer, auditLog *audit.Logger) *Broker {
 	return &Broker{
-		q:      gen.New(pool),
+		q:      sqlc.New(pool),
 		sealer: sealer,
 		authz:  authorizer,
 		audit:  auditLog,
@@ -145,14 +145,14 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 // the ssh:login:<login> entitlement (for every kind), and mints the credential
 // for that login's configured kind: a host-scoped cert (ca), or the plain
 // stored password/key secret.
-func (b *Broker) issueSSH(ctx context.Context, userID uuid.UUID, asset gen.Asset, req IssueRequest) (Credential, error) {
+func (b *Broker) issueSSH(ctx context.Context, userID uuid.UUID, asset sqlc.Asset, req IssueRequest) (Credential, error) {
 	assetID := asset.ID
 	rows, err := b.q.ListSSHAssetLogins(ctx, assetID)
 	if err != nil {
 		return Credential{}, fmt.Errorf("list ssh asset logins: %w", err)
 	}
 
-	var row gen.SshAssetLogin
+	var row sqlc.SshAssetLogin
 	found := false
 	allLogins := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -201,13 +201,13 @@ func contains(xs []string, s string) bool {
 // issueStoredSecret opens the login's asset-scoped stored secret and returns it
 // as the given credential kind ("ssh-password" or "ssh-key"). The GetAssetSecret
 // query is asset-scoped, so a secret belonging to another asset cannot be opened.
-func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUID, row gen.SshAssetLogin, kind string) (Credential, error) {
+func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUID, row sqlc.SshAssetLogin, kind string) (Credential, error) {
 	if !row.SecretID.Valid {
 		// The ssh_login_secret_present CHECK makes this unreachable, but guard
 		// anyway rather than pass a zero uuid.
 		return Credential{}, ErrNoConfig
 	}
-	sec, err := b.q.GetAssetSecret(ctx, gen.GetAssetSecretParams{
+	sec, err := b.q.GetAssetSecret(ctx, sqlc.GetAssetSecretParams{
 		ID:      uuid.UUID(row.SecretID.Bytes),
 		AssetID: assetID,
 	})
@@ -231,7 +231,7 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 
 // issueSSHCert signs the client's public key with host-scoped principals
 // [login@<asset-path>, login@<asset-id>] and returns an "ssh-cert" credential.
-func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset gen.Asset, req IssueRequest) (Credential, error) {
+func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset sqlc.Asset, req IssueRequest) (Credential, error) {
 	assetID := asset.ID
 	caRow, err := b.q.GetActiveCA(ctx, "ssh")
 	if err != nil {

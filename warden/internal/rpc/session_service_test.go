@@ -14,30 +14,30 @@ import (
 
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
 
 // seedSSHAsset creates a folder + ssh asset with a config row plus one ca login
 // per given name, and returns the asset id.
-func seedSSHAsset(t *testing.T, q *gen.Queries, allowedLogins []string) uuid.UUID {
+func seedSSHAsset(t *testing.T, q *sqlc.Queries, allowedLogins []string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-sess"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-sess"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-sess", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-sess", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.9:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
 	for _, login := range allowedLogins {
-		if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+		if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 			AssetID: asset.ID, Login: login, Kind: "ca", SecretID: pgtype.UUID{},
 		}); err != nil {
 			t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -64,7 +64,7 @@ func clientSSHKey(t *testing.T) ([]byte, string) {
 func TestCreateSessionEntitled(t *testing.T) {
 	pool, url, signPub := newServerWithSession(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	assetID := seedSSHAsset(t, q, []string{"deploy"})
 
@@ -77,7 +77,7 @@ func TestCreateSessionEntitled(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "user@sess").Scan(&uid); err != nil {
 		t.Fatalf("lookup user: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -126,7 +126,7 @@ func TestCreateSessionEntitled(t *testing.T) {
 func TestCreateSessionNoLoginIsNotFound(t *testing.T) {
 	pool, url, _ := newServerWithSession(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Asset exists and is ssh, but the caller holds no ssh:login:deploy capability.
 	assetID := seedSSHAsset(t, q, []string{"deploy"})
@@ -163,7 +163,7 @@ func TestCreateSessionMissingAssetIsNotFound(t *testing.T) {
 func TestCreateWebSession(t *testing.T) {
 	pool, url, signPub := newServerWithSession(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	assetID := seedSSHAsset(t, q, []string{"deploy"})
 
@@ -174,7 +174,7 @@ func TestCreateWebSession(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "webuser@sess").Scan(&uid); err != nil {
 		t.Fatalf("lookup user: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -230,7 +230,7 @@ func TestCreateWebSession(t *testing.T) {
 func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
 	pool, url, _ := newServerWithSession(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// The asset offers "deploy" and "root"; the caller is entitled only to
 	// "deploy", so requesting "root" must be denied.
@@ -241,7 +241,7 @@ func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", "webdeny@sess").Scan(&uid); err != nil {
 		t.Fatalf("lookup user: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)

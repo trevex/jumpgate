@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // CreateRoleBinding grants a role to a subject at a scope (admin only).
@@ -54,7 +54,7 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
 		return nil, err
 	}
-	rb, err := s.q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	rb, err := s.q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        roleID,
 		ScopeFolderID: scopeFolder, ScopeAssetID: scopeAsset,
 		SubjectUserID: subjUser, SubjectGroupID: subjGroup,
@@ -121,7 +121,7 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListRoleBindingsParams{
+	params := sqlc.ListRoleBindingsParams{
 		RoleID:         roleID,
 		ScopeFolderID:  scopeFolder,
 		ScopeAssetID:   scopeAsset,

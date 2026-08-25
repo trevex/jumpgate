@@ -13,7 +13,7 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
@@ -56,7 +56,7 @@ func mapWriteErr(err error) error {
 // AccessService.
 type CatalogServer struct {
 	capGuard
-	q          *gen.Queries
+	q          *sqlc.Queries
 	pool       *pgxpool.Pool
 	authorizer authz.Authorizer
 	reqReads   requestReadAuthorizer
@@ -75,7 +75,7 @@ type assetTerminator interface {
 // request-party path of GetAssetDisplay; a nil reqReads disables that path (only
 // the capability check can then grant a display read). sealer seals inline SSH
 // login secrets during onboarding; a nil sealer fails those write paths closed.
-func NewCatalogServer(q *gen.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer, sealer *secrets.Sealer, terminator assetTerminator) *CatalogServer {
+func NewCatalogServer(q *sqlc.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer, sealer *secrets.Sealer, terminator assetTerminator) *CatalogServer {
 	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads, sealer: sealer, terminator: terminator}
 }
 
@@ -86,11 +86,11 @@ func pgUUIDToString(u pgtype.UUID) string {
 	return uuid.UUID(u.Bytes).String()
 }
 
-func toFolderMsg(f gen.Folder) *catalogv1.Folder {
+func toFolderMsg(f sqlc.Folder) *catalogv1.Folder {
 	return &catalogv1.Folder{Id: f.ID.String(), Name: f.Name, ParentId: pgUUIDToString(f.ParentID)}
 }
 
-func toAssetMsg(a gen.Asset) *catalogv1.Asset {
+func toAssetMsg(a sqlc.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 

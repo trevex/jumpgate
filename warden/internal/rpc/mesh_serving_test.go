@@ -24,9 +24,9 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -63,12 +63,12 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 		t.Fatalf("pool: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	sealer := testSealer(t)
 
 	// Active session signing key → minter (session svc) + verifier (setup svc).
-	ks := session.NewKeyStore(gen.New(pool), sealer)
+	ks := session.NewKeyStore(sqlc.New(pool), sealer)
 	if err := ks.Init(ctx); err != nil {
 		t.Fatalf("keystore init: %v", err)
 	}
@@ -88,43 +88,43 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	if err != nil {
 		t.Fatalf("seal ca seed: %v", err)
 	}
-	if _, err := q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: "ssh", Sealed: sealedSeed, PublicMaterial: line}); err != nil {
+	if _, err := q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: "ssh", Sealed: sealedSeed, PublicMaterial: line}); err != nil {
 		t.Fatalf("CreateCAKey: %v", err)
 	}
 
 	authorizer := authz.NewSQLAuthorizer(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
-	sessionSvc := session.NewService(gen.New(pool), authorizer, minter, testGatewayEndpoint, time.Minute)
+	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, time.Minute)
 	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 
 	// --- Seed: subject, ssh asset (target set), role, ACTIVE JIT grant (sole login). ---
-	subject, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "mesh-subject@e2e", DisplayName: "Subject"})
+	subject, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "mesh-subject@e2e", DisplayName: "Subject"})
 	if err != nil {
 		t.Fatalf("CreateUser subject: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-mesh-" + uuid.NewString()})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-mesh-" + uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-mesh", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-mesh", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.7:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-mesh-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
-	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	req, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   subject.ID,
 		RoleID:            role.ID,
 		AssetID:           asset.ID,
@@ -137,7 +137,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	if _, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+	if _, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID, SubjectUserID: subject.ID,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}); err != nil {

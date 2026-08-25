@@ -25,8 +25,8 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/pgerr"
+	"github.com/trevex/jumpgate/warden/internal/postgres/pgerr"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
@@ -119,14 +119,14 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		return SetupResult{}, ErrBadToken
 	}
 
-	cfg, err := gen.New(s.pool).GetSSHAssetConfig(ctx, claims.AssetID)
+	cfg, err := sqlc.New(s.pool).GetSSHAssetConfig(ctx, claims.AssetID)
 	if err != nil {
 		return SetupResult{}, fmt.Errorf("get ssh asset config: %w", err)
 	}
 	if cfg.TargetAddress == "" {
 		return SetupResult{}, ErrNoTarget
 	}
-	loginRows, err := gen.New(s.pool).ListSSHAssetLogins(ctx, claims.AssetID)
+	loginRows, err := sqlc.New(s.pool).ListSSHAssetLogins(ctx, claims.AssetID)
 	if err != nil {
 		return SetupResult{}, fmt.Errorf("list ssh asset logins: %w", err)
 	}
@@ -159,12 +159,12 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		return SetupResult{}, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 	// Attribute the session to its authorizing JIT grant when exactly one active
 	// grant covers (user, asset). Zero (standing binding) or multiple (ambiguous)
 	// active grants leave grant_id NULL — the attribution must be unambiguous.
 	var grantID pgtype.UUID
-	ids, err := q.ActiveGrantIDsForUserAsset(ctx, gen.ActiveGrantIDsForUserAssetParams{
+	ids, err := q.ActiveGrantIDsForUserAsset(ctx, sqlc.ActiveGrantIDsForUserAssetParams{
 		SubjectUserID: claims.UserID,
 		ScopeAssetID:  claims.AssetID,
 	})
@@ -174,7 +174,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	if len(ids) == 1 {
 		grantID = pgtype.UUID{Bytes: ids[0], Valid: true}
 	}
-	if _, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+	if _, err := q.InsertLiveSession(ctx, sqlc.InsertLiveSessionParams{
 		ID:          claims.SessionID,
 		UserID:      claims.UserID,
 		AssetID:     claims.AssetID,

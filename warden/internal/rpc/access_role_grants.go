@@ -10,7 +10,7 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // AddRoleGrant adds a role-rewrite rule "holding source_role_id CONFERS role_id"
@@ -42,7 +42,7 @@ func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[ac
 	if req.Msg.Via == "same_object" && roleID == sourceRoleID {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("same-object self-reference not allowed"))
 	}
-	g, err := s.q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: sourceRoleID, Via: req.Msg.Via})
+	g, err := s.q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: sourceRoleID, Via: req.Msg.Via})
 	if err != nil {
 		return nil, mapWriteErr(err)
 	}
@@ -99,7 +99,7 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListRoleGrantsParams{RoleID: roleID, Lim: limit}
+	params := sqlc.ListRoleGrantsParams{RoleID: roleID, Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}

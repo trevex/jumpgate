@@ -27,7 +27,7 @@ import (
 
 	clicmd "github.com/trevex/jumpgate/cli/cmd"
 	"github.com/trevex/jumpgate/warden/internal/auth"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // recordingBucket is the object-store bucket the worker uploads recordings to and
@@ -406,9 +406,9 @@ func emptyBucket(ctx context.Context, t *testing.T, client *s3.Client, bucket st
 func seedExemptUser(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: exemptUserEmail, DisplayName: "Exempt"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: exemptUserEmail, DisplayName: "Exempt"})
 	if err != nil {
 		t.Fatalf("CreateUser(exempt): %v", err)
 	}
@@ -416,25 +416,25 @@ func seedExemptUser(t *testing.T, pool *pgxpool.Pool) string {
 	// Resolve the existing asset seeded by seedAccess (unique by name).
 	assetID := lookupAssetID(t, pool, assetName)
 
-	loginRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+	loginRole, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
 		Name: "ssh-deploy-exempt-login", Capabilities: capsJSON("ssh:login:" + login),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole(exempt login): %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: loginRole.ID, ScopeAssetID: pgUUID(assetID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding(exempt login): %v", err)
 	}
 
-	exemptRole, err := q.CreateRole(ctx, gen.CreateRoleParams{
+	exemptRole, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
 		Name: "ssh-record-exempt", Capabilities: capsJSON("ssh:record:exempt"),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole(exempt): %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: exemptRole.ID, ScopeAssetID: pgUUID(assetID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding(exempt): %v", err)

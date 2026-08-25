@@ -12,8 +12,8 @@ import (
 	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -44,11 +44,11 @@ func newResolverPool(t *testing.T) *pgxpool.Pool {
 func TestHoldsRole(t *testing.T) {
 	pool := newResolverPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// ── roles ────────────────────────────────────────────────────────────────
 	mkRole := func(name string) uuid.UUID {
-		r, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name})
+		r, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name})
 		if err != nil {
 			t.Fatalf("CreateRole(%s): %v", name, err)
 		}
@@ -61,7 +61,7 @@ func TestHoldsRole(t *testing.T) {
 
 	// ── role_grants (rewrite rules) ───────────────────────────────────────────
 	mkGrant := func(roleID, sourceID uuid.UUID, via string) {
-		if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{
+		if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{
 			RoleID: roleID, SourceRoleID: sourceID, Via: via,
 		}); err != nil {
 			t.Fatalf("CreateRoleGrant: %v", err)
@@ -77,42 +77,42 @@ func TestHoldsRole(t *testing.T) {
 	mkGrant(clusterEditor, editor, "parent")
 
 	// ── folders: prod (root), proddb (child of prod) ─────────────────────────
-	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	prod, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder prod: %v", err)
 	}
-	proddb, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "proddb", ParentID: pg(prod.ID)})
+	proddb, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "proddb", ParentID: pg(prod.ID)})
 	if err != nil {
 		t.Fatalf("CreateFolder proddb: %v", err)
 	}
 
 	// ── asset pg in proddb ────────────────────────────────────────────────────
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset pg: %v", err)
 	}
 
 	// ── users ─────────────────────────────────────────────────────────────────
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateUser alice: %v", err)
 	}
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateUser bob: %v", err)
 	}
 
 	// ── group sre, alice ∈ sre ────────────────────────────────────────────────
-	sre, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "sre"})
+	sre, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "sre"})
 	if err != nil {
 		t.Fatalf("CreateGroup sre: %v", err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: sre.ID, MemberUserID: pg(alice.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: sre.ID, MemberUserID: pg(alice.ID)}); err != nil {
 		t.Fatalf("AddUserToGroup: %v", err)
 	}
 
 	// ── binding: sre → owner STANDING on folder prod ─────────────────────────
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:         owner,
 		ScopeFolderID:  pg(prod.ID),
 		SubjectGroupID: pg(sre.ID),
@@ -174,7 +174,7 @@ func TestHoldsRole(t *testing.T) {
 	}
 
 	// ── direct on asset ───────────────────────────────────────────────────────
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        admin,
 		ScopeAssetID:  pg(pgAsset.ID),
 		SubjectUserID: pg(bob.ID),
@@ -186,15 +186,15 @@ func TestHoldsRole(t *testing.T) {
 	// ── nested-group membership ───────────────────────────────────────────────
 	// alice ∈ teamA ∈ sre. alice only holds owner@prod through the sre binding, so
 	// the extra nesting layer must still resolve.
-	teamA, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "team-a"})
+	teamA, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "team-a"})
 	if err != nil {
 		t.Fatalf("CreateGroup teamA: %v", err)
 	}
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: sre.ID, MemberGroupID: pg(teamA.ID)}); err != nil {
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: sre.ID, MemberGroupID: pg(teamA.ID)}); err != nil {
 		t.Fatalf("AddGroupToGroup teamA→sre: %v", err)
 	}
 	// Move alice's membership one level deeper: alice ∈ teamA (teamA ∈ sre).
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: teamA.ID, MemberUserID: pg(alice.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: teamA.ID, MemberUserID: pg(alice.ID)}); err != nil {
 		t.Fatalf("AddUserToGroup alice→teamA: %v", err)
 	}
 	check("alice owner folder/prod via nested teamA∈sre", true, alice.ID, owner, "folder", prod.ID)

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // ErrInvalidToken is returned when a token is unknown, revoked, or expired.
@@ -20,11 +20,11 @@ var ErrInvalidToken = errors.New("invalid token")
 // TokenService issues and validates opaque bearer tokens backed by Postgres.
 // Only the SHA-256 hash of a token is stored, so tokens are revocable instantly.
 type TokenService struct {
-	q *gen.Queries
+	q *sqlc.Queries
 }
 
 // NewTokenService constructs a TokenService over the given queries.
-func NewTokenService(q *gen.Queries) *TokenService {
+func NewTokenService(q *sqlc.Queries) *TokenService {
 	return &TokenService{q: q}
 }
 
@@ -40,7 +40,7 @@ func (s *TokenService) Issue(ctx context.Context, userID uuid.UUID, ttl time.Dur
 		return "", fmt.Errorf("rand: %w", err)
 	}
 	raw := base64.RawURLEncoding.EncodeToString(buf)
-	if _, err := s.q.CreateAuthToken(ctx, gen.CreateAuthTokenParams{
+	if _, err := s.q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
 		UserID:    userID,
 		TokenHash: hashToken(raw),
 		ExpiresAt: time.Now().Add(ttl),

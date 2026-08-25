@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -42,7 +42,7 @@ func testSealer(t *testing.T) *secrets.Sealer {
 func TestKeyStoreInitAndLoad(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	ks := session.NewKeyStore(gen.New(pool), testSealer(t))
+	ks := session.NewKeyStore(sqlc.New(pool), testSealer(t))
 
 	if _, _, err := ks.LoadActive(ctx); err == nil {
 		t.Fatal("LoadActive must fail before Init")

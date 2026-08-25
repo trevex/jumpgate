@@ -29,9 +29,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/postgres"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
@@ -68,13 +68,13 @@ func main() {
 	}
 
 	ctx := context.Background()
-	pool, err := pg.NewPool(ctx, dsn)
+	pool, err := postgres.NewPool(ctx, dsn)
 	if err != nil {
 		log.Fatalf("db pool: %v", err)
 	}
 	defer pool.Close()
 
-	row, err := gen.New(pool).GetActiveCA(ctx, "mesh")
+	row, err := sqlc.New(pool).GetActiveCA(ctx, "mesh")
 	if errors.Is(err, pgx.ErrNoRows) {
 		log.Fatal("mesh CA not initialized: run VaultService.InitMeshCA first")
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // keys returns the map's keys as a slice (order-independent), for feeding the
@@ -25,9 +25,9 @@ func keys(m map[uuid.UUID]struct{}) []uuid.UUID {
 }
 
 // mustCreateUser inserts a user via the generated query layer and returns its id.
-func mustCreateUser(t testing.TB, q *gen.Queries, email string) uuid.UUID {
+func mustCreateUser(t testing.TB, q *sqlc.Queries, email string) uuid.UUID {
 	t.Helper()
-	u, err := q.CreateUser(context.Background(), gen.CreateUserParams{Email: email, DisplayName: email})
+	u, err := q.CreateUser(context.Background(), sqlc.CreateUserParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatalf("mustCreateUser(%s): %v", email, err)
 	}
@@ -36,9 +36,9 @@ func mustCreateUser(t testing.TB, q *gen.Queries, email string) uuid.UUID {
 
 // mustCreateFolder inserts a folder (optional parent) via the generated query
 // layer and returns its id.
-func mustCreateFolder(t testing.TB, q *gen.Queries, name string, parent *uuid.UUID) uuid.UUID {
+func mustCreateFolder(t testing.TB, q *sqlc.Queries, name string, parent *uuid.UUID) uuid.UUID {
 	t.Helper()
-	params := gen.CreateFolderParams{Name: name}
+	params := sqlc.CreateFolderParams{Name: name}
 	if parent != nil {
 		params.ParentID = pgUUID(*parent)
 	}
@@ -149,9 +149,9 @@ func mustNoErr(t testing.TB, err error) {
 // createRoleWithCaps creates a role and populates its capabilities from a
 // caps() []byte value (JSON capability array). The folderID may be the zero
 // pgtype.UUID for a global (scopeless) role. Returns the new role.
-func createRoleWithCaps(t testing.TB, ctx context.Context, q *gen.Queries, name string, folderID pgtype.UUID, capsBytes []byte) gen.Role { //nolint:revive
+func createRoleWithCaps(t testing.TB, ctx context.Context, q *sqlc.Queries, name string, folderID pgtype.UUID, capsBytes []byte) sqlc.Role { //nolint:revive
 	t.Helper()
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: name, FolderID: folderID})
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name, FolderID: folderID})
 	if err != nil {
 		t.Fatalf("createRoleWithCaps: create role %q: %v", name, err)
 	}
@@ -161,7 +161,7 @@ func createRoleWithCaps(t testing.TB, ctx context.Context, q *gen.Queries, name 
 	}
 	for _, pat := range patterns {
 		sc, ac, qu := NormalizeCap(pat)
-		if err := q.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{
+		if err := q.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{
 			RoleID:    role.ID,
 			Scope:     sc,
 			Action:    ac,

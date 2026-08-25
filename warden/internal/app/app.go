@@ -20,11 +20,11 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/postgres"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/recording"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
@@ -42,13 +42,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
-	pool, err := pg.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	if err := bootstrap.EnsureAdmin(ctx, q, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	var setupSvc *dataplane.SetupService
 	var sessionPubKey ed25519.PublicKey
 	if sealer != nil {
-		ks := session.NewKeyStore(gen.New(pool), sealer)
+		ks := session.NewKeyStore(sqlc.New(pool), sealer)
 		priv, pub, err := ks.LoadActive(ctx)
 		if errors.Is(err, session.ErrNoActiveKey) {
 			slog.Warn("no active session signing key; CreateSession disabled until initialized")
@@ -152,7 +152,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			return err
 		} else {
 			sessionPubKey = pub
-			sessionSvc = session.NewService(gen.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)
 			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, cfg.SSHCertMaxTTL)
@@ -188,7 +188,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	//
 	// Build the token lookup once here and share it with both the RPC interceptor
 	// and the HTTP cookie-auth middleware.
-	apiQ := gen.New(pool)
+	apiQ := sqlc.New(pool)
 	apiTokens := auth.NewTokenService(apiQ)
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
 	userServices := rpc.UserServices{

@@ -12,7 +12,7 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // CreateRequestPolicy creates a JIT request policy for a role (admin only).
@@ -55,7 +55,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {
 		return nil, err
 	}
-	policy, err := s.q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	policy, err := s.q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            roleID,
 		ScopeFolderID:     scopeFolder,
 		ScopeAssetID:      scopeAsset,
@@ -92,7 +92,7 @@ func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
-	policy, err := s.q.UpdateRequestPolicy(ctx, gen.UpdateRequestPolicyParams{
+	policy, err := s.q.UpdateRequestPolicy(ctx, sqlc.UpdateRequestPolicyParams{
 		ID:                id,
 		RequiredApprovals: req.Msg.RequiredApprovals,
 		ApproverRoleID:    approverRole,
@@ -139,7 +139,7 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListRequestPoliciesParams{RoleID: roleID, Lim: limit}
+	params := sqlc.ListRequestPoliciesParams{RoleID: roleID, Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -178,7 +178,7 @@ func (s *AccessServer) ListPoliciesForAsset(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListPoliciesForAssetParams{AssetID: pgUUID(assetID), Lim: limit}
+	params := sqlc.ListPoliciesForAssetParams{AssetID: pgUUID(assetID), Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -213,7 +213,7 @@ func (s *AccessServer) ListPoliciesForGroup(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListPoliciesForSubjectGroupParams{GroupID: pgUUID(groupID), Lim: limit}
+	params := sqlc.ListPoliciesForSubjectGroupParams{GroupID: pgUUID(groupID), Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -243,7 +243,7 @@ func (s *AccessServer) ResolvePolicy(ctx context.Context, req *connect.Request[a
 	if err := s.requireCap(ctx, "access:policy:read", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	p, err := s.q.GetPolicyByNameAndAsset(ctx, gen.GetPolicyByNameAndAssetParams{
+	p, err := s.q.GetPolicyByNameAndAsset(ctx, sqlc.GetPolicyByNameAndAssetParams{
 		Name:         pgText(strings.ToLower(req.Msg.Name)),
 		ScopeAssetID: pgUUID(assetID),
 	})
@@ -280,7 +280,7 @@ func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Reques
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
 	}
-	ps, err := s.q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	ps, err := s.q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:       policyID,
 		Kind:           req.Msg.Kind,
 		SubjectUserID:  subjUser,
@@ -335,7 +335,7 @@ func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListPolicySubjectsParams{PolicyID: policyID, Lim: limit}
+	params := sqlc.ListPolicySubjectsParams{PolicyID: policyID, Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}

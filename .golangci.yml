@@ -13,7 +13,7 @@ linters:
     rules:
       - path: 'warden/gen/'
         linters: [revive, gosec, staticcheck]
-      - path: 'internal/db/gen/'
+      - path: 'internal/postgres/sqlc/'
         linters: [revive, gosec, staticcheck]
       # `make ci` lints only the warden and cli modules (per-directory), so this rule
       # applies to repo-root runs — the pre-commit golangci-lint hook lints changed

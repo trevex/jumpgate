@@ -16,7 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestListFoldersParentScoped: admin browses root and children; a requester who
@@ -81,7 +81,7 @@ func TestListFoldersParentScoped(t *testing.T) {
 	}
 	// role cascades down folders (parent self-rule).
 	rid := uuid.MustParse(role.Msg.Role.Id)
-	if _, err := gen.New(pool).CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: rid, SourceRoleID: rid, Via: "parent"}); err != nil {
+	if _, err := sqlc.New(pool).CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: rid, SourceRoleID: rid, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	// Standing binding: alice -> ro on folder f1 (so the box-1 asset under f1/db is active).
@@ -166,7 +166,7 @@ func TestListAssetsUnified(t *testing.T) {
 		t.Fatal(err)
 	}
 	rid := uuid.MustParse(role.Msg.Role.Id)
-	if _, err := gen.New(pool).CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: rid, SourceRoleID: rid, Via: "parent"}); err != nil {
+	if _, err := sqlc.New(pool).CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: rid, SourceRoleID: rid, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := access.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{

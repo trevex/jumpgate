@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // toSet converts a uuid slice into a map[uuid.UUID]struct{} for set operations.
@@ -55,45 +55,45 @@ func idSet(t *testing.T, label string, got, want []uuid.UUID) {
 func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2, a1, a2 uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	adminU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "admin@tree", DisplayName: "Admin"})
+	adminU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "admin@tree", DisplayName: "Admin"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	aliceU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@tree", DisplayName: "Alice"})
+	aliceU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@tree", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bobU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@tree", DisplayName: "Bob"})
+	bobU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@tree", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rootF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "root"})
+	rootF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "root"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f1F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "f1", ParentID: pgUUID(rootF.ID)})
+	f1F, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "f1", ParentID: pgUUID(rootF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f2F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "f2", ParentID: pgUUID(f1F.ID)})
+	f2F, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "f2", ParentID: pgUUID(f1F.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a1A, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: f1F.ID, Name: "a1", Labels: []byte("{}"), Kind: "ssh"})
+	a1A, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: f1F.ID, Name: "a1", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a2A, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: f2F.ID, Name: "a2", Labels: []byte("{}"), Kind: "ssh"})
+	a2A, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: f2F.ID, Name: "a2", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// admin: scopeless (global) role carrying the two catalog read caps.
 	adminRole := createRoleWithCaps(t, ctx, q, "tree-admin", pgtype.UUID{}, caps("catalog:asset:read", "catalog:folder:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU.ID), // no scope → global
 	}); err != nil {
 		t.Fatal(err)
@@ -101,28 +101,28 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 
 	// alice: standing connect role bound directly on a1 (active access, no mgmt cap).
 	connect := createRoleWithCaps(t, ctx, q, "tree-connect", pgtype.UUID{}, caps("ssh:connect"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: connect.ID, ScopeAssetID: pgUUID(a1A.ID), SubjectUserID: pgUUID(aliceU.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// bob: a2 requestable via a policy naming bob (a group he's in) as a requester.
-	bobs, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "tree-bobs"})
+	bobs, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "tree-bobs"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: bobs.ID, MemberUserID: pgUUID(bobU.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: bobs.ID, MemberUserID: pgUUID(bobU.ID)}); err != nil {
 		t.Fatal(err)
 	}
 	dba := createRoleWithCaps(t, ctx, q, "tree-dba", pgtype.UUID{}, caps("db:admin"))
-	pol, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	pol, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: dba.ID, ScopeAssetID: pgUUID(a2A.ID), RequiredApprovals: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID: pol.ID, Kind: "requester", SubjectGroupID: pgUUID(bobs.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -147,13 +147,13 @@ func seedTree(t *testing.T, pool *pgxpool.Pool) (admin, alice, bob, root, f1, f2
 func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, stranger, root, f1, groleG, frole, ggroupG, fgroup, adminRoleID uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	rootF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-root"})
+	rootF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "rg-root"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f1F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-f1", ParentID: pgUUID(rootF.ID)})
+	f1F, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "rg-f1", ParentID: pgUUID(rootF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,35 +163,35 @@ func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, s
 	froleRole := createRoleWithCaps(t, ctx, q, "rg-frole", pgUUID(f1F.ID), caps("ssh:connect"))
 
 	// A global group (folder NULL) and a folder-homed group (@f1).
-	ggroupGGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "rg-group-global"})
+	ggroupGGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "rg-group-global"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fgroupGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "rg-fgroup", FolderID: pgUUID(f1F.ID)})
+	fgroupGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "rg-fgroup", FolderID: pgUUID(f1F.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	adminU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-admin@tree", DisplayName: "RGAdmin"})
+	adminU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-admin@tree", DisplayName: "RGAdmin"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	holderU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-holder@tree", DisplayName: "RGHolder"})
+	holderU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-holder@tree", DisplayName: "RGHolder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-member@tree", DisplayName: "RGMember"})
+	memberU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-member@tree", DisplayName: "RGMember"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	strangerU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-stranger@tree", DisplayName: "RGStranger"})
+	strangerU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-stranger@tree", DisplayName: "RGStranger"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// admin: global role carrying the two read caps (management arm, everywhere).
 	adminRole := createRoleWithCaps(t, ctx, q, "rg-admin-role", pgtype.UUID{}, caps("access:role:read", "identity:group:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU.ID), // no scope → global
 	}); err != nil {
 		t.Fatal(err)
@@ -200,14 +200,14 @@ func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, s
 	// holder: standing binding conferring frole on a folder (access arm: held).
 	// Bound at f1 so the binding has a concrete object; holding frole on ANY object
 	// makes it appear in heldRoleIDs.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: froleRole.ID, ScopeFolderID: pgUUID(f1F.ID), SubjectUserID: pgUUID(holderU.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// member: member of fgroup (access arm: transitive membership).
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{
 		GroupID: fgroupGroup.ID, MemberUserID: pgUUID(memberU.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestVisibleAssetsUnder(t *testing.T) {
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
 	admin, alice, bob, root, f1, f2, a1, a2 := seedTree(t, pool)
 
-	stranger, err := gen.New(pool).CreateUser(ctx, gen.CreateUserParams{Email: "stranger@tree", DisplayName: "S"})
+	stranger, err := sqlc.New(pool).CreateUser(ctx, sqlc.CreateUserParams{Email: "stranger@tree", DisplayName: "S"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,29 +412,29 @@ func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Tree: root ⊃ f1 ⊃ f2  (from seedTree) + root ⊃ f3
 	_, _, _, root, f1, f2, a1, a2 := seedTree(t, pool)
 
-	f3F, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "vt-f3", ParentID: pgUUID(root)})
+	f3F, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "vt-f3", ParentID: pgUUID(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f3 := f3F.ID
-	a3A, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: f3, Name: "vt-a3", Labels: []byte("{}"), Kind: "ssh"})
+	a3A, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: f3, Name: "vt-a3", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	a3 := a3A.ID
 
 	// scopedAdmin holds catalog:asset:read + catalog:folder:read bound at f1 ONLY.
-	scopedAdminU, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "scoped-admin@vt", DisplayName: "ScopedAdmin"})
+	scopedAdminU, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "scoped-admin@vt", DisplayName: "ScopedAdmin"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	scopedRole := createRoleWithCaps(t, ctx, q, "vt-scoped-admin", pgtype.UUID{}, caps("catalog:asset:read", "catalog:folder:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: scopedRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdminU.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -502,12 +502,12 @@ func TestVisibleManageOnlyEmptyFolder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	admin, _, _, root, f1, _, _, _ := seedTree(t, pool)
 
 	// Empty folder fe under root — no assets, no sub-folders.
-	feF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "vt-fe", ParentID: pgUUID(root)})
+	feF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "vt-fe", ParentID: pgUUID(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,17 +592,17 @@ func TestVisibleDeactivatedRoleHolder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, frole, _, _, _ := seedRolesGroups(t, pool)
 
 	// Create a new user (separate from the seed's holder) with a standing binding
 	// conferring frole on f1 so we can deactivate without disturbing the seed.
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-role-holder@vt", DisplayName: "DeactRoleHolder"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-role-holder@vt", DisplayName: "DeactRoleHolder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: frole, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -635,16 +635,16 @@ func TestVisibleDeactivatedGroupMember(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, _, _, fgroup, _ := seedRolesGroups(t, pool)
 
 	// Create a new user and add them to fgroup so we can deactivate independently.
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-group-member@vt", DisplayName: "DeactGroupMember"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-group-member@vt", DisplayName: "DeactGroupMember"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: fgroup, MemberUserID: pgUUID(u.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: fgroup, MemberUserID: pgUUID(u.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -673,18 +673,18 @@ func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	_, _, _, _, root, f1, _, frole, _, fgroup, _ := seedRolesGroups(t, pool)
 
 	// Create f-other as a sibling of f1 under rg-root, with its own role+group.
-	fOtherF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "rg-f-other", ParentID: pgUUID(root)})
+	fOtherF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "rg-f-other", ParentID: pgUUID(root)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fOther := fOtherF.ID
 	fOtherRole := createRoleWithCaps(t, ctx, q, "rg-other-role", pgUUID(fOther), caps("ssh:connect"))
-	fOtherGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+	fOtherGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{
 		Name: "rg-other-group", FolderID: pgUUID(fOther),
 	})
 	if err != nil {
@@ -695,12 +695,12 @@ func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 	// mgmtRole is itself homed in f1 (not folder-less), so it will not appear in
 	// the folder-less (global) candidate list and cannot be seen via the management
 	// arm at the global level.
-	scopedAdmin, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-scoped-admin@vt", DisplayName: "RGScopedAdmin"})
+	scopedAdmin, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-scoped-admin@vt", DisplayName: "RGScopedAdmin"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mgmtRole := createRoleWithCaps(t, ctx, q, "rg-scoped-mgmt", pgUUID(f1), caps("access:role:read", "identity:group:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: mgmtRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(scopedAdmin.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -767,36 +767,36 @@ func TestVisibleNestedSubgroupMember(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, _, _, _, _ := seedRolesGroups(t, pool)
 
 	// Create a parent+child group pair both homed in f1.
-	childGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+	childGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{
 		Name: "rg-nested-child", FolderID: pgUUID(f1),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	parentGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+	parentGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{
 		Name: "rg-nested-parent", FolderID: pgUUID(f1),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// childGroup is a member of parentGroup (nested group membership).
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{
 		GroupID: parentGroup.ID, MemberGroupID: pgUUID(childGroup.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a user who is a direct member of childGroup only.
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "rg-nested-user@vt", DisplayName: "RGNestedUser"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "rg-nested-user@vt", DisplayName: "RGNestedUser"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{
 		GroupID: childGroup.ID, MemberUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -824,17 +824,17 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	_, _, _, root, f1, _, a1, _ := seedTree(t, pool)
 
 	// Create a new user with a standing connect binding on a1.
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-vis@vt", DisplayName: "DeactVis"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-vis@vt", DisplayName: "DeactVis"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	connectRole := createRoleWithCaps(t, ctx, q, "vt-deact-connect", pgtype.UUID{}, caps("ssh:connect"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: connectRole.ID, ScopeAssetID: pgUUID(a1), SubjectUserID: pgUUID(u.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -877,41 +877,41 @@ func TestIsMember(t *testing.T) {
 	pool := newPool(t)
 	s := NewSQLAuthorizer(pool)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@member", DisplayName: "Alice"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@member", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@member", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@member", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// deactivated user
-	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@member", DisplayName: "Carol"})
+	carol, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "carol@member", DisplayName: "Carol"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	inner, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "inner"})
+	inner, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "inner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	outer, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "outer"})
+	outer, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "outer"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// alice is a direct member of inner.
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
 		t.Fatal(err)
 	}
 	// inner is nested inside outer (alice is a transitive member of outer).
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
 		t.Fatal(err)
 	}
 	// carol is a direct member of inner but will be deactivated.
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := q.DeactivateUser(ctx, carol.ID); err != nil {

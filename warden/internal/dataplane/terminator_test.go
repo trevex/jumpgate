@@ -12,7 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Compile-time assertion that *dataplane.Terminator satisfies the seam.
@@ -26,7 +26,7 @@ var _ interface {
 // attached per-scenario by the test.
 type termFixture struct {
 	pool *pgxpool.Pool
-	q    *gen.Queries
+	q    *sqlc.Queries
 	ctx  context.Context
 	term *dataplane.Terminator
 	az   authz.Authorizer
@@ -41,26 +41,26 @@ func setupTerm(t *testing.T) *termFixture {
 	t.Helper()
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -71,7 +71,7 @@ func setupTerm(t *testing.T) *termFixture {
 		t.Fatalf("CreateRole: %v", err)
 	}
 
-	sess, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+	sess, err := q.InsertLiveSession(ctx, sqlc.InsertLiveSessionParams{
 		ID: uuid.New(), UserID: user.ID, AssetID: asset.ID, WorkerID: "worker-1",
 		GrantID: pgtype.UUID{}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
 	})
@@ -91,7 +91,7 @@ func setupTerm(t *testing.T) *termFixture {
 // bindStanding attaches a standing role_binding of the role on the asset.
 func (f *termFixture) bindStanding(t *testing.T) {
 	t.Helper()
-	if _, err := f.q.CreateRoleBinding(f.ctx, gen.CreateRoleBindingParams{
+	if _, err := f.q.CreateRoleBinding(f.ctx, sqlc.CreateRoleBindingParams{
 		RoleID: f.role, ScopeAssetID: pg(f.asset), SubjectUserID: pg(f.user),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -101,7 +101,7 @@ func (f *termFixture) bindStanding(t *testing.T) {
 // mkGrant mints an active JIT access_grant of the role to the user and returns its id.
 func (f *termFixture) mkGrant(t *testing.T) uuid.UUID {
 	t.Helper()
-	req, err := f.q.CreateAccessRequest(f.ctx, gen.CreateAccessRequestParams{
+	req, err := f.q.CreateAccessRequest(f.ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   f.user,
 		RoleID:            f.role,
 		AssetID:           f.asset,
@@ -114,7 +114,7 @@ func (f *termFixture) mkGrant(t *testing.T) uuid.UUID {
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	g, err := f.q.CreateAccessGrant(f.ctx, gen.CreateAccessGrantParams{
+	g, err := f.q.CreateAccessGrant(f.ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: f.role, ScopeAssetID: f.asset, SubjectUserID: f.user,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -362,15 +362,15 @@ func TestReevaluateRedeliversTeardownAuditsOnce(t *testing.T) {
 // eviction has more than one row to signal. Returns the new session id.
 func (f *termFixture) seedSecondSession(t *testing.T) uuid.UUID {
 	t.Helper()
-	folder, err := f.q.CreateFolder(f.ctx, gen.CreateFolderParams{Name: uuid.NewString()})
+	folder, err := f.q.CreateFolder(f.ctx, sqlc.CreateFolderParams{Name: uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := f.q.CreateAsset(f.ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg2", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := f.q.CreateAsset(f.ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg2", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	sess, err := f.q.InsertLiveSession(f.ctx, gen.InsertLiveSessionParams{
+	sess, err := f.q.InsertLiveSession(f.ctx, sqlc.InsertLiveSessionParams{
 		ID: uuid.New(), UserID: f.user, AssetID: asset.ID, WorkerID: "worker-2",
 		GrantID: pgtype.UUID{}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp2",
 	})

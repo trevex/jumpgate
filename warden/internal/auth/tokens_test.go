@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -30,10 +30,10 @@ func newPool(t *testing.T) *pgxpool.Pool {
 func TestTokenIssueValidateRevoke(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	svc := auth.NewTokenService(q)
 
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "t@x", DisplayName: "T"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "t@x", DisplayName: "T"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,9 +69,9 @@ func TestTokenIssueValidateRevoke(t *testing.T) {
 func TestExpiredTokenRejected(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	svc := auth.NewTokenService(q)
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "e@x", DisplayName: "E"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "e@x", DisplayName: "E"})
 	if err != nil {
 		t.Fatal(err)
 	}

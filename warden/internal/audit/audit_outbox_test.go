@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // enqueueCommit enqueues one event inside its own committed transaction, mirroring
@@ -21,7 +21,7 @@ func enqueueCommit(t *testing.T, pool *pgxpool.Pool, log *audit.Logger, e audit.
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := log.Enqueue(ctx, gen.New(tx), e); err != nil {
+	if err := log.Enqueue(ctx, sqlc.New(tx), e); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -31,7 +31,7 @@ func enqueueCommit(t *testing.T, pool *pgxpool.Pool, log *audit.Logger, e audit.
 
 func countOutbox(t *testing.T, pool *pgxpool.Pool) int64 {
 	t.Helper()
-	n, err := gen.New(pool).CountOutbox(context.Background())
+	n, err := sqlc.New(pool).CountOutbox(context.Background())
 	if err != nil {
 		t.Fatalf("count outbox: %v", err)
 	}
@@ -40,7 +40,7 @@ func countOutbox(t *testing.T, pool *pgxpool.Pool) int64 {
 
 func countChain(t *testing.T, pool *pgxpool.Pool) int {
 	t.Helper()
-	rows, err := gen.New(pool).ListAuditEntries(context.Background())
+	rows, err := sqlc.New(pool).ListAuditEntries(context.Background())
 	if err != nil {
 		t.Fatalf("list audit entries: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestDrainPreservesSeqOrder(t *testing.T) {
 	if n != 3 {
 		t.Fatalf("drained = %d, want 3", n)
 	}
-	rows, err := gen.New(pool).ListAuditEntries(ctx)
+	rows, err := sqlc.New(pool).ListAuditEntries(ctx)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

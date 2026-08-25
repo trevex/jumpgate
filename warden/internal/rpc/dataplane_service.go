@@ -17,8 +17,8 @@ import (
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // workerIdentity returns the authoritative worker id from the request's mesh
@@ -131,7 +131,7 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 	})
 	defer s.registry.ClearWorkerMeta(workerID)
 
-	if err := gen.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
+	if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 		slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
 	}
 
@@ -165,7 +165,7 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 				}
 			}
 			if msg.GetHeartbeat() != nil {
-				if err := gen.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
+				if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 					slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
 				}
 			}
@@ -209,7 +209,7 @@ func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID stri
 	for _, id := range workerLiveIDs {
 		have[id] = true
 	}
-	rows, err := gen.New(s.pool).ListLiveSessionsByWorker(ctx, workerID)
+	rows, err := sqlc.New(s.pool).ListLiveSessionsByWorker(ctx, workerID)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 	if err != nil {
 		return fmt.Errorf("bad session id %q: %w", sessionID, err)
 	}
-	parties, err := gen.New(s.pool).GetLiveSessionParties(ctx, sid)
+	parties, err := sqlc.New(s.pool).GetLiveSessionParties(ctx, sid)
 	if err != nil {
 		return fmt.Errorf("lookup session parties: %w", err)
 	}
@@ -247,7 +247,7 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	// Attribute the recording to the grant that authorized the session, if the worker
 	// reported one. A malformed grant_id is treated as unattributed (NULL) rather than
@@ -259,7 +259,7 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 		}
 	}
 
-	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := q.UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sid,
 		UserID:    parties.UserID,
 		AssetID:   parties.AssetID,

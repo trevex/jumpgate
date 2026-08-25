@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -78,8 +78,8 @@ func TestAppendWithActor(t *testing.T) {
 func TestChainSurvivesActorDeletion(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
-	u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "actor@x", DisplayName: "Actor"})
+	q := sqlc.New(pool)
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "actor@x", DisplayName: "Actor"})
 	if err != nil {
 		t.Fatal(err)
 	}

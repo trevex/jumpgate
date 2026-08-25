@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestMgmtScopeFolders: a user holding a management-cap role bound at a nested
@@ -16,7 +16,7 @@ func TestMgmtScopeFolders(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := &sqlAuthorizer{pool: pool}
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "ma-root", nil)
 	nested := mustCreateFolder(t, q, "ma-nested", &root)
@@ -26,14 +26,14 @@ func TestMgmtScopeFolders(t *testing.T) {
 
 	// mgr: a role carrying catalog:asset:read bound at the nested folder.
 	mgrRole := createRoleWithCaps(t, ctx, q, "ma-mgr-role", pgtype.UUID{}, caps("catalog:asset:read"))
-	_, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	_, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: mgrRole.ID, ScopeFolderID: pgUUID(nested), SubjectUserID: pgUUID(mgr),
 	})
 	mustNoErr(t, err)
 
 	// conn: a role carrying only ssh:login:* bound at the same nested folder.
 	connRole := createRoleWithCaps(t, ctx, q, "ma-conn-role", pgtype.UUID{}, caps("ssh:login:*"))
-	_, err = q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	_, err = q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: connRole.ID, ScopeFolderID: pgUUID(nested), SubjectUserID: pgUUID(conn),
 	})
 	mustNoErr(t, err)
@@ -69,7 +69,7 @@ func TestVisibleNodeHomeAnchors(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := &sqlAuthorizer{pool: pool}
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "an-root", nil)
 	nested := mustCreateFolder(t, q, "an-nested", &root)
@@ -79,7 +79,7 @@ func TestVisibleNodeHomeAnchors(t *testing.T) {
 
 	// A role homed @nested that the holder HOLDS (standing binding of that role).
 	frole := createRoleWithCaps(t, ctx, q, "an-frole", pgUUID(nested), caps("ssh:connect"))
-	_, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	_, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: frole.ID, ScopeFolderID: pgUUID(nested), SubjectUserID: pgUUID(holder),
 	})
 	mustNoErr(t, err)
@@ -89,9 +89,9 @@ func TestVisibleNodeHomeAnchors(t *testing.T) {
 	requireContains(t, keys(roleFolders), nested)
 
 	// A group homed @nested that member is a member of.
-	fgroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "an-fgroup", FolderID: pgUUID(nested)})
+	fgroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "an-fgroup", FolderID: pgUUID(nested)})
 	mustNoErr(t, err)
-	err = q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: fgroup.ID, MemberUserID: pgUUID(member)})
+	err = q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: fgroup.ID, MemberUserID: pgUUID(member)})
 	mustNoErr(t, err)
 
 	groupFolders, err := s.visibleGroupHomeFolders(ctx, member)
@@ -110,7 +110,7 @@ func TestVisibleAssetFolders(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	s := &sqlAuthorizer{pool: pool}
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "af-root", nil)
 	nested := mustCreateFolder(t, q, "af-nested", &root)
@@ -118,12 +118,12 @@ func TestVisibleAssetFolders(t *testing.T) {
 	user := mustCreateUser(t, q, "af-user@t")
 	stranger := mustCreateUser(t, q, "af-stranger@t")
 
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{
 		FolderID: nested, Name: "af-asset", Labels: []byte("{}"), Kind: "ssh",
 	})
 	mustNoErr(t, err)
 	// A ca login on the asset (no secret required for kind=ca).
-	_, err = q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	_, err = q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "root", Kind: "ca",
 	})
 	mustNoErr(t, err)
@@ -131,7 +131,7 @@ func TestVisibleAssetFolders(t *testing.T) {
 	// user: a role entitling ssh:login:root bound at the nested folder ⇒ the asset
 	// is connect-visible, so its folder anchors.
 	connRole := createRoleWithCaps(t, ctx, q, "af-conn-role", pgtype.UUID{}, caps("ssh:login:root"))
-	_, err = q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	_, err = q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: connRole.ID, ScopeFolderID: pgUUID(nested), SubjectUserID: pgUUID(user),
 	})
 	mustNoErr(t, err)

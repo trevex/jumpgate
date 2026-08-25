@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -60,46 +60,46 @@ func newPool(t *testing.T) *pgxpool.Pool {
 func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, topsecret, operatorRole, viewerRole, dbaRole uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	au, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
+	au, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sre, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "sre"})
+	sre, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "sre"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	platform, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "platform"})
+	platform, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "platform"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: sre.ID, MemberUserID: pgUUID(au.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: sre.ID, MemberUserID: pgUUID(au.ID)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: platform.ID, MemberGroupID: pgUUID(sre.ID)}); err != nil {
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: platform.ID, MemberGroupID: pgUUID(sre.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
-	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	prod, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	proddb, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-db", ParentID: pgUUID(prod.ID)})
+	proddb, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-db", ParentID: pgUUID(prod.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	staging, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "staging"})
+	staging, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "staging"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "secret"})
+	secret, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	mkAsset := func(folder uuid.UUID, name string) uuid.UUID {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,27 +115,27 @@ func seed(t *testing.T, pool *pgxpool.Pool) (alice, pgprod, apiprod, pgstaging, 
 	dba := createRoleWithCaps(t, ctx, q, "dba", pgtype.UUID{}, caps("db:admin"))
 
 	// operator + viewer cascade down folders via explicit parent self-rules.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: vw.ID, SourceRoleID: vw.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: vw.ID, SourceRoleID: vw.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 
 	// STANDING: platform -> operator on prod (⇒ pgprod, apiprod active for alice).
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: op.ID, ScopeFolderID: pgUUID(prod.ID), SubjectGroupID: pgUUID(platform.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// STANDING: sre -> viewer on staging (⇒ alice holds viewer on pgstaging via cascade).
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: vw.ID, ScopeFolderID: pgUUID(staging.ID), SubjectGroupID: pgUUID(sre.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// request_policy: dba requestable on pgstaging, requester_role=viewer.
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: dba.ID, ScopeAssetID: pgUUID(pgstaging), RequiredApprovals: 1, RequesterRoleID: pgUUID(vw.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -215,19 +215,19 @@ func TestGrantConfersAccess(t *testing.T) {
 func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 	rr := NewRoleResolver(pool)
 
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grantflow@x", DisplayName: "Alice"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grantflow@x", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "gf-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "gf-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "gf-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "gf-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	editor := createRoleWithCaps(t, ctx, q, "gf-editor", pgtype.UUID{}, caps("db:write"))
 	// editor ⊇ owner via same_object: goal editor reduces to source owner, so
 	// holding owner confers editor on the same object.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: editor.ID, SourceRoleID: owner.ID, Via: "same_object"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: editor.ID, SourceRoleID: owner.ID, Via: "same_object"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -422,50 +422,50 @@ func TestVisibleAssetsTiers(t *testing.T) {
 func TestRequestableViaExplicitSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
+	carol, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// carol ∈ subteam ∈ contractors (nested group, group-aware subject matching).
-	contractors, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "contractors"})
+	contractors, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "contractors"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	subteam, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "subteam"})
+	subteam, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "subteam"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: subteam.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: subteam.ID, MemberUserID: pgUUID(carol.ID)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: contractors.ID, MemberGroupID: pgUUID(subteam.ID)}); err != nil {
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: contractors.ID, MemberGroupID: pgUUID(subteam.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "bg-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "bg-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "bg-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "bg-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	breakglass := createRoleWithCaps(t, ctx, q, "breakglass", pgtype.UUID{}, caps("db:admin"))
 	// Policy with NO requester_role — eligibility is ONLY via explicit subjects.
-	pol, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	pol, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: breakglass.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID: pol.ID, Kind: "requester", SubjectGroupID: pgUUID(contractors.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -526,10 +526,10 @@ func TestRequestableIneligibleNoRequesterMatch(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	_, _, _, pgstaging, _, _, _, _ := seed(t, pool)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob-ineligible@x", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob-ineligible@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestActiveExcludesRequestable(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
 	// Pre-condition: dba is Requestable (not Active) for alice on pgstaging.
@@ -572,7 +572,7 @@ func TestActiveExcludesRequestable(t *testing.T) {
 	}
 
 	// Grant alice a standing dba binding directly on pgstaging.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: dbaRole, ScopeAssetID: pgUUID(pgstaging), SubjectUserID: pgUUID(alice),
 	}); err != nil {
 		t.Fatal(err)
@@ -628,45 +628,45 @@ func TestCheckCapability(t *testing.T) {
 func TestThreeLevelFolderInheritance(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "eng"})
+	grp, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "eng"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
-		t.Fatal(err)
-	}
-
-	gp, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "gp"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	parent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "parent", ParentID: pgUUID(gp.ID)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	child, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "child", ParentID: pgUUID(parent.ID)})
-	if err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(alice.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
-	deepAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "deep", Labels: []byte("{}"), Kind: "ssh"})
+	gp, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "gp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "parent", ParentID: pgUUID(gp.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "child", ParentID: pgUUID(parent.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deepAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: child.ID, Name: "deep", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	role := createRoleWithCaps(t, ctx, q, "op3", pgtype.UUID{}, caps("db:read"))
 	// op3 cascades down folders via an explicit parent self-rule.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: role.ID, SourceRoleID: role.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	// standing binding on the GRANDPARENT folder
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -703,36 +703,36 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 func TestCheckExplicitFolderCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cascade@x", DisplayName: "Cascade"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "cascade@x", DisplayName: "Cascade"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "cascade-grp"})
+	grp, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "cascade-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
-	parent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cascade-parent"})
+	parent, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cascade-parent"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cascade-child", ParentID: pgUUID(parent.ID)})
+	child, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cascade-child", ParentID: pgUUID(parent.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: child.ID, Name: "cascade-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: child.ID, Name: "cascade-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	op := createRoleWithCaps(t, ctx, q, "cascade-op", pgtype.UUID{}, caps("db:read"))
 	// STANDING binding of op to the group on the PARENT folder. No role_grant yet.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: op.ID, ScopeFolderID: pgUUID(parent.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -764,7 +764,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 	}
 
 	// Add the explicit op ⊇ op via parent rule.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: op.ID, SourceRoleID: op.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -802,25 +802,25 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 func TestCheckSameObjectComposition(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "compose@x", DisplayName: "Compose"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "compose@x", DisplayName: "Compose"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "compose-grp"})
+	grp, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "compose-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "compose-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "compose-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "compose-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "compose-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -832,11 +832,11 @@ func TestCheckSameObjectComposition(t *testing.T) {
 	// forward closure adds base whenever super is held. (This is the (base ⊇ super)
 	// direction — "base is conferred by super" — matching the goal-expansion engine
 	// where WHERE rg.source_role_id = h.role_id SELECT rg.role_id.)
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: base.ID, SourceRoleID: super.ID, Via: "same_object"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: base.ID, SourceRoleID: super.ID, Via: "same_object"}); err != nil {
 		t.Fatal(err)
 	}
 	// STANDING binding of super to the group on the asset.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: super.ID, ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -865,14 +865,14 @@ func TestCheckSameObjectComposition(t *testing.T) {
 func TestCheckGlobCapabilities(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "glob@x", DisplayName: "Glob"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "glob@x", DisplayName: "Glob"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "glob-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "glob-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,12 +880,12 @@ func TestCheckGlobCapabilities(t *testing.T) {
 	// bindRole creates a role with the given capability patterns and a STANDING
 	// binding of it to `user` on a fresh asset, returning that asset id.
 	bindRole := func(name string, patterns ...string) uuid.UUID {
-		asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name + "-asset", Labels: []byte("{}"), Kind: "ssh"})
+		asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: name + "-asset", Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		role := createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, caps(patterns...))
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 		}); err != nil {
 			t.Fatal(err)
@@ -981,43 +981,43 @@ func TestRolesOnAsset(t *testing.T) {
 func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+	dave, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// dave ∈ inner ∈ outer (doubly nested).
-	outer, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "outer"})
+	outer, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "outer"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "inner"})
+	inner, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "inner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(dave.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: inner.ID, MemberUserID: pgUUID(dave.ID)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddGroupToGroup(ctx, gen.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
+	if err := q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: outer.ID, MemberGroupID: pgUUID(inner.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
 	// gp ⊃ mid ⊃ leaf; asset deep ∈ leaf.
-	gp, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-gp"})
+	gp, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "casc-gp"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mid, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-mid", ParentID: pgUUID(gp.ID)})
+	mid, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "casc-mid", ParentID: pgUUID(gp.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "casc-leaf", ParentID: pgUUID(mid.ID)})
+	leaf, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "casc-leaf", ParentID: pgUUID(mid.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	deep, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: leaf.ID, Name: "casc-deep", Labels: []byte("{}"), Kind: "ssh"})
+	deep, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: leaf.ID, Name: "casc-deep", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1025,17 +1025,17 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 	prereq := createRoleWithCaps(t, ctx, q, "casc-prereq", pgtype.UUID{}, caps("db:read"))
 	target := createRoleWithCaps(t, ctx, q, "casc-target", pgtype.UUID{}, caps("db:admin"))
 	// prereq cascades down folders → dave holds prereq on `deep`.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: prereq.ID, SourceRoleID: prereq.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: prereq.ID, SourceRoleID: prereq.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 	// STANDING prereq → outer group on the GRANDPARENT folder.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: prereq.ID, ScopeFolderID: pgUUID(gp.ID), SubjectGroupID: pgUUID(outer.ID),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// Policy: target requestable on `deep`, requester_role = prereq.
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: target.ID, ScopeAssetID: pgUUID(deep.ID), RequiredApprovals: 1, RequesterRoleID: pgUUID(prereq.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -1061,23 +1061,23 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 func TestCapabilitiesOnAsset(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "cap-on-asset@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "cap-on-asset@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cap-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cap-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "cap-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "cap-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "cap-deploy", pgtype.UUID{}, caps("ssh:login:deploy"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -1121,18 +1121,18 @@ func TestCapabilitiesOnAsset(t *testing.T) {
 func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	rr := NewRoleResolver(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "hrs@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "hrs@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "hrs-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "hrs-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "hrs-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "hrs-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1142,7 +1142,7 @@ func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 	// granted: held ONLY via an active JIT grant.
 	fabricateGrant(t, pool, user.ID, granted.ID, asset.ID, grantOpts{expiresIn: time.Hour})
 	// standing: held via a standing binding.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: standing.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -1172,25 +1172,25 @@ func TestHoldsRoleStandingExcludesGrants(t *testing.T) {
 func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grr@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grr@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "grr-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "grr-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "grr-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "grr-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	requester := createRoleWithCaps(t, ctx, q, "grr-requester", pgtype.UUID{}, caps())
 	target := createRoleWithCaps(t, ctx, q, "grr-target", pgtype.UUID{}, caps("db:admin"))
 	// Policy: target requestable on asset, requester_role = requester.
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: target.ID, ScopeAssetID: pgUUID(asset.ID), RequiredApprovals: 1, RequesterRoleID: pgUUID(requester.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -1235,7 +1235,7 @@ func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	}
 
 	// Now give a STANDING binding of the requester role → target becomes Requestable.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: requester.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatal(err)

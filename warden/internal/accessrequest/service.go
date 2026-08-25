@@ -37,7 +37,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // pgUniqueViolation is the SQLSTATE for a unique-constraint violation.
@@ -144,8 +144,8 @@ func durationToInterval(d time.Duration) pgtype.Interval {
 	return pgtype.Interval{Microseconds: int64(d / time.Microsecond), Valid: true}
 }
 
-// toRequest maps a gen.AccessRequest plus derived fields to the DTO.
-func toRequest(r gen.AccessRequest, approvals int, grantID uuid.UUID) Request {
+// toRequest maps a sqlc.AccessRequest plus derived fields to the DTO.
+func toRequest(r sqlc.AccessRequest, approvals int, grantID uuid.UUID) Request {
 	out := Request{
 		ID:                r.ID,
 		RequesterID:       r.RequesterUserID,
@@ -213,9 +213,9 @@ func (s *Service) RequestAccess(ctx context.Context, requester, roleID, assetID 
 		return Request{}, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
-	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	req, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   requester,
 		RoleID:            roleID,
 		AssetID:           assetID,
@@ -239,7 +239,7 @@ func (s *Service) RequestAccess(ctx context.Context, requester, roleID, assetID 
 			return Request{}, err
 		}
 		grantID = grant.ID
-		if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+		if err := q.SetAccessRequestStatus(ctx, sqlc.SetAccessRequestStatusParams{
 			Status:     "granted",
 			ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			ID:         req.ID,
@@ -280,7 +280,7 @@ func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decis
 		return Request{}, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	req, err := q.GetAccessRequestForUpdate(ctx, requestID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -305,7 +305,7 @@ func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decis
 		return Request{}, ErrSelfApprove
 	}
 
-	if _, err := q.AddApproval(ctx, gen.AddApprovalParams{
+	if _, err := q.AddApproval(ctx, sqlc.AddApprovalParams{
 		RequestID:      requestID,
 		ApproverUserID: approver,
 		Decision:       decision,
@@ -321,7 +321,7 @@ func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decis
 		granted bool
 	)
 	if decision == "deny" {
-		if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+		if err := q.SetAccessRequestStatus(ctx, sqlc.SetAccessRequestStatusParams{
 			Status:     "denied",
 			ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			ID:         requestID,
@@ -341,7 +341,7 @@ func (s *Service) vote(ctx context.Context, approver, requestID uuid.UUID, decis
 			}
 			grantID = gr.ID
 			granted = true
-			if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+			if err := q.SetAccessRequestStatus(ctx, sqlc.SetAccessRequestStatusParams{
 				Status:     "granted",
 				ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 				ID:         requestID,
@@ -386,7 +386,7 @@ func (s *Service) Cancel(ctx context.Context, requester, requestID uuid.UUID) er
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	req, err := q.GetAccessRequestForUpdate(ctx, requestID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -401,7 +401,7 @@ func (s *Service) Cancel(ctx context.Context, requester, requestID uuid.UUID) er
 	if req.Status != "pending" {
 		return ErrNotPending
 	}
-	if err := q.SetAccessRequestStatus(ctx, gen.SetAccessRequestStatusParams{
+	if err := q.SetAccessRequestStatus(ctx, sqlc.SetAccessRequestStatusParams{
 		Status:     "cancelled",
 		ResolvedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		ID:         requestID,
@@ -421,8 +421,8 @@ func (s *Service) Cancel(ctx context.Context, requester, requestID uuid.UUID) er
 // mintGrant inserts the access_grant for a granted request. Shared by
 // RequestAccess (self-service) and Approve (threshold reached). The tx-scoped
 // UNIQUE(request_id) is the backstop against a duplicate grant under concurrency.
-func (s *Service) mintGrant(ctx context.Context, q *gen.Queries, req gen.AccessRequest, granted time.Duration) (gen.AccessGrant, error) {
-	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+func (s *Service) mintGrant(ctx context.Context, q *sqlc.Queries, req sqlc.AccessRequest, granted time.Duration) (sqlc.AccessGrant, error) {
+	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID:     req.ID,
 		RoleID:        req.RoleID,
 		ScopeAssetID:  req.AssetID,
@@ -430,7 +430,7 @@ func (s *Service) mintGrant(ctx context.Context, q *gen.Queries, req gen.AccessR
 		ExpiresAt:     time.Now().Add(granted),
 	})
 	if err != nil {
-		return gen.AccessGrant{}, fmt.Errorf("mint grant: %w", err)
+		return sqlc.AccessGrant{}, fmt.Errorf("mint grant: %w", err)
 	}
 	return grant, nil
 }
@@ -447,7 +447,7 @@ func mustDuration(iv pgtype.Interval) time.Duration {
 
 // ListMyRequests returns the caller's own requests, newest first.
 func (s *Service) ListMyRequests(ctx context.Context, requester uuid.UUID) ([]Request, error) {
-	q := gen.New(s.pool)
+	q := sqlc.New(s.pool)
 	rows, err := q.ListAccessRequestsByRequester(ctx, requester)
 	if err != nil {
 		return nil, fmt.Errorf("list my requests: %w", err)
@@ -574,7 +574,7 @@ ORDER BY p.created_at DESC, p.id`
 	}
 	out := make([]Request, 0, len(prows))
 	for _, r := range prows {
-		out = append(out, toRequest(gen.AccessRequest{
+		out = append(out, toRequest(sqlc.AccessRequest{
 			ID: r.ID, RequesterUserID: r.RequesterUserID, RoleID: r.RoleID, AssetID: r.AssetID,
 			Reason: r.Reason, RequiredApprovals: r.RequiredApprovals, Status: r.Status,
 			CreatedAt: r.CreatedAt.Time, ResolvedAt: r.ResolvedAt,
@@ -607,7 +607,7 @@ type party struct {
 // denies. A deactivated caller is never party (IsApprover already excludes them;
 // the requester branch checks activity explicitly).
 func (s *Service) CanReadForRequest(ctx context.Context, caller uuid.UUID, kind ReqEntityKind, id uuid.UUID) (bool, error) {
-	q := gen.New(s.pool)
+	q := sqlc.New(s.pool)
 
 	var parties []party
 	switch kind {
@@ -663,7 +663,7 @@ func (s *Service) CanReadForRequest(ctx context.Context, caller uuid.UUID, kind 
 // checks — callers consult it only after a cap check denies. Fails closed: an
 // unknown grant yields false, not an error swallowed to true.
 func (s *Service) CanReviewGrant(ctx context.Context, caller, grantID uuid.UUID) (bool, error) {
-	g, err := gen.New(s.pool).GetGrant(ctx, grantID)
+	g, err := sqlc.New(s.pool).GetGrant(ctx, grantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -680,7 +680,7 @@ func (s *Service) CanReviewGrant(ctx context.Context, caller, grantID uuid.UUID)
 }
 
 // grantIDFor returns the grant id for a granted request, or uuid.Nil.
-func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRequest) uuid.UUID {
+func (s *Service) grantIDFor(ctx context.Context, q *sqlc.Queries, r sqlc.AccessRequest) uuid.UUID {
 	if r.Status != "granted" {
 		return uuid.Nil
 	}
@@ -694,7 +694,7 @@ func (s *Service) grantIDFor(ctx context.Context, q *gen.Queries, r gen.AccessRe
 // enqueue writes a request-lifecycle audit event into the outbox on the caller's
 // tx-bound querier, so it commits atomically with the domain write. Returns an
 // error so an enqueue failure rolls back the domain action.
-func (s *Service) enqueue(ctx context.Context, q *gen.Queries, eventType string, actor uuid.UUID, req gen.AccessRequest, extra map[string]any) error {
+func (s *Service) enqueue(ctx context.Context, q *sqlc.Queries, eventType string, actor uuid.UUID, req sqlc.AccessRequest, extra map[string]any) error {
 	if s.audit == nil {
 		return nil
 	}
@@ -719,7 +719,7 @@ func (s *Service) enqueue(ctx context.Context, q *gen.Queries, eventType string,
 
 // enqueueGrant writes the grant-activation audit event into the outbox on the
 // caller's tx-bound querier (atomic with the domain write).
-func (s *Service) enqueueGrant(ctx context.Context, q *gen.Queries, actor uuid.UUID, req gen.AccessRequest, grantID uuid.UUID) error {
+func (s *Service) enqueueGrant(ctx context.Context, q *sqlc.Queries, actor uuid.UUID, req sqlc.AccessRequest, grantID uuid.UUID) error {
 	if s.audit == nil {
 		return nil
 	}
@@ -746,52 +746,52 @@ func (s *Service) enqueueGrant(ctx context.Context, q *gen.Queries, actor uuid.U
 // symmetric with approval authority. On success the revocation is audited and the
 // terminator is notified so live sessions relying on the grant are torn down (both
 // post-commit, best-effort).
-func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, mgmtAuthorized bool, grantID uuid.UUID, reason string) (gen.AccessGrant, error) {
-	g, err := gen.New(s.pool).GetGrant(ctx, grantID)
+func (s *Service) RevokeGrant(ctx context.Context, caller auth.CurrentUser, mgmtAuthorized bool, grantID uuid.UUID, reason string) (sqlc.AccessGrant, error) {
+	g, err := sqlc.New(s.pool).GetGrant(ctx, grantID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return gen.AccessGrant{}, ErrGrantNotFound
+		return sqlc.AccessGrant{}, ErrGrantNotFound
 	}
 	if err != nil {
-		return gen.AccessGrant{}, fmt.Errorf("get grant: %w", err)
+		return sqlc.AccessGrant{}, fmt.Errorf("get grant: %w", err)
 	}
 
 	authorized := mgmtAuthorized || g.SubjectUserID == caller.ID
 	if !authorized {
 		ok, err := s.resolver.IsApprover(ctx, caller.ID, g.RoleID, g.ScopeAssetID)
 		if err != nil {
-			return gen.AccessGrant{}, err
+			return sqlc.AccessGrant{}, err
 		}
 		authorized = ok
 	}
 	if !authorized {
-		return gen.AccessGrant{}, ErrRevokeForbidden
+		return sqlc.AccessGrant{}, ErrRevokeForbidden
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return gen.AccessGrant{}, fmt.Errorf("begin: %w", err)
+		return sqlc.AccessGrant{}, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
-	revoked, err := q.RevokeGrant(ctx, gen.RevokeGrantParams{
+	revoked, err := q.RevokeGrant(ctx, sqlc.RevokeGrantParams{
 		ID:            grantID,
 		RevokedBy:     pgtype.UUID{Bytes: caller.ID, Valid: true},
 		RevokedReason: pgtype.Text{String: reason, Valid: true},
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 0 rows updated: the grant was already revoked or has no live window.
-		return gen.AccessGrant{}, ErrGrantInactive
+		return sqlc.AccessGrant{}, ErrGrantInactive
 	}
 	if err != nil {
-		return gen.AccessGrant{}, fmt.Errorf("revoke grant: %w", err)
+		return sqlc.AccessGrant{}, fmt.Errorf("revoke grant: %w", err)
 	}
 
 	if err := s.enqueueRevoked(ctx, q, caller.ID, revoked); err != nil {
-		return gen.AccessGrant{}, err
+		return sqlc.AccessGrant{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return gen.AccessGrant{}, fmt.Errorf("commit: %w", err)
+		return sqlc.AccessGrant{}, fmt.Errorf("commit: %w", err)
 	}
 
 	s.terminate(ctx, revoked.ID)
@@ -807,9 +807,9 @@ func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UU
 		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
-	revoked, err := q.RevokeActiveGrantsForUser(ctx, gen.RevokeActiveGrantsForUserParams{
+	revoked, err := q.RevokeActiveGrantsForUser(ctx, sqlc.RevokeActiveGrantsForUserParams{
 		SubjectUserID: userID,
 		RevokedBy:     pgtype.UUID{Bytes: actor, Valid: true},
 		RevokedReason: pgtype.Text{String: reason, Valid: true},
@@ -864,11 +864,11 @@ func (s *Service) DeleteRoleCascade(ctx context.Context, actor, roleID uuid.UUID
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	// Revoke the role's still-live grants first (before the FK cascade removes the
 	// rows), auditing each so the terminator can tear down their live sessions.
-	revoked, err := q.RevokeActiveGrantsForRole(ctx, gen.RevokeActiveGrantsForRoleParams{
+	revoked, err := q.RevokeActiveGrantsForRole(ctx, sqlc.RevokeActiveGrantsForRoleParams{
 		RoleID:        roleID,
 		RevokedBy:     pgtype.UUID{Bytes: actor, Valid: true},
 		RevokedReason: pgtype.Text{String: "role_deleted", Valid: true},
@@ -925,7 +925,7 @@ func (s *Service) DeleteRoleCascade(ctx context.Context, actor, roleID uuid.UUID
 
 // ListMyGrants returns the caller's own grants (active + past), newest first.
 func (s *Service) ListMyGrants(ctx context.Context, subject uuid.UUID) ([]Grant, error) {
-	rows, err := gen.New(s.pool).ListGrantsBySubject(ctx, subject)
+	rows, err := sqlc.New(s.pool).ListGrantsBySubject(ctx, subject)
 	if err != nil {
 		return nil, fmt.Errorf("list my grants: %w", err)
 	}
@@ -935,8 +935,8 @@ func (s *Service) ListMyGrants(ctx context.Context, subject uuid.UUID) ([]Grant,
 // ListMyRequestsPaged returns the caller's own requests with keyset pagination
 // on (created_at DESC, id ASC).
 func (s *Service) ListMyRequestsPaged(ctx context.Context, requester uuid.UUID, page PageParams) ([]Request, error) {
-	q := gen.New(s.pool)
-	params := gen.ListAccessRequestsByRequesterPagedParams{
+	q := sqlc.New(s.pool)
+	params := sqlc.ListAccessRequestsByRequesterPagedParams{
 		RequesterUserID: requester,
 		Lim:             page.Limit,
 	}
@@ -971,8 +971,8 @@ func (s *Service) ListMyRequestsPaged(ctx context.Context, requester uuid.UUID, 
 // filtered row — so the cursor tracks SQL position even when all rows on a
 // page were filtered out.
 func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Request, *PageCursor, error) {
-	q := gen.New(s.pool)
-	params := gen.ListPendingRequestsPagedParams{Lim: page.Limit}
+	q := sqlc.New(s.pool)
+	params := sqlc.ListPendingRequestsPagedParams{Lim: page.Limit}
 	if page.AfterTs != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
@@ -1010,7 +1010,7 @@ func (s *Service) ListPendingApprovalsPaged(ctx context.Context, caller uuid.UUI
 // ListMyGrantsPaged returns the caller's own grants with keyset pagination on
 // (granted_at DESC, id ASC).
 func (s *Service) ListMyGrantsPaged(ctx context.Context, subject uuid.UUID, page PageParams) ([]Grant, error) {
-	params := gen.ListGrantsBySubjectPagedParams{
+	params := sqlc.ListGrantsBySubjectPagedParams{
 		SubjectUserID: subject,
 		Lim:           page.Limit,
 	}
@@ -1018,7 +1018,7 @@ func (s *Service) ListMyGrantsPaged(ctx context.Context, subject uuid.UUID, page
 		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
 	}
-	rows, err := gen.New(s.pool).ListGrantsBySubjectPaged(ctx, params)
+	rows, err := sqlc.New(s.pool).ListGrantsBySubjectPaged(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("list my grants paged: %w", err)
 	}
@@ -1028,7 +1028,7 @@ func (s *Service) ListMyGrantsPaged(ctx context.Context, subject uuid.UUID, page
 // ListGrantsPaged returns grants for admin introspection with keyset pagination
 // on (granted_at DESC, id ASC). Filters (subject, active_only) are preserved.
 func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page PageParams) ([]Grant, error) {
-	params := gen.ListGrantsFilteredPagedParams{
+	params := sqlc.ListGrantsFilteredPagedParams{
 		ActiveOnly: filter.ActiveOnly,
 		Lim:        page.Limit,
 	}
@@ -1039,7 +1039,7 @@ func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page 
 		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
 	}
-	rows, err := gen.New(s.pool).ListGrantsFilteredPaged(ctx, params)
+	rows, err := sqlc.New(s.pool).ListGrantsFilteredPaged(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("list grants paged: %w", err)
 	}
@@ -1058,7 +1058,7 @@ func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page 
 // filtered rows rather than stopping early. The per-row filter IS the authz for
 // this caller-scoped list (no capability gate).
 func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Grant, *PageCursor, error) {
-	params := gen.ListGrantsFilteredPagedParams{
+	params := sqlc.ListGrantsFilteredPagedParams{
 		ActiveOnly: false, // include revoked/expired/past grants
 		Lim:        page.Limit,
 	}
@@ -1066,7 +1066,7 @@ func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUI
 		params.AfterTs = pgtype.Timestamptz{Time: *page.AfterTs, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: page.AfterID, Valid: true}
 	}
-	rows, err := gen.New(s.pool).ListGrantsFilteredPaged(ctx, params)
+	rows, err := sqlc.New(s.pool).ListGrantsFilteredPaged(ctx, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list reviewable grants paged: %w", err)
 	}
@@ -1183,7 +1183,7 @@ ORDER BY g.granted_at DESC, g.id`
 	}
 	out := make([]Grant, 0, len(grows))
 	for _, g := range grows {
-		out = append(out, toGrant(gen.AccessGrant{
+		out = append(out, toGrant(sqlc.AccessGrant{
 			ID: g.ID, RoleID: g.RoleID, ScopeAssetID: g.ScopeAssetID, SubjectUserID: g.SubjectUserID,
 			GrantedAt: g.GrantedAt.Time, ExpiresAt: g.ExpiresAt.Time, RevokedAt: g.RevokedAt, RevokedReason: g.RevokedReason,
 		}))
@@ -1216,23 +1216,23 @@ type GrantFilter struct {
 // ListGrants returns grants for admin introspection (active + past), optionally
 // filtered by subject and/or active-only.
 func (s *Service) ListGrants(ctx context.Context, filter GrantFilter) ([]Grant, error) {
-	params := gen.ListGrantsFilteredParams{ActiveOnly: filter.ActiveOnly}
+	params := sqlc.ListGrantsFilteredParams{ActiveOnly: filter.ActiveOnly}
 	if filter.Subject != uuid.Nil {
 		params.SubjectUserID = pgtype.UUID{Bytes: filter.Subject, Valid: true}
 	}
-	rows, err := gen.New(s.pool).ListGrantsFiltered(ctx, params)
+	rows, err := sqlc.New(s.pool).ListGrantsFiltered(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("list grants: %w", err)
 	}
 	return toGrants(rows), nil
 }
 
-// GrantDTO maps a raw gen.AccessGrant to the transport DTO (used by handlers
+// GrantDTO maps a raw sqlc.AccessGrant to the transport DTO (used by handlers
 // that receive the revoked grant from RevokeGrant).
-func (s *Service) GrantDTO(g gen.AccessGrant) Grant { return toGrant(g) }
+func (s *Service) GrantDTO(g sqlc.AccessGrant) Grant { return toGrant(g) }
 
-// toGrant maps a gen.AccessGrant to the DTO, deriving the active flag.
-func toGrant(g gen.AccessGrant) Grant {
+// toGrant maps a sqlc.AccessGrant to the DTO, deriving the active flag.
+func toGrant(g sqlc.AccessGrant) Grant {
 	out := Grant{
 		ID:            g.ID,
 		RoleID:        g.RoleID,
@@ -1251,7 +1251,7 @@ func toGrant(g gen.AccessGrant) Grant {
 	return out
 }
 
-func toGrants(rows []gen.AccessGrant) []Grant {
+func toGrants(rows []sqlc.AccessGrant) []Grant {
 	out := make([]Grant, 0, len(rows))
 	for _, g := range rows {
 		out = append(out, toGrant(g))
@@ -1272,7 +1272,7 @@ func (s *Service) terminate(ctx context.Context, grantID uuid.UUID) {
 
 // enqueueRevoked writes the grant-revocation audit event into the outbox on the
 // caller's tx-bound querier (atomic with the domain write).
-func (s *Service) enqueueRevoked(ctx context.Context, q *gen.Queries, actor uuid.UUID, g gen.AccessGrant) error {
+func (s *Service) enqueueRevoked(ctx context.Context, q *sqlc.Queries, actor uuid.UUID, g sqlc.AccessGrant) error {
 	if s.audit == nil {
 		return nil
 	}

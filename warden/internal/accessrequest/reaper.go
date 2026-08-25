@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // ReapExpired marks every grant whose window has elapsed as revoked
@@ -31,7 +31,7 @@ func (s *Service) ReapExpired(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	expired, err := q.ExpireGrants(ctx)
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *Service) RunReaper(ctx context.Context, interval time.Duration) {
 // enqueueExpired writes the grant-expiry audit event into the outbox on the
 // caller's tx-bound querier (atomic with the expiry write). The actor is the
 // system (uuid.Nil): expiry is time-driven, with no human actor.
-func (s *Service) enqueueExpired(ctx context.Context, q *gen.Queries, g gen.AccessGrant) error {
+func (s *Service) enqueueExpired(ctx context.Context, q *sqlc.Queries, g sqlc.AccessGrant) error {
 	if s.audit == nil {
 		return nil
 	}

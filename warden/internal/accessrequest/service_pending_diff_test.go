@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/approvals"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // legacyListPending is the pre-set-based implementation of ListPendingApprovals: the
@@ -19,7 +19,7 @@ import (
 func legacyListPending(t *testing.T, pool *pgxpool.Pool, caller uuid.UUID) map[uuid.UUID]int {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	resolver := approvals.New(pool)
 	rows, err := q.ListPendingRequests(ctx)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestListPendingApprovalsMatchesLegacy(t *testing.T) {
 	}
 	// One recorded approval so the compared approve-count is non-zero (2 required, so
 	// still pending).
-	if _, err := h.q.AddApproval(h.ctx, gen.AddApprovalParams{
+	if _, err := h.q.AddApproval(h.ctx, sqlc.AddApprovalParams{
 		RequestID: req.ID, ApproverUserID: roleApprover, Decision: "approve",
 	}); err != nil {
 		t.Fatalf("AddApproval: %v", err)

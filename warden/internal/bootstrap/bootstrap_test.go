@@ -9,8 +9,8 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -24,7 +24,7 @@ func TestBootstrapSeedsAdminOnEmptyDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	ctx := context.Background()
 
 	if err := bootstrap.EnsureAdmin(ctx, q, "root@x", "hunter2hunter2"); err != nil {
@@ -51,7 +51,7 @@ func TestBootstrapSeedsAdminOnEmptyDB(t *testing.T) {
 	if len(rcaps) != 1 || rcaps[0].Scope != "*" || rcaps[0].Action != "*" || rcaps[0].Qualifier != "*" {
 		t.Fatalf("admin role must carry exactly one '**' capability; got %+v", rcaps)
 	}
-	bindings, err := q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{
+	bindings, err := q.ListRoleBindings(ctx, sqlc.ListRoleBindingsParams{
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
 		Lim:           100,
 	})
@@ -86,7 +86,7 @@ func TestBootstrapNoOpWhenUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	if err := bootstrap.EnsureAdmin(context.Background(), q, "", ""); err != nil {
 		t.Fatalf("noop: %v", err)
 	}

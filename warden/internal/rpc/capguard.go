@@ -11,14 +11,14 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // capGuard performs management-plane capability checks. Embed it in each service
 // that gates management RPCs. q is used for scope-derivation lookups.
 type capGuard struct {
 	authz authz.Authorizer
-	q     *gen.Queries
+	q     *sqlc.Queries
 }
 
 // requireCap denies unless the authenticated user holds `capability` at `scope`.

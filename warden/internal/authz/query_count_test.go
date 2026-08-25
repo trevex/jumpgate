@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -64,16 +64,16 @@ func newCountingPool(t *testing.T) (*pgxpool.Pool, *queryCounter) {
 // non-cascade VisibleAssetsUnder considers only assets whose folder IS `parent`).
 // Combined with a management binding on `parent`, a non-cascade browse of `parent`
 // returns all `width` child folders and all `width` assets.
-func seedBrowseTree(ctx context.Context, t *testing.T, q *gen.Queries, parent uuid.UUID, width int, prefix string) {
+func seedBrowseTree(ctx context.Context, t *testing.T, q *sqlc.Queries, parent uuid.UUID, width int, prefix string) {
 	t.Helper()
 	for i := 0; i < width; i++ {
-		if _, err := q.CreateFolder(ctx, gen.CreateFolderParams{
+		if _, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{
 			Name:     prefix + "-f" + itoa(i),
 			ParentID: pgUUID(parent),
 		}); err != nil {
 			t.Fatalf("seedBrowseTree folder %d: %v", i, err)
 		}
-		if _, err := q.CreateAsset(ctx, gen.CreateAssetParams{
+		if _, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{
 			FolderID: parent, Name: prefix + "-a" + itoa(i), Labels: []byte("{}"), Kind: "ssh",
 		}); err != nil {
 			t.Fatalf("seedBrowseTree asset %d: %v", i, err)
@@ -124,19 +124,19 @@ func itoa(n int) string {
 func TestBrowseQueryCountIsO1(t *testing.T) {
 	pool, counter := newCountingPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "browse@qc", DisplayName: "Browser"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "browse@qc", DisplayName: "Browser"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// SMALL and LARGE subtrees, each under its own parent.
-	smallParent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "qc-small"})
+	smallParent, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "qc-small"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	largeParent, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "qc-large"})
+	largeParent, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "qc-large"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestBrowseQueryCountIsO1(t *testing.T) {
 	mgmtRole := createRoleWithCaps(t, ctx, q, "qc-mgmt", pgtype.UUID{},
 		caps("catalog:folder:read", "catalog:asset:read", "access:role:read", "identity:group:read"))
 	for _, parent := range []uuid.UUID{smallParent.ID, largeParent.ID} {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: mgmtRole.ID, ScopeFolderID: pgUUID(parent), SubjectUserID: pgUUID(user.ID),
 		}); err != nil {
 			t.Fatal(err)
@@ -163,18 +163,18 @@ func TestBrowseQueryCountIsO1(t *testing.T) {
 	// also return non-empty sets (access:role:read / identity:group:read on the
 	// parent make folder-homed roles/groups visible via the same cascade).
 	for i := 0; i < smallWidth; i++ {
-		if _, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "s-role" + itoa(i), FolderID: pgUUID(smallParent.ID)}); err != nil {
+		if _, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "s-role" + itoa(i), FolderID: pgUUID(smallParent.ID)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "s-grp" + itoa(i), FolderID: pgUUID(smallParent.ID)}); err != nil {
+		if _, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "s-grp" + itoa(i), FolderID: pgUUID(smallParent.ID)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < largeWidth; i++ {
-		if _, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "l-role" + itoa(i), FolderID: pgUUID(largeParent.ID)}); err != nil {
+		if _, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "l-role" + itoa(i), FolderID: pgUUID(largeParent.ID)}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "l-grp" + itoa(i), FolderID: pgUUID(largeParent.ID)}); err != nil {
+		if _, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "l-grp" + itoa(i), FolderID: pgUUID(largeParent.ID)}); err != nil {
 			t.Fatal(err)
 		}
 	}

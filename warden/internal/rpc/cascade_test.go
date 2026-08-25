@@ -17,7 +17,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // cascadeFixture wires the user-facing RPC server together with the standalone
@@ -30,7 +30,7 @@ type cascadeFixture struct {
 	admin string
 
 	ctx   context.Context
-	q     *gen.Queries
+	q     *sqlc.Queries
 	reg   *dataplane.Registry
 	swp   *dataplane.Sweeper
 	user  uuid.UUID
@@ -47,29 +47,29 @@ func setupCascade(t *testing.T) *cascadeFixture {
 	admin := adminToken(t, url)
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Subject user whose data-plane access is under test.
-	subject, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	subject, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
 	// SSH asset scaffolding: folder + asset + ssh config allowing the "deploy" login.
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -130,7 +130,7 @@ func (f *cascadeFixture) deleteBinding(t *testing.T, bindingID string) {
 // owned by worker "w1".
 func (f *cascadeFixture) seedSession(t *testing.T) uuid.UUID {
 	t.Helper()
-	sess, err := f.q.InsertLiveSession(f.ctx, gen.InsertLiveSessionParams{
+	sess, err := f.q.InsertLiveSession(f.ctx, sqlc.InsertLiveSessionParams{
 		ID: uuid.New(), UserID: f.user, AssetID: f.asset, WorkerID: "w1",
 		GrantID: pgtype.UUID{}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
 	})

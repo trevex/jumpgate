@@ -4,7 +4,7 @@ A reference for warden's Postgres schema — the tables, their key columns, and 
 they relate. This is the storage behind the concepts in
 [access-model.md](access-model.md); read that first for the *meaning*, this for the
 *columns*. The schema is defined by the goose migrations embedded in the binary
-(`warden/internal/db/migrate/migrations`).
+(`warden/internal/postgres/migrate/migrations`).
 
 The relationship rows are **tuple-shaped** (subject → relation → object), so the
 whole model could be mirrored into an external relationship engine (OpenFGA)

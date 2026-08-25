@@ -19,7 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
@@ -388,7 +388,7 @@ func TestGetAssetDisplay(t *testing.T) {
 	capper := auth.CurrentUser{ID: userID(t, pool, "capper@x"), Email: "capper@x"}
 
 	authorizer := authz.NewSQLAuthorizer(pool)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// A server whose fake authorizes the request-party path.
 	allowSrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: true}, testSealer(t), nil)
@@ -658,7 +658,7 @@ func TestCatalogAssetConfigRequiresAdmin(t *testing.T) {
 func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	u, err := q.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -669,7 +669,7 @@ func giveAssetAccess(t *testing.T, pool *pgxpool.Pool, email, assetID string) {
 		t.Fatalf("giveAssetAccess: parse assetID %s: %v", assetID, err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "resolve-test-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:*"]`)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeAssetID:  pgtype.UUID{Bytes: aid, Valid: true},
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
@@ -704,7 +704,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	seedUser(t, pool, "dana@x", "password123", false)
 	danatok := authClient(t, url, "dana@x", "password123")
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	teamID, err := uuid.Parse(team.Msg.Folder.Id)
 	if err != nil {
 		t.Fatalf("parse team id: %v", err)
@@ -718,7 +718,7 @@ func TestCatalogCapabilityGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get dana: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: teamID, Valid: true},
 		SubjectUserID: pgtype.UUID{Bytes: dana.ID, Valid: true},
@@ -769,7 +769,7 @@ func TestSearchCatalog(t *testing.T) {
 	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Two sibling top-level folders. The caller will hold management read on `vis`
 	// (which cascades down the tree) and NOTHING on `hidden`.
@@ -797,7 +797,7 @@ func TestSearchCatalog(t *testing.T) {
 		t.Fatalf("create vis child folder: %v", err)
 	}
 	createRoleWithCaps(t, ctx, q, "pg-operator", pgtype.UUID{Bytes: visFID, Valid: true}, "[]")
-	if _, err := q.CreateGroup(ctx, gen.CreateGroupParams{
+	if _, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{
 		Name:     "pg-team",
 		FolderID: pgtype.UUID{Bytes: visFID, Valid: true},
 	}); err != nil {
@@ -821,7 +821,7 @@ func TestSearchCatalog(t *testing.T) {
 		t.Fatalf("get searcher: %v", err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "vis-reader", pgtype.UUID{}, `["catalog:folder:read","catalog:asset:read","access:role:read","identity:group:read"]`)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: visFID, Valid: true},
 		SubjectUserID: pgtype.UUID{Bytes: su.ID, Valid: true},

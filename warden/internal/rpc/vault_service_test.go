@@ -19,7 +19,7 @@ import (
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestVaultNilSealerFailsClosed locks the vault-disabled contract: the seal paths
@@ -346,9 +346,9 @@ func TestCreateAssetKind(t *testing.T) {
 func bindScopedCap(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, capsJSON string, folderID, assetID uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	role := createRoleWithCaps(t, ctx, q, "cap-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
-	params := gen.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: userID, Valid: true}}
+	params := sqlc.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: userID, Valid: true}}
 	if assetID != uuid.Nil {
 		params.ScopeAssetID = pgtype.UUID{Bytes: assetID, Valid: true}
 	} else if folderID != uuid.Nil {

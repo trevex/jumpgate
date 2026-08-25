@@ -16,7 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
@@ -2209,7 +2209,7 @@ func TestGetRoleDisplay(t *testing.T) {
 
 	authorizer := authz.NewSQLAuthorizer(pool)
 	roles := authz.NewRoleResolver(pool)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	allowSrv := rpc.NewAccessServer(q, pool, roles, authorizer, fakeReqReads{allow: true}, nil)
 	denySrv := rpc.NewAccessServer(q, pool, roles, authorizer, fakeReqReads{allow: false}, nil)

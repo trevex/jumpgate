@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // deactivateUser marks a user deactivated directly in the store.
@@ -29,24 +29,24 @@ func deactivateUser(t *testing.T, pool *pgxpool.Pool, user uuid.UUID) {
 func TestDeactivatedUserStandingBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 	rr := NewRoleResolver(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-standing@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-standing@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "deact-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "deact-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "deact-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "deact-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "deact-role", pgtype.UUID{}, caps("ssh:login:deploy"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -96,30 +96,30 @@ func TestDeactivatedUserStandingBinding(t *testing.T) {
 func TestDeactivatedUserGroupBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-group@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-group@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "deact-grp"})
+	grp, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "deact-grp"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: grp.ID, MemberUserID: pgUUID(user.ID)}); err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "deact-grp-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "deact-grp-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "deact-grp-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "deact-grp-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "deact-grp-role", pgtype.UUID{}, caps("db:read"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgUUID(asset.ID), SubjectGroupID: pgUUID(grp.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -166,32 +166,32 @@ func TestDeactivatedUserActiveGrant(t *testing.T) {
 func TestDeactivatedUserExplicitRequesterSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := NewSQLAuthorizer(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-requester@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-requester@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "deact-req-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "deact-req-folder"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "deact-req-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "deact-req-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "deact-req-role", pgtype.UUID{}, caps("db:read"))
 	// Role-default request policy for the role, with NO requester_role — the only
 	// path to eligibility is the explicit requester subject below.
-	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	policy, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            role.ID,
 		RequiredApprovals: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:      policy.ID,
 		Kind:          "requester",
 		SubjectUserID: pgUUID(user.ID),

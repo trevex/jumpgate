@@ -13,8 +13,8 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/postgres"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -48,12 +48,12 @@ func TestBootstrapProvisions(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	pool, err := pg.NewPool(ctx, dsn)
+	pool, err := postgres.NewPool(ctx, dsn)
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
 	defer pool.Close()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// SSH CA row exists and the emitted public line parses as an SSH public key.
 	sshRow, err := q.GetActiveCA(ctx, "ssh")
@@ -221,12 +221,12 @@ func TestBootstrapSkipMeshCA(t *testing.T) {
 		t.Fatalf("ssh-ca.pub should exist: %v", err)
 	}
 
-	pool, err := pg.NewPool(ctx, dsn)
+	pool, err := postgres.NewPool(ctx, dsn)
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
 	defer pool.Close()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// No mesh CA row was created.
 	if _, err := q.GetActiveCA(ctx, "mesh"); err == nil {

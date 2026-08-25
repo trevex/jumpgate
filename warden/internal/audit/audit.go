@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Event is an audit event to append.
@@ -68,7 +68,7 @@ func (l *Logger) Append(ctx context.Context, e Event) error {
 		return fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	if err := q.AcquireAuditLock(ctx); err != nil {
 		return fmt.Errorf("acquire audit lock: %w", err)
@@ -85,7 +85,7 @@ func (l *Logger) Append(ctx context.Context, e Event) error {
 // of Append and DrainOnce: it normalizes details, locks the tail for the prev
 // hash, computes the entry hash, and inserts — but never touches the tx lifecycle
 // or the lock, so multiple entries can be chained within one locked tx (drain).
-func (l *Logger) appendLocked(ctx context.Context, q *gen.Queries, e Event) error {
+func (l *Logger) appendLocked(ctx context.Context, q *sqlc.Queries, e Event) error {
 	if e.Details == nil {
 		e.Details = []byte("{}")
 	}
@@ -110,7 +110,7 @@ func (l *Logger) appendLocked(ctx context.Context, q *gen.Queries, e Event) erro
 	if e.ActorID != uuid.Nil {
 		actor = pgtype.UUID{Bytes: e.ActorID, Valid: true}
 	}
-	if _, err := q.InsertAuditEntry(ctx, gen.InsertAuditEntryParams{
+	if _, err := q.InsertAuditEntry(ctx, sqlc.InsertAuditEntryParams{
 		EventType:   e.Type,
 		ActorUserID: actor,
 		Subject:     e.Subject,
@@ -130,7 +130,7 @@ func (l *Logger) appendLocked(ctx context.Context, q *gen.Queries, e Event) erro
 // Append (which opens its own tx) leaves open. This is a plain insert — no
 // advisory lock, no hashing — the drainer (DrainOnce) later moves the row into
 // the hash-chained audit_log in seq order.
-func (l *Logger) Enqueue(ctx context.Context, q *gen.Queries, e Event) error {
+func (l *Logger) Enqueue(ctx context.Context, q *sqlc.Queries, e Event) error {
 	details := e.Details
 	if details == nil {
 		details = []byte("{}")
@@ -139,7 +139,7 @@ func (l *Logger) Enqueue(ctx context.Context, q *gen.Queries, e Event) error {
 	if e.ActorID != uuid.Nil {
 		actor = pgtype.UUID{Bytes: e.ActorID, Valid: true}
 	}
-	if _, err := q.EnqueueAuditEvent(ctx, gen.EnqueueAuditEventParams{
+	if _, err := q.EnqueueAuditEvent(ctx, sqlc.EnqueueAuditEventParams{
 		EventType:   e.Type,
 		ActorUserID: actor,
 		Subject:     e.Subject,
@@ -164,7 +164,7 @@ func (l *Logger) DrainOnce(ctx context.Context, batch int) (int, error) {
 		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	q := gen.New(tx)
+	q := sqlc.New(tx)
 
 	if err := q.AcquireAuditLock(ctx); err != nil {
 		return 0, fmt.Errorf("acquire audit lock: %w", err)
@@ -235,7 +235,7 @@ func (l *Logger) RunDrainer(ctx context.Context, interval time.Duration) {
 // separately by anchoring the chain tip to the object store (RunAnchorer) and
 // cross-checking the live chain against the last anchor (VerifyTipAtLeast).
 func (l *Logger) Verify(ctx context.Context) error {
-	rows, err := gen.New(l.pool).ListAuditEntries(ctx)
+	rows, err := sqlc.New(l.pool).ListAuditEntries(ctx)
 	if err != nil {
 		return fmt.Errorf("list: %w", err)
 	}

@@ -13,7 +13,7 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // seedCapUserScoped creates a non-admin user bound to a fresh role carrying
@@ -24,8 +24,8 @@ import (
 func seedCapUserScoped(t *testing.T, pool *pgxpool.Pool, email, pw, capsJSON string, scopeFolder, scopeAsset uuid.UUID) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
+	q := sqlc.New(pool)
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +33,11 @@ func seedCapUserScoped(t *testing.T, pool *pgxpool.Pool, email, pw, capsJSON str
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatal(err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "role-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
-	params := gen.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true}}
+	params := sqlc.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true}}
 	if scopeFolder != uuid.Nil {
 		params.ScopeFolderID = pgtype.UUID{Bytes: scopeFolder, Valid: true}
 	}
@@ -146,14 +146,14 @@ func TestAuthzObjectDerivedScope(t *testing.T) {
 	ctx := context.Background()
 
 	// A deletable role-binding in each folder (a global role bound at each folder).
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	role := createRoleWithCaps(t, ctx, q, "r-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
-	grp, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "g-" + uuid.NewString()})
+	grp, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "g-" + uuid.NewString()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mkBinding := func(folderID string) string {
-		b, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		b, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: role.ID, ScopeFolderID: pgtype.UUID{Bytes: uuid.MustParse(folderID), Valid: true},
 			SubjectGroupID: pgtype.UUID{Bytes: grp.ID, Valid: true},
 		})

@@ -16,7 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 func pgU(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
@@ -26,7 +26,7 @@ func pgU(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} 
 func TestAccessRequestRPCFlow(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
 		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
@@ -35,15 +35,15 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 	requesterRole := mkRole("requester-flow")
 	approverRole := mkRole("approver-flow")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-flow"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-flow"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-flow", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-flow", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: target, RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
@@ -58,7 +58,7 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 		return id
 	}
 	bind := func(uid, roleID uuid.UUID) {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: roleID, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(uid),
 		}); err != nil {
 			t.Fatalf("CreateRoleBinding: %v", err)
@@ -160,7 +160,7 @@ func TestAccessRequestRPCFlow(t *testing.T) {
 func TestListReviewableGrants(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
 		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
@@ -169,15 +169,15 @@ func TestListReviewableGrants(t *testing.T) {
 	requesterRole := mkRole("lrg-requester")
 	approverRole := mkRole("lrg-approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lrg-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "lrg-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "lrg-asset", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "lrg-asset", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: targetRole, ScopeAssetID: pgU(asset.ID), RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
@@ -191,12 +191,12 @@ func TestListReviewableGrants(t *testing.T) {
 	aliceUID := userIDByEmail(t, pool, "lrg-alice@x")
 	bobUID := userIDByEmail(t, pool, "lrg-bob@x")
 
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: requesterRole, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(aliceUID),
 	}); err != nil {
 		t.Fatalf("bind requester: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: approverRole, ScopeAssetID: pgU(asset.ID), SubjectUserID: pgU(bobUID),
 	}); err != nil {
 		t.Fatalf("bind approver: %v", err)
@@ -366,7 +366,7 @@ func TestAccessRequestAdminGating(t *testing.T) {
 func TestListMyRequestsKeysetPagination(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Roles: one target role, one requester role.
 	mkRole := func(name string) uuid.UUID {
@@ -376,7 +376,7 @@ func TestListMyRequestsKeysetPagination(t *testing.T) {
 	requesterRole := mkRole("myr-requester")
 	approverRole := mkRole("myr-approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "myr-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "myr-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
@@ -384,11 +384,11 @@ func TestListMyRequestsKeysetPagination(t *testing.T) {
 	// Create 3 assets so we can place 3 distinct requests (one per asset).
 	assets := make([]uuid.UUID, 3)
 	for i, name := range []string{"myr-asset-a", "myr-asset-b", "myr-asset-c"} {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatalf("CreateAsset %s: %v", name, err)
 		}
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
 			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 		}); err != nil {
@@ -404,12 +404,12 @@ func TestListMyRequestsKeysetPagination(t *testing.T) {
 
 	// Bind requester and approver on all 3 assets.
 	for _, aid := range assets {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
 		}); err != nil {
 			t.Fatalf("bind requester: %v", err)
 		}
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
 		}); err != nil {
 			t.Fatalf("bind approver: %v", err)
@@ -489,7 +489,7 @@ func TestListMyRequestsKeysetPagination(t *testing.T) {
 func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
 		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
@@ -498,7 +498,7 @@ func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 	requesterRole := mkRole("lpa-requester")
 	approverRole := mkRole("lpa-approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lpa-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "lpa-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
@@ -506,11 +506,11 @@ func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 	// 3 assets → 3 distinct pending requests.
 	assets := make([]uuid.UUID, 3)
 	for i, name := range []string{"lpa-a", "lpa-b", "lpa-c"} {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatalf("CreateAsset %s: %v", name, err)
 		}
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
 			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 		}); err != nil {
@@ -525,12 +525,12 @@ func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 	appUID := userIDByEmail(t, pool, "lpa-app@x")
 
 	for _, aid := range assets {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
 		}); err != nil {
 			t.Fatalf("bind requester: %v", err)
 		}
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
 		}); err != nil {
 			t.Fatalf("bind approver: %v", err)
@@ -608,7 +608,7 @@ func TestListPendingApprovalsKeysetPagination(t *testing.T) {
 func TestListMyGrantsKeysetPagination(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
 		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
@@ -617,18 +617,18 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 	requesterRole := mkRole("lmg-requester")
 	approverRole := mkRole("lmg-approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lmg-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "lmg-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 
 	assets := make([]uuid.UUID, 3)
 	for i, name := range []string{"lmg-a", "lmg-b", "lmg-c"} {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatalf("CreateAsset %s: %v", name, err)
 		}
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
 			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 		}); err != nil {
@@ -643,12 +643,12 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 	appUID := userIDByEmail(t, pool, "lmg-app@x")
 
 	for _, aid := range assets {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
 		}); err != nil {
 			t.Fatalf("bind requester: %v", err)
 		}
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
 		}); err != nil {
 			t.Fatalf("bind approver: %v", err)
@@ -748,22 +748,22 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 
 	// Create a role with ssh:login caps and verify logins are extracted.
 	sshRole := createRoleWithCaps(t, ctx, q, "lmg-ssh-role", pgtype.UUID{}, `["ssh:login:root","ssh:login:deploy"]`)
-	sshAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "lmg-ssh", Labels: []byte("{}"), Kind: "ssh"})
+	sshAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "lmg-ssh", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset ssh: %v", err)
 	}
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: sshRole.ID, ScopeAssetID: pgU(sshAsset.ID), RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
 		t.Fatalf("CreateRequestPolicy ssh: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: requesterRole, ScopeAssetID: pgU(sshAsset.ID), SubjectUserID: pgU(reqUID),
 	}); err != nil {
 		t.Fatalf("bind requester ssh: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: approverRole, ScopeAssetID: pgU(sshAsset.ID), SubjectUserID: pgU(appUID),
 	}); err != nil {
 		t.Fatalf("bind approver ssh: %v", err)
@@ -810,7 +810,7 @@ func TestListMyGrantsKeysetPagination(t *testing.T) {
 func TestListGrantsKeysetPagination(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	atok := adminToken(t, url)
@@ -822,18 +822,18 @@ func TestListGrantsKeysetPagination(t *testing.T) {
 	requesterRole := mkRole("lg-requester")
 	approverRole := mkRole("lg-approver")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "lg-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "lg-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 
 	assets := make([]uuid.UUID, 3)
 	for i, name := range []string{"lg-a", "lg-b", "lg-c"} {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatalf("CreateAsset %s: %v", name, err)
 		}
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID: targetRole, ScopeAssetID: pgU(a.ID), RequiredApprovals: 1,
 			ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 		}); err != nil {
@@ -848,12 +848,12 @@ func TestListGrantsKeysetPagination(t *testing.T) {
 	appUID := userIDByEmail(t, pool, "lg-app@x")
 
 	for _, aid := range assets {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
 		}); err != nil {
 			t.Fatalf("bind requester: %v", err)
 		}
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: approverRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(appUID),
 		}); err != nil {
 			t.Fatalf("bind approver: %v", err)
@@ -986,7 +986,7 @@ func TestListGrantsKeysetPagination(t *testing.T) {
 func TestListPendingApprovalsPaginationAdvancesPastFilteredRows(t *testing.T) {
 	pool, url := newServer(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkRole := func(name string) uuid.UUID {
 		return createRoleWithCaps(t, ctx, q, name, pgtype.UUID{}, "[]").ID
@@ -999,28 +999,28 @@ func TestListPendingApprovalsPaginationAdvancesPastFilteredRows(t *testing.T) {
 	approverRole1 := mkRole("filter-approver1")
 	approverRole2 := mkRole("filter-approver2")
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "filter-folder"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "filter-folder"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
 
 	// asset1 → P1 (approvable by caller), asset2 → P2 (NOT approvable by caller).
-	asset1, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "filter-a1", Labels: []byte("{}"), Kind: "ssh"})
+	asset1, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "filter-a1", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset asset1: %v", err)
 	}
-	asset2, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "filter-a2", Labels: []byte("{}"), Kind: "ssh"})
+	asset2, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "filter-a2", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset asset2: %v", err)
 	}
 
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: targetRole1, ScopeAssetID: pgU(asset1.ID), RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole1), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
 		t.Fatalf("CreateRequestPolicy P1: %v", err)
 	}
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: targetRole2, ScopeAssetID: pgU(asset2.ID), RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole2), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
@@ -1036,14 +1036,14 @@ func TestListPendingApprovalsPaginationAdvancesPastFilteredRows(t *testing.T) {
 
 	// Requester is eligible on both assets.
 	for _, aid := range []uuid.UUID{asset1.ID, asset2.ID} {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: requesterRole, ScopeAssetID: pgU(aid), SubjectUserID: pgU(reqUID),
 		}); err != nil {
 			t.Fatalf("bind requester on asset: %v", err)
 		}
 	}
 	// Caller holds approverRole1 on asset1 ONLY — NOT approverRole2 on asset2.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: approverRole1, ScopeAssetID: pgU(asset1.ID), SubjectUserID: pgU(appUID),
 	}); err != nil {
 		t.Fatalf("bind approver on asset1: %v", err)

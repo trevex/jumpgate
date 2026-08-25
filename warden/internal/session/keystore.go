@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
@@ -21,13 +21,13 @@ var ErrNoActiveKey = errors.New("no active session signing key")
 
 // KeyStore generates, seals, and loads the active Ed25519 session signing key.
 type KeyStore struct {
-	q      *gen.Queries
+	q      *sqlc.Queries
 	sealer *secrets.Sealer
 }
 
 // NewKeyStore constructs a KeyStore. A nil sealer disables Init/LoadActive (they
 // fail closed) — matching the vault-disabled posture.
-func NewKeyStore(q *gen.Queries, sealer *secrets.Sealer) *KeyStore {
+func NewKeyStore(q *sqlc.Queries, sealer *secrets.Sealer) *KeyStore {
 	return &KeyStore{q: q, sealer: sealer}
 }
 
@@ -45,7 +45,7 @@ func (k *KeyStore) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := k.q.CreateSessionSigningKey(ctx, gen.CreateSessionSigningKeyParams{
+	if _, err := k.q.CreateSessionSigningKey(ctx, sqlc.CreateSessionSigningKeyParams{
 		Sealed: sealed, PublicKey: pub,
 	}); err != nil {
 		return fmt.Errorf("store signing key: %w", err)

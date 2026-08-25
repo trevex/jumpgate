@@ -24,9 +24,9 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -209,12 +209,12 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 		t.Fatalf("pool: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	sealer := testSealer(t)
 
 	// Active session signing key → minter (this test) + verifier (setup svc).
-	ks := session.NewKeyStore(gen.New(pool), sealer)
+	ks := session.NewKeyStore(sqlc.New(pool), sealer)
 	if err := ks.Init(ctx); err != nil {
 		t.Fatalf("keystore init: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal ca seed: %v", err)
 	}
-	if _, err := q.CreateCAKey(ctx, gen.CreateCAKeyParams{Kind: "ssh", Sealed: sealedSeed, PublicMaterial: line}); err != nil {
+	if _, err := q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: "ssh", Sealed: sealedSeed, PublicMaterial: line}); err != nil {
 		t.Fatalf("CreateCAKey: %v", err)
 	}
 
@@ -258,30 +258,30 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 
 	// Seed an ssh asset (target + allowed_logins {deploy}) and a role carrying
 	// ssh:login:deploy standing-bound to the user — the sole login source.
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-rec-" + uuid.NewString()})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-rec-" + uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-rec", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-rec", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.7:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-rec-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: role.ID, ScopeAssetID: pgtype.UUID{Bytes: asset.ID, Valid: true}, SubjectUserID: pgtype.UUID{Bytes: user.ID, Valid: true},
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -356,26 +356,26 @@ type reconcileSeed struct {
 func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod-recon-" + uuid.NewString()})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-recon-" + uuid.NewString()})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg-recon", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-recon", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -383,7 +383,7 @@ func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 
 	role := createRoleWithCaps(t, ctx, q, "ssh-deploy-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
 
-	req, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	req, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID:   user.ID,
 		RoleID:            role.ID,
 		AssetID:           asset.ID,
@@ -396,7 +396,7 @@ func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID, SubjectUserID: user.ID,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -404,7 +404,7 @@ func seedReconcile(t *testing.T, pool *pgxpool.Pool) reconcileSeed {
 		t.Fatalf("CreateAccessGrant: %v", err)
 	}
 
-	sess, err := q.InsertLiveSession(ctx, gen.InsertLiveSessionParams{
+	sess, err := q.InsertLiveSession(ctx, sqlc.InsertLiveSessionParams{
 		ID: uuid.New(), UserID: user.ID, AssetID: asset.ID, WorkerID: "w1",
 		GrantID: pgtype.UUID{Bytes: grant.ID, Valid: true}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
 	})
@@ -451,7 +451,7 @@ func sessionEventCount(t *testing.T, pool *pgxpool.Pool, eventType string) int {
 			break
 		}
 	}
-	rows, err := gen.New(pool).ListAuditEntries(ctx)
+	rows, err := sqlc.New(pool).ListAuditEntries(ctx)
 	if err != nil {
 		t.Fatalf("ListAuditEntries: %v", err)
 	}
@@ -657,10 +657,10 @@ func TestWorkerSessionEndedPersistsRecording(t *testing.T) {
 			}
 
 			// Poll until the recording row appears.
-			var rec gen.SessionRecording
+			var rec sqlc.SessionRecording
 			deadline := time.Now().Add(2 * time.Second)
 			for {
-				rec, err = gen.New(pool).GetSessionRecording(ctx, seed.sess)
+				rec, err = sqlc.New(pool).GetSessionRecording(ctx, seed.sess)
 				if err == nil {
 					break
 				}
@@ -751,10 +751,10 @@ func TestWorkerSessionEndedPersistsRecordingGrantID(t *testing.T) {
 	}
 
 	// Poll until the recording row appears, then assert grant_id attribution.
-	var rec gen.SessionRecording
+	var rec sqlc.SessionRecording
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		rec, err = gen.New(pool).GetSessionRecording(ctx, seed.sess)
+		rec, err = sqlc.New(pool).GetSessionRecording(ctx, seed.sess)
 		if err == nil {
 			break
 		}

@@ -12,7 +12,7 @@ import (
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/audit"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestDeleteRoleCascade proves the DeleteRole cascade removes every reference to a
@@ -40,21 +40,21 @@ func TestDeleteRoleCascade(t *testing.T) {
 
 	// Two role-grant edges: R as the conferred role_id (S confers R), and R as the
 	// source that confers O. Both directions must vanish.
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: rUUID, SourceRoleID: src.ID, Via: "same_object"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: rUUID, SourceRoleID: src.ID, Via: "same_object"}); err != nil {
 		t.Fatalf("CreateRoleGrant R<-S: %v", err)
 	}
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: other.ID, SourceRoleID: rUUID, Via: "same_object"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: other.ID, SourceRoleID: rUUID, Via: "same_object"}); err != nil {
 		t.Fatalf("CreateRoleGrant O<-R: %v", err)
 	}
 
 	// P1: a request policy whose requestable role is R, plus a subject. Both go.
-	p1, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	p1, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: rUUID, RequiredApprovals: 1, Name: pgtype.Text{String: "p1", Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateRequestPolicy p1: %v", err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID: p1.ID, Kind: "requester", SubjectUserID: pgtype.UUID{Bytes: f.user, Valid: true},
 	}); err != nil {
 		t.Fatalf("AddPolicySubject p1: %v", err)
@@ -62,7 +62,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 
 	// P2: a request policy for a DIFFERENT role (O) that references R only as its
 	// approver role. It must SURVIVE with approver_role_id NULLed.
-	p2, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	p2, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: other.ID, RequiredApprovals: 1, ApproverRoleID: pgtype.UUID{Bytes: rUUID, Valid: true},
 		Name: pgtype.Text{String: "p2", Valid: true},
 	})
@@ -72,7 +72,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 
 	// An active grant of R to the subject on the asset, with a future expiry, plus a
 	// live session it (and the standing binding) authorize.
-	greq, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	greq, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID: f.user, RoleID: rUUID, AssetID: f.asset,
 		Reason: "seed", RequestedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true},
 		RequiredApprovals: 0, GrantedDuration: pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true}, Status: "granted",
@@ -80,7 +80,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAccessRequest: %v", err)
 	}
-	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: greq.ID, RoleID: rUUID, ScopeAssetID: f.asset, SubjectUserID: f.user,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -108,7 +108,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 	}
 
 	// No bindings of R remain.
-	if bs, err := q.ListRoleBindings(ctx, gen.ListRoleBindingsParams{RoleID: pgtype.UUID{Bytes: rUUID, Valid: true}, Lim: 100}); err != nil {
+	if bs, err := q.ListRoleBindings(ctx, sqlc.ListRoleBindingsParams{RoleID: pgtype.UUID{Bytes: rUUID, Valid: true}, Lim: 100}); err != nil {
 		t.Fatalf("ListRoleBindings: %v", err)
 	} else if len(bs) != 0 {
 		t.Fatalf("role bindings after delete = %d, want 0", len(bs))

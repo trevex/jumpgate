@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: entities.sql
 
-package gen
+package sqlc
 
 import (
 	"context"

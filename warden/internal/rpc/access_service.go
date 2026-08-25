@@ -11,14 +11,14 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // AccessServer implements accessv1connect.AccessServiceHandler: all authorization
 // configuration (roles, grants, standing bindings, request policies) plus the
 // admin-or-self ExplainRole introspection.
 type AccessServer struct {
-	q        *gen.Queries
+	q        *sqlc.Queries
 	pool     *pgxpool.Pool
 	roles    *authz.RoleResolver
 	reqReads requestReadAuthorizer
@@ -39,14 +39,14 @@ type roleDeleter interface {
 // request-scoped display reads (GetRoleDisplay) for callers who are party to a
 // pending access request but lack the read capability; a nil reqReads disables that
 // path (only the capability grants the read). deleter runs the DeleteRole cascade.
-func NewAccessServer(q *gen.Queries, pool *pgxpool.Pool, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
+func NewAccessServer(q *sqlc.Queries, pool *pgxpool.Pool, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
 	return &AccessServer{q: q, pool: pool, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{authz: a, q: q}}
 }
 
 // roleCapsStrings queries role_capabilities for the given role and returns the
 // reconstructed capability pattern strings. Used wherever a role's capability list
 // is needed for display or no-escalation checks.
-func roleCapsStrings(ctx context.Context, q *gen.Queries, roleID uuid.UUID) ([]string, error) {
+func roleCapsStrings(ctx context.Context, q *sqlc.Queries, roleID uuid.UUID) ([]string, error) {
 	rows, err := q.RoleCapabilityRows(ctx, roleID)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func roleCapsStrings(ctx context.Context, q *gen.Queries, roleID uuid.UUID) ([]s
 	return caps, nil
 }
 
-func toAccessRoleMsg(r gen.Role, caps []string) *accessv1.Role {
+func toAccessRoleMsg(r sqlc.Role, caps []string) *accessv1.Role {
 	return &accessv1.Role{
 		Id:           r.ID.String(),
 		Name:         r.Name,
@@ -68,7 +68,7 @@ func toAccessRoleMsg(r gen.Role, caps []string) *accessv1.Role {
 }
 
 // roleMsgWithPath returns the role message with folder_path and capabilities populated.
-func (s *AccessServer) roleMsgWithPath(ctx context.Context, r gen.Role) (*accessv1.Role, error) {
+func (s *AccessServer) roleMsgWithPath(ctx context.Context, r sqlc.Role) (*accessv1.Role, error) {
 	caps, err := roleCapsStrings(ctx, s.q, r.ID)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -84,7 +84,7 @@ func (s *AccessServer) roleMsgWithPath(ctx context.Context, r gen.Role) (*access
 	return m, nil
 }
 
-func toAccessRoleGrantMsg(g gen.RoleGrant) *accessv1.RoleGrant {
+func toAccessRoleGrantMsg(g sqlc.RoleGrant) *accessv1.RoleGrant {
 	return &accessv1.RoleGrant{
 		Id:           g.ID.String(),
 		RoleId:       g.RoleID.String(),
@@ -93,7 +93,7 @@ func toAccessRoleGrantMsg(g gen.RoleGrant) *accessv1.RoleGrant {
 	}
 }
 
-func toRoleBindingMsg(b gen.RoleBinding) *accessv1.RoleBinding {
+func toRoleBindingMsg(b sqlc.RoleBinding) *accessv1.RoleBinding {
 	return &accessv1.RoleBinding{
 		Id:             b.ID.String(),
 		RoleId:         b.RoleID.String(),
@@ -104,7 +104,7 @@ func toRoleBindingMsg(b gen.RoleBinding) *accessv1.RoleBinding {
 	}
 }
 
-func toRequestPolicyMsg(r gen.RequestPolicy) *accessv1.RequestPolicy {
+func toRequestPolicyMsg(r sqlc.RequestPolicy) *accessv1.RequestPolicy {
 	return &accessv1.RequestPolicy{
 		Id:                 r.ID.String(),
 		RoleId:             r.RoleID.String(),
@@ -146,7 +146,7 @@ func intervalToSeconds(iv pgtype.Interval) int64 {
 	return int64(iv.Months)*30*secPerDay + int64(iv.Days)*secPerDay + iv.Microseconds/1_000_000
 }
 
-func toPolicySubjectMsg(s gen.RequestPolicySubject) *accessv1.PolicySubject {
+func toPolicySubjectMsg(s sqlc.RequestPolicySubject) *accessv1.PolicySubject {
 	return &accessv1.PolicySubject{
 		Id:             s.ID.String(),
 		PolicyId:       s.PolicyID.String(),

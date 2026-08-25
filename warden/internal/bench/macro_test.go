@@ -15,7 +15,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
@@ -33,7 +33,7 @@ func benchAccessService(b *testing.B) *accessrequest.Service {
 
 func benchCatalog(b *testing.B) *rpc.CatalogServer {
 	pool, _ := sharedDB(b)
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	a := authz.NewSQLAuthorizer(pool)
 	return rpc.NewCatalogServer(q, pool, a, benchAccessService(b), nil, nil)
 }

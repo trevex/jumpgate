@@ -38,7 +38,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // ── Seed ────────────────────────────────────────────────────────────────────
@@ -107,23 +107,23 @@ var userLabels = []string{
 
 // seedMatrix builds the representative tree + probe-user matrix described on
 // matrixSeed and returns every id a differential probe needs. It creates all
-// rows via the generated query layer (gen.New) plus one direct ssh_asset_login
+// rows via the generated query layer (sqlc.New) plus one direct ssh_asset_login
 // insert, matching the seed() pattern in sql_authorizer_test.go.
 func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mkUser := func(email string) uuid.UUID { return mustCreateUser(t, q, email) }
 	mkFolderQ := func(name string, parent pgtype.UUID) uuid.UUID {
-		f, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: name, ParentID: parent})
+		f, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: name, ParentID: parent})
 		if err != nil {
 			t.Fatalf("seedMatrix: folder %q: %v", name, err)
 		}
 		return f.ID
 	}
 	mkAsset := func(folder uuid.UUID, name string) uuid.UUID {
-		a, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+		a, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 		if err != nil {
 			t.Fatalf("seedMatrix: asset %q: %v", name, err)
 		}
@@ -133,7 +133,7 @@ func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 	// folder scope.
 	bindFolder := func(user, folder uuid.UUID, roleName string, capsBytes []byte) uuid.UUID {
 		r := createRoleWithCaps(t, ctx, q, roleName, pgtype.UUID{}, capsBytes)
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: r.ID, ScopeFolderID: pgUUID(folder), SubjectUserID: pgUUID(user),
 		}); err != nil {
 			t.Fatalf("seedMatrix: bind %q @ folder: %v", roleName, err)
@@ -143,7 +143,7 @@ func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 	// bindGlobal attaches a scopeless (global) standing role to a user.
 	bindGlobal := func(user uuid.UUID, roleName string, capsBytes []byte) uuid.UUID {
 		r := createRoleWithCaps(t, ctx, q, roleName, pgtype.UUID{}, capsBytes)
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: r.ID, SubjectUserID: pgUUID(user),
 		}); err != nil {
 			t.Fatalf("seedMatrix: bind global %q: %v", roleName, err)
@@ -167,7 +167,7 @@ func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 
 	// ssh_asset_login on connAsset so the connect-visibility arm has a login to
 	// entitle. kind='ca' needs no secret_id (see 0017_ssh_per_login schema).
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: s.connAsset, Login: "deploy", Kind: "ca",
 	}); err != nil {
 		t.Fatalf("seedMatrix: ssh_asset_login: %v", err)
@@ -179,12 +179,12 @@ func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 	globalRole := createRoleWithCaps(t, ctx, q, "global-role", pgtype.UUID{}, caps("db:read"))
 	s.globalRole = globalRole.ID
 
-	groupHomed, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "group-homed", FolderID: pgUUID(s.groupTeam)})
+	groupHomed, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "group-homed", FolderID: pgUUID(s.groupTeam)})
 	if err != nil {
 		t.Fatalf("seedMatrix: group-homed: %v", err)
 	}
 	s.groupHomed = groupHomed.ID
-	globalGroup, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "global-group"})
+	globalGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "global-group"})
 	if err != nil {
 		t.Fatalf("seedMatrix: global-group: %v", err)
 	}
@@ -222,12 +222,12 @@ func seedMatrix(t *testing.T, pool *pgxpool.Pool) matrixSeed {
 	targetRole := createRoleWithCaps(t, ctx, q, "m-target-role", pgtype.UUID{}, caps("db:admin"))
 	s.requesterRole = requesterRole.ID
 	s.targetRole = targetRole.ID
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: requesterRole.ID, ScopeAssetID: pgUUID(s.reqAsset), SubjectUserID: pgUUID(requester),
 	}); err != nil {
 		t.Fatalf("seedMatrix: bind requesterRole: %v", err)
 	}
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: targetRole.ID, ScopeAssetID: pgUUID(s.reqAsset), RequiredApprovals: 1, RequesterRoleID: pgUUID(requesterRole.ID),
 	}); err != nil {
 		t.Fatalf("seedMatrix: request_policy: %v", err)

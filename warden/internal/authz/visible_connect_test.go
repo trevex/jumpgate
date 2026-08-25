@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // seedConnectCascade builds the folder-cascade visibility fixture:
@@ -25,10 +25,10 @@ import (
 func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, nobody, root, cf, cbox uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mk := func(email string) uuid.UUID {
-		u, err := q.CreateUser(ctx, gen.CreateUserParams{Email: email, DisplayName: email})
+		u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: email, DisplayName: email})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,20 +39,20 @@ func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, 
 	carolU := mk("cc-carol@x")
 	nobodyU := mk("cc-nobody@x")
 
-	rootF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cc-root"})
+	rootF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cc-root"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "cc-cascade", ParentID: pgUUID(rootF.ID)})
+	cfF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "cc-cascade", ParentID: pgUUID(rootF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cboxA, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: cfF.ID, Name: "cc-box", Labels: []byte("{}"), Kind: "ssh"})
+	cboxA, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: cfF.ID, Name: "cc-box", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// cbox has exactly one login: demo (kind ca needs no secret).
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: cboxA.ID, Login: "demo", Kind: "ca",
 	}); err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, 
 
 	// admin: scopeless (global) ** role.
 	adminRole := createRoleWithCaps(t, ctx, q, "cc-admin-role", pgtype.UUID{}, caps("**"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: adminRole.ID, SubjectUserID: pgUUID(adminU),
 	}); err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, 
 
 	// alice: ssh:login:demo bound at the folder cf (folder cascade, no asset binding).
 	demoRole := createRoleWithCaps(t, ctx, q, "cc-demo-role", pgtype.UUID{}, caps("ssh:login:demo"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: demoRole.ID, ScopeFolderID: pgUUID(cfF.ID), SubjectUserID: pgUUID(aliceU),
 	}); err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, 
 
 	// carol: ssh:login:root bound at cf — entitles no login on cbox (only demo exists).
 	rootRole := createRoleWithCaps(t, ctx, q, "cc-root-role", pgtype.UUID{}, caps("ssh:login:root"))
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: rootRole.ID, ScopeFolderID: pgUUID(cfF.ID), SubjectUserID: pgUUID(carolU),
 	}); err != nil {
 		t.Fatal(err)

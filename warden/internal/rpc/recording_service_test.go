@@ -17,7 +17,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // fakePresigner is a test presigner that returns a canned URL and a fixed
@@ -34,7 +34,7 @@ func TestRecordingServiceAdminFlow(t *testing.T) {
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	seedUser(t, pool, "bob@x", "password123", false)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Seed a recording row.
 	userID := userIDByEmail(t, pool, "bob@x")
@@ -42,7 +42,7 @@ func TestRecordingServiceAdminFlow(t *testing.T) {
 	sessionID := uuid.New()
 	started := time.Now().Add(-10 * time.Minute).UTC().Truncate(time.Millisecond)
 	ended := time.Now().Add(-5 * time.Minute).UTC().Truncate(time.Millisecond)
-	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := q.UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sessionID,
 		UserID:    userID,
 		AssetID:   assetID,
@@ -155,7 +155,7 @@ func seedRecordingRow(t *testing.T, pool *pgxpool.Pool, userID, assetID uuid.UUI
 	t.Helper()
 	ctx := context.Background()
 	sessionID := uuid.New()
-	if err := gen.New(pool).UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := sqlc.New(pool).UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sessionID,
 		UserID:    userID,
 		AssetID:   assetID,
@@ -241,7 +241,7 @@ func TestRecordingCapabilityGating(t *testing.T) {
 func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) (grantID, assetID, sessionID uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	adminTok := adminToken(t, url)
 	asset := newAsset(t, url, adminTok, "ssh")
@@ -254,7 +254,7 @@ func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) 
 	requesterRole := mkRole("gr-requester")
 	approverRole := mkRole("gr-approver")
 
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID: target, RequiredApprovals: 1,
 		ApproverRoleID: pgU(approverRole), RequesterRoleID: pgU(requesterRole),
 	}); err != nil {
@@ -262,7 +262,7 @@ func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) 
 	}
 
 	bind := func(uid, roleID uuid.UUID) {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID: roleID, ScopeAssetID: pgU(aID), SubjectUserID: pgU(uid),
 		}); err != nil {
 			t.Fatalf("CreateRoleBinding: %v", err)
@@ -296,7 +296,7 @@ func seedGrantAttributedRecording(t *testing.T, pool *pgxpool.Pool, url string) 
 	// Seed a recording attributed to the grant. The subject of the recording is
 	// alice; the session is authorized by the grant.
 	sID := uuid.New()
-	if err := q.UpsertSessionRecording(ctx, gen.UpsertSessionRecordingParams{
+	if err := q.UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sID,
 		UserID:    aliceID,
 		AssetID:   aID,

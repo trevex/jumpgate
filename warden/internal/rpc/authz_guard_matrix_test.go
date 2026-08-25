@@ -28,7 +28,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // guardClients bundles a Connect client per service, all pointed at one test server.
@@ -177,12 +177,12 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 
 	// Rows the API does not create directly: a pending request, an active grant,
 	// a role-grant edge, and a completed recording — seeded via the DB layer.
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	assetUUID := uuid.MustParse(f.assetID)
 	roleUUID := uuid.MustParse(f.roleID)
 	hour := pgtype.Interval{Microseconds: int64(time.Hour / time.Microsecond), Valid: true}
 
-	pending, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	pending, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID: targetUserID, RoleID: roleUUID, AssetID: assetUUID,
 		Reason: "guard-seed", RequestedDuration: hour, RequiredApprovals: 1, GrantedDuration: hour, Status: "pending",
 	})
@@ -191,14 +191,14 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 	}
 	f.pendingReq = pending.ID.String()
 
-	granted, err := q.CreateAccessRequest(ctx, gen.CreateAccessRequestParams{
+	granted, err := q.CreateAccessRequest(ctx, sqlc.CreateAccessRequestParams{
 		RequesterUserID: targetUserID, RoleID: roleUUID, AssetID: assetUUID,
 		Reason: "guard-seed", RequestedDuration: hour, RequiredApprovals: 0, GrantedDuration: hour, Status: "granted",
 	})
 	if err != nil {
 		t.Fatalf("fixture granted request: %v", err)
 	}
-	grant, err := q.CreateAccessGrant(ctx, gen.CreateAccessGrantParams{
+	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: granted.ID, RoleID: roleUUID, ScopeAssetID: assetUUID, SubjectUserID: targetUserID,
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
@@ -207,7 +207,7 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 	}
 	f.grantID = grant.ID.String()
 
-	rg, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{
+	rg, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{
 		RoleID: roleUUID, SourceRoleID: uuid.MustParse(f.srcRoleID), Via: "same_object",
 	})
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // resolveParentFolderRef resolves an optional folder reference to its id.
@@ -21,7 +21,7 @@ import (
 // No visibility gate is applied; the caller's list operation is itself
 // visibility-filtered, so any authenticated user may name any folder (they will
 // just get an empty result set if they have no visibility into it).
-func resolveParentFolderRef(ctx context.Context, q *gen.Queries, ref string) (uuid.UUID, error) {
+func resolveParentFolderRef(ctx context.Context, q *sqlc.Queries, ref string) (uuid.UUID, error) {
 	if ref == "" {
 		return uuid.Nil, nil
 	}
@@ -41,12 +41,12 @@ func resolveParentFolderRef(ctx context.Context, q *gen.Queries, ref string) (uu
 // resolveFolderIDByPath walks a DNS-style leaf->root folder path (e.g. "db.prod")
 // to a folder id, matching root->leaf. Returns pgx.ErrNoRows if any segment is
 // missing so callers can map it to NotFound.
-func resolveFolderIDByPath(ctx context.Context, q *gen.Queries, path string) (uuid.UUID, error) {
+func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (uuid.UUID, error) {
 	segs := strings.Split(path, ".")
 	var parent pgtype.UUID // NULL = top level
 	var folderID uuid.UUID
 	for i := len(segs) - 1; i >= 0; i-- {
-		f, err := q.FolderByParentName(ctx, gen.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
+		f, err := q.FolderByParentName(ctx, sqlc.FolderByParentNameParams{ParentID: parent, Name: segs[i]})
 		if err != nil {
 			return uuid.Nil, err
 		}
@@ -85,7 +85,7 @@ func uuidFromPg(u pgtype.UUID) uuid.UUID { return u.Bytes }
 
 // roleRefs resolves role ids to {id, name, folder_path}, computing each distinct
 // scoped folder's path once. Preserves the input order.
-func roleRefs(ctx context.Context, q *gen.Queries, ids []uuid.UUID) ([]*catalogv1.RoleRef, error) {
+func roleRefs(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) ([]*catalogv1.RoleRef, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}

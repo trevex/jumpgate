@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: request_policies.sql
 
-package gen
+package sqlc
 
 import (
 	"context"

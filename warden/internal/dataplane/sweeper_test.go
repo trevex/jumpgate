@@ -13,14 +13,14 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // sweepFixture seeds an ssh asset with allowed_logins {deploy}, a role carrying
 // ssh:login:deploy, and a user. Sessions and login sources are attached per-scenario.
 type sweepFixture struct {
 	pool *pgxpool.Pool
-	q    *gen.Queries
+	q    *sqlc.Queries
 	ctx  context.Context
 	reg  *dataplane.Registry
 	term *dataplane.Terminator
@@ -35,26 +35,26 @@ func setupSweep(t *testing.T) *sweepFixture {
 	t.Helper()
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset.ID, TargetAddress: "10.0.0.5:22",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: "deploy", Kind: "ca", SecretID: pgtype.UUID{},
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
@@ -88,7 +88,7 @@ func (f *sweepFixture) registerWorker(workerID string) chan dataplane.Signal {
 // bindStanding attaches a standing role_binding of the role on the asset to the user.
 func (f *sweepFixture) bindStanding(t *testing.T) {
 	t.Helper()
-	if _, err := f.q.CreateRoleBinding(f.ctx, gen.CreateRoleBindingParams{
+	if _, err := f.q.CreateRoleBinding(f.ctx, sqlc.CreateRoleBindingParams{
 		RoleID: f.role, ScopeAssetID: pg(f.asset), SubjectUserID: pg(f.user),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding: %v", err)
@@ -106,7 +106,7 @@ func (f *sweepFixture) deleteBinding(t *testing.T) {
 // seedSession inserts a live_sessions row for (user,asset) owned by workerID.
 func (f *sweepFixture) seedSession(t *testing.T, workerID string) uuid.UUID {
 	t.Helper()
-	sess, err := f.q.InsertLiveSession(f.ctx, gen.InsertLiveSessionParams{
+	sess, err := f.q.InsertLiveSession(f.ctx, sqlc.InsertLiveSessionParams{
 		ID: uuid.New(), UserID: f.user, AssetID: f.asset, WorkerID: workerID,
 		GrantID: pgtype.UUID{}, Protocol: "ssh", Principals: []string{"deploy"}, ClientKeyFp: "fp",
 	})

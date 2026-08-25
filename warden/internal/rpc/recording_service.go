@@ -16,7 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Presigner issues a short-lived download URL for an object key. Satisfied by an
@@ -48,7 +48,7 @@ const (
 // (recording.accessed) via the shared audit Logger, since there is no domain
 // transaction to ride along with.
 type RecordingServer struct {
-	q        *gen.Queries
+	q        *sqlc.Queries
 	audit    *audit.Logger
 	presign  Presigner // may be nil → download fails closed
 	urlTTL   time.Duration
@@ -60,11 +60,11 @@ type RecordingServer struct {
 // be nil, in which case GetRecordingDownload returns FailedPrecondition. reviewer
 // authorizes grant-scoped review (subject or potential approver) on top of the
 // recording:read gate; a nil reviewer disables that additive path.
-func NewRecordingServer(q *gen.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *RecordingServer {
+func NewRecordingServer(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *RecordingServer {
 	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, capGuard: capGuard{authz: a, q: q}}
 }
 
-func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
+func toRecordingMsg(r sqlc.SessionRecording) *recordingv1.Recording {
 	var startMs, endMs int64
 	if r.StartedAt.Valid {
 		startMs = r.StartedAt.Time.UnixMilli()
@@ -96,7 +96,7 @@ func toRecordingMsg(r gen.SessionRecording) *recordingv1.Recording {
 // (created_at DESC, session_id ASC). session_id is the PK; it is used as the
 // tiebreak because session_recordings has no separate `id` column.
 func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Request[recordingv1.ListRecordingsRequest]) (*connect.Response[recordingv1.ListRecordingsResponse], error) {
-	params := gen.ListSessionRecordingsParams{}
+	params := sqlc.ListSessionRecordingsParams{}
 	if req.Msg.UserId != "" {
 		id, err := uuid.Parse(req.Msg.UserId)
 		if err != nil {
@@ -207,7 +207,7 @@ func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request
 // carrying a grant_id, so an unattributed recording always requires recording:read.
 // Returns the existing capability deny error on denial (preserving its code and
 // existence-hiding semantics).
-func (s *RecordingServer) authorizeRecordingRead(ctx context.Context, row gen.SessionRecording) error {
+func (s *RecordingServer) authorizeRecordingRead(ctx context.Context, row sqlc.SessionRecording) error {
 	capErr := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID))
 	if capErr == nil {
 		return nil

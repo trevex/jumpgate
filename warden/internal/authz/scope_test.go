@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // TestCovers pins the pattern-vs-pattern subsumption semantics of Covers/covers1.
@@ -70,23 +70,23 @@ func insertGlobalBinding(t *testing.T, pool interface {
 func TestCapabilitiesOnScope(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	mgr := createRoleWithCaps(t, ctx, q, "mgr", pgtype.UUID{}, caps("catalog:asset:create"))
 
-	folderF, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "scope-f"})
+	folderF, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "scope-f"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sibling, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "scope-sibling"})
+	sibling, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "scope-sibling"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	subFolder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "scope-sub", ParentID: pgUUID(folderF.ID)})
+	subFolder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "scope-sub", ParentID: pgUUID(folderF.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	childAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folderF.ID, Name: "scope-child", Labels: []byte("{}"), Kind: "ssh"})
+	childAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folderF.ID, Name: "scope-child", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
 
 	// --- scopeless global standing binding ---
-	gUser, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "scope-global@x", DisplayName: "G"})
+	gUser, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "scope-global@x", DisplayName: "G"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +121,11 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	}
 
 	// --- folder-scoped standing binding on folder F ---
-	fUser, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "scope-folder@x", DisplayName: "F"})
+	fUser, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "scope-folder@x", DisplayName: "F"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: mgr.ID, ScopeFolderID: pgUUID(folderF.ID), SubjectUserID: pgUUID(fUser.ID),
 	}); err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	}
 
 	// --- deactivated user with a global binding holds nothing anywhere ---
-	dUser, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "scope-deactivated@x", DisplayName: "D"})
+	dUser, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "scope-deactivated@x", DisplayName: "D"})
 	if err != nil {
 		t.Fatal(err)
 	}

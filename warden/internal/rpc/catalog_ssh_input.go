@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // sshLoginRow is a persisted login: its name, derived kind (ca|password|key), and
@@ -24,7 +24,7 @@ type sshLoginRow struct {
 // q. It seals inline new_value into a fresh asset_secret and validates
 // existing_secret_id. onCreate=true forbids existing_secret_id (a brand-new asset has
 // no secrets). The login kind is derived server-side from the auth oneof arm.
-func (s *CatalogServer) resolveSSHConfigInput(ctx context.Context, q *gen.Queries, assetID uuid.UUID, in *catalogv1.SSHConfigInput, onCreate bool) ([]sshLoginRow, error) {
+func (s *CatalogServer) resolveSSHConfigInput(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, in *catalogv1.SSHConfigInput, onCreate bool) ([]sshLoginRow, error) {
 	rows := make([]sshLoginRow, 0, len(in.GetLogins()))
 	for _, l := range in.GetLogins() {
 		row := sshLoginRow{login: l.GetLogin()}
@@ -58,7 +58,7 @@ func (s *CatalogServer) resolveSSHConfigInput(ctx context.Context, q *gen.Querie
 // login, so re-onboarding a login rotates in place); existing_secret_id references
 // an already-stored secret (forbidden on create) and is validated to belong to the
 // asset before use.
-func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries, assetID uuid.UUID, login string, sa *catalogv1.SecretAuth, onCreate bool) (pgtype.UUID, error) {
+func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, login string, sa *catalogv1.SecretAuth, onCreate bool) (pgtype.UUID, error) {
 	switch src := sa.GetSource().(type) {
 	case *catalogv1.SecretAuth_NewValue:
 		// Defense-in-depth: the proto edge (bytes.min_len = 1) rejects empty inline
@@ -74,7 +74,7 @@ func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries,
 		if err != nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInternal, err)
 		}
-		row, err := q.SetAssetSecret(ctx, gen.SetAssetSecretParams{AssetID: assetID, Name: "login:" + login, Sealed: sealed})
+		row, err := q.SetAssetSecret(ctx, sqlc.SetAssetSecretParams{AssetID: assetID, Name: "login:" + login, Sealed: sealed})
 		if err != nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInternal, err)
 		}
@@ -106,15 +106,15 @@ func (s *CatalogServer) resolveSecretSource(ctx context.Context, q *gen.Queries,
 // writeSSHConfig upserts the asset's connection config (host/target) and replaces
 // its login set with rows. A CHECK / composite-FK violation surfaces via the
 // caller's mapWriteErr as InvalidArgument.
-func writeSSHConfig(ctx context.Context, q *gen.Queries, assetID uuid.UUID, hostKey, target string, rows []sshLoginRow) error {
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{AssetID: assetID, HostPublicKey: hostKey, TargetAddress: target}); err != nil {
+func writeSSHConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, hostKey, target string, rows []sshLoginRow) error {
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{AssetID: assetID, HostPublicKey: hostKey, TargetAddress: target}); err != nil {
 		return err
 	}
 	if err := q.DeleteSSHAssetLoginsForAsset(ctx, assetID); err != nil {
 		return err
 	}
 	for _, r := range rows {
-		if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{AssetID: assetID, Login: r.login, Kind: r.kind, SecretID: r.secretID}); err != nil {
+		if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{AssetID: assetID, Login: r.login, Kind: r.kind, SecretID: r.secretID}); err != nil {
 			return err
 		}
 	}

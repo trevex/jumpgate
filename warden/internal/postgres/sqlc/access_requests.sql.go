@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: access_requests.sql
 
-package gen
+package sqlc
 
 import (
 	"context"

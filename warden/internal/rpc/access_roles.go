@@ -12,7 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // CreateRole creates a custom role (admin only).
@@ -30,13 +30,13 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	qtx := s.q.WithTx(tx)
-	r, err := qtx.CreateRole(ctx, gen.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID})
+	r, err := qtx.CreateRole(ctx, sqlc.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
 		return nil, mapWriteErr(err)
 	}
 	for _, cap := range req.Msg.Capabilities {
 		sc, ac, qu := authz.NormalizeCap(cap)
-		if err := qtx.InsertRoleCapability(ctx, gen.InsertRoleCapabilityParams{RoleID: r.ID, Scope: sc, Action: ac, Qualifier: qu}); err != nil {
+		if err := qtx.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{RoleID: r.ID, Scope: sc, Action: ac, Qualifier: qu}); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 	}
@@ -53,7 +53,7 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 // ResolveRole resolves uuid | name (global) | <role>.<folder-path> (scoped) to a role id (admin only).
 func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[accessv1.ResolveRoleRequest]) (*connect.Response[accessv1.ResolveRoleResponse], error) {
 	ref := req.Msg.Ref
-	var role gen.Role
+	var role sqlc.Role
 	if id, perr := uuid.Parse(ref); perr == nil {
 		r, err := s.q.GetRole(ctx, id)
 		if err != nil {
@@ -65,7 +65,7 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 		if err != nil {
 			return nil, roleNotFoundOrInternal(err)
 		}
-		r, err := s.q.GetRoleByFolderAndName(ctx, gen.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		r, err := s.q.GetRoleByFolderAndName(ctx, sqlc.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
 		if err != nil {
 			return nil, roleNotFoundOrInternal(err)
 		}
@@ -118,7 +118,7 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	if err != nil {
 		return nil, err
 	}
-	params := gen.ListRolesByIDsPagedParams{Column1: ids, Lim: limit}
+	params := sqlc.ListRolesByIDsPagedParams{Column1: ids, Lim: limit}
 	if key != nil {
 		params.AfterName = pgText(key.Name)
 		params.AfterID = pgUUID(key.ID)

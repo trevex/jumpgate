@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // AnchorStore is the minimal object-store write capability the anchorer needs.
@@ -54,7 +54,7 @@ func anchorKey(seq int64) string {
 // writes nothing. All object-store and DB errors are returned to the caller,
 // which logs them (fail-open) — anchoring never blocks audit writes.
 func (l *Logger) AnchorTip(ctx context.Context, store AnchorStore, lastSeq int64) (int64, error) {
-	tip, err := gen.New(l.pool).AuditChainTip(ctx)
+	tip, err := sqlc.New(l.pool).AuditChainTip(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Empty log: nothing to anchor yet.
 		return lastSeq, nil
@@ -133,7 +133,7 @@ var ErrTailTruncated = errors.New("audit chain truncated or rewritten below anch
 // operator or admin tool feeds it the last anchor read back from the object store.
 // It is additive — the existing Verify (whole-chain integrity) is unchanged.
 func (l *Logger) VerifyTipAtLeast(ctx context.Context, anchorSeq int64, anchorHash []byte) error {
-	q := gen.New(l.pool)
+	q := sqlc.New(l.pool)
 	tip, err := q.AuditChainTip(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Live log is empty but an anchor exists → everything after genesis was

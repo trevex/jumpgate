@@ -13,7 +13,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // GetAssetDisplay returns an asset's decision context — path, kind, and for SSH the
@@ -177,7 +177,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 	}
 	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 {
-		rows, err := s.q.ListFoldersByIDsPaged(ctx, gen.ListFoldersByIDsPagedParams{
+		rows, err := s.q.ListFoldersByIDsPaged(ctx, sqlc.ListFoldersByIDsPagedParams{
 			Ids: folderIDs,
 			Lim: contentsSlice + 1,
 		})
@@ -210,7 +210,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(assetIDs) > 0 {
-		rows, err := s.q.ListAssetsByIDsPaged(ctx, gen.ListAssetsByIDsPagedParams{
+		rows, err := s.q.ListAssetsByIDsPaged(ctx, sqlc.ListAssetsByIDsPagedParams{
 			Ids: assetIDs,
 			Lim: contentsSlice + 1,
 		})
@@ -242,7 +242,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(roleIDs) > 0 {
-		rows, err := s.q.ListRolesByIDsPaged(ctx, gen.ListRolesByIDsPagedParams{
+		rows, err := s.q.ListRolesByIDsPaged(ctx, sqlc.ListRolesByIDsPagedParams{
 			Column1: roleIDs,
 			Lim:     contentsSlice + 1,
 		})
@@ -281,7 +281,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(groupIDs) > 0 {
-		rows, err := s.q.ListGroupsByIDsPaged(ctx, gen.ListGroupsByIDsPagedParams{
+		rows, err := s.q.ListGroupsByIDsPaged(ctx, sqlc.ListGroupsByIDsPagedParams{
 			Column1: groupIDs,
 			Lim:     contentsSlice + 1,
 		})
@@ -391,7 +391,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 	}
 	folderIDs := authz.FolderIDsOf(visibleFolders)
 	if len(folderIDs) > 0 && !full() {
-		rows, err := s.q.SearchFoldersByIDs(ctx, gen.SearchFoldersByIDsParams{Column1: folderIDs, Name: pattern, Limit: remaining()})
+		rows, err := s.q.SearchFoldersByIDs(ctx, sqlc.SearchFoldersByIDsParams{Column1: folderIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -412,7 +412,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(assetIDs) > 0 && !full() {
-		rows, err := s.q.SearchAssetsByIDs(ctx, gen.SearchAssetsByIDsParams{Column1: assetIDs, Name: pattern, Limit: remaining()})
+		rows, err := s.q.SearchAssetsByIDs(ctx, sqlc.SearchAssetsByIDsParams{Column1: assetIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -433,7 +433,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(roleIDs) > 0 && !full() {
-		rows, err := s.q.SearchRolesByIDs(ctx, gen.SearchRolesByIDsParams{Column1: roleIDs, Name: pattern, Limit: remaining()})
+		rows, err := s.q.SearchRolesByIDs(ctx, sqlc.SearchRolesByIDsParams{Column1: roleIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -460,7 +460,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(groupIDs) > 0 && !full() {
-		rows, err := s.q.SearchGroupsByIDs(ctx, gen.SearchGroupsByIDsParams{Column1: groupIDs, Name: pattern, Limit: remaining()})
+		rows, err := s.q.SearchGroupsByIDs(ctx, sqlc.SearchGroupsByIDsParams{Column1: groupIDs, Name: pattern, Limit: remaining()})
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}

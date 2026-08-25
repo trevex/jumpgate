@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
 
@@ -24,7 +24,7 @@ var ErrNoAccess = errors.New("no session access to asset")
 
 // Service authorizes and mints data-plane admission tokens.
 type Service struct {
-	q               *gen.Queries
+	q               *sqlc.Queries
 	authz           authz.Authorizer
 	minter          *sessiontoken.Minter
 	gatewayEndpoint string
@@ -32,7 +32,7 @@ type Service struct {
 }
 
 // NewService builds the CreateSession domain service.
-func NewService(q *gen.Queries, a authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint string, ttl time.Duration) *Service {
+func NewService(q *sqlc.Queries, a authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint string, ttl time.Duration) *Service {
 	return &Service{q: q, authz: a, minter: minter, gatewayEndpoint: gatewayEndpoint, ttl: ttl}
 }
 

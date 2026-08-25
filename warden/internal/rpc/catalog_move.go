@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // ancestorSet returns folderID together with all of its ancestors up to the root as
 // a set, for a containment membership test.
-func ancestorSet(ctx context.Context, q *gen.Queries, folderID uuid.UUID) (map[uuid.UUID]bool, error) {
+func ancestorSet(ctx context.Context, q *sqlc.Queries, folderID uuid.UUID) (map[uuid.UUID]bool, error) {
 	ids, err := q.FolderAncestorsAndSelf(ctx, folderID)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func homeContained(roleHome pgtype.UUID, targetAncestors map[uuid.UUID]bool) boo
 }
 
 // roleHome returns a role's home folder (invalid pgtype.UUID for a global role).
-func (s *CatalogServer) roleHome(ctx context.Context, q *gen.Queries, roleID uuid.UUID) (pgtype.UUID, error) {
+func (s *CatalogServer) roleHome(ctx context.Context, q *sqlc.Queries, roleID uuid.UUID) (pgtype.UUID, error) {
 	r, err := q.GetRole(ctx, roleID)
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -47,7 +47,7 @@ func (s *CatalogServer) roleHome(ctx context.Context, q *gen.Queries, roleID uui
 // roleRefsOfPolicy collects the role ids a policy references: the granted role plus
 // its optional requester and approver roles. Each is subject to the containment
 // invariant when the policy's scope moves.
-func roleRefsOfPolicy(p gen.RequestPolicy) []uuid.UUID {
+func roleRefsOfPolicy(p sqlc.RequestPolicy) []uuid.UUID {
 	ids := []uuid.UUID{p.RoleID}
 	if p.RequesterRoleID.Valid {
 		ids = append(ids, uuid.UUID(p.RequesterRoleID.Bytes))
@@ -61,7 +61,7 @@ func roleRefsOfPolicy(p gen.RequestPolicy) []uuid.UUID {
 // validateAssetMove denies (FailedPrecondition) if moving assetID into destFolder
 // would leave any binding or policy scoped to that asset granting a folder-scoped
 // role whose home no longer contains the asset's new location.
-func (s *CatalogServer) validateAssetMove(ctx context.Context, q *gen.Queries, assetID, destFolder uuid.UUID) error {
+func (s *CatalogServer) validateAssetMove(ctx context.Context, q *sqlc.Queries, assetID, destFolder uuid.UUID) error {
 	destAnc, err := ancestorSet(ctx, q, destFolder)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -112,7 +112,7 @@ func (s *CatalogServer) validateAssetMove(ctx context.Context, q *gen.Queries, a
 // second is the new above-portion contributed by the destination parent (empty for a
 // root move). For every affected binding/policy, every referenced folder-scoped
 // role's home must lie in its scope node's newAnc, else the move is denied.
-func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, movedFolder uuid.UUID, newParent pgtype.UUID) error {
+func (s *CatalogServer) validateFolderMove(ctx context.Context, q *sqlc.Queries, movedFolder uuid.UUID, newParent pgtype.UUID) error {
 	subList, err := q.FolderSubtreeIDs(ctx, movedFolder)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -181,7 +181,7 @@ func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, 
 		return uuid.Nil, false
 	}
 
-	bindings, err := q.BindingsScopedToFoldersOrAssets(ctx, gen.BindingsScopedToFoldersOrAssetsParams{
+	bindings, err := q.BindingsScopedToFoldersOrAssets(ctx, sqlc.BindingsScopedToFoldersOrAssetsParams{
 		Column1: subList, Column2: assetIDs,
 	})
 	if err != nil {
@@ -205,7 +205,7 @@ func (s *CatalogServer) validateFolderMove(ctx context.Context, q *gen.Queries, 
 		}
 	}
 
-	policies, err := q.PoliciesScopedToFoldersOrAssets(ctx, gen.PoliciesScopedToFoldersOrAssetsParams{
+	policies, err := q.PoliciesScopedToFoldersOrAssets(ctx, sqlc.PoliciesScopedToFoldersOrAssetsParams{
 		Column1: subList, Column2: assetIDs,
 	})
 	if err != nil {

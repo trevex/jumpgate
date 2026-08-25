@@ -11,7 +11,7 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
@@ -35,7 +35,7 @@ func newCatalogTestEnv(t *testing.T) *catalogTestEnv {
 	pool, _ := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	authorizer := authz.NewSQLAuthorizer(pool)
 	srv := rpc.NewCatalogServer(q, pool, authorizer, nil, testSealer(t), nil)
 

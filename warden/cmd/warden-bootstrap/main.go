@@ -37,9 +37,9 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
-	"github.com/trevex/jumpgate/warden/internal/pg"
+	"github.com/trevex/jumpgate/warden/internal/postgres"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 )
@@ -104,12 +104,12 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	// 3. Open the connection pool.
-	pool, err := pg.NewPool(ctx, cfg.dsn)
+	pool, err := postgres.NewPool(ctx, cfg.dsn)
 	if err != nil {
 		return fmt.Errorf("db pool: %w", err)
 	}
 	defer pool.Close()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	if err := os.MkdirAll(cfg.outDir, 0o750); err != nil {
 		return fmt.Errorf("mkdir %s: %w", cfg.outDir, err)
@@ -143,7 +143,7 @@ func run(ctx context.Context, cfg config) error {
 // provisionSSHCA ensures an active SSH CA exists (generating and sealing one on
 // first run) and writes the active CA's authorized_keys public line to
 // <out>/ssh-ca.pub.
-func provisionSSHCA(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer, outDir string) error {
+func provisionSSHCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer, outDir string) error {
 	_, err := q.GetActiveCA(ctx, "ssh")
 	if errors.Is(err, pgx.ErrNoRows) {
 		seed, line, gerr := ca.GenerateSSHCA()
@@ -154,7 +154,7 @@ func provisionSSHCA(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer,
 		if serr != nil {
 			return fmt.Errorf("seal ssh ca: %w", serr)
 		}
-		if _, cerr := q.CreateCAKey(ctx, gen.CreateCAKeyParams{
+		if _, cerr := q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{
 			Kind: "ssh", Sealed: sealed, PublicMaterial: line,
 		}); cerr != nil {
 			return fmt.Errorf("store ssh ca: %w", cerr)
@@ -178,7 +178,7 @@ func provisionSSHCA(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer,
 // provisionSessionKey initializes the active session signing key if none exists.
 // A second run is a no-op (Init would otherwise collide on the unique-active
 // index, so we gate on LoadActive first).
-func provisionSessionKey(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer) error {
+func provisionSessionKey(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer) error {
 	ks := session.NewKeyStore(q, sealer)
 	_, _, err := ks.LoadActive(ctx)
 	if errors.Is(err, session.ErrNoActiveKey) {
@@ -197,7 +197,7 @@ func provisionSessionKey(ctx context.Context, q *gen.Queries, sealer *secrets.Se
 // first run) and writes the active CA's cert + key PEM files. The private key is
 // stored as PKCS#8 DER; it is PEM-wrapped here as a PRIVATE KEY block for
 // cert-manager's CA Issuer (tls.crt + tls.key).
-func provisionMeshCA(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer, outDir string) error {
+func provisionMeshCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer, outDir string) error {
 	row, err := q.GetActiveCA(ctx, "mesh")
 	if errors.Is(err, pgx.ErrNoRows) {
 		keyDER, certPEM, gerr := ca.GenerateMeshCA()
@@ -208,7 +208,7 @@ func provisionMeshCA(ctx context.Context, q *gen.Queries, sealer *secrets.Sealer
 		if serr != nil {
 			return fmt.Errorf("seal mesh ca: %w", serr)
 		}
-		if _, cerr := q.CreateCAKey(ctx, gen.CreateCAKeyParams{
+		if _, cerr := q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{
 			Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM),
 		}); cerr != nil {
 			return fmt.Errorf("store mesh ca: %w", cerr)

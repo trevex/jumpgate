@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: role_grants.sql
 
-package gen
+package sqlc
 
 import (
 	"context"

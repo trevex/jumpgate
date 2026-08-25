@@ -98,8 +98,8 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/ca"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -411,7 +411,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatalf("seal ssh ca: %v", err)
 	}
-	if _, err := gen.New(pool).CreateCAKey(context.Background(), gen.CreateCAKeyParams{
+	if _, err := sqlc.New(pool).CreateCAKey(context.Background(), sqlc.CreateCAKeyParams{
 		Kind: "ssh", Sealed: sealed, PublicMaterial: line,
 	}); err != nil {
 		t.Fatalf("store ssh ca: %v", err)
@@ -428,7 +428,7 @@ func initMeshCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatalf("seal mesh ca: %v", err)
 	}
-	if _, err := gen.New(pool).CreateCAKey(context.Background(), gen.CreateCAKeyParams{
+	if _, err := sqlc.New(pool).CreateCAKey(context.Background(), sqlc.CreateCAKeyParams{
 		Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM),
 	}); err != nil {
 		t.Fatalf("store mesh ca: %v", err)
@@ -437,7 +437,7 @@ func initMeshCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 
 func initSessionKey(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	t.Helper()
-	if err := session.NewKeyStore(gen.New(pool), sealer).Init(context.Background()); err != nil {
+	if err := session.NewKeyStore(sqlc.New(pool), sealer).Init(context.Background()); err != nil {
 		t.Fatalf("init session signing key: %v", err)
 	}
 }
@@ -446,7 +446,7 @@ func initSessionKey(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 // as a parsed ssh.PublicKey, so the target sshd can trust certs it signs.
 func activeSSHCAPublicKey(t *testing.T, pool *pgxpool.Pool) gossh.PublicKey {
 	t.Helper()
-	row, err := gen.New(pool).GetActiveCA(context.Background(), "ssh")
+	row, err := sqlc.New(pool).GetActiveCA(context.Background(), "ssh")
 	if err != nil {
 		t.Fatalf("GetActiveCA(ssh): %v", err)
 	}
@@ -466,44 +466,44 @@ func activeSSHCAPublicKey(t *testing.T, pool *pgxpool.Pool) gossh.PublicKey {
 func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub string) (token, roleBindingID string) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: userEmail, DisplayName: "Deployer"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: userEmail, DisplayName: "Deployer"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatalf("CreateFolder: %v", err)
 	}
-	asset, err := q.CreateAsset(ctx, gen.CreateAssetParams{
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{
 		FolderID: folder.ID, Name: assetName, Labels: []byte("{}"), Kind: "ssh",
 	})
 	if err != nil {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 
-	if _, err := q.UpsertSSHAssetConfig(ctx, gen.UpsertSSHAssetConfigParams{
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{
 		AssetID:       asset.ID,
 		HostPublicKey: targetHostPub,
 		TargetAddress: targetAddr,
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetConfig: %v", err)
 	}
-	if _, err := q.UpsertSSHAssetLogin(ctx, gen.UpsertSSHAssetLoginParams{
+	if _, err := q.UpsertSSHAssetLogin(ctx, sqlc.UpsertSSHAssetLoginParams{
 		AssetID: asset.ID, Login: login, Kind: "ca",
 	}); err != nil {
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
 		Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:" + login),
 	})
 	if err != nil {
 		t.Fatalf("CreateRole: %v", err)
 	}
-	rb, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	rb, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeAssetID:  pgUUID(asset.ID),
 		SubjectUserID: pgUUID(user.ID),
@@ -524,8 +524,8 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
 	t.Helper()
 	ctx := context.Background()
-	q := gen.New(pool)
-	u, err := q.CreateUserFull(ctx, gen.CreateUserFullParams{Email: email, DisplayName: email})
+	q := sqlc.New(pool)
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
@@ -533,17 +533,17 @@ func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
 	if err != nil {
 		t.Fatalf("hash admin password: %v", err)
 	}
-	if err := q.SetUserPassword(ctx, gen.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
 		t.Fatalf("set admin password: %v", err)
 	}
 	// Mirror bootstrap.EnsureAdmin: the admin holds `**` globally via a scopeless
 	// standing binding so the capability-gated management handlers (e.g. RevokeGrant)
 	// admit it. There is no is_admin boolean anymore; authz is capability-only.
-	role, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
 	if err != nil {
 		t.Fatalf("create admin role: %v", err)
 	}
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
 	}); err != nil {

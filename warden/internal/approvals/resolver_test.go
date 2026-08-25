@@ -11,8 +11,8 @@ import (
 	pgxuuid "github.com/vgarvardt/pgx-google-uuid/v5"
 
 	"github.com/trevex/jumpgate/warden/internal/approvals"
-	"github.com/trevex/jumpgate/warden/internal/db/gen"
-	"github.com/trevex/jumpgate/warden/internal/db/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
 
@@ -43,69 +43,69 @@ func newPool(t *testing.T) *pgxpool.Pool {
 func TestApprovalResolver(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 
 	// Roles
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "owner"})
+	owner, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	readonly, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "readonly"})
+	readonly, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "readonly"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// owner cascades down folders via an explicit parent self-rule (IsApprover now
 	// resolves the approver-role through the explicit role-rewrite graph).
-	if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: owner.ID, SourceRoleID: owner.ID, Via: "parent"}); err != nil {
+	if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: owner.ID, SourceRoleID: owner.ID, Via: "parent"}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Folders: prod (root), prod/db (parent=prod)
-	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	prod, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	proddb, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "db", ParentID: pg(prod.ID)})
+	proddb, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "db", ParentID: pg(prod.ID)})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Asset pg in prod/db
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: proddb.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Users
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	carol, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
+	carol, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Group leads with carol as member
-	leads, err := q.CreateGroup(ctx, gen.CreateGroupParams{Name: "leads"})
+	leads, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "leads"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := q.AddUserToGroup(ctx, gen.AddUserToGroupParams{GroupID: leads.ID, MemberUserID: pg(carol.ID)}); err != nil {
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: leads.ID, MemberUserID: pg(carol.ID)}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Role-level DEFAULT rule for dba: required_approvals=1, approver_role_id=owner
-	defaultRule, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	defaultRule, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 		ApproverRoleID:    pg(owner.ID),
@@ -116,7 +116,7 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Explicit approver on the default rule: group leads
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:       defaultRule.ID,
 		Kind:           "approver",
 		SubjectGroupID: pg(leads.ID),
@@ -125,7 +125,7 @@ func TestApprovalResolver(t *testing.T) {
 	}
 
 	// Standing role binding: alice -> owner on folder prod (inherited to pg)
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        owner.ID,
 		ScopeFolderID: pg(prod.ID),
 		SubjectUserID: pg(alice.ID),
@@ -168,28 +168,28 @@ func TestApprovalResolver(t *testing.T) {
 	// Uses fresh roles/users (custodian/keeper/dave) so existing assertions are
 	// untouched.
 	t.Run("approver-role-requires-explicit-parent-rule", func(t *testing.T) {
-		custodian, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "custodian"})
+		custodian, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "custodian"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		keeper, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "keeper"})
+		keeper, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "keeper"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Role-default rule for custodian whose approver-role is keeper.
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID:            custodian.ID,
 			RequiredApprovals: 1,
 			ApproverRoleID:    pg(keeper.ID),
 		}); err != nil {
 			t.Fatal(err)
 		}
-		dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+		dave, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		// keeper STANDING on folder prod; pgAsset lives in prod/db (a descendant).
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID:        keeper.ID,
 			ScopeFolderID: pg(prod.ID),
 			SubjectUserID: pg(dave.ID),
@@ -207,7 +207,7 @@ func TestApprovalResolver(t *testing.T) {
 		}
 
 		// Add the explicit parent self-rule; keeper now cascades to descendants.
-		if _, err := q.CreateRoleGrant(ctx, gen.CreateRoleGrantParams{RoleID: keeper.ID, SourceRoleID: keeper.ID, Via: "parent"}); err != nil {
+		if _, err := q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: keeper.ID, SourceRoleID: keeper.ID, Via: "parent"}); err != nil {
 			t.Fatal(err)
 		}
 		ok, err = r.IsApprover(ctx, dave.ID, custodian.ID, pgAsset.ID)
@@ -243,7 +243,7 @@ func TestApprovalResolver(t *testing.T) {
 
 	// --- Assertion 5: Asset-override rule beats role default ---
 	// Add asset-override for dba on pg: required_approvals=3, no approver_role
-	assetOverride, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	assetOverride, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		ScopeAssetID:      pg(pgAsset.ID),
 		RequiredApprovals: 3,
@@ -313,7 +313,7 @@ func TestApprovalResolver(t *testing.T) {
 	if err := q.DeleteRequestPolicy(ctx, assetOverride.ID); err != nil {
 		t.Fatal(err)
 	}
-	folderOverride, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	folderOverride, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		ScopeFolderID:     pg(proddb.ID),
 		RequiredApprovals: 2,
@@ -341,11 +341,11 @@ func TestApprovalResolver(t *testing.T) {
 	// with a 1h cap must round-trip through EffectiveRule.MaxDuration; a policy with
 	// NULL max_duration must yield an invalid interval.
 	t.Run("max-duration-round-trips", func(t *testing.T) {
-		capped, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "capped"})
+		capped, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "capped"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+		if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 			RoleID:            capped.ID,
 			RequiredApprovals: 0,
 			MaxDuration:       pgtype.Interval{Microseconds: 3600 * 1_000_000, Valid: true},
@@ -380,47 +380,47 @@ func TestApprovalResolver(t *testing.T) {
 func TestIsEligibleRequester(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	r := approvals.New(pool)
 
 	// Roles: dba (the requestable role) and requester (the standing role that
 	// confers requester eligibility).
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester"})
+	requester, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "requester"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Folder + asset.
-	prod, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	prod, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: prod.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: prod.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Users: alice holds `requester` standing, bob holds nothing, dave is an
 	// explicit requester subject.
-	alice, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
+	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "alice@x", DisplayName: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
+	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob@x", DisplayName: "Bob"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dave, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
+	dave, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Role-default policy for dba with requester_role_id = requester.
-	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	policy, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 		RequesterRoleID:   pg(requester.ID),
@@ -430,7 +430,7 @@ func TestIsEligibleRequester(t *testing.T) {
 	}
 
 	// alice: standing `requester` on the asset → eligible via requester_role.
-	if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        requester.ID,
 		ScopeAssetID:  pg(pgAsset.ID),
 		SubjectUserID: pg(alice.ID),
@@ -439,7 +439,7 @@ func TestIsEligibleRequester(t *testing.T) {
 	}
 
 	// dave: explicit kind='requester' subject on the policy.
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:      policy.ID,
 		Kind:          "requester",
 		SubjectUserID: pg(dave.ID),
@@ -479,11 +479,11 @@ func TestIsEligibleRequester(t *testing.T) {
 
 	t.Run("approver-subject-is-not-a-requester", func(t *testing.T) {
 		// An approver-kind subject must NOT be treated as an eligible requester.
-		erin, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "erin@x", DisplayName: "Erin"})
+		erin, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "erin@x", DisplayName: "Erin"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+		if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 			PolicyID:      policy.ID,
 			Kind:          "approver",
 			SubjectUserID: pg(erin.ID),
@@ -515,36 +515,36 @@ func deactivateUser(t *testing.T, pool *pgxpool.Pool, user uuid.UUID) {
 func TestDeactivatedExplicitApproverSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-approver@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-approver@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Role-default policy with NO approver_role: the only approver path is the
 	// explicit subject below.
-	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	policy, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:      policy.ID,
 		Kind:          "approver",
 		SubjectUserID: pg(user.ID),
@@ -578,36 +578,36 @@ func TestDeactivatedExplicitApproverSubject(t *testing.T) {
 func TestDeactivatedExplicitRequesterSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "deact-req@x", DisplayName: "U"})
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-req@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Role-default policy with NO requester_role: the only requester path is the
 	// explicit subject below.
-	policy, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	policy, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.AddPolicySubject(ctx, gen.AddPolicySubjectParams{
+	if _, err := q.AddPolicySubject(ctx, sqlc.AddPolicySubjectParams{
 		PolicyID:      policy.ID,
 		Kind:          "requester",
 		SubjectUserID: pg(user.ID),
@@ -664,35 +664,35 @@ RETURNING id`, reqID, role, asset, user).Scan(&grantID); err != nil {
 func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	r := approvals.New(pool)
 
 	// Roles: dba (the requestable role) + approver (confers approver eligibility).
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	approver, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "approver"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	approver, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "approver"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grantapprover@x", DisplayName: "U"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grantapprover@x", DisplayName: "U"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Role-default policy for dba, approver_role = approver.
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 		ApproverRoleID:    pg(approver.ID),
@@ -714,7 +714,7 @@ func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
 	})
 
 	t.Run("standing-approver-role-is-approver", func(t *testing.T) {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID:        approver.ID,
 			ScopeAssetID:  pg(pgAsset.ID),
 			SubjectUserID: pg(user.ID),
@@ -737,33 +737,33 @@ func TestGrantedApproverRoleIsNotApprover(t *testing.T) {
 func TestGrantedRequesterRoleIsNotEligible(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	q := gen.New(pool)
+	q := sqlc.New(pool)
 	r := approvals.New(pool)
 
-	dba, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "dba"})
+	dba, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "dba"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	requester, err := q.CreateRole(ctx, gen.CreateRoleParams{Name: "requester"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	folder, err := q.CreateFolder(ctx, gen.CreateFolderParams{Name: "prod"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pgAsset, err := q.CreateAsset(ctx, gen.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
+	requester, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "requester"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	user, err := q.CreateUser(ctx, gen.CreateUserParams{Email: "grantrequester@x", DisplayName: "U"})
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgAsset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg", Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := q.CreateRequestPolicy(ctx, gen.CreateRequestPolicyParams{
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grantrequester@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := q.CreateRequestPolicy(ctx, sqlc.CreateRequestPolicyParams{
 		RoleID:            dba.ID,
 		RequiredApprovals: 1,
 		RequesterRoleID:   pg(requester.ID),
@@ -785,7 +785,7 @@ func TestGrantedRequesterRoleIsNotEligible(t *testing.T) {
 	})
 
 	t.Run("standing-requester-role-is-eligible", func(t *testing.T) {
-		if _, err := q.CreateRoleBinding(ctx, gen.CreateRoleBindingParams{
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 			RoleID:        requester.ID,
 			ScopeAssetID:  pg(pgAsset.ID),
 			SubjectUserID: pg(user.ID),

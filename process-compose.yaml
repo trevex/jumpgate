@@ -64,7 +64,7 @@ processes:
   migrate:
     command: >-
       goose
-      -dir warden/internal/db/migrate/migrations
+      -dir warden/internal/postgres/migrate/migrations
       postgres
       "postgres://postgres@localhost:5433/jumpgate?host=${PWD}/.devdata"
       up
