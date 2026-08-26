@@ -498,6 +498,70 @@ func (q *Queries) MemberGroupIDs(ctx context.Context, user uuid.UUID) ([]pgtype.
 	return items, nil
 }
 
+const requestableRolesOnAsset = `-- name: RequestableRolesOnAsset :many
+WITH held_on_asset AS (
+    SELECT role_id FROM authz_held($1)
+    WHERE object_kind = 'asset' AND object_id = $2
+),
+held_standing_on_asset AS (
+    SELECT role_id FROM authz_held_standing($1)
+    WHERE object_kind = 'asset' AND object_id = $2
+),
+effective AS (
+    SELECT r.role_id, ep.policy_id, ep.requester_role_id
+    FROM (SELECT DISTINCT role_id FROM request_policies) r
+    JOIN LATERAL authz_effective_request_policy(r.role_id, $2) ep ON true
+)
+SELECT e.role_id
+FROM effective e
+WHERE
+  (
+    ( e.requester_role_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM held_standing_on_asset ha WHERE ha.role_id = e.requester_role_id) )
+    OR EXISTS (
+        SELECT 1 FROM request_policy_subjects rps
+        WHERE rps.policy_id = e.policy_id
+          AND rps.kind = 'requester'
+          AND (rps.subject_user_id = $1
+               OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($1)))
+          AND authz_user_is_active($1)
+    )
+  )
+  AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.role_id = e.role_id)
+`
+
+type RequestableRolesOnAssetParams struct {
+	User    pgtype.UUID `json:"user"`
+	AssetID pgtype.UUID `json:"asset_id"`
+}
+
+// [2] requestableRoles: roles requestable (but not already active) for the user on
+// the asset under the request_policy eligibility model. The effective policy per
+// candidate role is authz_effective_request_policy(role, asset); the held /
+// held_standing closures come from the shared authz_held / authz_held_standing
+// functions. A role is requestable iff its effective policy makes the user eligible
+// (requester_role held STANDING on the asset OR an explicit kind='requester'
+// subject) AND the user does not already hold it Active on the asset (grants count).
+func (q *Queries) RequestableRolesOnAsset(ctx context.Context, arg RequestableRolesOnAssetParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, requestableRolesOnAsset, arg.User, arg.AssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var role_id uuid.UUID
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scopeCapabilitiesAsset = `-- name: ScopeCapabilitiesAsset :many
 SELECT DISTINCT rc.scope, rc.action, rc.qualifier
 FROM role_capabilities rc
@@ -580,6 +644,86 @@ func (q *Queries) ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabili
 	for rows.Next() {
 		var i ScopeCapabilitiesFolderRow
 		if err := rows.Scan(&i.Scope, &i.Action, &i.Qualifier); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const visibleRequestable = `-- name: VisibleRequestable :many
+WITH RECURSIVE
+ancestors(asset_id, folder_id, depth) AS (
+    SELECT id, folder_id, 0 FROM assets
+  UNION ALL
+    SELECT a.asset_id, f.parent_id, a.depth + 1
+    FROM folders f JOIN ancestors a ON f.id = a.folder_id
+    WHERE f.parent_id IS NOT NULL
+),
+held_on_asset(asset_id, role_id) AS (
+    SELECT object_id, role_id FROM authz_held($1) WHERE object_kind = 'asset'
+),
+held_standing_on_asset(asset_id, role_id) AS (
+    SELECT object_id, role_id FROM authz_held_standing($1) WHERE object_kind = 'asset'
+),
+candidate_pairs(asset_id, role_id) AS (
+    SELECT rp.scope_asset_id, rp.role_id
+    FROM request_policies rp WHERE rp.scope_asset_id IS NOT NULL
+  UNION
+    SELECT an.asset_id, rp.role_id
+    FROM request_policies rp JOIN ancestors an ON rp.scope_folder_id = an.folder_id
+  UNION
+    SELECT a.id, rp.role_id
+    FROM request_policies rp CROSS JOIN assets a
+    WHERE rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
+),
+effective AS (
+    SELECT cp.asset_id, cp.role_id, ep.policy_id, ep.requester_role_id
+    FROM candidate_pairs cp
+    JOIN LATERAL authz_effective_request_policy(cp.role_id, cp.asset_id) ep ON true
+)
+SELECT e.asset_id, e.role_id
+FROM effective e
+WHERE
+  (
+    ( e.requester_role_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM held_standing_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.requester_role_id) )
+    OR EXISTS (
+        SELECT 1 FROM request_policy_subjects rps
+        WHERE rps.policy_id = e.policy_id
+          AND rps.kind = 'requester'
+          AND (rps.subject_user_id = $1
+               OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($1)))
+          AND authz_user_is_active($1)
+    )
+  )
+  AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.role_id)
+`
+
+type VisibleRequestableRow struct {
+	AssetID pgtype.UUID `json:"asset_id"`
+	RoleID  pgtype.UUID `json:"role_id"`
+}
+
+// [3] visibleRequestable: every (asset, role) requestable (and not already active)
+// for the user across ALL assets. The candidate (asset, role) universe is the union
+// of asset-scoped, ancestor-folder-scoped, and scopeless request_policies; per pair
+// the winning policy is authz_effective_request_policy(role, asset) via LATERAL. The
+// eligibility and active-exclusion arms mirror RequestableRolesOnAsset, keyed on the
+// (asset, role) pair.
+func (q *Queries) VisibleRequestable(ctx context.Context, user pgtype.UUID) ([]VisibleRequestableRow, error) {
+	rows, err := q.db.Query(ctx, visibleRequestable, user)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisibleRequestableRow
+	for rows.Next() {
+		var i VisibleRequestableRow
+		if err := rows.Scan(&i.AssetID, &i.RoleID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

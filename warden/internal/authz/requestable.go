@@ -5,7 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
+
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // requestableRolesCTE computes, for a user (@user) and asset (@assetID), the set
@@ -167,21 +168,9 @@ WHERE
 // requestableRoles returns the roles requestable (but not already active) for the
 // user on the asset, per the request_policy eligibility model above.
 func (s *sqlAuthorizer) requestableRoles(ctx context.Context, userID, assetID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.pool.Query(ctx, requestableRolesCTE, pgx.NamedArgs{"user": userID, "assetID": assetID})
+	out, err := s.queries().RequestableRolesOnAsset(ctx, sqlc.RequestableRolesOnAssetParams{User: uuidArg(userID), AssetID: uuidArg(assetID)})
 	if err != nil {
 		return nil, fmt.Errorf("requestable roles: %w", err)
-	}
-	defer rows.Close()
-	var out []uuid.UUID
-	for rows.Next() {
-		var roleID uuid.UUID
-		if err := rows.Scan(&roleID); err != nil {
-			return nil, fmt.Errorf("requestable roles scan: %w", err)
-		}
-		out = append(out, roleID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("requestable roles rows: %w", err)
 	}
 	return out, nil
 }
@@ -195,21 +184,13 @@ type requestableAsset struct {
 // visibleRequestable returns every (asset, role) requestable pair for the user
 // across all assets, per the request_policy eligibility model above.
 func (s *sqlAuthorizer) visibleRequestable(ctx context.Context, userID uuid.UUID) ([]requestableAsset, error) {
-	rows, err := s.pool.Query(ctx, visibleRequestableCTE, pgx.NamedArgs{"user": userID})
+	rows, err := s.queries().VisibleRequestable(ctx, uuidArg(userID))
 	if err != nil {
 		return nil, fmt.Errorf("visible requestable: %w", err)
 	}
-	defer rows.Close()
-	var out []requestableAsset
-	for rows.Next() {
-		var ra requestableAsset
-		if err := rows.Scan(&ra.AssetID, &ra.RoleID); err != nil {
-			return nil, fmt.Errorf("visible requestable scan: %w", err)
-		}
-		out = append(out, ra)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("visible requestable rows: %w", err)
+	out := make([]requestableAsset, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, requestableAsset{AssetID: uuid.UUID(r.AssetID.Bytes), RoleID: uuid.UUID(r.RoleID.Bytes)})
 	}
 	return out, nil
 }

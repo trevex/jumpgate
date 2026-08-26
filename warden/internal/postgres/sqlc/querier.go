@@ -237,6 +237,14 @@ type Querier interface {
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
 	RemovePolicySubject(ctx context.Context, id uuid.UUID) error
 	RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error
+	// [2] requestableRoles: roles requestable (but not already active) for the user on
+	// the asset under the request_policy eligibility model. The effective policy per
+	// candidate role is authz_effective_request_policy(role, asset); the held /
+	// held_standing closures come from the shared authz_held / authz_held_standing
+	// functions. A role is requestable iff its effective policy makes the user eligible
+	// (requester_role held STANDING on the asset OR an explicit kind='requester'
+	// subject) AND the user does not already hold it Active on the asset (grants count).
+	RequestableRolesOnAsset(ctx context.Context, arg RequestableRolesOnAssetParams) ([]uuid.UUID, error)
 	// Revokes a role's still-live grants (not yet revoked, not yet expired) so the
 	// terminator can tear down the sessions they authorized. Used by the DeleteRole
 	// cascade before the role row (and, via FK cascade, these grant rows) is deleted.
@@ -273,6 +281,13 @@ type Querier interface {
 	UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error)
 	UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error
 	UpsertWorkerPresence(ctx context.Context, workerID string) error
+	// [3] visibleRequestable: every (asset, role) requestable (and not already active)
+	// for the user across ALL assets. The candidate (asset, role) universe is the union
+	// of asset-scoped, ancestor-folder-scoped, and scopeless request_policies; per pair
+	// the winning policy is authz_effective_request_policy(role, asset) via LATERAL. The
+	// eligibility and active-exclusion arms mirror RequestableRolesOnAsset, keyed on the
+	// (asset, role) pair.
+	VisibleRequestable(ctx context.Context, user pgtype.UUID) ([]VisibleRequestableRow, error)
 }
 
 var _ Querier = (*Queries)(nil)
