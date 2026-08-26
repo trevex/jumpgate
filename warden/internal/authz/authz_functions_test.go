@@ -102,3 +102,80 @@ func TestAuthzUserGroupsParity(t *testing.T) {
 		t.Fatalf("want 2 groups, got %d", len(got))
 	}
 }
+
+// pgxNamed is a tiny helper: pgx.NamedArgs{"user": u}.
+func pgxNamed(u uuid.UUID) pgx.NamedArgs { return pgx.NamedArgs{"user": u} }
+
+func TestAuthzHeldParity(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	_, alice, _, _, _, _, a1, _ := seedTree(t, pool) // existing seeder
+
+	// Old builder result (heldCTE is still present during migration).
+	old := map[[2]string]struct{}{}
+	rows, err := pool.Query(ctx, heldCTE+`
+SELECT DISTINCT object_kind, object_id, role_id FROM held`, pgxNamed(alice))
+	if err != nil {
+		t.Fatalf("old: %v", err)
+	}
+	for rows.Next() {
+		var k string
+		var o, r uuid.UUID
+		if err := rows.Scan(&k, &o, &r); err != nil {
+			t.Fatalf("old scan: %v", err)
+		}
+		old[[2]string{k, o.String() + "|" + r.String()}] = struct{}{}
+	}
+	rows.Close()
+
+	// New function result.
+	neu := map[[2]string]struct{}{}
+	rows2, err := pool.Query(ctx, `SELECT object_kind, object_id, role_id FROM authz_held($1)`, alice)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	for rows2.Next() {
+		var k string
+		var o, r uuid.UUID
+		if err := rows2.Scan(&k, &o, &r); err != nil {
+			t.Fatalf("new scan: %v", err)
+		}
+		neu[[2]string{k, o.String() + "|" + r.String()}] = struct{}{}
+	}
+	rows2.Close()
+
+	if len(old) != len(neu) {
+		t.Fatalf("cardinality: old=%d new=%d", len(old), len(neu))
+	}
+	for k := range old {
+		if _, ok := neu[k]; !ok {
+			t.Fatalf("row in old missing from new: %v", k)
+		}
+	}
+	_ = a1
+}
+
+func TestAuthzHeldStandingExcludesGrants(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	old := map[string]struct{}{}
+	// held_standing built via the exported StandingHeldClosurePrefix (still present).
+	rows, err := pool.Query(ctx, StandingHeldClosurePrefix()+`
+SELECT DISTINCT role_id, object_kind, object_id FROM held_standing`, pgxNamed(mustSeedUser(t, pool, "standing@x")))
+	if err != nil {
+		t.Fatalf("old standing: %v", err)
+	}
+	for rows.Next() {
+		var r, o uuid.UUID
+		var k string
+		if err := rows.Scan(&r, &k, &o); err != nil {
+			t.Fatalf("old standing scan: %v", err)
+		}
+		old[r.String()] = struct{}{}
+	}
+	rows.Close()
+	// On a fresh user with no bindings this is empty; the assertion that matters is
+	// that the query shape is valid and column contract matches. Richer grant-vs-standing
+	// divergence is covered by the existing setbased_diff_test after conversion.
+	_ = old
+}

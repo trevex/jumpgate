@@ -804,6 +804,64 @@ CREATE FUNCTION authz_user_groups(p_user uuid)
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_held_impl: the single forward-closure body. include_grants gates the JIT
+-- grant base arm (held vs held_standing). Deactivated users hold nothing.
+CREATE FUNCTION authz_held_impl(p_user uuid, p_include_grants boolean)
+    RETURNS TABLE(role_id uuid, object_kind text, object_id uuid)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE held(role_id, object_kind, object_id) AS (
+        -- base: direct/nested-group standing bindings
+        SELECT rb.role_id,
+               (CASE WHEN rb.scope_asset_id IS NOT NULL THEN 'asset' ELSE 'folder' END)::text,
+               COALESCE(rb.scope_asset_id, rb.scope_folder_id)
+        FROM role_bindings rb
+        WHERE (rb.subject_user_id = p_user
+               OR rb.subject_group_id IN (SELECT group_id FROM authz_user_groups(p_user)))
+          AND authz_user_is_active(p_user)
+      UNION
+        -- base: active JIT grants (only when include_grants), via the shared view
+        SELECT g.role_id, 'asset'::text, g.scope_asset_id
+        FROM active_access_grants g
+        WHERE p_include_grants
+          AND g.subject_user_id = p_user
+          AND authz_user_is_active(p_user)
+      UNION
+        -- recursive rewrite: same_object + parent→child-folders + parent→child-assets
+        SELECT x.role_id, x.object_kind, x.object_id
+        FROM held h,
+             LATERAL (
+                 SELECT rg.role_id, h.object_kind, h.object_id
+                 FROM role_grants rg
+                 WHERE rg.source_role_id = h.role_id AND rg.via = 'same_object'
+               UNION ALL
+                 SELECT rg.role_id, 'folder'::text, cf.id
+                 FROM role_grants rg
+                 JOIN folders cf ON h.object_kind = 'folder' AND cf.parent_id = h.object_id
+                 WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+               UNION ALL
+                 SELECT rg.role_id, 'asset'::text, ca.id
+                 FROM role_grants rg
+                 JOIN assets ca ON h.object_kind = 'folder' AND ca.folder_id = h.object_id
+                 WHERE rg.source_role_id = h.role_id AND rg.via = 'parent'
+             ) x
+    )
+    SELECT held.role_id, held.object_kind, held.object_id FROM held
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE FUNCTION authz_held(p_user uuid)
+    RETURNS TABLE(role_id uuid, object_kind text, object_id uuid)
+    LANGUAGE sql STABLE AS $$ SELECT * FROM authz_held_impl(p_user, true) $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE FUNCTION authz_held_standing(p_user uuid)
+    RETURNS TABLE(role_id uuid, object_kind text, object_id uuid)
+    LANGUAGE sql STABLE AS $$ SELECT * FROM authz_held_impl(p_user, false) $$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
