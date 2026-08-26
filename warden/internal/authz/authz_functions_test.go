@@ -51,7 +51,6 @@ func TestActiveAccessGrantsView(t *testing.T) {
 	if !active {
 		t.Fatalf("freshly seeded user must be active")
 	}
-	_ = pgx.ErrNoRows // keep the pgx import used across the file's Phase 1 tests
 }
 
 func TestAuthzUserGroupsParity(t *testing.T) {
@@ -155,29 +154,95 @@ SELECT DISTINCT object_kind, object_id, role_id FROM held`, pgxNamed(alice))
 	_ = a1
 }
 
+// TestAuthzHeldStandingExcludesGrants pins the security invariant that a JIT
+// access_grant confers access (authz_held) but NOT governance (authz_held_standing).
+// A user with a standing binding on one role AND an active grant of a DIFFERENT
+// role on the same asset must show BOTH roles in authz_held and ONLY the binding
+// role in authz_held_standing.
 func TestAuthzHeldStandingExcludesGrants(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	old := map[string]struct{}{}
-	// held_standing built via the exported StandingHeldClosurePrefix (still present).
-	rows, err := pool.Query(ctx, StandingHeldClosurePrefix()+`
-SELECT DISTINCT role_id, object_kind, object_id FROM held_standing`, pgxNamed(mustSeedUser(t, pool, "standing@x")))
+
+	var user, folder, asset, bindingRole, grantRole, request uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,display_name) VALUES('standing@x','standing') RETURNING id`).Scan(&user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO folders(name) VALUES('f') RETURNING id`).Scan(&folder); err != nil {
+		t.Fatalf("seed folder: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO assets(name, folder_id) VALUES('a',$1) RETURNING id`, folder).Scan(&asset); err != nil {
+		t.Fatalf("seed asset: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO roles(name) VALUES('binding-role') RETURNING id`).Scan(&bindingRole); err != nil {
+		t.Fatalf("seed binding role: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO roles(name) VALUES('grant-role') RETURNING id`).Scan(&grantRole); err != nil {
+		t.Fatalf("seed grant role: %v", err)
+	}
+
+	// (a) standing role_binding: bindingRole on the asset for the user.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO role_bindings(role_id, scope_asset_id, subject_user_id) VALUES($1,$2,$3)`,
+		bindingRole, asset, user); err != nil {
+		t.Fatalf("seed binding: %v", err)
+	}
+
+	// (b) an active (non-revoked, future-expiry) access_grant conferring grantRole on
+	// the same asset. A grant requires a backing access_request (request_id is a
+	// NOT NULL, UNIQUE FK).
+	if err := pool.QueryRow(ctx, `
+INSERT INTO access_requests(requester_user_id, role_id, asset_id, requested_duration, required_approvals, granted_duration, status)
+VALUES($1,$2,$3,interval '1 hour',1,interval '1 hour','granted') RETURNING id`,
+		user, grantRole, asset).Scan(&request); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO access_grants(request_id, role_id, scope_asset_id, subject_user_id, expires_at)
+VALUES($1,$2,$3,$4, now() + interval '1 hour')`,
+		request, grantRole, asset, user); err != nil {
+		t.Fatalf("seed grant: %v", err)
+	}
+
+	held := heldRoleSet(t, pool, `SELECT role_id FROM authz_held($1)`, user)
+	standing := heldRoleSet(t, pool, `SELECT role_id FROM authz_held_standing($1)`, user)
+
+	// authz_held (access): BOTH roles.
+	if _, ok := held[bindingRole]; !ok {
+		t.Fatalf("authz_held missing binding role %s", bindingRole)
+	}
+	if _, ok := held[grantRole]; !ok {
+		t.Fatalf("authz_held missing granted role %s (grant confers access)", grantRole)
+	}
+
+	// authz_held_standing (governance): ONLY the binding role, NEVER the granted one.
+	if _, ok := standing[bindingRole]; !ok {
+		t.Fatalf("authz_held_standing missing binding role %s", bindingRole)
+	}
+	if _, ok := standing[grantRole]; ok {
+		t.Fatalf("SECURITY: authz_held_standing wrongly includes JIT-granted role %s", grantRole)
+	}
+}
+
+// heldRoleSet runs a single-uuid-arg role_id query and collects the result set.
+func heldRoleSet(t *testing.T, pool *pgxpool.Pool, query string, user uuid.UUID) map[uuid.UUID]struct{} {
+	t.Helper()
+	set := map[uuid.UUID]struct{}{}
+	rows, err := pool.Query(context.Background(), query, user)
 	if err != nil {
-		t.Fatalf("old standing: %v", err)
+		t.Fatalf("query %q: %v", query, err)
 	}
+	defer rows.Close()
 	for rows.Next() {
-		var r, o uuid.UUID
-		var k string
-		if err := rows.Scan(&r, &k, &o); err != nil {
-			t.Fatalf("old standing scan: %v", err)
+		var r uuid.UUID
+		if err := rows.Scan(&r); err != nil {
+			t.Fatalf("scan: %v", err)
 		}
-		old[r.String()] = struct{}{}
+		set[r] = struct{}{}
 	}
-	rows.Close()
-	// On a fresh user with no bindings this is empty; the assertion that matters is
-	// that the query shape is valid and column contract matches. Richer grant-vs-standing
-	// divergence is covered by the existing setbased_diff_test after conversion.
-	_ = old
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	return set
 }
 
 func TestAuthzGlobalHeldParity(t *testing.T) {

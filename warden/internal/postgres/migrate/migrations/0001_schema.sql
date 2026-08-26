@@ -1012,12 +1012,28 @@ $$;
 
 -- +goose Down
 -- +goose StatementBegin
+-- Drop the authorization SQL objects before the tables/functions they read.
+-- SQL functions are not dependency-tracked, so each must be dropped explicitly
+-- (dependents — the held wrappers — before authz_held_impl; the view explicitly).
+DROP FUNCTION IF EXISTS authz_role_goal_paths(uuid, uuid, uuid),
+    authz_effective_request_policy(uuid, uuid),
+    authz_role_goals(uuid, text, uuid),
+    authz_global_held(uuid),
+    authz_held(uuid),
+    authz_held_standing(uuid),
+    authz_held_impl(uuid, boolean),
+    authz_user_groups(uuid),
+    authz_user_is_active(uuid);
+DROP VIEW IF EXISTS active_access_grants;
+-- NB: group_memberships must be listed explicitly — dropping groups/users CASCADE
+-- only removes its FK constraints, not the table, leaving trg_group_memberships_authz
+-- (and thus notify_authz_changed_membership_delete) undroppable below.
 DROP TABLE IF EXISTS
     access_request_approvals, live_sessions, session_recordings, ssh_asset_login,
     role_capabilities, request_policy_subjects, access_grants, access_requests,
     request_policies, role_bindings, role_grants, catalog_names, ssh_asset_config,
     asset_secrets, auth_tokens, audit_log, audit_outbox, session_signing_keys,
-    worker_presence, groups, assets, roles, folders, ca_keys, users CASCADE;
+    worker_presence, group_memberships, groups, assets, roles, folders, ca_keys, users CASCADE;
 DROP FUNCTION IF EXISTS notify_authz_changed(), notify_authz_changed_user_update(),
     notify_authz_changed_membership_delete(), notify_authz_changed_binding_delete(),
     folders_set_path_ids(), folders_move_path_ids();
