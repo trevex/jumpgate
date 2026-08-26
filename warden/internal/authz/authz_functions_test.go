@@ -179,3 +179,40 @@ SELECT DISTINCT role_id, object_kind, object_id FROM held_standing`, pgxNamed(mu
 	// divergence is covered by the existing setbased_diff_test after conversion.
 	_ = old
 }
+
+func TestAuthzGlobalHeldParity(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	_, _, _, _, _, _, _, _ = seedTree(t, pool)
+	u := mustSeedUser(t, pool, "global@x")
+	old := map[uuid.UUID]struct{}{}
+	rows, err := pool.Query(ctx, globalHeldCTE+`
+SELECT DISTINCT role_id FROM global_held`, pgxNamed(u))
+	if err != nil {
+		t.Fatalf("old: %v", err)
+	}
+	for rows.Next() {
+		var r uuid.UUID
+		if err := rows.Scan(&r); err != nil {
+			t.Fatalf("old scan: %v", err)
+		}
+		old[r] = struct{}{}
+	}
+	rows.Close()
+	neu := map[uuid.UUID]struct{}{}
+	rows2, err := pool.Query(ctx, `SELECT role_id FROM authz_global_held($1)`, u)
+	if err != nil {
+		t.Fatalf("fn: %v", err)
+	}
+	for rows2.Next() {
+		var r uuid.UUID
+		if err := rows2.Scan(&r); err != nil {
+			t.Fatalf("new scan: %v", err)
+		}
+		neu[r] = struct{}{}
+	}
+	rows2.Close()
+	if len(old) != len(neu) {
+		t.Fatalf("old=%d new=%d", len(old), len(neu))
+	}
+}

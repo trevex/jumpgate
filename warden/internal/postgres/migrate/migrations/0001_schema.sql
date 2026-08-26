@@ -862,6 +862,31 @@ CREATE FUNCTION authz_held_standing(p_user uuid)
     LANGUAGE sql STABLE AS $$ SELECT * FROM authz_held_impl(p_user, false) $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_global_held: the scopeless analogue of authz_held — every role a user
+-- holds GLOBALLY via a scopeless standing binding, closed over role_grants
+-- through both rewrite arms (no object dimension). No grant arm: JIT grants are
+-- always asset-scoped and can never confer a global role.
+CREATE FUNCTION authz_global_held(p_user uuid)
+    RETURNS TABLE(role_id uuid)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE global_held(role_id) AS (
+        SELECT rb.role_id
+        FROM role_bindings rb
+        WHERE rb.scope_folder_id IS NULL AND rb.scope_asset_id IS NULL
+          AND (rb.subject_user_id = p_user
+               OR rb.subject_group_id IN (SELECT group_id FROM authz_user_groups(p_user)))
+          AND authz_user_is_active(p_user)
+      UNION
+        SELECT rg.role_id
+        FROM global_held gh
+        JOIN role_grants rg ON rg.source_role_id = gh.role_id
+        WHERE rg.via IN ('same_object', 'parent')
+    )
+    SELECT global_held.role_id FROM global_held
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
