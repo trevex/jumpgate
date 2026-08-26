@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // globalHeldCTE is the SCOPELESS analogue of heldCTE (sql_authorizer.go): it
@@ -78,11 +77,13 @@ var heldPlusGlobalHeldPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
 // globalHeldCapabilities returns the capability patterns the user holds GLOBALLY
 // via scopeless standing bindings closed over role_grants (see globalHeldCTE).
 func (s *sqlAuthorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {
-	rows, err := s.pool.Query(ctx, globalHeldCTE+`
-SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM global_held gh JOIN role_capabilities rc ON rc.role_id = gh.role_id`, pgx.NamedArgs{"user": userID})
+	rows, err := s.queries().GlobalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("global held: %w", err)
 	}
-	defer rows.Close()
-	return scanCapabilities(rows)
+	var caps Capabilities
+	for _, r := range rows {
+		caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
+	}
+	return caps, nil
 }

@@ -6,18 +6,46 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // sqlAuthorizer resolves access with recursive SQL over the control-plane Postgres.
+// The shared authorization closures live in the DB as inlinable SQL functions
+// (authz_held / authz_global_held / …); this type reaches them through the static
+// sqlc queries on q. pool is retained for the few remaining ad-hoc queries.
 type sqlAuthorizer struct {
 	pool *pgxpool.Pool
+	q    *sqlc.Queries
 }
 
 // NewSQLAuthorizer returns an Authorizer backed by Postgres.
 func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
-	return &sqlAuthorizer{pool: pool}
+	return &sqlAuthorizer{pool: pool, q: sqlc.New(pool)}
 }
+
+// queries returns the sqlc query set bound to the authorizer's pool. It lazily
+// initialises q for authorizers built as a bare struct literal (the internal
+// tests) rather than via NewSQLAuthorizer, so both construction paths reach the
+// shared authz SQL functions identically.
+func (s *sqlAuthorizer) queries() *sqlc.Queries {
+	if s.q == nil {
+		s.q = sqlc.New(s.pool)
+	}
+	return s.q
+}
+
+// uuidArg wraps a uuid.UUID as a non-null pgtype.UUID for the generated sqlc
+// query params that are typed pgtype.UUID (sqlc emits pgtype.UUID for function
+// arguments whose nullability it cannot prove). The authz functions never emit or
+// require NULL ids, so the wrapper is always Valid.
+func uuidArg(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
+
+// textArg wraps a string as a non-null pgtype.Text for the generated sqlc query
+// params that are typed pgtype.Text.
+func textArg(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
 
 // heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
 // a user (@user), every (role, object) the user holds via direct standing bindings,
@@ -57,26 +85,15 @@ func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]
 	}
 
 	// Active tier: assets held via the explicit role-rewrite graph (standing).
-	activeRows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT object_id, role_id FROM held WHERE object_kind = 'asset'`, pgx.NamedArgs{"user": userID})
+	heldAssets, err := s.queries().HeldAssets(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("visible assets (active): %w", err)
 	}
-	defer activeRows.Close()
-	for activeRows.Next() {
-		var assetID, roleID uuid.UUID
-		if err := activeRows.Scan(&assetID, &roleID); err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
-		}
-		a := get(assetID)
+	for _, row := range heldAssets {
+		a := get(uuid.UUID(row.ObjectID.Bytes))
 		a.active = true
-		addRole(a, roleID)
+		addRole(a, uuid.UUID(row.RoleID.Bytes))
 	}
-	if err := activeRows.Err(); err != nil {
-		return nil, err
-	}
-	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
-	activeRows.Close()
 
 	// Requestable tier: assets with ≥1 role requestable-but-not-active under the
 	// request_policy eligibility model.
@@ -100,28 +117,18 @@ func (s *sqlAuthorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.U
 	var r AssetRoles
 
 	// Active: roles held on the asset via the explicit role-rewrite graph.
-	activeRows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT role_id FROM held WHERE object_kind = 'asset' AND object_id = @assetID`, pgx.NamedArgs{"user": userID, "assetID": assetID})
+	activeRoleIDs, err := s.queries().HeldRolesOnAsset(ctx, sqlc.HeldRolesOnAssetParams{User: uuidArg(userID), AssetID: uuidArg(assetID)})
 	if err != nil {
 		return AssetRoles{}, fmt.Errorf("roles on asset (active): %w", err)
 	}
-	defer activeRows.Close()
 	activeSeen := map[uuid.UUID]struct{}{}
-	for activeRows.Next() {
-		var roleID uuid.UUID
-		if err := activeRows.Scan(&roleID); err != nil {
-			return AssetRoles{}, fmt.Errorf("scan: %w", err)
-		}
+	for _, rid := range activeRoleIDs {
+		roleID := uuid.UUID(rid.Bytes)
 		if _, ok := activeSeen[roleID]; !ok {
 			activeSeen[roleID] = struct{}{}
 			r.Active = append(r.Active, roleID)
 		}
 	}
-	if err := activeRows.Err(); err != nil {
-		return AssetRoles{}, err
-	}
-	// release the pooled conn before the second query; defer remains as the error-path guard (Close is idempotent)
-	activeRows.Close()
 
 	// Requestable: roles requestable-but-not-active under the request_policy
 	// eligibility model (active-exclusion is already applied inside the query).
@@ -150,32 +157,17 @@ func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID
 // the held closure once and flattens all matching roles' patterns into a single
 // Capabilities set (glob matching stays in Go via CapMatch/Allows).
 func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
-	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT rc.scope, rc.action, rc.qualifier
-FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-WHERE h.object_kind = @objectKind AND h.object_id = @objectID`, pgx.NamedArgs{"user": userID, "objectID": objectID, "objectKind": kind})
+	rows, err := s.queries().HeldCapabilitiesOnObject(ctx, sqlc.HeldCapabilitiesOnObjectParams{
+		User:       uuidArg(userID),
+		ObjectKind: textArg(kind),
+		ObjectID:   uuidArg(objectID),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("capabilities on object: %w", err)
 	}
-	defer rows.Close()
-	return scanCapabilities(rows)
-}
-
-// scanCapabilities collects every (scope, action, qualifier) row from
-// role_capabilities into a Capabilities set, reconstructing the canonical
-// pattern string via ReconstructCap. Shared by CapabilitiesOnObject,
-// capsOnFolders, and globalHeldCapabilities.
-func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 	var caps Capabilities
-	for rows.Next() {
-		var s, a, q string
-		if err := rows.Scan(&s, &a, &q); err != nil {
-			return nil, fmt.Errorf("capabilities scan: %w", err)
-		}
-		caps = append(caps, ReconstructCap(s, a, q))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("capabilities rows: %w", err)
+	for _, r := range rows {
+		caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
 	}
 	return caps, nil
 }
@@ -199,16 +191,13 @@ func scanCapabilities(rows pgx.Rows) (Capabilities, error) {
 // `capability` is internal (from workers) and assumed concrete — not proto-validated.
 func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(capability)
-	var ok bool
-	err := s.pool.QueryRow(ctx, heldCTE+`
-SELECT EXISTS (
-    SELECT 1
-    FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'asset' AND h.object_id = @assetID
-      AND (rc.scope = @capScope OR rc.scope = '*')
-      AND (rc.action = @capAction OR rc.action = '*')
-      AND (rc.qualifier = @capQual OR rc.qualifier = '*')
-)`, pgx.NamedArgs{"user": userID, "assetID": assetID, "capScope": reqScope, "capAction": reqAction, "capQual": reqQual}).Scan(&ok)
+	ok, err := s.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{
+		User:      uuidArg(userID),
+		AssetID:   uuidArg(assetID),
+		CapScope:  textArg(reqScope),
+		CapAction: textArg(reqAction),
+		CapQual:   textArg(reqQual),
+	})
 	if err != nil {
 		return false, fmt.Errorf("check: %w", err)
 	}
@@ -253,52 +242,30 @@ func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUI
 		// Global-only: no object dimension, so the lone global_held closure suffices.
 		return s.globalHeldCapabilities(ctx, userID)
 	case ScopeFolder:
-		return s.scopeCapabilities(ctx, userID, `
-    SELECT h.role_id FROM held h
-    WHERE h.object_kind = 'folder'
-      AND h.object_id IN (
-          SELECT f.id FROM folders f
-          WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = @scopeID)
-      )`, scope.ID)
+		// global_held ∪ held on folders in the scope subtree (ltree @>).
+		rows, err := s.queries().ScopeCapabilitiesFolder(ctx, sqlc.ScopeCapabilitiesFolderParams{User: userID, ScopeID: scope.ID})
+		if err != nil {
+			return nil, fmt.Errorf("capabilities on scope: %w", err)
+		}
+		var caps Capabilities
+		for _, r := range rows {
+			caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
+		}
+		return caps, nil
 	case ScopeAsset:
-		return s.scopeCapabilities(ctx, userID, `
-    SELECT h.role_id FROM held h
-    WHERE (h.object_kind = 'asset' AND h.object_id = @scopeID)
-       OR (h.object_kind = 'folder'
-           AND h.object_id IN (
-               SELECT f.id FROM folders f
-               WHERE f.path_ids @> (
-                   SELECT af.path_ids FROM folders af
-                   JOIN assets a ON a.folder_id = af.id
-                   WHERE a.id = @scopeID
-               )
-           ))`, scope.ID)
+		// global_held ∪ held on the asset or its ancestor-or-self folders.
+		rows, err := s.queries().ScopeCapabilitiesAsset(ctx, sqlc.ScopeCapabilitiesAssetParams{User: uuidArg(userID), ScopeID: uuidArg(scope.ID)})
+		if err != nil {
+			return nil, fmt.Errorf("capabilities on scope: %w", err)
+		}
+		var caps Capabilities
+		for _, r := range rows {
+			caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
+		}
+		return caps, nil
 	default:
 		return nil, fmt.Errorf("unknown scope kind %d", scope.Kind)
 	}
-}
-
-// scopeCapabilities runs the single set-based CapabilitiesOnScope query for a
-// folder/asset scope: the DISTINCT capability patterns of every role in
-// global_held UNION the held roles selected by objectSelect (which references the
-// scoped object id as @scopeID). Shared by the ScopeFolder / ScopeAsset arms above so
-// the global-caps-always-apply union and the combined closure prefix live in one
-// place; only the in-scope-object predicate differs. Existence-hiding is
-// upheld here: for a nonexistent object the objectSelect matches nothing, so the
-// result is global-only with no error.
-func (s *sqlAuthorizer) scopeCapabilities(ctx context.Context, userID uuid.UUID, objectSelect string, objectID uuid.UUID) (Capabilities, error) {
-	rows, err := s.pool.Query(ctx, heldPlusGlobalHeldPrefix+`
-SELECT DISTINCT rc.scope, rc.action, rc.qualifier
-FROM role_capabilities rc
-WHERE rc.role_id IN (
-    SELECT role_id FROM global_held
-  UNION`+objectSelect+`
-)`, pgx.NamedArgs{"user": userID, "scopeID": objectID})
-	if err != nil {
-		return nil, fmt.Errorf("capabilities on scope: %w", err)
-	}
-	defer rows.Close()
-	return scanCapabilities(rows)
 }
 
 // capsOnFolders returns the union of the capability patterns the user holds on
@@ -311,14 +278,15 @@ func (s *sqlAuthorizer) capsOnFolders(ctx context.Context, userID uuid.UUID, fol
 	if len(folderIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := s.pool.Query(ctx, heldCTE+`
-SELECT DISTINCT rc.scope, rc.action, rc.qualifier FROM held h JOIN role_capabilities rc ON rc.role_id = h.role_id
-WHERE h.object_kind = 'folder' AND h.object_id = ANY(@folderIDs::uuid[])`, pgx.NamedArgs{"user": userID, "folderIDs": folderIDs})
+	rows, err := s.queries().HeldCapabilitiesOnFolders(ctx, sqlc.HeldCapabilitiesOnFoldersParams{User: userID, FolderIds: folderIDs})
 	if err != nil {
 		return nil, fmt.Errorf("caps on folders: %w", err)
 	}
-	defer rows.Close()
-	return scanCapabilities(rows)
+	var caps Capabilities
+	for _, r := range rows {
+		caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
+	}
+	return caps, nil
 }
 
 // folderAncestorsAndSelfRecursive returns every ancestor-or-self folder id of
