@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/gateway"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
@@ -169,7 +170,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// *recording.S3Presigner also implements httpapi.ObjectGetter for the
 	// server-side cast proxy — stored separately so both are threaded to their
 	// respective consumers without a type assertion.
-	var recordingPresign rpc.Presigner
+	var recordingPresign recording.Presigner
 	var castGetter httpapi.ObjectGetter
 	if cfg.RecordingBucket != "" {
 		presign, err := recording.NewS3Presigner(ctx, cfg.RecordingBucket, cfg.RecordingS3Endpoint, cfg.RecordingS3Region)
@@ -197,16 +198,16 @@ func Run(ctx context.Context, cfg config.Config) error {
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
 	userServices := rpc.UserServices{
 		Lookup:        apiLookup,
-		Auth:          rpc.NewAuthServer(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
+		Auth:          auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
 		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
 		Access:        access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
-		AccessRequest: rpc.NewAccessRequestServer(approvalResolver, arSvc, authorizer, apiQ),
-		Vault:         rpc.NewVaultServer(apiQ, sealer, authorizer),
-		Recording:     rpc.NewRecordingServer(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
+		AccessRequest: accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
+		Vault:         vault.NewHandler(apiQ, sealer, authorizer),
+		Recording:     recording.NewHandler(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
 	}
 	if sessionSvc != nil {
-		userServices.Session = rpc.NewSessionServer(sessionSvc)
+		userServices.Session = session.NewHandler(sessionSvc)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", webui.Handler(httpapi.NewRouter(pool, httpapi.RouterDeps{
@@ -293,9 +294,9 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.
 	tlsCfg.NextProtos = []string{"h2", "http/1.1"}
 
 	meshMux := http.NewServeMux()
-	meshServices := rpc.MeshServices{Gateway: rpc.NewGatewayServer(registry, sessionPubKey)}
+	meshServices := rpc.MeshServices{Gateway: gateway.NewHandler(registry, sessionPubKey)}
 	if setupSvc != nil {
-		meshServices.Dataplane = rpc.NewDataplaneServer(setupSvc, registry, pool, terminator)
+		meshServices.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator)
 	}
 	rpc.RegisterMeshServices(meshMux, meshServices)
 	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /

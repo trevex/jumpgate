@@ -1,4 +1,4 @@
-package rpc
+package auth
 
 import (
 	"context"
@@ -9,35 +9,34 @@ import (
 	"connectrpc.com/connect"
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
-	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 const tokenTTL = 12 * time.Hour
 
-// AuthServer implements authv1connect.AuthServiceHandler.
-type AuthServer struct {
+// Handler implements authv1connect.AuthServiceHandler.
+type Handler struct {
 	q            *sqlc.Queries
-	tokens       *auth.TokenService
+	tokens       *TokenService
 	authorizer   authz.Authorizer
 	cookieSecure bool
 }
 
-// NewAuthServer constructs the AuthService implementation.
-func NewAuthServer(q *sqlc.Queries, tokens *auth.TokenService, authorizer authz.Authorizer, cookieSecure bool) *AuthServer {
-	return &AuthServer{q: q, tokens: tokens, authorizer: authorizer, cookieSecure: cookieSecure}
+// NewHandler constructs the AuthService implementation.
+func NewHandler(q *sqlc.Queries, tokens *TokenService, authorizer authz.Authorizer, cookieSecure bool) *Handler {
+	return &Handler{q: q, tokens: tokens, authorizer: authorizer, cookieSecure: cookieSecure}
 }
 
 // Login exchanges email + password for a bearer token.
-func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.LoginRequest]) (*connect.Response[authv1.LoginResponse], error) {
+func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRequest]) (*connect.Response[authv1.LoginResponse], error) {
 	unauth := connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	u, err := s.q.GetUserByEmail(ctx, req.Msg.Email)
 	if err != nil {
-		_, _ = auth.VerifyPassword(req.Msg.Password, auth.DummyHash) // constant-time: avoid user enumeration via timing
+		_, _ = VerifyPassword(req.Msg.Password, DummyHash) // constant-time: avoid user enumeration via timing
 		return nil, unauth
 	}
-	ok, err := auth.VerifyPassword(req.Msg.Password, u.PasswordHash)
+	ok, err := VerifyPassword(req.Msg.Password, u.PasswordHash)
 	if err != nil || !ok {
 		return nil, unauth
 	}
@@ -56,7 +55,7 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 		// dev/e2e env (which the browser would otherwise reject). HttpOnly and
 		// SameSite=Strict are always set, so the cookie is not insecure by design.
 		c := &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Strict set; Secure is config-gated.
-			Name:     auth.SessionCookie,
+			Name:     SessionCookie,
 			Value:    tok,
 			Path:     "/",
 			MaxAge:   int(tokenTTL / time.Second),
@@ -72,11 +71,11 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[authv1.Logi
 }
 
 // Logout revokes the caller's current token and clears the session cookie.
-func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[authv1.LogoutRequest]) (*connect.Response[authv1.LogoutResponse], error) {
-	if _, ok := auth.UserFromContext(ctx); !ok {
+func (s *Handler) Logout(ctx context.Context, req *connect.Request[authv1.LogoutRequest]) (*connect.Response[authv1.LogoutResponse], error) {
+	if _, ok := UserFromContext(ctx); !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	raw, fromCookie := auth.ExtractToken(req.Header())
+	raw, fromCookie := ExtractToken(req.Header())
 	if raw != "" {
 		_ = s.tokens.Revoke(ctx, raw) // idempotent: ignore already-revoked errors
 	}
@@ -85,7 +84,7 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[authv1.Log
 		// Matches the login cookie's attributes so the browser replaces it; Secure
 		// is config-gated (see Login). HttpOnly + SameSite=Strict are always set.
 		c := &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Strict set; Secure is config-gated.
-			Name:     auth.SessionCookie,
+			Name:     SessionCookie,
 			Value:    "",
 			Path:     "/",
 			MaxAge:   -1,
@@ -99,8 +98,8 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[authv1.Log
 }
 
 // WhoAmI returns the caller's identity.
-func (s *AuthServer) WhoAmI(ctx context.Context, _ *connect.Request[authv1.WhoAmIRequest]) (*connect.Response[authv1.WhoAmIResponse], error) {
-	u, ok := auth.UserFromContext(ctx)
+func (s *Handler) WhoAmI(ctx context.Context, _ *connect.Request[authv1.WhoAmIRequest]) (*connect.Response[authv1.WhoAmIResponse], error) {
+	u, ok := UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}

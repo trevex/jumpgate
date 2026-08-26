@@ -1,4 +1,4 @@
-package rpc_test
+package dataplane_test
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package rpc
+package dataplane
 
 import (
 	"context"
@@ -16,10 +16,14 @@ import (
 
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/internal/audit"
-	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
+
+// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
 
 // workerIdentity returns the authoritative worker id from the request's mesh
 // identity, enforcing that the caller presented a `worker`-role mesh cert whose
@@ -37,25 +41,25 @@ func workerIdentity(ctx context.Context, claimedID string) (string, error) {
 	return id.ID, nil
 }
 
-// DataplaneServer implements dataplanev1connect.DataplaneServiceHandler: the
+// Handler implements dataplanev1connect.DataplaneServiceHandler: the
 // worker lifeline stream (register/heartbeat/session-ended + teardown push) and
 // the unary session-setup admission RPC.
-type DataplaneServer struct {
-	setup      *dataplane.SetupService
-	registry   *dataplane.Registry
+type Handler struct {
+	setup      *SetupService
+	registry   *Registry
 	pool       *pgxpool.Pool
-	terminator *dataplane.Terminator
+	terminator *Terminator
 }
 
-// NewDataplaneServer constructs the data-plane RPC implementation.
-func NewDataplaneServer(setup *dataplane.SetupService, registry *dataplane.Registry, pool *pgxpool.Pool, terminator *dataplane.Terminator) *DataplaneServer {
-	return &DataplaneServer{setup: setup, registry: registry, pool: pool, terminator: terminator}
+// NewHandler constructs the data-plane RPC implementation.
+func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, terminator *Terminator) *Handler {
+	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator}
 }
 
 // SetupSession redeems a session token: it re-checks authorization, records the
 // live session, and issues a JIT SSH certificate. Domain sentinels are mapped to
 // Connect codes here; the domain layer stays transport-agnostic.
-func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
+func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
 	// Derive the authoritative worker id from the mTLS cert SAN; the request must
 	// not claim a different worker than its certificate (else PermissionDenied).
 	workerID, err := workerIdentity(ctx, req.Msg.WorkerId)
@@ -64,13 +68,13 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 	}
 	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.Login, req.Msg.ClientSshPublicKey, req.Msg.TargetPublicKey)
 	switch {
-	case errors.Is(err, dataplane.ErrBadToken), errors.Is(err, dataplane.ErrKeyMismatch):
+	case errors.Is(err, ErrBadToken), errors.Is(err, ErrKeyMismatch):
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	case errors.Is(err, dataplane.ErrNotAuthorized):
+	case errors.Is(err, ErrNotAuthorized):
 		return nil, connect.NewError(connect.CodePermissionDenied, err)
-	case errors.Is(err, dataplane.ErrReplay):
+	case errors.Is(err, ErrReplay):
 		return nil, connect.NewError(connect.CodeAlreadyExists, err)
-	case errors.Is(err, dataplane.ErrNoTarget):
+	case errors.Is(err, ErrNoTarget):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -105,7 +109,7 @@ func (s *DataplaneServer) SetupSession(ctx context.Context, req *connect.Request
 // the teardown sink and ctx. The recv goroutine exits when Receive returns (client
 // half-close → io.EOF, or ctx cancel closes the stream), so it does not leak once
 // the handler returns.
-func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.BidiStream[dataplanev1.WorkerMessage, dataplanev1.ServerMessage]) error {
+func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[dataplanev1.WorkerMessage, dataplanev1.ServerMessage]) error {
 	first, err := stream.Receive()
 	if err != nil {
 		return err
@@ -120,11 +124,11 @@ func (s *DataplaneServer) WorkerStream(ctx context.Context, stream *connect.Bidi
 		return err
 	}
 
-	sink := make(chan dataplane.Signal, 64)
+	sink := make(chan Signal, 64)
 	s.registry.Add(workerID, sink)
 	defer s.registry.Remove(workerID, sink)
 
-	s.registry.SetWorkerMeta(workerID, dataplane.WorkerMeta{
+	s.registry.SetWorkerMeta(workerID, WorkerMeta{
 		Protocol: firstProtocolOr(reg.Protocols, "ssh"),
 		Address:  reg.DataplaneAddress,
 		Capacity: reg.Capacity,
@@ -204,7 +208,7 @@ func firstProtocolOr(ps []string, def string) string {
 // against the set it reports still having. Sessions the worker dropped are marked
 // ended; sessions it retains are re-evaluated and torn down if they lost
 // authorization while the stream was down. Best-effort per session (errors logged).
-func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID string, workerLiveIDs []string) error {
+func (s *Handler) reconcileOnRegister(ctx context.Context, workerID string, workerLiveIDs []string) error {
 	have := make(map[string]bool, len(workerLiveIDs))
 	for _, id := range workerLiveIDs {
 		have[id] = true
@@ -232,7 +236,7 @@ func (s *DataplaneServer) reconcileOnRegister(ctx context.Context, workerID stri
 // from the live_sessions row, so it MUST run before handleSessionEnded deletes that
 // row. Failures are returned for the caller to LOG (not fatal to the worker stream): a
 // recording-persistence hiccup must never sever the worker's lifeline.
-func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
+func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
 	sid, err := uuid.Parse(sessionID)
 	if err != nil {
 		return fmt.Errorf("bad session id %q: %w", sessionID, err)
@@ -277,9 +281,9 @@ func (s *DataplaneServer) persistRecording(ctx context.Context, sessionID string
 		return fmt.Errorf("upsert session recording: %w", err)
 	}
 
-	eventType := dataplane.EventRecordingCompleted
+	eventType := EventRecordingCompleted
 	if rec.GetStatus() != "completed" {
-		eventType = dataplane.EventRecordingFailed
+		eventType = EventRecordingFailed
 	}
 	detail, _ := json.Marshal(map[string]any{
 		"object_key": rec.GetObjectKey(),
@@ -311,7 +315,7 @@ func msToTimestamptz(ms int64) pgtype.Timestamptz {
 // (natural close or a forced-kill confirmation) and audits session.ended. It is
 // idempotent (MarkEnded no-ops if the row is already gone), so a duplicate or
 // late report is harmless.
-func (s *DataplaneServer) handleSessionEnded(ctx context.Context, sessionID, reason string) error {
+func (s *Handler) handleSessionEnded(ctx context.Context, sessionID, reason string) error {
 	sid, err := uuid.Parse(sessionID)
 	if err != nil {
 		return fmt.Errorf("bad session id %q: %w", sessionID, err)

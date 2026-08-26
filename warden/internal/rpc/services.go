@@ -1,4 +1,7 @@
-// Package rpc assembles warden's ConnectRPC handlers.
+// Package rpc assembles warden's ConnectRPC handlers into the user-facing and
+// mesh-facing service sets and mounts them. It is wiring only: the handler
+// implementations live in their domain packages (auth, identity, catalog, access,
+// accessrequest, vault, recording, session, dataplane, gateway).
 package rpc
 
 import (
@@ -18,9 +21,15 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/access"
+	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
+	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/gateway"
 	"github.com/trevex/jumpgate/warden/internal/identity"
+	"github.com/trevex/jumpgate/warden/internal/recording"
+	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
 // UserServices is the complete set of already-constructed user-facing Connect
@@ -28,14 +37,14 @@ import (
 // handlers and transport interceptors.
 type UserServices struct {
 	Lookup        auth.Lookup
-	Auth          *AuthServer
+	Auth          *auth.Handler
 	Identity      *identity.Handler
 	Catalog       *catalog.Handler
 	Access        *access.Handler
-	AccessRequest *AccessRequestServer
-	Vault         *VaultServer
-	Recording     *RecordingServer
-	Session       *SessionServer // optional when session admission is disabled
+	AccessRequest *accessrequest.Handler
+	Vault         *vault.Handler
+	Recording     *recording.Handler
+	Session       *session.Handler // optional when session admission is disabled
 }
 
 // RegisterUserServices mounts the bearer-authenticated user services.
@@ -73,8 +82,8 @@ func RegisterUserServices(mux *http.ServeMux, services UserServices) {
 
 // MeshServices is the complete set of already-constructed mesh-facing adapters.
 type MeshServices struct {
-	Gateway   *GatewayServer
-	Dataplane *DataplaneServer // optional when session setup is disabled
+	Gateway   *gateway.Handler
+	Dataplane *dataplane.Handler // optional when session setup is disabled
 }
 
 // RegisterMeshServices mounts the mTLS-authenticated worker/gateway services.

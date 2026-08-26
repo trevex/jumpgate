@@ -1,4 +1,4 @@
-package rpc_test
+package recording_test
 
 import (
 	"context"
@@ -477,4 +477,22 @@ func TestListRecordingsKeysetPagination(t *testing.T) {
 		t.Fatalf("total sessions across pages = %d, want 3", len(seen))
 	}
 	_ = sessions // seeded; IDs are verified via the round-trip
+}
+
+// bindScopedCap binds userID to a fresh role carrying capsJSON at a specific scope: an
+// asset (assetID set), a folder (folderID set), or global (both uuid.Nil).
+func bindScopedCap(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, capsJSON string, folderID, assetID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	role := createRoleWithCaps(t, ctx, q, "cap-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
+	params := sqlc.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: userID, Valid: true}}
+	if assetID != uuid.Nil {
+		params.ScopeAssetID = pgtype.UUID{Bytes: assetID, Valid: true}
+	} else if folderID != uuid.Nil {
+		params.ScopeFolderID = pgtype.UUID{Bytes: folderID, Valid: true}
+	}
+	if _, err := q.CreateRoleBinding(ctx, params); err != nil {
+		t.Fatalf("bindScopedCap CreateRoleBinding: %v", err)
+	}
 }

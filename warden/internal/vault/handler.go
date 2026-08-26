@@ -1,4 +1,4 @@
-package rpc
+package vault
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
@@ -28,29 +29,38 @@ import (
 // meshCertTTL is the validity window of an issued mesh leaf certificate.
 const meshCertTTL = 90 * 24 * time.Hour
 
-// VaultServer implements vaultv1connect.VaultServiceHandler: the admin API for
+// Handler implements vaultv1connect.VaultServiceHandler: the admin API for
 // certificate authorities, per-asset stored secrets, and SSH asset config.
 //
 // SECURITY: sealed private material never leaves the server. InitCA returns only
 // the CA's public material; ListAssetSecrets returns metadata only (never the
 // sealed value). A nil sealer means the vault is disabled: the write paths that
 // need to seal plaintext fail FailedPrecondition rather than storing anything.
-type VaultServer struct {
+type Handler struct {
 	q      *sqlc.Queries
 	sealer *secrets.Sealer
-	capGuard
+	guard  apiguard.Guard
 }
 
-// NewVaultServer constructs the VaultService implementation. A nil sealer
+// NewHandler constructs the VaultService implementation. A nil sealer
 // disables the sealing write paths (vault disabled).
-func NewVaultServer(q *sqlc.Queries, sealer *secrets.Sealer, a authz.Authorizer) *VaultServer {
-	return &VaultServer{q: q, sealer: sealer, capGuard: capGuard{guard: apiguard.New(a, q)}}
+func NewHandler(q *sqlc.Queries, sealer *secrets.Sealer, a authz.Authorizer) *Handler {
+	return &Handler{q: q, sealer: sealer, guard: apiguard.New(a, q)}
+}
+
+// requireCap denies unless the authenticated user holds `capability` at `scope`.
+func (s *Handler) requireCap(ctx context.Context, capability string, scope authz.Scope) error {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	return s.guard.RequireCap(ctx, u.ID, capability, scope)
 }
 
 // InitCA generates and seals a new active CA of the requested kind, returning
 // its public material. A second init for the same kind hits the unique-active
 // index and surfaces as AlreadyExists.
-func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.InitCARequest]) (*connect.Response[vaultv1.InitCAResponse], error) {
+func (s *Handler) InitCA(ctx context.Context, req *connect.Request[vaultv1.InitCARequest]) (*connect.Response[vaultv1.InitCAResponse], error) {
 	if err := s.requireCap(ctx, "vault:ca:init", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
@@ -93,7 +103,7 @@ func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.I
 // its certificate PEM (public trust material). A second init hits the
 // unique-active index and surfaces as AlreadyExists. The sealed private key
 // never leaves the server.
-func (s *VaultServer) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1.InitMeshCARequest]) (*connect.Response[vaultv1.InitMeshCAResponse], error) {
+func (s *Handler) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1.InitMeshCARequest]) (*connect.Response[vaultv1.InitMeshCAResponse], error) {
 	if err := s.requireCap(ctx, "vault:ca:init", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
@@ -118,7 +128,7 @@ func (s *VaultServer) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1
 // URI SAN is stamped from the trusted spiffe_id (never from the CSR). The client
 // keeps its private key; only the leaf cert and CA bundle are returned. Requires
 // an already-initialized mesh CA (else FailedPrecondition).
-func (s *VaultServer) IssueMeshCert(ctx context.Context, req *connect.Request[vaultv1.IssueMeshCertRequest]) (*connect.Response[vaultv1.IssueMeshCertResponse], error) {
+func (s *Handler) IssueMeshCert(ctx context.Context, req *connect.Request[vaultv1.IssueMeshCertRequest]) (*connect.Response[vaultv1.IssueMeshCertResponse], error) {
 	if err := s.requireCap(ctx, "vault:ca:issue", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
@@ -164,7 +174,7 @@ func (s *VaultServer) IssueMeshCert(ctx context.Context, req *connect.Request[va
 // surfaces as AlreadyExists. The running server loads the signing key once at
 // boot, so a fresh deploy must restart warden after InitSessionKey to enable
 // CreateSession/SetupSession.
-func (s *VaultServer) InitSessionKey(ctx context.Context, _ *connect.Request[vaultv1.InitSessionKeyRequest]) (*connect.Response[vaultv1.InitSessionKeyResponse], error) {
+func (s *Handler) InitSessionKey(ctx context.Context, _ *connect.Request[vaultv1.InitSessionKeyRequest]) (*connect.Response[vaultv1.InitSessionKeyResponse], error) {
 	if err := s.requireCap(ctx, "vault:key:init", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
@@ -186,7 +196,7 @@ func (s *VaultServer) InitSessionKey(ctx context.Context, _ *connect.Request[vau
 }
 
 // GetCAPublic returns the active CA's public material for a kind.
-func (s *VaultServer) GetCAPublic(ctx context.Context, req *connect.Request[vaultv1.GetCAPublicRequest]) (*connect.Response[vaultv1.GetCAPublicResponse], error) {
+func (s *Handler) GetCAPublic(ctx context.Context, req *connect.Request[vaultv1.GetCAPublicRequest]) (*connect.Response[vaultv1.GetCAPublicResponse], error) {
 	if err := s.requireCap(ctx, "vault:ca:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
@@ -201,7 +211,7 @@ func (s *VaultServer) GetCAPublic(ctx context.Context, req *connect.Request[vaul
 }
 
 // SetAssetSecret seals and stores a named secret for an asset (upsert by name).
-func (s *VaultServer) SetAssetSecret(ctx context.Context, req *connect.Request[vaultv1.SetAssetSecretRequest]) (*connect.Response[vaultv1.SetAssetSecretResponse], error) {
+func (s *Handler) SetAssetSecret(ctx context.Context, req *connect.Request[vaultv1.SetAssetSecretRequest]) (*connect.Response[vaultv1.SetAssetSecretResponse], error) {
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
@@ -225,7 +235,7 @@ func (s *VaultServer) SetAssetSecret(ctx context.Context, req *connect.Request[v
 
 // DeleteAssetSecret removes a stored secret by id. Deleting a non-existent id is
 // a no-op.
-func (s *VaultServer) DeleteAssetSecret(ctx context.Context, req *connect.Request[vaultv1.DeleteAssetSecretRequest]) (*connect.Response[vaultv1.DeleteAssetSecretResponse], error) {
+func (s *Handler) DeleteAssetSecret(ctx context.Context, req *connect.Request[vaultv1.DeleteAssetSecretRequest]) (*connect.Response[vaultv1.DeleteAssetSecretResponse], error) {
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad id"))
@@ -257,7 +267,7 @@ func (s *VaultServer) DeleteAssetSecret(ctx context.Context, req *connect.Reques
 // ListAssetSecrets returns the metadata (id, name, created_at) of an asset's
 // stored secrets ordered by (name ASC, id ASC) with keyset pagination.
 // The sealed value is NEVER returned.
-func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request[vaultv1.ListAssetSecretsRequest]) (*connect.Response[vaultv1.ListAssetSecretsResponse], error) {
+func (s *Handler) ListAssetSecrets(ctx context.Context, req *connect.Request[vaultv1.ListAssetSecretsRequest]) (*connect.Response[vaultv1.ListAssetSecretsResponse], error) {
 	assetID, err := uuid.Parse(req.Msg.AssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))

@@ -1,4 +1,4 @@
-package rpc
+package accessrequest
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 
 	accessrequestv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1"
-	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
@@ -19,55 +18,74 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// AccessRequestServer implements accessrequestv1connect.AccessRequestServiceHandler:
+// Handler implements accessrequestv1connect.AccessRequestServiceHandler:
 // the JIT access-request runtime. ResolveApproval is admin introspection; the
 // request/approve/deny/cancel/list surface is authenticated and delegates all
 // per-action authorization to the domain Service.
-type AccessRequestServer struct {
+type Handler struct {
 	resolver *approvals.Resolver
-	svc      *accessrequest.Service
-	capGuard
+	svc      *Service
+	guard    apiguard.Guard
 }
 
-// NewAccessRequestServer constructs the AccessRequestService implementation.
-func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *sqlc.Queries) *AccessRequestServer {
-	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{guard: apiguard.New(a, q)}}
+// NewHandler constructs the AccessRequestService implementation.
+func NewHandler(resolver *approvals.Resolver, svc *Service, a authz.Authorizer, q *sqlc.Queries) *Handler {
+	return &Handler{resolver: resolver, svc: svc, guard: apiguard.New(a, q)}
+}
+
+// requireCap denies unless the authenticated user holds `capability` at `scope`.
+func (s *Handler) requireCap(ctx context.Context, capability string, scope authz.Scope) error {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	return s.guard.RequireCap(ctx, u.ID, capability, scope)
+}
+
+// joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
+// its folder's leaf->root path. folderPath is the containing folder's own leaf-first
+// path (empty only defensively — a real asset always has a folder).
+func joinPath(folderPath, name string) string {
+	if folderPath == "" {
+		return name
+	}
+	return name + "." + folderPath
 }
 
 // mapAccessRequestErr maps a domain sentinel to a Connect error.
 func mapAccessRequestErr(err error) error {
 	switch {
-	case errors.Is(err, accessrequest.ErrNotEligible):
+	case errors.Is(err, ErrNotEligible):
 		// Existence-hiding: an ineligible requester learns nothing about the policy.
 		return connect.NewError(connect.CodeNotFound, errors.New("no requestable access"))
-	case errors.Is(err, accessrequest.ErrNotRequestable):
+	case errors.Is(err, ErrNotRequestable):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("role is not JIT-requestable on this asset"))
-	case errors.Is(err, accessrequest.ErrAlreadyActive):
+	case errors.Is(err, ErrAlreadyActive):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("role is already active on this asset"))
-	case errors.Is(err, accessrequest.ErrDuplicatePending):
+	case errors.Is(err, ErrDuplicatePending):
 		return connect.NewError(connect.CodeAlreadyExists, errors.New("a pending request already exists"))
-	case errors.Is(err, accessrequest.ErrNotPending):
+	case errors.Is(err, ErrNotPending):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("request is not pending"))
-	case errors.Is(err, accessrequest.ErrNotApprover):
+	case errors.Is(err, ErrNotApprover):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("not an approver for this request"))
-	case errors.Is(err, accessrequest.ErrSelfApprove):
+	case errors.Is(err, ErrSelfApprove):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("cannot approve your own request"))
-	case errors.Is(err, accessrequest.ErrAlreadyVoted):
+	case errors.Is(err, ErrAlreadyVoted):
 		return connect.NewError(connect.CodeAlreadyExists, errors.New("already voted on this request"))
-	case errors.Is(err, accessrequest.ErrNotRequester):
+	case errors.Is(err, ErrNotRequester):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("not the requester"))
-	case errors.Is(err, accessrequest.ErrGrantNotFound):
+	case errors.Is(err, ErrGrantNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("grant not found"))
-	case errors.Is(err, accessrequest.ErrRevokeForbidden):
+	case errors.Is(err, ErrRevokeForbidden):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("not permitted to revoke this grant"))
-	case errors.Is(err, accessrequest.ErrGrantInactive):
+	case errors.Is(err, ErrGrantInactive):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("grant is already inactive"))
 	default:
 		return connect.NewError(connect.CodeInternal, err)
 	}
 }
 
-func toAccessRequestMsg(r accessrequest.Request) *accessrequestv1.AccessRequest {
+func toAccessRequestMsg(r Request) *accessrequestv1.AccessRequest {
 	msg := &accessrequestv1.AccessRequest{
 		Id:                r.ID.String(),
 		RequesterId:       r.RequesterID.String(),
@@ -88,7 +106,7 @@ func toAccessRequestMsg(r accessrequest.Request) *accessrequestv1.AccessRequest 
 	return msg
 }
 
-func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
+func toGrantMsg(g Grant) *accessrequestv1.Grant {
 	msg := &accessrequestv1.Grant{
 		Id:            g.ID.String(),
 		RoleId:        g.RoleID.String(),
@@ -107,7 +125,7 @@ func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
 
 // grantAssetPath resolves the DNS-style asset path for a grant (best-effort;
 // returns "" on any lookup error so the caller degrades gracefully).
-func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.UUID) string {
+func (s *Handler) grantAssetPath(ctx context.Context, assetID uuid.UUID) string {
 	a, err := s.guard.Q.GetAsset(ctx, assetID)
 	if err != nil {
 		return ""
@@ -121,7 +139,7 @@ func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.U
 
 // grantLoginsFromRole extracts the ssh:login:<x> capability values from
 // role_capabilities. Wildcard values ("*", "**") are skipped.
-func (s *AccessRequestServer) grantLoginsFromRole(ctx context.Context, roleID uuid.UUID) []string {
+func (s *Handler) grantLoginsFromRole(ctx context.Context, roleID uuid.UUID) []string {
 	caps, err := apiguard.RoleCapsStrings(ctx, s.guard.Q, roleID)
 	if err != nil {
 		return nil
@@ -140,7 +158,7 @@ func (s *AccessRequestServer) grantLoginsFromRole(ctx context.Context, roleID uu
 }
 
 // ResolveApproval returns the effective request policy for a (role, asset) pair (admin only).
-func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.Request[accessrequestv1.ResolveApprovalRequest]) (*connect.Response[accessrequestv1.ResolveApprovalResponse], error) {
+func (s *Handler) ResolveApproval(ctx context.Context, req *connect.Request[accessrequestv1.ResolveApprovalRequest]) (*connect.Response[accessrequestv1.ResolveApprovalResponse], error) {
 	roleID, err := uuid.Parse(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
@@ -171,7 +189,7 @@ func (s *AccessRequestServer) ResolveApproval(ctx context.Context, req *connect.
 }
 
 // RequestAccess opens a JIT access request (authenticated).
-func (s *AccessRequestServer) RequestAccess(ctx context.Context, req *connect.Request[accessrequestv1.RequestAccessRequest]) (*connect.Response[accessrequestv1.RequestAccessResponse], error) {
+func (s *Handler) RequestAccess(ctx context.Context, req *connect.Request[accessrequestv1.RequestAccessRequest]) (*connect.Response[accessrequestv1.RequestAccessResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -193,7 +211,7 @@ func (s *AccessRequestServer) RequestAccess(ctx context.Context, req *connect.Re
 }
 
 // CancelRequest cancels the caller's own pending request (authenticated).
-func (s *AccessRequestServer) CancelRequest(ctx context.Context, req *connect.Request[accessrequestv1.CancelRequestRequest]) (*connect.Response[accessrequestv1.CancelRequestResponse], error) {
+func (s *Handler) CancelRequest(ctx context.Context, req *connect.Request[accessrequestv1.CancelRequestRequest]) (*connect.Response[accessrequestv1.CancelRequestResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -209,7 +227,7 @@ func (s *AccessRequestServer) CancelRequest(ctx context.Context, req *connect.Re
 }
 
 // ApproveRequest records the caller's approval (authenticated).
-func (s *AccessRequestServer) ApproveRequest(ctx context.Context, req *connect.Request[accessrequestv1.ApproveRequestRequest]) (*connect.Response[accessrequestv1.ApproveRequestResponse], error) {
+func (s *Handler) ApproveRequest(ctx context.Context, req *connect.Request[accessrequestv1.ApproveRequestRequest]) (*connect.Response[accessrequestv1.ApproveRequestResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -226,7 +244,7 @@ func (s *AccessRequestServer) ApproveRequest(ctx context.Context, req *connect.R
 }
 
 // DenyRequest records the caller's denial (authenticated).
-func (s *AccessRequestServer) DenyRequest(ctx context.Context, req *connect.Request[accessrequestv1.DenyRequestRequest]) (*connect.Response[accessrequestv1.DenyRequestResponse], error) {
+func (s *Handler) DenyRequest(ctx context.Context, req *connect.Request[accessrequestv1.DenyRequestRequest]) (*connect.Response[accessrequestv1.DenyRequestResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -244,7 +262,7 @@ func (s *AccessRequestServer) DenyRequest(ctx context.Context, req *connect.Requ
 
 // ListMyRequests lists the caller's own requests (authenticated), ordered by
 // (created_at DESC, id) with keyset pagination.
-func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.Request[accessrequestv1.ListMyRequestsRequest]) (*connect.Response[accessrequestv1.ListMyRequestsResponse], error) {
+func (s *Handler) ListMyRequests(ctx context.Context, req *connect.Request[accessrequestv1.ListMyRequestsRequest]) (*connect.Response[accessrequestv1.ListMyRequestsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -254,7 +272,7 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.R
 	if err != nil {
 		return nil, err
 	}
-	page := accessrequest.PageParams{Limit: limit}
+	page := PageParams{Limit: limit}
 	if k != nil {
 		page.AfterTs = k.Time
 		page.AfterID = k.ID
@@ -286,7 +304,7 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.R
 // policies the caller cannot approve. The next-page token is keyed to the SQL
 // page position — not the filtered result — so pagination advances past
 // filtered rows rather than stopping early.
-func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *connect.Request[accessrequestv1.ListPendingApprovalsRequest]) (*connect.Response[accessrequestv1.ListPendingApprovalsResponse], error) {
+func (s *Handler) ListPendingApprovals(ctx context.Context, req *connect.Request[accessrequestv1.ListPendingApprovalsRequest]) (*connect.Response[accessrequestv1.ListPendingApprovalsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -296,7 +314,7 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 	if err != nil {
 		return nil, err
 	}
-	page := accessrequest.PageParams{Limit: limit}
+	page := PageParams{Limit: limit}
 	if k != nil {
 		page.AfterTs = k.Time
 		page.AfterID = k.ID
@@ -319,7 +337,7 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 }
 
 // RevokeGrant revokes an access grant (admin, subject self-revoke, or approver).
-func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Request[accessrequestv1.RevokeGrantRequest]) (*connect.Response[accessrequestv1.RevokeGrantResponse], error) {
+func (s *Handler) RevokeGrant(ctx context.Context, req *connect.Request[accessrequestv1.RevokeGrantRequest]) (*connect.Response[accessrequestv1.RevokeGrantResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -342,7 +360,7 @@ func (s *AccessRequestServer) RevokeGrant(ctx context.Context, req *connect.Requ
 
 // ListMyGrants lists the caller's own grants (authenticated), ordered by
 // (granted_at DESC, id) with keyset pagination.
-func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListMyGrantsRequest]) (*connect.Response[accessrequestv1.ListMyGrantsResponse], error) {
+func (s *Handler) ListMyGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListMyGrantsRequest]) (*connect.Response[accessrequestv1.ListMyGrantsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -352,7 +370,7 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, err
 	}
-	page := accessrequest.PageParams{Limit: limit}
+	page := PageParams{Limit: limit}
 	if k != nil {
 		page.AfterTs = k.Time
 		page.AfterID = k.ID
@@ -393,7 +411,7 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 // shorter than page_size (or empty). The next-page token is keyed to the SQL page
 // position — not the filtered result — so pagination advances past filtered rows
 // rather than stopping early.
-func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListReviewableGrantsRequest]) (*connect.Response[accessrequestv1.ListReviewableGrantsResponse], error) {
+func (s *Handler) ListReviewableGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListReviewableGrantsRequest]) (*connect.Response[accessrequestv1.ListReviewableGrantsResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -403,7 +421,7 @@ func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *con
 	if err != nil {
 		return nil, err
 	}
-	page := accessrequest.PageParams{Limit: limit}
+	page := PageParams{Limit: limit}
 	if k != nil {
 		page.AfterTs = k.Time
 		page.AfterID = k.ID
@@ -434,11 +452,11 @@ func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *con
 // ListGrants lists grants for admin introspection (admin only), ordered by
 // (granted_at DESC, id) with keyset pagination. The subject_user_id and
 // active_only filters are preserved.
-func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
+func (s *Handler) ListGrants(ctx context.Context, req *connect.Request[accessrequestv1.ListGrantsRequest]) (*connect.Response[accessrequestv1.ListGrantsResponse], error) {
 	if err := s.requireCap(ctx, "access:grant:read", authz.GlobalScope()); err != nil {
 		return nil, err
 	}
-	filter := accessrequest.GrantFilter{ActiveOnly: req.Msg.ActiveOnly}
+	filter := GrantFilter{ActiveOnly: req.Msg.ActiveOnly}
 	if req.Msg.SubjectUserId != "" {
 		sid, err := uuid.Parse(req.Msg.SubjectUserId)
 		if err != nil {
@@ -451,7 +469,7 @@ func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, err
 	}
-	page := accessrequest.PageParams{Limit: limit}
+	page := PageParams{Limit: limit}
 	if k != nil {
 		page.AfterTs = k.Time
 		page.AfterID = k.ID

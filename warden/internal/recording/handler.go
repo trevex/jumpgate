@@ -1,4 +1,4 @@
-package rpc
+package recording
 
 import (
 	"context"
@@ -44,26 +44,35 @@ const (
 	maxRecordingPageSize     = 200
 )
 
-// RecordingServer implements recordingv1connect.RecordingServiceHandler: the
+// Handler implements recordingv1connect.RecordingServiceHandler: the
 // admin-only API to list/get session recording metadata and issue a short-lived
 // presigned download URL. Issuing a download URL is audited post-hoc
 // (recording.accessed) via the shared audit Logger, since there is no domain
 // transaction to ride along with.
-type RecordingServer struct {
+type Handler struct {
 	q        *sqlc.Queries
 	audit    *audit.Logger
 	presign  Presigner // may be nil → download fails closed
 	urlTTL   time.Duration
 	reviewer grantReviewer // may be nil → only recording:read applies
-	capGuard
+	guard    apiguard.Guard
 }
 
-// NewRecordingServer constructs the RecordingService implementation. presign may
+// NewHandler constructs the RecordingService implementation. presign may
 // be nil, in which case GetRecordingDownload returns FailedPrecondition. reviewer
 // authorizes grant-scoped review (subject or potential approver) on top of the
 // recording:read gate; a nil reviewer disables that additive path.
-func NewRecordingServer(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *RecordingServer {
-	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, capGuard: capGuard{guard: apiguard.New(a, q)}}
+func NewHandler(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *Handler {
+	return &Handler{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, guard: apiguard.New(a, q)}
+}
+
+// requireCap denies unless the authenticated user holds `capability` at `scope`.
+func (s *Handler) requireCap(ctx context.Context, capability string, scope authz.Scope) error {
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	return s.guard.RequireCap(ctx, u.ID, capability, scope)
 }
 
 func toRecordingMsg(r sqlc.SessionRecording) *recordingv1.Recording {
@@ -97,7 +106,7 @@ func toRecordingMsg(r sqlc.SessionRecording) *recordingv1.Recording {
 // (empty → no filter), newest first (admin only), with keyset pagination on
 // (created_at DESC, session_id ASC). session_id is the PK; it is used as the
 // tiebreak because session_recordings has no separate `id` column.
-func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Request[recordingv1.ListRecordingsRequest]) (*connect.Response[recordingv1.ListRecordingsResponse], error) {
+func (s *Handler) ListRecordings(ctx context.Context, req *connect.Request[recordingv1.ListRecordingsRequest]) (*connect.Response[recordingv1.ListRecordingsResponse], error) {
 	params := sqlc.ListSessionRecordingsParams{}
 	if req.Msg.UserId != "" {
 		id, err := uuid.Parse(req.Msg.UserId)
@@ -183,7 +192,7 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 }
 
 // GetRecording fetches a single recording's metadata by session id (admin only).
-func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.Recording], error) {
+func (s *Handler) GetRecording(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.Recording], error) {
 	sessionID, err := uuid.Parse(req.Msg.SessionId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad session_id"))
@@ -209,7 +218,7 @@ func (s *RecordingServer) GetRecording(ctx context.Context, req *connect.Request
 // carrying a grant_id, so an unattributed recording always requires recording:read.
 // Returns the existing capability deny error on denial (preserving its code and
 // existence-hiding semantics).
-func (s *RecordingServer) authorizeRecordingRead(ctx context.Context, row sqlc.SessionRecording) error {
+func (s *Handler) authorizeRecordingRead(ctx context.Context, row sqlc.SessionRecording) error {
 	capErr := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID))
 	if capErr == nil {
 		return nil
@@ -234,7 +243,7 @@ func (s *RecordingServer) authorizeRecordingRead(ctx context.Context, row sqlc.S
 // GetRecordingDownload issues a short-lived presigned download URL for the
 // recorded object (admin only). Issuing the URL is audited (recording.accessed).
 // A nil presigner returns FailedPrecondition (recording retrieval not configured).
-func (s *RecordingServer) GetRecordingDownload(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.GetRecordingDownloadResponse], error) {
+func (s *Handler) GetRecordingDownload(ctx context.Context, req *connect.Request[recordingv1.GetRecordingRequest]) (*connect.Response[recordingv1.GetRecordingDownloadResponse], error) {
 	sessionID, err := uuid.Parse(req.Msg.SessionId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad session_id"))

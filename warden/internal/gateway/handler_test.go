@@ -1,4 +1,4 @@
-package rpc_test
+package gateway_test
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/gateway/v1/gatewayv1connect"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/gateway"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 // meshTestCA is a test mesh CA with helpers to mint identity keypairs.
@@ -84,7 +84,7 @@ func newGatewayTestServer(t *testing.T, pubKey ed25519.PublicKey) (*meshTestCA, 
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
-	path, handler := gatewayv1connect.NewGatewayServiceHandler(rpc.NewGatewayServer(registry, pubKey))
+	path, handler := gatewayv1connect.NewGatewayServiceHandler(gateway.NewHandler(registry, pubKey))
 	mux.Handle(path, handler)
 
 	srv := httptest.NewUnstartedServer(mesh.Middleware(mux))

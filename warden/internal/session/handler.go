@@ -1,4 +1,4 @@
-package rpc
+package session
 
 import (
 	"context"
@@ -11,19 +11,18 @@ import (
 
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
-	"github.com/trevex/jumpgate/warden/internal/session"
 )
 
-// SessionServer implements sessionv1connect.SessionServiceHandler.
-type SessionServer struct{ svc *session.Service }
+// Handler implements sessionv1connect.SessionServiceHandler.
+type Handler struct{ svc *Service }
 
-// NewSessionServer constructs the SessionService implementation.
-func NewSessionServer(svc *session.Service) *SessionServer { return &SessionServer{svc: svc} }
+// NewHandler constructs the SessionService implementation.
+func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 // CreateSession authorizes the caller to reach the asset (held-closure SSH-login
 // check) and mints a data-plane admission token bound to the client's SSH key.
 // Existence-hiding: an unentitled caller and an unknown asset both yield NotFound.
-func (s *SessionServer) CreateSession(ctx context.Context, req *connect.Request[sessionv1.CreateSessionRequest]) (*connect.Response[sessionv1.CreateSessionResponse], error) {
+func (s *Handler) CreateSession(ctx context.Context, req *connect.Request[sessionv1.CreateSessionRequest]) (*connect.Response[sessionv1.CreateSessionResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -39,7 +38,7 @@ func (s *SessionServer) CreateSession(ctx context.Context, req *connect.Request[
 	fp := ssh.FingerprintSHA256(pub)
 	out, err := s.svc.CreateSession(ctx, caller.ID, assetID, fp)
 	switch {
-	case errors.Is(err, session.ErrNoAccess):
+	case errors.Is(err, ErrNoAccess):
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no session access"))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -56,7 +55,7 @@ func (s *SessionServer) CreateSession(ctx context.Context, req *connect.Request[
 // admission ticket with no client-key binding. The caller is taken from the
 // request context, which cookie and bearer auth both populate. Existence-hiding:
 // an unentitled caller and an unknown asset both yield PermissionDenied.
-func (s *SessionServer) CreateWebSession(ctx context.Context, req *connect.Request[sessionv1.CreateWebSessionRequest]) (*connect.Response[sessionv1.CreateWebSessionResponse], error) {
+func (s *Handler) CreateWebSession(ctx context.Context, req *connect.Request[sessionv1.CreateWebSessionRequest]) (*connect.Response[sessionv1.CreateWebSessionResponse], error) {
 	caller, ok := auth.UserFromContext(ctx)
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
@@ -70,7 +69,7 @@ func (s *SessionServer) CreateWebSession(ctx context.Context, req *connect.Reque
 	}
 	out, err := s.svc.CreateWebSession(ctx, caller.ID, assetID, req.Msg.Login)
 	switch {
-	case errors.Is(err, session.ErrNoAccess):
+	case errors.Is(err, ErrNoAccess):
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("no session access"))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)

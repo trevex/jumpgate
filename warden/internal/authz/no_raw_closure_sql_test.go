@@ -23,7 +23,7 @@ func TestNoRawClosureSQLInGo(t *testing.T) {
 	banned := regexp.MustCompile(`(?i)WITH RECURSIVE|\bheld_standing\b|\bglobal_held\b|\buser_groups\b`)
 	// allowlist: the unrelated upward supergroups cycle-check.
 	allow := map[string]bool{
-		filepath.FromSlash("internal/rpc/identity_service.go"): true,
+		filepath.FromSlash("internal/identity/groups.go"): true,
 	}
 	root := findModuleRoot(t) // walks up to the dir containing go.mod
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {

@@ -1,4 +1,4 @@
-package catalog_test
+package recording_test
 
 import (
 	"context"
@@ -54,14 +54,6 @@ func testSealer(t *testing.T) *secrets.Sealer {
 	return s
 }
 
-// fakePresigner is a stand-in Presigner for the recording service (never exercised by
-// the catalog tests; present only so the full user-service set registers).
-type fakePresigner struct{}
-
-func (fakePresigner) PresignGet(_ context.Context, objectKey string, ttl time.Duration) (string, time.Time, error) {
-	return "https://recordings.test/get?key=" + objectKey, time.Now().Add(ttl), nil
-}
-
 // testAccessRequestService builds a shared access-request Service for the test server.
 func testAccessRequestService(pool *pgxpool.Pool) *accessrequest.Service {
 	return accessrequest.NewService(
@@ -75,9 +67,8 @@ func testAccessRequestService(pool *pgxpool.Pool) *accessrequest.Service {
 }
 
 // newServer spins up an ephemeral Postgres, migrates it, and mounts the full
-// user-facing service set (with the catalog Handler under test) on an httptest
-// server. It returns the pool and the server URL. The catalog tests drive the
-// catalog/auth/access/identity Connect clients over this URL.
+// user-facing service set (with the recording Handler under test) on an httptest
+// server. It returns the pool and the server URL.
 func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	dsn := testsupport.StartPostgres(t)
@@ -108,7 +99,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
 		AccessRequest: accessrequest.NewHandler(resolver, arSvc, authorizer, q),
 		Vault:         vault.NewHandler(q, sealer, authorizer),
-		Recording:     recording.NewHandler(q, auditLog, fakePresigner{}, time.Minute, authorizer, arSvc),
+		Recording:     recording.NewHandler(q, auditLog, &fakePresigner{}, time.Minute, authorizer, arSvc),
 	}
 	mux := http.NewServeMux()
 	rpc.RegisterUserServices(mux, services)
@@ -172,45 +163,6 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, email, pw string, admin bool) {
 	}
 }
 
-// seedCapUser creates a non-admin user bound globally to a fresh role carrying
-// capsJSON, and returns the user id.
-func seedCapUser(t *testing.T, pool *pgxpool.Pool, email, pw string, capsJSON string) uuid.UUID {
-	t.Helper()
-	return seedCapUserScoped(t, pool, email, pw, capsJSON, uuid.Nil, uuid.Nil)
-}
-
-// seedCapUserScoped creates a non-admin user bound to a fresh role carrying capsJSON
-// at a specific scope: a folder (scopeFolder set), an asset (scopeAsset set), or
-// global (both uuid.Nil). It returns the user id.
-func seedCapUserScoped(t *testing.T, pool *pgxpool.Pool, email, pw, capsJSON string, scopeFolder, scopeAsset uuid.UUID) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	q := sqlc.New(pool)
-	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash, err := auth.HashPassword(pw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
-		t.Fatal(err)
-	}
-	role := createRoleWithCaps(t, ctx, q, "role-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
-	params := sqlc.CreateRoleBindingParams{RoleID: role.ID, SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true}}
-	if scopeFolder != uuid.Nil {
-		params.ScopeFolderID = pgtype.UUID{Bytes: scopeFolder, Valid: true}
-	}
-	if scopeAsset != uuid.Nil {
-		params.ScopeAssetID = pgtype.UUID{Bytes: scopeAsset, Valid: true}
-	}
-	if _, err := q.CreateRoleBinding(ctx, params); err != nil {
-		t.Fatal(err)
-	}
-	return u.ID
-}
-
 // adminToken logs in the seeded admin (admin@x/supersecret) and returns its bearer token.
 func adminToken(t *testing.T, url string) string {
 	t.Helper()
@@ -241,16 +193,6 @@ func withToken[T any](req *connect.Request[T], tok string) *connect.Request[T] {
 
 // pgU wraps a uuid.UUID as a valid pgtype.UUID (test helper).
 func pgU(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
-
-// contains reports whether x is in xs.
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
 
 // emptySSHConfig is the minimal valid CreateAssetRequest config oneof: an SSH asset
 // with no logins.

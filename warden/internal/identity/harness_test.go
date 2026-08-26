@@ -27,9 +27,11 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/recording"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
+	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
 // testMasterKeyB64 is a base64-encoded 32-byte KEK used to build a real sealer so the
@@ -104,13 +106,13 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 
 	services := rpc.UserServices{
 		Lookup:        auth.Lookup{Tokens: tokens, Q: q},
-		Auth:          rpc.NewAuthServer(q, tokens, authorizer, true),
+		Auth:          auth.NewHandler(q, tokens, authorizer, true),
 		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
 		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
-		AccessRequest: rpc.NewAccessRequestServer(resolver, arSvc, authorizer, q),
-		Vault:         rpc.NewVaultServer(q, sealer, authorizer),
-		Recording:     rpc.NewRecordingServer(q, auditLog, fakePresigner{}, time.Minute, authorizer, arSvc),
+		AccessRequest: accessrequest.NewHandler(resolver, arSvc, authorizer, q),
+		Vault:         vault.NewHandler(q, sealer, authorizer),
+		Recording:     recording.NewHandler(q, auditLog, fakePresigner{}, time.Minute, authorizer, arSvc),
 	}
 	mux := http.NewServeMux()
 	rpc.RegisterUserServices(mux, services)
