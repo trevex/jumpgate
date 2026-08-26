@@ -952,6 +952,64 @@ CREATE FUNCTION authz_effective_request_policy(p_role uuid, p_asset uuid)
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_role_goal_paths: the ExplainRole derivation enumerator — every jsonb path
+-- by which p_user holds p_role on p_asset, down to a satisfying standing binding
+-- or active JIT grant. Mirrors authz_role_goals' traversal but carries the chain
+-- as a jsonb path with an in-path cycle guard. Defensive LIMIT 500 bounds breadth.
+CREATE FUNCTION authz_role_goal_paths(p_user uuid, p_role uuid, p_asset uuid)
+    RETURNS TABLE(path jsonb, binding_id uuid, subject_user_id uuid, subject_group_id uuid)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE goals(role_id, object_kind, object_id, path) AS (
+        SELECT p_role, 'asset'::text, p_asset,
+               jsonb_build_array(jsonb_build_object(
+                 'role_id', p_role, 'object_kind', 'asset', 'object_id', p_asset, 'via', 'direct'))
+      UNION ALL
+        SELECT x.role_id, x.object_kind, x.object_id,
+               g.path || jsonb_build_object('role_id', x.role_id, 'object_kind', x.object_kind, 'object_id', x.object_id, 'via', x.via)
+        FROM goals g,
+        LATERAL (
+            SELECT rg.source_role_id AS role_id, g.object_kind AS object_kind, g.object_id AS object_id, 'same_object'::text AS via
+            FROM role_grants rg WHERE rg.role_id = g.role_id AND rg.via = 'same_object'
+          UNION ALL
+            SELECT rg.source_role_id, 'folder'::text, a.folder_id, 'parent'::text
+            FROM role_grants rg JOIN assets a ON g.object_kind = 'asset' AND a.id = g.object_id
+            WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+          UNION ALL
+            SELECT rg.source_role_id, 'folder'::text, f.parent_id, 'parent'::text
+            FROM role_grants rg JOIN folders f ON g.object_kind = 'folder' AND f.id = g.object_id AND f.parent_id IS NOT NULL
+            WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+        ) x
+        WHERE NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(g.path) e
+            WHERE (e->>'role_id')::uuid = x.role_id
+              AND e->>'object_kind' = x.object_kind
+              AND (e->>'object_id')::uuid = x.object_id
+        )
+    )
+    SELECT path, binding_id, subject_user_id, subject_group_id
+    FROM (
+        -- satisfaction via a standing role_binding on the reached goal.
+        SELECT g.path AS path, rb.id AS binding_id, rb.subject_user_id, rb.subject_group_id
+        FROM goals g
+        JOIN role_bindings rb ON rb.role_id = g.role_id
+          AND ((g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
+            OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id))
+          AND (rb.subject_user_id = p_user OR rb.subject_group_id IN (SELECT group_id FROM authz_user_groups(p_user)))
+        WHERE authz_user_is_active(p_user)
+      UNION ALL
+        -- satisfaction via an active JIT access_grant (user-subject + asset-scope).
+        SELECT g.path AS path, ag.id AS binding_id, ag.subject_user_id, NULL::uuid AS subject_group_id
+        FROM goals g
+        JOIN active_access_grants ag ON ag.role_id = g.role_id
+          AND g.object_kind = 'asset' AND ag.scope_asset_id = g.object_id
+          AND ag.subject_user_id = p_user
+        WHERE authz_user_is_active(p_user)
+    ) sat
+    LIMIT 500
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS

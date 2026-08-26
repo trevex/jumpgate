@@ -276,3 +276,23 @@ func TestAuthzEffectivePolicyParity(t *testing.T) {
 		t.Fatalf("want winning policy %s, got %s", policy, gotPolicy)
 	}
 }
+
+func TestAuthzRoleGoalPathsShape(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	_, alice, _, _, _, _, a1, _ := seedTree(t, pool)
+	var role uuid.UUID
+	if err := pool.QueryRow(ctx, heldCTE+`
+SELECT role_id FROM held WHERE object_kind='asset' AND object_id=@assetID LIMIT 1`,
+		pgx.NamedArgs{"user": alice, "assetID": a1}).Scan(&role); err != nil {
+		t.Skipf("no role: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM authz_role_goal_paths($1,$2,$3)`, alice, role, a1).Scan(&n); err != nil {
+		t.Fatalf("fn: %v", err)
+	}
+	if n == 0 {
+		t.Fatalf("expected >=1 derivation path")
+	}
+}
