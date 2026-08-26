@@ -770,6 +770,24 @@ ALTER TABLE ONLY public.ssh_asset_login
 
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- active_access_grants: the single source of the "grant is live" predicate.
+-- Shared by authz_held_impl (grant arm) and authz_role_goals (grant satisfaction),
+-- replacing the hand-copied `revoked_at IS NULL AND expires_at > now()` arms.
+CREATE VIEW active_access_grants AS
+    SELECT * FROM access_grants
+    WHERE revoked_at IS NULL AND expires_at > now();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- authz_user_is_active: the deactivation guard for the request_policy_subjects
+-- arms that bypass the held closure. STABLE so it inlines in EXISTS predicates.
+CREATE FUNCTION authz_user_is_active(p_user uuid) RETURNS boolean
+    LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM users u WHERE u.id = p_user AND u.deactivated_at IS NULL)
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
