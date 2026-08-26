@@ -200,7 +200,7 @@ func buildGuardFixture(t *testing.T, url, adminTok string, pool *pgxpool.Pool) g
 	}
 	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: granted.ID, RoleID: roleUUID, ScopeAssetID: assetUUID, SubjectUserID: targetUserID,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("fixture grant: %v", err)

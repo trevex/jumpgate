@@ -297,7 +297,7 @@ func (f *fixture) insertActiveGrant(t *testing.T) uuid.UUID {
 	}
 	g, err := f.q.CreateAccessGrant(f.ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: f.role, ScopeAssetID: f.asset, SubjectUserID: f.user,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAccessGrant: %v", err)

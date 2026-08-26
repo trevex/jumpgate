@@ -82,7 +82,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 	}
 	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: greq.ID, RoleID: rUUID, ScopeAssetID: f.asset, SubjectUserID: f.user,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAccessGrant: %v", err)

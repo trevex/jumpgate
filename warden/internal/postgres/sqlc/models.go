@@ -46,6 +46,19 @@ type AccessRequestApproval struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type ActiveAccessGrant struct {
+	ID            uuid.UUID          `json:"id"`
+	RequestID     uuid.UUID          `json:"request_id"`
+	RoleID        uuid.UUID          `json:"role_id"`
+	ScopeAssetID  uuid.UUID          `json:"scope_asset_id"`
+	SubjectUserID uuid.UUID          `json:"subject_user_id"`
+	GrantedAt     time.Time          `json:"granted_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy     pgtype.UUID        `json:"revoked_by"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
 type Asset struct {
 	ID        uuid.UUID `json:"id"`
 	FolderID  uuid.UUID `json:"folder_id"`

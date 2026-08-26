@@ -6,7 +6,6 @@ package sqlc
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -84,7 +83,7 @@ type Querier interface {
 	// the conferred role_id, or as the source that confers another). Part of DeleteRole.
 	DeleteRoleGrantsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
-	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error
+	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt pgtype.Timestamptz) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
@@ -189,9 +188,9 @@ type Querier interface {
 	ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error)
 	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
 	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
-	ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error)
+	ListStaleWorkerSessions(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]uuid.UUID, error)
 	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
-	ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error)
+	ListUndrainedOutbox(ctx context.Context, limit int64) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)

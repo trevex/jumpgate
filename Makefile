@@ -28,10 +28,10 @@ help: ## List targets
 
 gen: ## Generate protobuf stubs (Go + Rust) and sqlc database code
 	buf generate
-	sqlc generate
+	$(MAKE) sqlc
 
-sqlc: ## Generate sqlc database access code (warden/internal/db)
-	sqlc generate
+sqlc: ## Generate sqlc database access code (spins an ephemeral PostgreSQL)
+	bash hack/gen-sqlc.sh
 
 build: ## Build all binaries
 	cd warden && go build ./...

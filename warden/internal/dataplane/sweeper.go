@@ -90,7 +90,7 @@ func (s *Sweeper) SweepGC(ctx context.Context, orphanGrace, teardownGrace time.D
 	q := sqlc.New(s.pool)
 	now := time.Now()
 
-	orphanCutoff := now.Add(-orphanGrace)
+	orphanCutoff := pgtype.Timestamptz{Time: now.Add(-orphanGrace), Valid: true}
 	orphans, err := q.ListStaleWorkerSessions(ctx, orphanCutoff)
 	if err != nil {
 		return fmt.Errorf("list stale sessions: %w", err)

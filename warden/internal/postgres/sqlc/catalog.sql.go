@@ -494,7 +494,7 @@ type ListAssetsByIDsPagedParams struct {
 	Ids       []uuid.UUID `json:"ids"`
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error) {
@@ -535,7 +535,7 @@ SELECT id, name, parent_id, created_at, path_ids FROM folders WHERE ($1::uuid IS
 
 type ListFoldersParams struct {
 	Column1 uuid.UUID `json:"column_1"`
-	Limit   int32     `json:"limit"`
+	Limit   int64     `json:"limit"`
 }
 
 func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error) {
@@ -579,7 +579,7 @@ type ListFoldersByIDsPagedParams struct {
 	Ids       []uuid.UUID `json:"ids"`
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error) {
@@ -675,7 +675,7 @@ type ListRoleBindingsParams struct {
 	SubjectGroupID pgtype.UUID        `json:"subject_group_id"`
 	AfterTs        pgtype.Timestamptz `json:"after_ts"`
 	AfterID        pgtype.UUID        `json:"after_id"`
-	Lim            int32              `json:"lim"`
+	Lim            int64              `json:"lim"`
 }
 
 func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error) {
@@ -762,7 +762,7 @@ LIMIT $3
 type ListRolesParams struct {
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error) {
@@ -834,7 +834,7 @@ type ListRolesByIDsPagedParams struct {
 	Column1   []uuid.UUID `json:"column_1"`
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error) {
@@ -947,7 +947,7 @@ LIMIT $3
 type SearchAssetsByIDsParams struct {
 	Column1 []uuid.UUID `json:"column_1"`
 	Name    string      `json:"name"`
-	Limit   int32       `json:"limit"`
+	Limit   int64       `json:"limit"`
 }
 
 func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error) {
@@ -987,7 +987,7 @@ LIMIT $3
 type SearchFoldersByIDsParams struct {
 	Column1 []uuid.UUID `json:"column_1"`
 	Name    string      `json:"name"`
-	Limit   int32       `json:"limit"`
+	Limit   int64       `json:"limit"`
 }
 
 // Name-matching folders within a visible-id set. The `name ILIKE` predicate is
@@ -1029,7 +1029,7 @@ LIMIT $3
 type SearchGroupsByIDsParams struct {
 	Column1 []uuid.UUID `json:"column_1"`
 	Name    string      `json:"name"`
-	Limit   int32       `json:"limit"`
+	Limit   int64       `json:"limit"`
 }
 
 func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]Group, error) {
@@ -1067,7 +1067,7 @@ LIMIT $3
 type SearchRolesByIDsParams struct {
 	Column1 []uuid.UUID `json:"column_1"`
 	Name    string      `json:"name"`
-	Limit   int32       `json:"limit"`
+	Limit   int64       `json:"limit"`
 }
 
 func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]Role, error) {

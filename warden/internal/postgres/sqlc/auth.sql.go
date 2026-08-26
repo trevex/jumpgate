@@ -7,9 +7,9 @@ package sqlc
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countUsers = `-- name: CountUsers :one
@@ -30,9 +30,9 @@ RETURNING id, user_id, token_hash, expires_at, created_at
 `
 
 type CreateAuthTokenParams struct {
-	UserID    uuid.UUID `json:"user_id"`
-	TokenHash []byte    `json:"token_hash"`
-	ExpiresAt time.Time `json:"expires_at"`
+	UserID    uuid.UUID          `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 }
 
 func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error) {

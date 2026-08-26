@@ -121,7 +121,7 @@ type ListAssetSecretsParams struct {
 	AssetID   uuid.UUID   `json:"asset_id"`
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 type ListAssetSecretsRow struct {

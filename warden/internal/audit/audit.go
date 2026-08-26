@@ -174,7 +174,7 @@ func (l *Logger) DrainOnce(ctx context.Context, batch int) (int, error) {
 	if limit < 0 || limit > math.MaxInt32 {
 		limit = math.MaxInt32
 	}
-	rows, err := q.ListUndrainedOutbox(ctx, int32(limit))
+	rows, err := q.ListUndrainedOutbox(ctx, int64(limit))
 	if err != nil {
 		return 0, fmt.Errorf("list outbox: %w", err)
 	}

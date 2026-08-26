@@ -189,7 +189,7 @@ func (h *harness) grantRole(t *testing.T, userID, roleID uuid.UUID) {
 		RoleID:        roleID,
 		ScopeAssetID:  h.asset,
 		SubjectUserID: userID,
-		ExpiresAt:     time.Now().Add(time.Hour),
+		ExpiresAt:     pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	}); err != nil {
 		t.Fatalf("seed grant: %v", err)
 	}
@@ -217,7 +217,7 @@ func (h *harness) activeGrant(t *testing.T, userID uuid.UUID, expires time.Durat
 		RoleID:        h.role,
 		ScopeAssetID:  h.asset,
 		SubjectUserID: userID,
-		ExpiresAt:     time.Now().Add(expires),
+		ExpiresAt:     pgtype.Timestamptz{Time: time.Now().Add(expires), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("seed grant: %v", err)

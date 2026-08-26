@@ -427,7 +427,7 @@ func (s *Service) mintGrant(ctx context.Context, q *sqlc.Queries, req sqlc.Acces
 		RoleID:        req.RoleID,
 		ScopeAssetID:  req.AssetID,
 		SubjectUserID: req.RequesterUserID,
-		ExpiresAt:     time.Now().Add(granted),
+		ExpiresAt:     pgtype.Timestamptz{Time: time.Now().Add(granted), Valid: true},
 	})
 	if err != nil {
 		return sqlc.AccessGrant{}, fmt.Errorf("mint grant: %w", err)
@@ -1196,7 +1196,7 @@ ORDER BY g.granted_at DESC, g.id`
 type PageParams struct {
 	AfterTs *time.Time
 	AfterID uuid.UUID
-	Limit   int32
+	Limit   int64
 }
 
 // PageCursor is a keyset position that can be encoded into a next-page token.

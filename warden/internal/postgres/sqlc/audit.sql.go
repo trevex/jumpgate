@@ -202,7 +202,7 @@ type ListUndrainedOutboxRow struct {
 	Details     []byte      `json:"details"`
 }
 
-func (q *Queries) ListUndrainedOutbox(ctx context.Context, limit int32) ([]ListUndrainedOutboxRow, error) {
+func (q *Queries) ListUndrainedOutbox(ctx context.Context, limit int64) ([]ListUndrainedOutboxRow, error) {
 	rows, err := q.db.Query(ctx, listUndrainedOutbox, limit)
 	if err != nil {
 		return nil, err

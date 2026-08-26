@@ -156,7 +156,7 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 	if limit > maxRecordingPageSize {
 		limit = maxRecordingPageSize
 	}
-	params.Lim = limit
+	params.Lim = int64(limit)
 	k, err := decodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err

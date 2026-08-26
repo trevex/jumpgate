@@ -179,7 +179,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	}
 	grant, err := q.CreateAccessGrant(ctx, sqlc.CreateAccessGrantParams{
 		RequestID: req.ID, RoleID: role.ID, ScopeAssetID: asset.ID, SubjectUserID: subject.ID,
-		ExpiresAt: time.Now().Add(time.Hour),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAccessGrant: %v", err)

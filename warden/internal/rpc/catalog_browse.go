@@ -367,8 +367,8 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 	// than materializing the whole visible catalog and substring-filtering in Go.
 	pattern := likePattern(q)
 	full := func() bool { return len(out.Hits) >= int(limit) }
-	// len(out.Hits) is bounded by limit (<= searchMaxLimit), so the conversion cannot overflow.
-	remaining := func() int32 { return limit - int32(len(out.Hits)) } //nolint:gosec // bounded by searchMaxLimit
+	// Remaining budget for the sqlc LIMIT parameter (int64; Postgres LIMIT is bigint).
+	remaining := func() int64 { return int64(limit) - int64(len(out.Hits)) }
 
 	// Home-folder path lookup, memoized across kinds (roles/groups reuse it).
 	pathByFolder := map[uuid.UUID]string{}

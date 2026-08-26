@@ -58,7 +58,7 @@ type ListSessionRecordingsParams struct {
 	GrantID        pgtype.UUID        `json:"grant_id"`
 	AfterTs        pgtype.Timestamptz `json:"after_ts"`
 	AfterSessionID pgtype.UUID        `json:"after_session_id"`
-	Lim            int32              `json:"lim"`
+	Lim            int64              `json:"lim"`
 }
 
 func (q *Queries) ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error) {

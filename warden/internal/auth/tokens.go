@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
@@ -43,7 +44,7 @@ func (s *TokenService) Issue(ctx context.Context, userID uuid.UUID, ttl time.Dur
 	if _, err := s.q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
 		UserID:    userID,
 		TokenHash: hashToken(raw),
-		ExpiresAt: time.Now().Add(ttl),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(ttl), Valid: true},
 	}); err != nil {
 		return "", fmt.Errorf("create token: %w", err)
 	}

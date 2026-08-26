@@ -18,12 +18,13 @@ type pageKey struct {
 	ID   uuid.UUID  `json:"id"`
 }
 
-// clampPageSize applies the [1,100] range with a default of 50.
-func clampPageSize(n int32) int32 {
+// clampPageSize applies the [1,100] range with a default of 50. Returns int64 to
+// match the sqlc LIMIT parameter type (Postgres LIMIT is bigint).
+func clampPageSize(n int32) int64 {
 	if n <= 0 || n > 100 {
 		return 50
 	}
-	return n
+	return int64(n)
 }
 
 func encodeNameToken(name string, id uuid.UUID) string {

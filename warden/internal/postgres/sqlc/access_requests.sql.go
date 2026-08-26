@@ -7,7 +7,6 @@ package sqlc
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -89,11 +88,11 @@ RETURNING id, request_id, role_id, scope_asset_id, subject_user_id, granted_at, 
 `
 
 type CreateAccessGrantParams struct {
-	RequestID     uuid.UUID `json:"request_id"`
-	RoleID        uuid.UUID `json:"role_id"`
-	ScopeAssetID  uuid.UUID `json:"scope_asset_id"`
-	SubjectUserID uuid.UUID `json:"subject_user_id"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	RequestID     uuid.UUID          `json:"request_id"`
+	RoleID        uuid.UUID          `json:"role_id"`
+	ScopeAssetID  uuid.UUID          `json:"scope_asset_id"`
+	SubjectUserID uuid.UUID          `json:"subject_user_id"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 }
 
 func (q *Queries) CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error) {
@@ -332,7 +331,7 @@ type ListAccessRequestsByRequesterPagedParams struct {
 	RequesterUserID uuid.UUID          `json:"requester_user_id"`
 	AfterTs         pgtype.Timestamptz `json:"after_ts"`
 	AfterID         pgtype.UUID        `json:"after_id"`
-	Lim             int32              `json:"lim"`
+	Lim             int64              `json:"lim"`
 }
 
 // Keyset pagination for (created_at DESC, id ASC). A row-comparison
@@ -425,7 +424,7 @@ type ListGrantsBySubjectPagedParams struct {
 	SubjectUserID uuid.UUID          `json:"subject_user_id"`
 	AfterTs       pgtype.Timestamptz `json:"after_ts"`
 	AfterID       pgtype.UUID        `json:"after_id"`
-	Lim           int32              `json:"lim"`
+	Lim           int64              `json:"lim"`
 }
 
 // Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
@@ -529,7 +528,7 @@ type ListGrantsFilteredPagedParams struct {
 	ActiveOnly    bool               `json:"active_only"`
 	AfterTs       pgtype.Timestamptz `json:"after_ts"`
 	AfterID       pgtype.UUID        `json:"after_id"`
-	Lim           int32              `json:"lim"`
+	Lim           int64              `json:"lim"`
 }
 
 // Admin listing with keyset pagination on (granted_at DESC, id ASC). Filters
@@ -698,7 +697,7 @@ LIMIT $3
 type ListPendingRequestsPagedParams struct {
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 // Keyset pagination for pending requests (created_at DESC, id ASC).

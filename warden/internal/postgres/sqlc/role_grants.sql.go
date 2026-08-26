@@ -90,7 +90,7 @@ type ListRoleGrantsParams struct {
 	RoleID  uuid.UUID          `json:"role_id"`
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 func (q *Queries) ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error) {

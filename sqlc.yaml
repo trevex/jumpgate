@@ -3,6 +3,13 @@ sql:
   - engine: "postgresql"
     schema: "warden/internal/postgres/migrate/migrations"
     queries: "warden/internal/postgres/queries"
+    # Database-backed analysis: sqlc types queries against a live PostgreSQL
+    # catalog (SQLC_PG_URI) with the schema already applied via goose. Required so
+    # queries selecting from the authz_* SQL set-returning functions resolve their
+    # RETURNS TABLE columns (the built-in analyzer cannot infer them). The `make
+    # sqlc` target spins a throwaway PostgreSQL, runs goose up, then generates.
+    database:
+      uri: "${SQLC_PG_URI}"
     gen:
       go:
         package: "sqlc"

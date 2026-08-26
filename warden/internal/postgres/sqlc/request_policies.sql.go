@@ -227,7 +227,7 @@ type ListPoliciesForAssetParams struct {
 	AssetID pgtype.UUID        `json:"asset_id"`
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 func (q *Queries) ListPoliciesForAsset(ctx context.Context, arg ListPoliciesForAssetParams) ([]RequestPolicy, error) {
@@ -284,7 +284,7 @@ type ListPoliciesForSubjectGroupParams struct {
 	GroupID pgtype.UUID        `json:"group_id"`
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 func (q *Queries) ListPoliciesForSubjectGroup(ctx context.Context, arg ListPoliciesForSubjectGroupParams) ([]RequestPolicy, error) {
@@ -341,7 +341,7 @@ type ListPolicySubjectsParams struct {
 	PolicyID uuid.UUID          `json:"policy_id"`
 	AfterTs  pgtype.Timestamptz `json:"after_ts"`
 	AfterID  pgtype.UUID        `json:"after_id"`
-	Lim      int32              `json:"lim"`
+	Lim      int64              `json:"lim"`
 }
 
 func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error) {
@@ -394,7 +394,7 @@ type ListRequestPoliciesParams struct {
 	RoleID  uuid.UUID          `json:"role_id"`
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 func (q *Queries) ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error) {

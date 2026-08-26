@@ -7,7 +7,6 @@ package sqlc
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -53,7 +52,7 @@ WHERE wp.last_seen_at < $1
   AND NOT EXISTS (SELECT 1 FROM live_sessions ls WHERE ls.worker_id = wp.worker_id)
 `
 
-func (q *Queries) DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt time.Time) error {
+func (q *Queries) DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt pgtype.Timestamptz) error {
 	_, err := q.db.Exec(ctx, deleteStaleWorkerPresence, lastSeenAt)
 	return err
 }
@@ -357,7 +356,7 @@ JOIN worker_presence wp ON wp.worker_id = ls.worker_id
 WHERE wp.last_seen_at < $1
 `
 
-func (q *Queries) ListStaleWorkerSessions(ctx context.Context, lastSeenAt time.Time) ([]uuid.UUID, error) {
+func (q *Queries) ListStaleWorkerSessions(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, listStaleWorkerSessions, lastSeenAt)
 	if err != nil {
 		return nil, err

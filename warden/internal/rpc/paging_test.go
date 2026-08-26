@@ -9,7 +9,10 @@ import (
 )
 
 func TestPageSizeClamp(t *testing.T) {
-	for _, tc := range []struct{ in, want int32 }{{0, 50}, {-5, 50}, {101, 50}, {1, 1}, {100, 100}, {50, 50}} {
+	for _, tc := range []struct {
+		in   int32
+		want int64
+	}{{0, 50}, {-5, 50}, {101, 50}, {1, 1}, {100, 100}, {50, 50}} {
 		if got := clampPageSize(tc.in); got != tc.want {
 			t.Fatalf("clampPageSize(%d)=%d want %d", tc.in, got, tc.want)
 		}

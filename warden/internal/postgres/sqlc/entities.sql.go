@@ -469,7 +469,7 @@ type ListGroupMembersPagedParams struct {
 	GroupID uuid.UUID          `json:"group_id"`
 	AfterTs pgtype.Timestamptz `json:"after_ts"`
 	AfterID pgtype.UUID        `json:"after_id"`
-	Lim     int32              `json:"lim"`
+	Lim     int64              `json:"lim"`
 }
 
 // Single keyset scan over group_memberships ordered by (created_at DESC, id).
@@ -521,7 +521,7 @@ type ListGroupsByIDsPagedParams struct {
 	Column1   []uuid.UUID `json:"column_1"`
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error) {
@@ -567,7 +567,7 @@ LIMIT $3
 type ListGroupsPagedParams struct {
 	AfterName pgtype.Text `json:"after_name"`
 	AfterID   pgtype.UUID `json:"after_id"`
-	Lim       int32       `json:"lim"`
+	Lim       int64       `json:"lim"`
 }
 
 func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error) {
@@ -608,7 +608,7 @@ LIMIT $3
 type ListUsersParams struct {
 	AfterEmail pgtype.Text `json:"after_email"`
 	AfterID    pgtype.UUID `json:"after_id"`
-	Lim        int32       `json:"lim"`
+	Lim        int64       `json:"lim"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
