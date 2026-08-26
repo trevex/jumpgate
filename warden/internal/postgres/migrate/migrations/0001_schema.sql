@@ -788,6 +788,22 @@ CREATE FUNCTION authz_user_is_active(p_user uuid) RETURNS boolean
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_user_groups: the transitive group-membership closure for a user
+-- (group-aware, cycle-safe). Single source for every held/global-held/goals
+-- query's user_groups arm.
+CREATE FUNCTION authz_user_groups(p_user uuid)
+    RETURNS TABLE(group_id uuid)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE ug(group_id) AS (
+        SELECT gm.group_id FROM group_memberships gm WHERE gm.member_user_id = p_user
+      UNION
+        SELECT gm.group_id FROM group_memberships gm JOIN ug ON gm.member_group_id = ug.group_id
+    )
+    SELECT ug.group_id FROM ug
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
