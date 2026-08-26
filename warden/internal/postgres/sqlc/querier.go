@@ -27,6 +27,17 @@ type Querier interface {
 	// authz_global_held) ∪ (for assets, CONNECT via an ssh:login entitled over the full
 	// asset-scope cascade). Management cascades DOWN a folder subtree (ltree <@).
 	AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersParams) ([]pgtype.UUID, error)
+	// [22] accessrequest.approvablePending: the pending access requests the caller may
+	// approve, with their current approve-count, resolved set-based (reproducing
+	// IsApprover over the whole candidate set). A candidate is included when the caller
+	// is neither its requester nor deactivated AND, for the request's EFFECTIVE policy
+	// (authz_effective_request_policy — the same asset/folder-ancestor/global precedence
+	// as EffectiveRule), the caller is either an explicit kind='approver' subject (direct
+	// or via a nested group, authz_user_groups) OR holds the policy's approver_role
+	// STANDING on the asset (authz_held_standing). @restrict limits the candidate set to
+	// those request ids (a keyset page); a NULL array considers all pending requests.
+	// Ordered created_at DESC, id to match the paged SQL page order.
+	ApprovablePending(ctx context.Context, arg ApprovablePendingParams) ([]ApprovablePendingRow, error)
 	// [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
 	// approver subject of the policy when a request_policy_subjects(kind='approver') row
 	// names them directly or via a (nested) group — subject to the deactivation guard.
@@ -259,6 +270,15 @@ type Querier interface {
 	// [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
 	// ApproverSubjectExists, differing only by the kind='requester' literal.
 	RequesterSubjectExists(ctx context.Context, arg RequesterSubjectExistsParams) (bool, error)
+	// [23] accessrequest.reviewableGrants: the grants the caller may review, resolved
+	// set-based (reproducing CanReviewGrant over the whole candidate set). A grant is
+	// reviewable when the caller is its subject OR (the caller is active AND, for the
+	// grant's (role, asset) EFFECTIVE policy — authz_effective_request_policy — an
+	// explicit kind='approver' subject, direct or via a nested group, OR the approver_role
+	// held STANDING on the asset). The subject arm intentionally has no active-user check,
+	// matching CanReviewGrant. @restrict limits the candidate set to those grant ids (a
+	// keyset page); a NULL array considers all grants. Ordered granted_at DESC, id.
+	ReviewableGrants(ctx context.Context, arg ReviewableGrantsParams) ([]ReviewableGrantsRow, error)
 	// Revokes a role's still-live grants (not yet revoked, not yet expired) so the
 	// terminator can tear down the sessions they authorized. Used by the DeleteRole
 	// cascade before the role row (and, via FK cascade, these grant rows) is deleted.

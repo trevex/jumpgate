@@ -90,6 +90,7 @@ type Grant struct {
 // Service is the JIT access-request domain service.
 type Service struct {
 	pool       *pgxpool.Pool
+	q          *sqlc.Queries
 	audit      *audit.Logger
 	resolver   *approvals.Resolver
 	roles      *authz.RoleResolver
@@ -107,7 +108,7 @@ func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.
 	if terminator == nil {
 		terminator = NoopTerminator{}
 	}
-	return &Service{pool: pool, audit: auditLog, resolver: resolver, roles: roles, terminator: terminator, maxTTL: maxTTL}
+	return &Service{pool: pool, q: sqlc.New(pool), audit: auditLog, resolver: resolver, roles: roles, terminator: terminator, maxTTL: maxTTL}
 }
 
 // intervalToDuration converts a pgtype.Interval to a time.Duration, folding
@@ -479,9 +480,9 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 // for the request's EFFECTIVE policy (most-specific of asset / folder-ancestor /
 // global by the same precedence as EffectiveRule), the caller is either an explicit
 // `approver` subject (direct or via a nested group) OR holds the policy's approver_role
-// STANDING on the asset. The standing arm reuses authz.StandingHeldClosurePrefix()'s
-// held_standing closure — the same relation HoldsRoleStanding checks — so governance
-// semantics cannot drift. restrict limits the candidate set to those request ids (a
+// STANDING on the asset. The standing arm reuses the shared authz_held_standing SQL
+// function — the same relation HoldsRoleStanding checks — so governance semantics
+// cannot drift; the effective policy is authz_effective_request_policy. restrict limits the candidate set to those request ids (a
 // keyset page); a nil slice (SQL NULL) considers all pending requests. Results are
 // ordered created_at DESC, id, matching the paged SQL page order.
 //
@@ -489,96 +490,18 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 // `@restrict IS NULL` all-arm); an EMPTY non-nil slice encodes as `'{}'` → `id = ANY('{}')`
 // → zero rows. Callers must never pass []uuid.UUID{} to mean "all" (the paged callers
 // guard this with a len(rows)==0 early return before building the id slice).
-// pendingRow is approvablePending's final SELECT, scanned by column NAME
-// (pgx.RowToStructByNameLax) so a SELECT-list reorder cannot misbind.
-type pendingRow struct {
-	ID                uuid.UUID          `db:"id"`
-	RequesterUserID   uuid.UUID          `db:"requester_user_id"`
-	RoleID            uuid.UUID          `db:"role_id"`
-	AssetID           uuid.UUID          `db:"asset_id"`
-	Reason            string             `db:"reason"`
-	RequiredApprovals int32              `db:"required_approvals"`
-	Status            string             `db:"status"`
-	CreatedAt         pgtype.Timestamptz `db:"created_at"`
-	ResolvedAt        pgtype.Timestamptz `db:"resolved_at"`
-	Approvals         int64              `db:"approvals"`
-}
-
 func (s *Service) approvablePending(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Request, error) {
-	const body = `,
-pending AS (
-    SELECT id, requester_user_id, role_id, asset_id, reason, required_approvals, status, created_at, resolved_at
-    FROM access_requests
-    WHERE status = 'pending' AND requester_user_id <> @caller
-      AND (@restrict::uuid[] IS NULL OR id = ANY(@restrict))
-),
-pa AS (SELECT DISTINCT role_id, asset_id FROM pending),
--- effective policy per pending (role, asset), via the EffectiveRule precedence:
--- asset-scoped override (spec 0) < folder-scoped by ancestor depth < global default.
-ancestors(role_id, asset_id, folder_id, depth) AS (
-    SELECT pa.role_id, pa.asset_id, a.folder_id, 0 FROM pa JOIN assets a ON a.id = pa.asset_id
-  UNION ALL
-    SELECT an.role_id, an.asset_id, f.parent_id, an.depth + 1
-    FROM folders f JOIN ancestors an ON f.id = an.folder_id WHERE f.parent_id IS NOT NULL
-),
-candidates(role_id, asset_id, policy_id, approver_role_id, spec) AS (
-    SELECT pa.role_id, pa.asset_id, rp.id, rp.approver_role_id, 0
-    FROM pa JOIN request_policies rp ON rp.role_id = pa.role_id AND rp.scope_asset_id = pa.asset_id
-  UNION ALL
-    SELECT an.role_id, an.asset_id, rp.id, rp.approver_role_id, an.depth + 1
-    FROM ancestors an JOIN request_policies rp ON rp.role_id = an.role_id AND rp.scope_folder_id = an.folder_id
-  UNION ALL
-    SELECT pa.role_id, pa.asset_id, rp.id, rp.approver_role_id, 1000000
-    FROM pa JOIN request_policies rp ON rp.role_id = pa.role_id AND rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
-),
-eff AS (
-    SELECT DISTINCT ON (role_id, asset_id) role_id, asset_id, policy_id, approver_role_id
-    FROM candidates ORDER BY role_id, asset_id, spec ASC
-),
-approve_counts AS (
-    SELECT request_id, count(*) AS n FROM access_request_approvals
-    WHERE decision = 'approve' AND request_id IN (SELECT id FROM pending)
-    GROUP BY request_id
-)
-SELECT p.id, p.requester_user_id, p.role_id, p.asset_id, p.reason,
-       p.required_approvals, p.status, p.created_at, p.resolved_at,
-       COALESCE(c.n, 0)::bigint AS approvals
-FROM pending p
-JOIN eff e ON e.role_id = p.role_id AND e.asset_id = p.asset_id
-LEFT JOIN approve_counts c ON c.request_id = p.id
-WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = @caller AND u.deactivated_at IS NULL)
-  AND (
-    EXISTS (
-        SELECT 1 FROM request_policy_subjects sub
-        WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
-          AND (sub.subject_user_id = @caller OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
-    )
-    OR (
-        e.approver_role_id IS NOT NULL
-        AND EXISTS (
-            SELECT 1 FROM held_standing hs
-            WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = p.asset_id
-        )
-    )
-  )
-ORDER BY p.created_at DESC, p.id`
-
-	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body,
-		pgx.NamedArgs{"user": caller, "caller": caller, "restrict": restrict})
+	rows, err := s.q.ApprovablePending(ctx, sqlc.ApprovablePendingParams{Caller: caller, Restrict: restrict})
 	if err != nil {
 		return nil, fmt.Errorf("approvable pending: %w", err)
 	}
-	prows, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[pendingRow])
-	if err != nil {
-		return nil, fmt.Errorf("approvable pending scan: %w", err)
-	}
-	out := make([]Request, 0, len(prows))
-	for _, r := range prows {
+	out := make([]Request, 0, len(rows))
+	for _, r := range rows {
 		out = append(out, toRequest(sqlc.AccessRequest{
 			ID: r.ID, RequesterUserID: r.RequesterUserID, RoleID: r.RoleID, AssetID: r.AssetID,
 			Reason: r.Reason, RequiredApprovals: r.RequiredApprovals, Status: r.Status,
 			CreatedAt: r.CreatedAt.Time, ResolvedAt: r.ResolvedAt,
-		}, int(r.Approvals), uuid.Nil))
+		}, int(r.Approvals.Int64), uuid.Nil))
 	}
 	return out, nil
 }
@@ -1104,85 +1027,21 @@ func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUI
 // asset/folder-ancestor/global precedence as EffectiveRule — an explicit approver
 // subject, direct or via a nested group, OR the approver_role held STANDING on the
 // asset). The subject arm intentionally has no active-user check, matching
-// CanReviewGrant. The standing arm reuses authz.StandingHeldClosurePrefix()'s
-// held_standing closure, single-sourced with Check/HoldsRoleStanding. restrict limits
-// the candidate set to those grant ids (a keyset page); a nil slice (SQL NULL)
-// considers all grants. Ordered granted_at DESC, id to match the paged SQL page.
-// reviewableGrantRow is reviewableGrants' final SELECT, scanned by column name.
-type reviewableGrantRow struct {
-	ID            uuid.UUID          `db:"id"`
-	RoleID        uuid.UUID          `db:"role_id"`
-	ScopeAssetID  uuid.UUID          `db:"scope_asset_id"`
-	SubjectUserID uuid.UUID          `db:"subject_user_id"`
-	GrantedAt     pgtype.Timestamptz `db:"granted_at"`
-	ExpiresAt     pgtype.Timestamptz `db:"expires_at"`
-	RevokedAt     pgtype.Timestamptz `db:"revoked_at"`
-	RevokedReason pgtype.Text        `db:"revoked_reason"`
-}
-
+// CanReviewGrant. The standing arm reuses the shared authz_held_standing SQL
+// function, single-sourced with Check/HoldsRoleStanding, and the effective policy is
+// authz_effective_request_policy. restrict limits the candidate set to those grant
+// ids (a keyset page); a nil slice (SQL NULL) considers all grants. Ordered
+// granted_at DESC, id to match the paged SQL page.
 func (s *Service) reviewableGrants(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Grant, error) {
-	const body = `,
-grants AS (
-    SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
-    FROM access_grants
-    WHERE (@restrict::uuid[] IS NULL OR id = ANY(@restrict))
-),
-ga AS (SELECT DISTINCT role_id, scope_asset_id FROM grants),
-ancestors(role_id, asset_id, folder_id, depth) AS (
-    SELECT ga.role_id, ga.scope_asset_id, a.folder_id, 0 FROM ga JOIN assets a ON a.id = ga.scope_asset_id
-  UNION ALL
-    SELECT an.role_id, an.asset_id, f.parent_id, an.depth + 1
-    FROM folders f JOIN ancestors an ON f.id = an.folder_id WHERE f.parent_id IS NOT NULL
-),
-candidates(role_id, asset_id, policy_id, approver_role_id, spec) AS (
-    SELECT ga.role_id, ga.scope_asset_id, rp.id, rp.approver_role_id, 0
-    FROM ga JOIN request_policies rp ON rp.role_id = ga.role_id AND rp.scope_asset_id = ga.scope_asset_id
-  UNION ALL
-    SELECT an.role_id, an.asset_id, rp.id, rp.approver_role_id, an.depth + 1
-    FROM ancestors an JOIN request_policies rp ON rp.role_id = an.role_id AND rp.scope_folder_id = an.folder_id
-  UNION ALL
-    SELECT ga.role_id, ga.scope_asset_id, rp.id, rp.approver_role_id, 1000000
-    FROM ga JOIN request_policies rp ON rp.role_id = ga.role_id AND rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
-),
-eff AS (
-    SELECT DISTINCT ON (role_id, asset_id) role_id, asset_id, policy_id, approver_role_id
-    FROM candidates ORDER BY role_id, asset_id, spec ASC
-)
-SELECT g.id, g.role_id, g.scope_asset_id, g.subject_user_id, g.granted_at, g.expires_at, g.revoked_at, g.revoked_reason
-FROM grants g
-LEFT JOIN eff e ON e.role_id = g.role_id AND e.asset_id = g.scope_asset_id
-WHERE g.subject_user_id = @caller
-   OR (
-       EXISTS (SELECT 1 FROM users u WHERE u.id = @caller AND u.deactivated_at IS NULL)
-       AND e.policy_id IS NOT NULL
-       AND (
-           EXISTS (
-               SELECT 1 FROM request_policy_subjects sub
-               WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
-                 AND (sub.subject_user_id = @caller OR sub.subject_group_id IN (SELECT group_id FROM user_groups))
-           )
-           OR (
-               e.approver_role_id IS NOT NULL
-               AND EXISTS (
-                   SELECT 1 FROM held_standing hs
-                   WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = g.scope_asset_id
-               )
-           )
-       )
-   )
-ORDER BY g.granted_at DESC, g.id`
-
-	rows, err := s.pool.Query(ctx, authz.StandingHeldClosurePrefix()+body,
-		pgx.NamedArgs{"user": caller, "caller": caller, "restrict": restrict})
+	rows, err := s.q.ReviewableGrants(ctx, sqlc.ReviewableGrantsParams{
+		Caller:   pgtype.UUID{Bytes: caller, Valid: true},
+		Restrict: restrict,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("reviewable grants: %w", err)
 	}
-	grows, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[reviewableGrantRow])
-	if err != nil {
-		return nil, fmt.Errorf("reviewable grants scan: %w", err)
-	}
-	out := make([]Grant, 0, len(grows))
-	for _, g := range grows {
+	out := make([]Grant, 0, len(rows))
+	for _, g := range rows {
 		out = append(out, toGrant(sqlc.AccessGrant{
 			ID: g.ID, RoleID: g.RoleID, ScopeAssetID: g.ScopeAssetID, SubjectUserID: g.SubjectUserID,
 			GrantedAt: g.GrantedAt.Time, ExpiresAt: g.ExpiresAt.Time, RevokedAt: g.RevokedAt, RevokedReason: g.RevokedReason,

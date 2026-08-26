@@ -138,6 +138,108 @@ func (q *Queries) AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersPa
 	return items, nil
 }
 
+const approvablePending = `-- name: ApprovablePending :many
+WITH pending AS (
+    SELECT id, requester_user_id, role_id, asset_id, reason, required_approvals, status, created_at, resolved_at
+    FROM access_requests
+    WHERE status = 'pending' AND requester_user_id <> $1
+      AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
+),
+pa AS (SELECT DISTINCT role_id, asset_id FROM pending),
+eff AS (
+    SELECT pa.role_id, pa.asset_id, ep.policy_id, ep.approver_role_id
+    FROM pa
+    JOIN LATERAL authz_effective_request_policy(pa.role_id, pa.asset_id) ep ON true
+),
+approve_counts AS (
+    SELECT request_id, count(*) AS n FROM access_request_approvals
+    WHERE decision = 'approve' AND request_id IN (SELECT id FROM pending)
+    GROUP BY request_id
+)
+SELECT p.id, p.requester_user_id, p.role_id, p.asset_id, p.reason,
+       p.required_approvals, p.status, p.created_at, p.resolved_at,
+       COALESCE(c.n, 0)::bigint AS approvals
+FROM pending p
+JOIN eff e ON e.role_id = p.role_id AND e.asset_id = p.asset_id
+LEFT JOIN approve_counts c ON c.request_id = p.id
+WHERE authz_user_is_active($1)
+  AND (
+    EXISTS (
+        SELECT 1 FROM request_policy_subjects sub
+        WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+          AND (sub.subject_user_id = $1
+               OR sub.subject_group_id IN (SELECT group_id FROM authz_user_groups($1)))
+    )
+    OR (
+        e.approver_role_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM authz_held_standing($1) hs
+            WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = p.asset_id
+        )
+    )
+  )
+ORDER BY p.created_at DESC, p.id
+`
+
+type ApprovablePendingParams struct {
+	Caller   uuid.UUID   `json:"caller"`
+	Restrict []uuid.UUID `json:"restrict"`
+}
+
+type ApprovablePendingRow struct {
+	ID                uuid.UUID          `json:"id"`
+	RequesterUserID   uuid.UUID          `json:"requester_user_id"`
+	RoleID            uuid.UUID          `json:"role_id"`
+	AssetID           uuid.UUID          `json:"asset_id"`
+	Reason            string             `json:"reason"`
+	RequiredApprovals int32              `json:"required_approvals"`
+	Status            string             `json:"status"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	Approvals         pgtype.Int8        `json:"approvals"`
+}
+
+// [22] accessrequest.approvablePending: the pending access requests the caller may
+// approve, with their current approve-count, resolved set-based (reproducing
+// IsApprover over the whole candidate set). A candidate is included when the caller
+// is neither its requester nor deactivated AND, for the request's EFFECTIVE policy
+// (authz_effective_request_policy — the same asset/folder-ancestor/global precedence
+// as EffectiveRule), the caller is either an explicit kind='approver' subject (direct
+// or via a nested group, authz_user_groups) OR holds the policy's approver_role
+// STANDING on the asset (authz_held_standing). @restrict limits the candidate set to
+// those request ids (a keyset page); a NULL array considers all pending requests.
+// Ordered created_at DESC, id to match the paged SQL page order.
+func (q *Queries) ApprovablePending(ctx context.Context, arg ApprovablePendingParams) ([]ApprovablePendingRow, error) {
+	rows, err := q.db.Query(ctx, approvablePending, arg.Caller, arg.Restrict)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApprovablePendingRow
+	for rows.Next() {
+		var i ApprovablePendingRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterUserID,
+			&i.RoleID,
+			&i.AssetID,
+			&i.Reason,
+			&i.RequiredApprovals,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.Approvals,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const approverSubjectExists = `-- name: ApproverSubjectExists :one
 SELECT EXISTS (
     SELECT 1 FROM request_policy_subjects rps
@@ -737,6 +839,97 @@ func (q *Queries) RequesterSubjectExists(ctx context.Context, arg RequesterSubje
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const reviewableGrants = `-- name: ReviewableGrants :many
+WITH grants AS (
+    SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
+    FROM access_grants
+    WHERE ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
+),
+ga AS (SELECT DISTINCT role_id, scope_asset_id FROM grants),
+eff AS (
+    SELECT ga.role_id, ga.scope_asset_id, ep.policy_id, ep.approver_role_id
+    FROM ga
+    JOIN LATERAL authz_effective_request_policy(ga.role_id, ga.scope_asset_id) ep ON true
+)
+SELECT g.id, g.role_id, g.scope_asset_id, g.subject_user_id, g.granted_at, g.expires_at, g.revoked_at, g.revoked_reason
+FROM grants g
+LEFT JOIN eff e ON e.role_id = g.role_id AND e.scope_asset_id = g.scope_asset_id
+WHERE g.subject_user_id = $1
+   OR (
+       authz_user_is_active($1)
+       AND e.policy_id IS NOT NULL
+       AND (
+           EXISTS (
+               SELECT 1 FROM request_policy_subjects sub
+               WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+                 AND (sub.subject_user_id = $1
+                      OR sub.subject_group_id IN (SELECT group_id FROM authz_user_groups($1)))
+           )
+           OR (
+               e.approver_role_id IS NOT NULL
+               AND EXISTS (
+                   SELECT 1 FROM authz_held_standing($1) hs
+                   WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = g.scope_asset_id
+               )
+           )
+       )
+   )
+ORDER BY g.granted_at DESC, g.id
+`
+
+type ReviewableGrantsParams struct {
+	Caller   pgtype.UUID `json:"caller"`
+	Restrict []uuid.UUID `json:"restrict"`
+}
+
+type ReviewableGrantsRow struct {
+	ID            uuid.UUID          `json:"id"`
+	RoleID        uuid.UUID          `json:"role_id"`
+	ScopeAssetID  uuid.UUID          `json:"scope_asset_id"`
+	SubjectUserID uuid.UUID          `json:"subject_user_id"`
+	GrantedAt     pgtype.Timestamptz `json:"granted_at"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
+// [23] accessrequest.reviewableGrants: the grants the caller may review, resolved
+// set-based (reproducing CanReviewGrant over the whole candidate set). A grant is
+// reviewable when the caller is its subject OR (the caller is active AND, for the
+// grant's (role, asset) EFFECTIVE policy — authz_effective_request_policy — an
+// explicit kind='approver' subject, direct or via a nested group, OR the approver_role
+// held STANDING on the asset). The subject arm intentionally has no active-user check,
+// matching CanReviewGrant. @restrict limits the candidate set to those grant ids (a
+// keyset page); a NULL array considers all grants. Ordered granted_at DESC, id.
+func (q *Queries) ReviewableGrants(ctx context.Context, arg ReviewableGrantsParams) ([]ReviewableGrantsRow, error) {
+	rows, err := q.db.Query(ctx, reviewableGrants, arg.Caller, arg.Restrict)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReviewableGrantsRow
+	for rows.Next() {
+		var i ReviewableGrantsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeAssetID,
+			&i.SubjectUserID,
+			&i.GrantedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const scopeCapabilitiesAsset = `-- name: ScopeCapabilitiesAsset :many

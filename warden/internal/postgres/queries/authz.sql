@@ -490,3 +490,100 @@ SELECT EXISTS (
            OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups(sqlc.arg('user'))))
       AND authz_user_is_active(sqlc.arg('user'))
 );
+
+-- name: ApprovablePending :many
+-- [22] accessrequest.approvablePending: the pending access requests the caller may
+-- approve, with their current approve-count, resolved set-based (reproducing
+-- IsApprover over the whole candidate set). A candidate is included when the caller
+-- is neither its requester nor deactivated AND, for the request's EFFECTIVE policy
+-- (authz_effective_request_policy — the same asset/folder-ancestor/global precedence
+-- as EffectiveRule), the caller is either an explicit kind='approver' subject (direct
+-- or via a nested group, authz_user_groups) OR holds the policy's approver_role
+-- STANDING on the asset (authz_held_standing). @restrict limits the candidate set to
+-- those request ids (a keyset page); a NULL array considers all pending requests.
+-- Ordered created_at DESC, id to match the paged SQL page order.
+WITH pending AS (
+    SELECT id, requester_user_id, role_id, asset_id, reason, required_approvals, status, created_at, resolved_at
+    FROM access_requests
+    WHERE status = 'pending' AND requester_user_id <> sqlc.arg('caller')
+      AND (sqlc.narg('restrict')::uuid[] IS NULL OR id = ANY(sqlc.narg('restrict')::uuid[]))
+),
+pa AS (SELECT DISTINCT role_id, asset_id FROM pending),
+eff AS (
+    SELECT pa.role_id, pa.asset_id, ep.policy_id, ep.approver_role_id
+    FROM pa
+    JOIN LATERAL authz_effective_request_policy(pa.role_id, pa.asset_id) ep ON true
+),
+approve_counts AS (
+    SELECT request_id, count(*) AS n FROM access_request_approvals
+    WHERE decision = 'approve' AND request_id IN (SELECT id FROM pending)
+    GROUP BY request_id
+)
+SELECT p.id, p.requester_user_id, p.role_id, p.asset_id, p.reason,
+       p.required_approvals, p.status, p.created_at, p.resolved_at,
+       COALESCE(c.n, 0)::bigint AS approvals
+FROM pending p
+JOIN eff e ON e.role_id = p.role_id AND e.asset_id = p.asset_id
+LEFT JOIN approve_counts c ON c.request_id = p.id
+WHERE authz_user_is_active(sqlc.arg('caller'))
+  AND (
+    EXISTS (
+        SELECT 1 FROM request_policy_subjects sub
+        WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+          AND (sub.subject_user_id = sqlc.arg('caller')
+               OR sub.subject_group_id IN (SELECT group_id FROM authz_user_groups(sqlc.arg('caller'))))
+    )
+    OR (
+        e.approver_role_id IS NOT NULL
+        AND EXISTS (
+            SELECT 1 FROM authz_held_standing(sqlc.arg('caller')) hs
+            WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = p.asset_id
+        )
+    )
+  )
+ORDER BY p.created_at DESC, p.id;
+
+-- name: ReviewableGrants :many
+-- [23] accessrequest.reviewableGrants: the grants the caller may review, resolved
+-- set-based (reproducing CanReviewGrant over the whole candidate set). A grant is
+-- reviewable when the caller is its subject OR (the caller is active AND, for the
+-- grant's (role, asset) EFFECTIVE policy — authz_effective_request_policy — an
+-- explicit kind='approver' subject, direct or via a nested group, OR the approver_role
+-- held STANDING on the asset). The subject arm intentionally has no active-user check,
+-- matching CanReviewGrant. @restrict limits the candidate set to those grant ids (a
+-- keyset page); a NULL array considers all grants. Ordered granted_at DESC, id.
+WITH grants AS (
+    SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
+    FROM access_grants
+    WHERE (sqlc.narg('restrict')::uuid[] IS NULL OR id = ANY(sqlc.narg('restrict')::uuid[]))
+),
+ga AS (SELECT DISTINCT role_id, scope_asset_id FROM grants),
+eff AS (
+    SELECT ga.role_id, ga.scope_asset_id, ep.policy_id, ep.approver_role_id
+    FROM ga
+    JOIN LATERAL authz_effective_request_policy(ga.role_id, ga.scope_asset_id) ep ON true
+)
+SELECT g.id, g.role_id, g.scope_asset_id, g.subject_user_id, g.granted_at, g.expires_at, g.revoked_at, g.revoked_reason
+FROM grants g
+LEFT JOIN eff e ON e.role_id = g.role_id AND e.scope_asset_id = g.scope_asset_id
+WHERE g.subject_user_id = sqlc.arg('caller')
+   OR (
+       authz_user_is_active(sqlc.arg('caller'))
+       AND e.policy_id IS NOT NULL
+       AND (
+           EXISTS (
+               SELECT 1 FROM request_policy_subjects sub
+               WHERE sub.policy_id = e.policy_id AND sub.kind = 'approver'
+                 AND (sub.subject_user_id = sqlc.arg('caller')
+                      OR sub.subject_group_id IN (SELECT group_id FROM authz_user_groups(sqlc.arg('caller'))))
+           )
+           OR (
+               e.approver_role_id IS NOT NULL
+               AND EXISTS (
+                   SELECT 1 FROM authz_held_standing(sqlc.arg('caller')) hs
+                   WHERE hs.role_id = e.approver_role_id AND hs.object_kind = 'asset' AND hs.object_id = g.scope_asset_id
+               )
+           )
+       )
+   )
+ORDER BY g.granted_at DESC, g.id;
