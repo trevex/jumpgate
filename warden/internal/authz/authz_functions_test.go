@@ -245,3 +245,34 @@ SELECT EXISTS (
 		t.Fatalf("authz_role_goals failed to back HoldsRole for role %s on %s", roleID, a1)
 	}
 }
+
+func TestAuthzEffectivePolicyParity(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	// Minimal fixture: role r, folder f with asset a, one folder-scoped request_policy.
+	// NB: `assets` has no target_address column (that lives on ssh_asset_config), and
+	// names must satisfy the `^[a-z0-9_-]+$` check constraint.
+	var role, folder, asset, policy uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO roles(name) VALUES('r') RETURNING id`).Scan(&role); err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO folders(name) VALUES('f') RETURNING id`).Scan(&folder); err != nil {
+		t.Fatalf("seed folder: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO assets(name, folder_id) VALUES('a',$1) RETURNING id`, folder).Scan(&asset); err != nil {
+		t.Fatalf("seed asset: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO request_policies(role_id, scope_folder_id, required_approvals)
+		VALUES($1,$2,1) RETURNING id`, role, folder).Scan(&policy); err != nil {
+		t.Fatalf("seed policy: %v", err)
+	}
+
+	var gotPolicy uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT policy_id FROM authz_effective_request_policy($1,$2)`, role, asset).Scan(&gotPolicy); err != nil {
+		t.Fatalf("fn: %v", err)
+	}
+	if gotPolicy != policy {
+		t.Fatalf("want winning policy %s, got %s", policy, gotPolicy)
+	}
+}

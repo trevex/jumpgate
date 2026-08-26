@@ -920,6 +920,38 @@ CREATE FUNCTION authz_role_goals(p_role uuid, p_object_kind text, p_object_id uu
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_effective_request_policy: the most-specific request policy for activating
+-- p_role on p_asset — asset override (spec 0) > nearest ancestor folder override
+-- (spec depth+1) > role-level default (scopeless, spec 1000000). Returns ≤1 row.
+CREATE FUNCTION authz_effective_request_policy(p_role uuid, p_asset uuid)
+    RETURNS TABLE(policy_id uuid, required_approvals int, approver_role_id uuid,
+                  requester_role_id uuid, max_duration interval)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE ancestors(folder_id, depth) AS (
+        SELECT a.folder_id, 0 FROM assets a WHERE a.id = p_asset
+      UNION ALL
+        SELECT f.parent_id, an.depth + 1
+        FROM ancestors an JOIN folders f ON f.id = an.folder_id
+        WHERE f.parent_id IS NOT NULL
+    ),
+    candidates(id, required_approvals, approver_role_id, requester_role_id, max_duration, spec) AS (
+        SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, 0
+        FROM request_policies rp WHERE rp.role_id = p_role AND rp.scope_asset_id = p_asset
+      UNION ALL
+        SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, an.depth + 1
+        FROM request_policies rp JOIN ancestors an ON rp.scope_folder_id = an.folder_id
+        WHERE rp.role_id = p_role
+      UNION ALL
+        SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, 1000000
+        FROM request_policies rp
+        WHERE rp.role_id = p_role AND rp.scope_folder_id IS NULL AND rp.scope_asset_id IS NULL
+    )
+    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration
+    FROM candidates ORDER BY spec ASC LIMIT 1
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
