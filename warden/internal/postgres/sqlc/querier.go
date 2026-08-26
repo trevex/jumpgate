@@ -27,6 +27,10 @@ type Querier interface {
 	// authz_global_held) ∪ (for assets, CONNECT via an ssh:login entitled over the full
 	// asset-scope cascade). Management cascades DOWN a folder subtree (ltree <@).
 	AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersParams) ([]pgtype.UUID, error)
+	// [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
+	// approver subject of the policy when a request_policy_subjects(kind='approver') row
+	// names them directly or via a (nested) group — subject to the deactivation guard.
+	ApproverSubjectExists(ctx context.Context, arg ApproverSubjectExistsParams) (bool, error)
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
 	AuditChainTip(ctx context.Context) (AuditChainTipRow, error)
@@ -252,6 +256,9 @@ type Querier interface {
 	// (requester_role held STANDING on the asset OR an explicit kind='requester'
 	// subject) AND the user does not already hold it Active on the asset (grants count).
 	RequestableRolesOnAsset(ctx context.Context, arg RequestableRolesOnAssetParams) ([]uuid.UUID, error)
+	// [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
+	// ApproverSubjectExists, differing only by the kind='requester' literal.
+	RequesterSubjectExists(ctx context.Context, arg RequesterSubjectExistsParams) (bool, error)
 	// Revokes a role's still-live grants (not yet revoked, not yet expired) so the
 	// terminator can tear down the sessions they authorized. Used by the DeleteRole
 	// cascade before the role row (and, via FK cascade, these grant rows) is deleted.

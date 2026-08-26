@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 // Rule is an effective request policy for activating a role on an asset.
@@ -25,49 +26,36 @@ type Rule struct {
 }
 
 // Resolver answers approval questions over the control-plane Postgres.
-type Resolver struct{ pool *pgxpool.Pool }
+type Resolver struct {
+	pool *pgxpool.Pool
+	q    *sqlc.Queries
+}
 
 // New constructs a Resolver.
-func New(pool *pgxpool.Pool) *Resolver { return &Resolver{pool: pool} }
+func New(pool *pgxpool.Pool) *Resolver { return &Resolver{pool: pool, q: sqlc.New(pool)} }
 
 // EffectiveRule returns the most-specific request policy for activating roleID on
 // assetID: asset override > nearest ancestor folder override > role-level default
 // (scope NULL). Returns (nil, nil) when no policy exists — the role is not
 // JIT-requestable on that asset.
 func (r *Resolver) EffectiveRule(ctx context.Context, roleID, assetID uuid.UUID) (*Rule, error) {
-	const sql = `
-WITH RECURSIVE ancestors(folder_id, depth) AS (
-    SELECT folder_id, 0 FROM assets WHERE id = @assetID
-  UNION ALL
-    SELECT f.parent_id, a.depth + 1 FROM folders f JOIN ancestors a ON f.id = a.folder_id WHERE f.parent_id IS NOT NULL
-),
-candidates(id, required_approvals, approver_role_id, requester_role_id, max_duration, spec) AS (
-    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 0 FROM request_policies WHERE role_id = @roleID AND scope_asset_id = @assetID
-  UNION ALL
-    SELECT rp.id, rp.required_approvals, rp.approver_role_id, rp.requester_role_id, rp.max_duration, a.depth + 1
-    FROM request_policies rp JOIN ancestors a ON rp.scope_folder_id = a.folder_id WHERE rp.role_id = @roleID
-  UNION ALL
-    SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration, 1000000 FROM request_policies WHERE role_id = @roleID AND scope_folder_id IS NULL AND scope_asset_id IS NULL
-)
-SELECT id, required_approvals, approver_role_id, requester_role_id, max_duration FROM candidates ORDER BY spec ASC LIMIT 1`
-	var id uuid.UUID
-	var req int32
-	var approver pgtype.UUID
-	var requester pgtype.UUID
-	var maxDuration pgtype.Interval
-	err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"roleID": roleID, "assetID": assetID}).Scan(&id, &req, &approver, &requester, &maxDuration)
+	row, err := r.q.EffectiveRequestPolicy(ctx, sqlc.EffectiveRequestPolicyParams{RoleID: roleID, AssetID: assetID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("effective rule: %w", err)
 	}
-	rule := &Rule{ID: id, RequiredApprovals: int(req), MaxDuration: maxDuration}
-	if approver.Valid {
-		rule.ApproverRoleID = uuid.UUID(approver.Bytes)
+	rule := &Rule{
+		ID:                uuid.UUID(row.PolicyID.Bytes),
+		RequiredApprovals: int(row.RequiredApprovals.Int32),
+		MaxDuration:       row.MaxDuration,
 	}
-	if requester.Valid {
-		rule.RequesterRoleID = uuid.UUID(requester.Bytes)
+	if row.ApproverRoleID.Valid {
+		rule.ApproverRoleID = uuid.UUID(row.ApproverRoleID.Bytes)
+	}
+	if row.RequesterRoleID.Valid {
+		rule.RequesterRoleID = uuid.UUID(row.RequesterRoleID.Bytes)
 	}
 	return rule, nil
 }
@@ -91,23 +79,13 @@ func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID
 	}
 
 	// Explicit approver subjects: direct user or (nested) group match, restricted
-	// to kind='approver' so requester subjects never count as approvers.
-	const sql = `
-WITH RECURSIVE user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = @userID
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-)
-SELECT EXISTS (
-    SELECT 1 FROM request_policy_subjects ara
-    WHERE ara.policy_id = @policyID
-      AND ara.kind = 'approver'
-      AND (ara.subject_user_id = @userID OR ara.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user counts for nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @userID AND u.deactivated_at IS NULL)
-)`
-	var explicit bool
-	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"userID": approverUserID, "policyID": rule.ID}).Scan(&explicit); err != nil {
+	// to kind='approver' so requester subjects never count as approvers. A
+	// deactivated user counts for nothing (authz_user_is_active inside the query).
+	explicit, err := r.q.ApproverSubjectExists(ctx, sqlc.ApproverSubjectExistsParams{
+		PolicyID: rule.ID,
+		User:     pgtype.UUID{Bytes: approverUserID, Valid: true},
+	})
+	if err != nil {
 		return false, fmt.Errorf("is approver (explicit): %w", err)
 	}
 	if explicit {
@@ -149,23 +127,13 @@ func (r *Resolver) IsEligibleRequester(ctx context.Context, requesterUserID, req
 	}
 
 	// Explicit requester subjects: direct user or (nested) group match, restricted
-	// to kind='requester'.
-	const sql = `
-WITH RECURSIVE user_groups(group_id) AS (
-    SELECT group_id FROM group_memberships WHERE member_user_id = @userID
-  UNION
-    SELECT gm.group_id FROM group_memberships gm JOIN user_groups ug ON gm.member_group_id = ug.group_id
-)
-SELECT EXISTS (
-    SELECT 1 FROM request_policy_subjects rps
-    WHERE rps.policy_id = @policyID
-      AND rps.kind = 'requester'
-      AND (rps.subject_user_id = @userID OR rps.subject_group_id IN (SELECT group_id FROM user_groups))
-      -- a deactivated user counts for nothing
-      AND EXISTS (SELECT 1 FROM users u WHERE u.id = @userID AND u.deactivated_at IS NULL)
-)`
-	var explicit bool
-	if err := r.pool.QueryRow(ctx, sql, pgx.NamedArgs{"userID": requesterUserID, "policyID": rule.ID}).Scan(&explicit); err != nil {
+	// to kind='requester'. A deactivated user counts for nothing
+	// (authz_user_is_active inside the query).
+	explicit, err := r.q.RequesterSubjectExists(ctx, sqlc.RequesterSubjectExistsParams{
+		PolicyID: rule.ID,
+		User:     pgtype.UUID{Bytes: requesterUserID, Valid: true},
+	})
+	if err != nil {
 		return false, fmt.Errorf("is eligible requester (explicit): %w", err)
 	}
 	if explicit {

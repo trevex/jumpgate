@@ -465,3 +465,28 @@ WHERE a.id = ANY(sqlc.arg('asset_access')::uuid[])
               AND (rc.qualifier = sal.login OR rc.qualifier = '*')
           )
    );
+
+-- name: ApproverSubjectExists :one
+-- [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
+-- approver subject of the policy when a request_policy_subjects(kind='approver') row
+-- names them directly or via a (nested) group — subject to the deactivation guard.
+SELECT EXISTS (
+    SELECT 1 FROM request_policy_subjects rps
+    WHERE rps.policy_id = sqlc.arg('policy_id')
+      AND rps.kind = 'approver'
+      AND (rps.subject_user_id = sqlc.arg('user')
+           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups(sqlc.arg('user'))))
+      AND authz_user_is_active(sqlc.arg('user'))
+);
+
+-- name: RequesterSubjectExists :one
+-- [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
+-- ApproverSubjectExists, differing only by the kind='requester' literal.
+SELECT EXISTS (
+    SELECT 1 FROM request_policy_subjects rps
+    WHERE rps.policy_id = sqlc.arg('policy_id')
+      AND rps.kind = 'requester'
+      AND (rps.subject_user_id = sqlc.arg('user')
+           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups(sqlc.arg('user'))))
+      AND authz_user_is_active(sqlc.arg('user'))
+);

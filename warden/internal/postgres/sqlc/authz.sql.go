@@ -138,6 +138,32 @@ func (q *Queries) AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersPa
 	return items, nil
 }
 
+const approverSubjectExists = `-- name: ApproverSubjectExists :one
+SELECT EXISTS (
+    SELECT 1 FROM request_policy_subjects rps
+    WHERE rps.policy_id = $1
+      AND rps.kind = 'approver'
+      AND (rps.subject_user_id = $2
+           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($2)))
+      AND authz_user_is_active($2)
+)
+`
+
+type ApproverSubjectExistsParams struct {
+	PolicyID uuid.UUID   `json:"policy_id"`
+	User     pgtype.UUID `json:"user"`
+}
+
+// [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
+// approver subject of the policy when a request_policy_subjects(kind='approver') row
+// names them directly or via a (nested) group — subject to the deactivation guard.
+func (q *Queries) ApproverSubjectExists(ctx context.Context, arg ApproverSubjectExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, approverSubjectExists, arg.PolicyID, arg.User)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const effectiveRequestPolicy = `-- name: EffectiveRequestPolicy :one
 SELECT policy_id, required_approvals, approver_role_id, requester_role_id, max_duration
 FROM authz_effective_request_policy($1, $2)
@@ -686,6 +712,31 @@ func (q *Queries) RequestableRolesOnAsset(ctx context.Context, arg RequestableRo
 		return nil, err
 	}
 	return items, nil
+}
+
+const requesterSubjectExists = `-- name: RequesterSubjectExists :one
+SELECT EXISTS (
+    SELECT 1 FROM request_policy_subjects rps
+    WHERE rps.policy_id = $1
+      AND rps.kind = 'requester'
+      AND (rps.subject_user_id = $2
+           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($2)))
+      AND authz_user_is_active($2)
+)
+`
+
+type RequesterSubjectExistsParams struct {
+	PolicyID uuid.UUID   `json:"policy_id"`
+	User     pgtype.UUID `json:"user"`
+}
+
+// [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
+// ApproverSubjectExists, differing only by the kind='requester' literal.
+func (q *Queries) RequesterSubjectExists(ctx context.Context, arg RequesterSubjectExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, requesterSubjectExists, arg.PolicyID, arg.User)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const scopeCapabilitiesAsset = `-- name: ScopeCapabilitiesAsset :many
