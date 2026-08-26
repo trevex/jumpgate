@@ -7,49 +7,15 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
-
-// PostgreSQL SQLSTATE codes used to map DB constraint failures to Connect codes.
-const (
-	pgerrcodeUniqueViolation     = "23505"
-	pgerrcodeForeignKeyViolation = "23503"
-	pgerrcodeCheckViolation      = "23514"
-)
-
-// mapWriteErr maps a Postgres write error to an appropriate Connect code so that
-// bad client input (a reference to a non-existent role/scope/subject, a violated
-// constraint) surfaces as InvalidArgument/AlreadyExists rather than Internal.
-// Returns nil for a nil error.
-func mapWriteErr(err error) error {
-	if err == nil {
-		return nil
-	}
-	// A pre-mapped Connect error (e.g. an InvalidArgument from login validation)
-	// passes through unchanged rather than being masked as Internal.
-	if _, ok := err.(*connect.Error); ok {
-		return err
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case pgerrcodeUniqueViolation:
-			return connect.NewError(connect.CodeAlreadyExists, errors.New("already exists"))
-		case pgerrcodeForeignKeyViolation:
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("references a non-existent entity"))
-		case pgerrcodeCheckViolation:
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("violates a constraint"))
-		}
-	}
-	return connect.NewError(connect.CodeInternal, err)
-}
 
 // CatalogServer implements catalogv1connect.CatalogServiceHandler: folders,
 // assets, and the caller's visible-asset catalog. Authorization config lives in
@@ -76,7 +42,7 @@ type assetTerminator interface {
 // the capability check can then grant a display read). sealer seals inline SSH
 // login secrets during onboarding; a nil sealer fails those write paths closed.
 func NewCatalogServer(q *sqlc.Queries, pool *pgxpool.Pool, authorizer authz.Authorizer, reqReads requestReadAuthorizer, sealer *secrets.Sealer, terminator assetTerminator) *CatalogServer {
-	return &CatalogServer{capGuard: capGuard{authz: authorizer, q: q}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads, sealer: sealer, terminator: terminator}
+	return &CatalogServer{capGuard: capGuard{guard: apiguard.New(authorizer, q)}, q: q, pool: pool, authorizer: authorizer, reqReads: reqReads, sealer: sealer, terminator: terminator}
 }
 
 func pgUUIDToString(u pgtype.UUID) string {

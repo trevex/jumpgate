@@ -12,6 +12,8 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -98,10 +100,10 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 
 	a, err := qtx.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: fid, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
-		return nil, mapWriteErr(err) // a bad folder_id is InvalidArgument, not Internal
+		return nil, apierr.MapWrite(err) // a bad folder_id is InvalidArgument, not Internal
 	}
 	if err := qtx.InsertAssetName(ctx, sqlc.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
-		return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+		return nil, apierr.MapWrite(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 	}
 
 	rows, err := s.resolveSSHConfigInput(ctx, qtx, a.ID, sshIn, true)
@@ -109,7 +111,7 @@ func (s *CatalogServer) CreateAsset(ctx context.Context, req *connect.Request[ca
 		return nil, err
 	}
 	if err := writeSSHConfig(ctx, qtx, a.ID, sshIn.GetHostPublicKey(), sshIn.GetTargetAddress(), rows); err != nil {
-		return nil, mapWriteErr(err) // CHECK / composite-FK → InvalidArgument
+		return nil, apierr.MapWrite(err) // CHECK / composite-FK → InvalidArgument
 	}
 	cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
 	if err != nil {
@@ -191,7 +193,7 @@ func (s *CatalogServer) UpdateAssetConfig(ctx context.Context, req *connect.Requ
 		return nil, err
 	}
 	if err := writeSSHConfig(ctx, qtx, assetID, sshIn.GetHostPublicKey(), sshIn.GetTargetAddress(), rows); err != nil {
-		return nil, mapWriteErr(err) // CHECK / composite-FK → InvalidArgument
+		return nil, apierr.MapWrite(err) // CHECK / composite-FK → InvalidArgument
 	}
 	if err := qtx.DeleteOrphanSecretsForAsset(ctx, assetID); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -224,8 +226,8 @@ func (s *CatalogServer) ListAssets(ctx context.Context, req *connect.Request[cat
 	if len(ids) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	key, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	key, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +255,7 @@ func (s *CatalogServer) ListAssets(ctx context.Context, req *connect.Request[cat
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -453,15 +455,15 @@ func (s *CatalogServer) UpdateAsset(ctx context.Context, req *connect.Request[ca
 			return nil, err
 		}
 		if err := q.UpdateAssetFolder(ctx, sqlc.UpdateAssetFolderParams{ID: id, FolderID: newFolder}); err != nil {
-			return nil, mapWriteErr(err)
+			return nil, apierr.MapWrite(err)
 		}
 	}
 	if newName != cur.Name || moving {
 		if err := q.UpdateAssetName(ctx, sqlc.UpdateAssetNameParams{ID: id, Name: newName}); err != nil {
-			return nil, mapWriteErr(err)
+			return nil, apierr.MapWrite(err)
 		}
 		if err := q.UpdateAssetCatalogName(ctx, sqlc.UpdateAssetCatalogNameParams{AssetID: pgUUID(id), ParentID: pgUUID(newFolder), Name: newName}); err != nil {
-			return nil, mapWriteErr(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+			return nil, apierr.MapWrite(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 		}
 	}
 	if moving {

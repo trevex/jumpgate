@@ -9,6 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -40,7 +43,7 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 	if hasUser == hasGroup {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one of subject_user_id, subject_group_id is required"))
 	}
-	bindScope := scopeOfObject(scopeFolder, scopeAsset)
+	bindScope := apiguard.ScopeOfObject(scopeFolder, scopeAsset)
 	if err := s.requireCap(ctx, "access:binding:create", bindScope); err != nil {
 		return nil, err
 	}
@@ -60,7 +63,7 @@ func (s *AccessServer) CreateRoleBinding(ctx context.Context, req *connect.Reque
 		SubjectUserID: subjUser, SubjectGroupID: subjGroup,
 	})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&accessv1.CreateRoleBindingResponse{Id: rb.ID.String()}), nil
 }
@@ -105,7 +108,7 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 	}
 	// Scope the cap check to the pinned object (asset > folder > global).
-	if err := s.requireCap(ctx, "access:binding:read", scopeOfObject(scopeFolder, scopeAsset)); err != nil {
+	if err := s.requireCap(ctx, "access:binding:read", apiguard.ScopeOfObject(scopeFolder, scopeAsset)); err != nil {
 		return nil, err
 	}
 	subjUser, _, err := optUUID(req.Msg.SubjectUserId)
@@ -116,8 +119,8 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +151,7 @@ func (s *AccessServer) ListRoleBindings(ctx context.Context, req *connect.Reques
 	// access_grants.granted_at) use that column instead.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

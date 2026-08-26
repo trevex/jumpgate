@@ -11,6 +11,7 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -255,13 +256,13 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		}
 		pathByFolder := map[uuid.UUID]string{}
 		for i := range rows {
-			caps, err := roleCapsStrings(ctx, s.q, rows[i].ID)
+			caps, err := apiguard.RoleCapsStrings(ctx, s.q, rows[i].ID)
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInternal, err)
 			}
 			m := toAccessRoleMsg(rows[i], caps)
 			if rows[i].FolderID.Valid {
-				fid := uuidFromPg(rows[i].FolderID)
+				fid := apiguard.UUIDFromPg(rows[i].FolderID)
 				p, ok := pathByFolder[fid]
 				if !ok {
 					if p, err = s.q.FolderPath(ctx, fid); err != nil {
@@ -296,7 +297,7 @@ func (s *CatalogServer) ListFolderContents(ctx context.Context, req *connect.Req
 		for i := range rows {
 			m := toGroupMsg(rows[i])
 			if rows[i].FolderID.Valid {
-				fid := uuidFromPg(rows[i].FolderID)
+				fid := apiguard.UUIDFromPg(rows[i].FolderID)
 				p, ok := pathByFolder[fid]
 				if !ok {
 					if p, err = s.q.FolderPath(ctx, fid); err != nil {
@@ -442,7 +443,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 			// just its name.
 			path := rows[i].Name
 			if rows[i].FolderID.Valid {
-				fp, err := folderPath(uuidFromPg(rows[i].FolderID))
+				fp, err := folderPath(apiguard.UUIDFromPg(rows[i].FolderID))
 				if err != nil {
 					return nil, connect.NewError(connect.CodeInternal, err)
 				}
@@ -469,7 +470,7 @@ func (s *CatalogServer) SearchCatalog(ctx context.Context, req *connect.Request[
 			// is just its name.
 			path := rows[i].Name
 			if rows[i].FolderID.Valid {
-				fp, err := folderPath(uuidFromPg(rows[i].FolderID))
+				fp, err := folderPath(apiguard.UUIDFromPg(rows[i].FolderID))
 				if err != nil {
 					return nil, connect.NewError(connect.CodeInternal, err)
 				}

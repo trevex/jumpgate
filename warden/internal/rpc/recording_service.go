@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	recordingv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
@@ -61,7 +63,7 @@ type RecordingServer struct {
 // authorizes grant-scoped review (subject or potential approver) on top of the
 // recording:read gate; a nil reviewer disables that additive path.
 func NewRecordingServer(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *RecordingServer {
-	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, capGuard: capGuard{authz: a, q: q}}
+	return &RecordingServer{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, capGuard: capGuard{guard: apiguard.New(a, q)}}
 }
 
 func toRecordingMsg(r sqlc.SessionRecording) *recordingv1.Recording {
@@ -122,7 +124,7 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 	}
 	// An asset-scoped filter narrows the required cap to that asset; an unfiltered
 	// (fleet-wide) list requires the global recording:read.
-	assetFilter := uuidFromPg(params.AssetID)
+	assetFilter := apiguard.UUIDFromPg(params.AssetID)
 	scope := authz.GlobalScope()
 	if assetFilter != uuid.Nil {
 		scope = authz.AssetScope(assetFilter)
@@ -157,7 +159,7 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 		limit = maxRecordingPageSize
 	}
 	params.Lim = int64(limit)
-	k, err := decodePageToken(req.Msg.PageToken)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ func (s *RecordingServer) ListRecordings(ctx context.Context, req *connect.Reque
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.SessionID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.SessionID)
 	}
 	return connect.NewResponse(out), nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
@@ -40,22 +41,7 @@ type roleDeleter interface {
 // pending access request but lack the read capability; a nil reqReads disables that
 // path (only the capability grants the read). deleter runs the DeleteRole cascade.
 func NewAccessServer(q *sqlc.Queries, pool *pgxpool.Pool, roles *authz.RoleResolver, a authz.Authorizer, reqReads requestReadAuthorizer, deleter roleDeleter) *AccessServer {
-	return &AccessServer{q: q, pool: pool, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{authz: a, q: q}}
-}
-
-// roleCapsStrings queries role_capabilities for the given role and returns the
-// reconstructed capability pattern strings. Used wherever a role's capability list
-// is needed for display or no-escalation checks.
-func roleCapsStrings(ctx context.Context, q *sqlc.Queries, roleID uuid.UUID) ([]string, error) {
-	rows, err := q.RoleCapabilityRows(ctx, roleID)
-	if err != nil {
-		return nil, err
-	}
-	caps := make([]string, 0, len(rows))
-	for _, row := range rows {
-		caps = append(caps, authz.ReconstructCap(row.Scope, row.Action, row.Qualifier))
-	}
-	return caps, nil
+	return &AccessServer{q: q, pool: pool, roles: roles, reqReads: reqReads, deleter: deleter, capGuard: capGuard{guard: apiguard.New(a, q)}}
 }
 
 func toAccessRoleMsg(r sqlc.Role, caps []string) *accessv1.Role {
@@ -69,13 +55,13 @@ func toAccessRoleMsg(r sqlc.Role, caps []string) *accessv1.Role {
 
 // roleMsgWithPath returns the role message with folder_path and capabilities populated.
 func (s *AccessServer) roleMsgWithPath(ctx context.Context, r sqlc.Role) (*accessv1.Role, error) {
-	caps, err := roleCapsStrings(ctx, s.q, r.ID)
+	caps, err := apiguard.RoleCapsStrings(ctx, s.q, r.ID)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	m := toAccessRoleMsg(r, caps)
 	if r.FolderID.Valid {
-		fp, err := s.q.FolderPath(ctx, uuidFromPg(r.FolderID))
+		fp, err := s.q.FolderPath(ctx, apiguard.UUIDFromPg(r.FolderID))
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -171,9 +157,9 @@ func (s *AccessServer) containedInRoleSubtree(ctx context.Context, roleID uuid.U
 	var target uuid.UUID
 	switch {
 	case scopeFolder.Valid:
-		target = uuidFromPg(scopeFolder)
+		target = apiguard.UUIDFromPg(scopeFolder)
 	case scopeAsset.Valid:
-		a, err := s.q.GetAsset(ctx, uuidFromPg(scopeAsset))
+		a, err := s.q.GetAsset(ctx, apiguard.UUIDFromPg(scopeAsset))
 		if err != nil {
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 		}
@@ -186,7 +172,7 @@ func (s *AccessServer) containedInRoleSubtree(ctx context.Context, roleID uuid.U
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
-	roleFolder := uuidFromPg(role.FolderID)
+	roleFolder := apiguard.UUIDFromPg(role.FolderID)
 	for _, a := range ancestors {
 		if a == roleFolder {
 			return nil

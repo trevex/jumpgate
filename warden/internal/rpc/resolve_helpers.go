@@ -7,7 +7,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
@@ -55,33 +54,6 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 	}
 	return folderID, nil
 }
-
-// roleNotFoundOrInternal maps pgx.ErrNoRows to NotFound and anything else to Internal.
-func roleNotFoundOrInternal(err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return connect.NewError(connect.CodeNotFound, errors.New("no such role"))
-	}
-	return connect.NewError(connect.CodeInternal, err)
-}
-
-// groupNotFoundOrInternal maps pgx.ErrNoRows to NotFound and anything else to Internal.
-func groupNotFoundOrInternal(err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
-		return connect.NewError(connect.CodeNotFound, errors.New("group not found"))
-	}
-	return connect.NewError(connect.CodeInternal, err)
-}
-
-// uuidFromPg converts a pgtype.UUID to a uuid.UUID.
-//
-// Precondition: the caller must ensure the value is meaningful for its use —
-// either the column is NOT NULL, or the caller has already checked u.Valid.
-// A NULL (u.Valid == false) yields uuid.Nil rather than an error, so passing an
-// unguarded nullable value silently substitutes the zero UUID. Callers reading
-// nullable columns (e.g. roles/groups folder_id) MUST guard on u.Valid first.
-// The one deliberate consumer of the NULL→uuid.Nil mapping is the recording
-// asset filter, which treats uuid.Nil as "no filter" (fleet-wide).
-func uuidFromPg(u pgtype.UUID) uuid.UUID { return u.Bytes }
 
 // roleRefs resolves role ids to {id, name, folder_path}, computing each distinct
 // scoped folder's path once. Preserves the input order.

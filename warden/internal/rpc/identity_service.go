@@ -13,6 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -47,7 +50,7 @@ type IdentityServer struct {
 // the user's remaining live sessions; either may be nil in tests that don't
 // exercise deactivation teardown.
 func NewIdentityServer(q *sqlc.Queries, pool *pgxpool.Pool, tokens *auth.TokenService, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *IdentityServer {
-	return &IdentityServer{q: q, pool: pool, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{authz: a, q: q}}
+	return &IdentityServer{q: q, pool: pool, tokens: tokens, revoker: revoker, evictor: evictor, capGuard: capGuard{guard: apiguard.New(a, q)}}
 }
 
 func toUserMsg(u sqlc.User) *identityv1.User {
@@ -62,7 +65,7 @@ func toGroupMsg(g sqlc.Group) *identityv1.Group {
 func (s *IdentityServer) groupMsgWithPath(ctx context.Context, g sqlc.Group) (*identityv1.Group, error) {
 	m := toGroupMsg(g)
 	if g.FolderID.Valid {
-		fp, err := s.q.FolderPath(ctx, uuidFromPg(g.FolderID))
+		fp, err := s.q.FolderPath(ctx, apiguard.UUIDFromPg(g.FolderID))
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -162,8 +165,8 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	if _, ok := auth.UserFromContext(ctx); !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +188,7 @@ func (s *IdentityServer) ListUsers(ctx context.Context, req *connect.Request[ide
 	// encodeNameToken takes the SORT-KEY column: email here.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Email, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Email, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -196,12 +199,12 @@ func (s *IdentityServer) CreateGroup(ctx context.Context, req *connect.Request[i
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
-	if err := s.requireCap(ctx, "identity:group:create", scopeOfFolderID(folderID)); err != nil {
+	if err := s.requireCap(ctx, "identity:group:create", apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
 	g, err := s.q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	m, err := s.groupMsgWithPath(ctx, g)
 	if err != nil {
@@ -221,30 +224,30 @@ func (s *IdentityServer) ResolveGroup(ctx context.Context, req *connect.Request[
 	if id, perr := uuid.Parse(ref); perr == nil {
 		g, err := s.q.GetGroup(ctx, id)
 		if err != nil {
-			return nil, groupNotFoundOrInternal(err)
+			return nil, apierr.GroupNotFoundOrInternal(err)
 		}
 		grp = g
 	} else if at := strings.LastIndex(ref, "@"); at >= 0 {
 		name, folderPath := ref[:at], ref[at+1:]
 		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
 		if err != nil {
-			return nil, groupNotFoundOrInternal(err)
+			return nil, apierr.GroupNotFoundOrInternal(err)
 		}
 		g, err := s.q.GetGroupByFolderAndName(ctx, sqlc.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
 		if err != nil {
-			return nil, groupNotFoundOrInternal(err)
+			return nil, apierr.GroupNotFoundOrInternal(err)
 		}
 		grp = g
 	} else {
 		g, err := s.q.GetGroupByNameGlobal(ctx, ref)
 		if err != nil {
-			return nil, groupNotFoundOrInternal(err)
+			return nil, apierr.GroupNotFoundOrInternal(err)
 		}
 		grp = g
 	}
 	// Existence-hide a read-cap denial as NotFound (must not reveal a group
 	// outside the caller's read scope).
-	if err := s.requireCap(ctx, "identity:group:read", scopeOfFolderID(grp.FolderID)); err != nil {
+	if err := s.requireCap(ctx, "identity:group:read", apiguard.ScopeOfFolderID(grp.FolderID)); err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
 	}
 	m, err := s.groupMsgWithPath(ctx, grp)
@@ -272,7 +275,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	if err != nil {
 		return nil, err
 	}
-	ids, err := s.authz.VisibleGroupsUnder(ctx, u.ID, parent, req.Msg.Cascade)
+	ids, err := s.guard.Authz.VisibleGroupsUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -280,8 +283,8 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	if len(ids) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	key, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	key, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +301,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	for i := range rows {
 		m := toGroupMsg(rows[i])
 		if rows[i].FolderID.Valid {
-			fid := uuidFromPg(rows[i].FolderID)
+			fid := apiguard.UUIDFromPg(rows[i].FolderID)
 			p, ok := pathByFolder[fid]
 			if !ok {
 				p, err = s.q.FolderPath(ctx, fid)
@@ -317,7 +320,7 @@ func (s *IdentityServer) ListGroups(ctx context.Context, req *connect.Request[id
 	// column: here name.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -410,7 +413,7 @@ func (s *IdentityServer) RemoveUserFromGroup(ctx context.Context, req *connect.R
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 	}
 	if err := s.q.RemoveUserFromGroup(ctx, sqlc.RemoveUserFromGroupParams{GroupID: gid, MemberUserID: pgUUID(uid)}); err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&identityv1.RemoveUserFromGroupResponse{}), nil
 }
@@ -433,7 +436,7 @@ func (s *IdentityServer) RemoveGroupFromGroup(ctx context.Context, req *connect.
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad member_group_id"))
 	}
 	if err := s.q.RemoveGroupFromGroup(ctx, sqlc.RemoveGroupFromGroupParams{GroupID: gid, MemberGroupID: pgUUID(mid)}); err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&identityv1.RemoveGroupFromGroupResponse{}), nil
 }
@@ -454,8 +457,8 @@ func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Requ
 	if err := s.requireCap(ctx, "identity:group:read", scope); err != nil {
 		return nil, err
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -471,14 +474,14 @@ func (s *IdentityServer) ListGroupMembers(ctx context.Context, req *connect.Requ
 	out := &identityv1.ListGroupMembersResponse{}
 	for i := range rows {
 		if rows[i].MemberUserID.Valid {
-			out.Users = append(out.Users, &identityv1.User{Id: uuidFromPg(rows[i].MemberUserID).String()})
+			out.Users = append(out.Users, &identityv1.User{Id: apiguard.UUIDFromPg(rows[i].MemberUserID).String()})
 		} else if rows[i].MemberGroupID.Valid {
-			out.Groups = append(out.Groups, &identityv1.Group{Id: uuidFromPg(rows[i].MemberGroupID).String()})
+			out.Groups = append(out.Groups, &identityv1.Group{Id: apiguard.UUIDFromPg(rows[i].MemberGroupID).String()})
 		}
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -542,7 +545,7 @@ func (s *IdentityServer) DeleteUser(ctx context.Context, req *connect.Request[id
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
 	}
 	if err := s.q.DeleteUser(ctx, uid); err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&identityv1.DeleteUserResponse{}), nil
 }
@@ -562,14 +565,14 @@ func (s *IdentityServer) GetGroupAccess(ctx context.Context, req *connect.Reques
 	}
 	grp, err := s.q.GetGroup(ctx, id)
 	if err != nil {
-		return nil, groupNotFoundOrInternal(err)
+		return nil, apierr.GroupNotFoundOrInternal(err)
 	}
-	caps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(grp.FolderID))
+	caps, err := s.guard.Authz.CapabilitiesOnScope(ctx, u.ID, apiguard.ScopeOfFolderID(grp.FolderID))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if len(caps) == 0 {
-		member, err := s.authz.IsMember(ctx, u.ID, id)
+		member, err := s.guard.Authz.IsMember(ctx, u.ID, id)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
@@ -596,7 +599,7 @@ func (s *IdentityServer) DeleteGroup(ctx context.Context, req *connect.Request[i
 		return nil, err
 	}
 	if err := s.q.DeleteGroup(ctx, gid); err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&identityv1.DeleteGroupResponse{}), nil
 }

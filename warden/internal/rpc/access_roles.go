@@ -10,6 +10,9 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -21,7 +24,7 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
-	if err := s.requireCap(ctx, "access:role:create", scopeOfFolderID(folderID)); err != nil {
+	if err := s.requireCap(ctx, "access:role:create", apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -32,7 +35,7 @@ func (s *AccessServer) CreateRole(ctx context.Context, req *connect.Request[acce
 	qtx := s.q.WithTx(tx)
 	r, err := qtx.CreateRole(ctx, sqlc.CreateRoleParams{Name: req.Msg.Name, FolderID: folderID})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	for _, cap := range req.Msg.Capabilities {
 		sc, ac, qu := authz.NormalizeCap(cap)
@@ -57,27 +60,27 @@ func (s *AccessServer) ResolveRole(ctx context.Context, req *connect.Request[acc
 	if id, perr := uuid.Parse(ref); perr == nil {
 		r, err := s.q.GetRole(ctx, id)
 		if err != nil {
-			return nil, roleNotFoundOrInternal(err)
+			return nil, apierr.RoleNotFoundOrInternal(err)
 		}
 		role = r
 	} else if name, folderPath, ok := strings.Cut(ref, "."); ok {
 		folderID, err := resolveFolderIDByPath(ctx, s.q, folderPath)
 		if err != nil {
-			return nil, roleNotFoundOrInternal(err)
+			return nil, apierr.RoleNotFoundOrInternal(err)
 		}
 		r, err := s.q.GetRoleByFolderAndName(ctx, sqlc.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
 		if err != nil {
-			return nil, roleNotFoundOrInternal(err)
+			return nil, apierr.RoleNotFoundOrInternal(err)
 		}
 		role = r
 	} else {
 		r, err := s.q.GetRoleByNameGlobal(ctx, ref)
 		if err != nil {
-			return nil, roleNotFoundOrInternal(err)
+			return nil, apierr.RoleNotFoundOrInternal(err)
 		}
 		role = r
 	}
-	if err := s.requireCap(ctx, "access:role:read", scopeOfFolderID(role.FolderID)); err != nil {
+	if err := s.requireCap(ctx, "access:role:read", apiguard.ScopeOfFolderID(role.FolderID)); err != nil {
 		return nil, err
 	}
 	m, err := s.roleMsgWithPath(ctx, role)
@@ -105,7 +108,7 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	if err != nil {
 		return nil, err
 	}
-	ids, err := s.authz.VisibleRolesUnder(ctx, u.ID, parent, req.Msg.Cascade)
+	ids, err := s.guard.Authz.VisibleRolesUnder(ctx, u.ID, parent, req.Msg.Cascade)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -113,8 +116,8 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	if len(ids) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	key, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	key, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +132,13 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	}
 	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
-		caps, err := roleCapsStrings(ctx, s.q, rows[i].ID)
+		caps, err := apiguard.RoleCapsStrings(ctx, s.q, rows[i].ID)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		m := toAccessRoleMsg(rows[i], caps)
 		if rows[i].FolderID.Valid {
-			fid := uuidFromPg(rows[i].FolderID)
+			fid := apiguard.UUIDFromPg(rows[i].FolderID)
 			p, ok := pathByFolder[fid]
 			if !ok {
 				p, err = s.q.FolderPath(ctx, fid)
@@ -154,7 +157,7 @@ func (s *AccessServer) ListRoles(ctx context.Context, req *connect.Request[acces
 	// column: here name.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -169,7 +172,7 @@ func (s *AccessServer) GetRole(ctx context.Context, req *connect.Request[accessv
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	if err := s.requireCap(ctx, "access:role:read", scopeOfFolderID(r.FolderID)); err != nil {
+	if err := s.requireCap(ctx, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); err != nil {
 		return nil, err
 	}
 	m, err := s.roleMsgWithPath(ctx, r)
@@ -230,7 +233,7 @@ func (s *AccessServer) GetRoleDisplay(ctx context.Context, req *connect.Request[
 	// Authorize: access:role:read at the role's folder scope OR party to a pending
 	// access request referencing this role. On cap-deny, preserve the original
 	// PermissionDenied unless the request-party path grants the read.
-	if capErr := s.requireCap(ctx, "access:role:read", scopeOfFolderID(r.FolderID)); capErr != nil {
+	if capErr := s.requireCap(ctx, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); capErr != nil {
 		caller, ok := auth.UserFromContext(ctx)
 		if !ok || s.reqReads == nil {
 			return nil, capErr
@@ -273,9 +276,9 @@ func (s *AccessServer) GetRoleAccess(ctx context.Context, req *connect.Request[a
 	}
 	role, err := s.q.GetRole(ctx, id)
 	if err != nil {
-		return nil, roleNotFoundOrInternal(err)
+		return nil, apierr.RoleNotFoundOrInternal(err)
 	}
-	caps, err := s.authz.CapabilitiesOnScope(ctx, u.ID, scopeOfFolderID(role.FolderID))
+	caps, err := s.guard.Authz.CapabilitiesOnScope(ctx, u.ID, apiguard.ScopeOfFolderID(role.FolderID))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

@@ -12,6 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -28,7 +31,7 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 		}
 		parent = pgUUID(pid)
 	}
-	if err := s.requireCap(ctx, "catalog:folder:create", scopeOfFolderID(parent)); err != nil {
+	if err := s.requireCap(ctx, "catalog:folder:create", apiguard.ScopeOfFolderID(parent)); err != nil {
 		return nil, err
 	}
 	name := strings.ToLower(req.Msg.Name)
@@ -42,10 +45,10 @@ func (s *CatalogServer) CreateFolder(ctx context.Context, req *connect.Request[c
 
 	f, err := qtx.CreateFolder(ctx, sqlc.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
-		return nil, mapWriteErr(err) // a bad parent_id is InvalidArgument, not Internal
+		return nil, apierr.MapWrite(err) // a bad parent_id is InvalidArgument, not Internal
 	}
 	if err := qtx.InsertFolderName(ctx, sqlc.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
-		return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
+		return nil, apierr.MapWrite(err) // sibling collision -> AlreadyExists
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -137,8 +140,8 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	if len(ids) == 0 {
 		return connect.NewResponse(out), nil
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	key, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	key, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +170,7 @@ func (s *CatalogServer) ListFolders(ctx context.Context, req *connect.Request[ca
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -353,15 +356,15 @@ func (s *CatalogServer) UpdateFolder(ctx context.Context, req *connect.Request[c
 			return nil, err
 		}
 		if err := q.UpdateFolderParent(ctx, sqlc.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
-			return nil, mapWriteErr(err)
+			return nil, apierr.MapWrite(err)
 		}
 	}
 	if newName != cur.Name || moving {
 		if err := q.UpdateFolderName(ctx, sqlc.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
-			return nil, mapWriteErr(err)
+			return nil, apierr.MapWrite(err)
 		}
 		if err := q.UpdateFolderCatalogName(ctx, sqlc.UpdateFolderCatalogNameParams{FolderID: pgUUID(id), ParentID: newParent, Name: newName}); err != nil {
-			return nil, mapWriteErr(err) // sibling collision -> AlreadyExists
+			return nil, apierr.MapWrite(err) // sibling collision -> AlreadyExists
 		}
 	}
 	if moving {

@@ -11,6 +11,8 @@ import (
 
 	accessrequestv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
@@ -29,7 +31,7 @@ type AccessRequestServer struct {
 
 // NewAccessRequestServer constructs the AccessRequestService implementation.
 func NewAccessRequestServer(resolver *approvals.Resolver, svc *accessrequest.Service, a authz.Authorizer, q *sqlc.Queries) *AccessRequestServer {
-	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{authz: a, q: q}}
+	return &AccessRequestServer{resolver: resolver, svc: svc, capGuard: capGuard{guard: apiguard.New(a, q)}}
 }
 
 // mapAccessRequestErr maps a domain sentinel to a Connect error.
@@ -106,11 +108,11 @@ func toGrantMsg(g accessrequest.Grant) *accessrequestv1.Grant {
 // grantAssetPath resolves the DNS-style asset path for a grant (best-effort;
 // returns "" on any lookup error so the caller degrades gracefully).
 func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.UUID) string {
-	a, err := s.q.GetAsset(ctx, assetID)
+	a, err := s.guard.Q.GetAsset(ctx, assetID)
 	if err != nil {
 		return ""
 	}
-	fp, err := s.q.FolderPath(ctx, a.FolderID)
+	fp, err := s.guard.Q.FolderPath(ctx, a.FolderID)
 	if err != nil {
 		return a.Name
 	}
@@ -120,7 +122,7 @@ func (s *AccessRequestServer) grantAssetPath(ctx context.Context, assetID uuid.U
 // grantLoginsFromRole extracts the ssh:login:<x> capability values from
 // role_capabilities. Wildcard values ("*", "**") are skipped.
 func (s *AccessRequestServer) grantLoginsFromRole(ctx context.Context, roleID uuid.UUID) []string {
-	caps, err := roleCapsStrings(ctx, s.q, roleID)
+	caps, err := apiguard.RoleCapsStrings(ctx, s.guard.Q, roleID)
 	if err != nil {
 		return nil
 	}
@@ -247,8 +249,8 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.R
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +273,7 @@ func (s *AccessRequestServer) ListMyRequests(ctx context.Context, req *connect.R
 	// column: here created_at.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -289,8 +291,8 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +313,7 @@ func (s *AccessRequestServer) ListPendingApprovals(ctx context.Context, req *con
 	// filtered result is short or empty. The cursor tracks the SQL position so
 	// the next call resumes past everything already examined.
 	if next != nil {
-		out.NextPageToken = encodeTimeToken(next.Ts, next.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(next.Ts, next.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -345,8 +347,8 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +374,7 @@ func (s *AccessRequestServer) ListMyGrants(ctx context.Context, req *connect.Req
 	// column: here granted_at (NOT created_at — access_grants has no created_at).
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.GrantedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.GrantedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -396,8 +398,8 @@ func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *con
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +426,7 @@ func (s *AccessRequestServer) ListReviewableGrants(ctx context.Context, req *con
 	// on granted_at, the sort column) so the next call resumes past everything
 	// already examined.
 	if next != nil {
-		out.NextPageToken = encodeTimeToken(next.Ts, next.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(next.Ts, next.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -444,8 +446,8 @@ func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Reque
 		}
 		filter.Subject = sid
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +470,7 @@ func (s *AccessRequestServer) ListGrants(ctx context.Context, req *connect.Reque
 	// column: here granted_at (NOT created_at — access_grants has no created_at).
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.GrantedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.GrantedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

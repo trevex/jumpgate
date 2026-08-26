@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
@@ -44,7 +46,7 @@ func (s *AccessServer) AddRoleGrant(ctx context.Context, req *connect.Request[ac
 	}
 	g, err := s.q.CreateRoleGrant(ctx, sqlc.CreateRoleGrantParams{RoleID: roleID, SourceRoleID: sourceRoleID, Via: req.Msg.Via})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&accessv1.AddRoleGrantResponse{Grant: toAccessRoleGrantMsg(g)}), nil
 }
@@ -94,8 +96,8 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	if err := s.requireCap(ctx, "access:role:read", scope); err != nil {
 		return nil, err
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +120,7 @@ func (s *AccessServer) ListRoleGrants(ctx context.Context, req *connect.Request[
 	// column: here created_at.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

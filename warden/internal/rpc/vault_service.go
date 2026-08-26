@@ -13,6 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
@@ -41,7 +44,7 @@ type VaultServer struct {
 // NewVaultServer constructs the VaultService implementation. A nil sealer
 // disables the sealing write paths (vault disabled).
 func NewVaultServer(q *sqlc.Queries, sealer *secrets.Sealer, a authz.Authorizer) *VaultServer {
-	return &VaultServer{q: q, sealer: sealer, capGuard: capGuard{authz: a, q: q}}
+	return &VaultServer{q: q, sealer: sealer, capGuard: capGuard{guard: apiguard.New(a, q)}}
 }
 
 // InitCA generates and seals a new active CA of the requested kind, returning
@@ -81,7 +84,7 @@ func (s *VaultServer) InitCA(ctx context.Context, req *connect.Request[vaultv1.I
 	}
 	row, err := s.q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: kind, Sealed: sealed, PublicMaterial: publicMaterial})
 	if err != nil {
-		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
+		return nil, apierr.MapWrite(err) // uq_active_ca violation → AlreadyExists
 	}
 	return connect.NewResponse(&vaultv1.InitCAResponse{PublicMaterial: row.PublicMaterial}), nil
 }
@@ -106,7 +109,7 @@ func (s *VaultServer) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	if _, err := s.q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{Kind: "mesh", Sealed: sealed, PublicMaterial: string(certPEM)}); err != nil {
-		return nil, mapWriteErr(err) // uq_active_ca violation → AlreadyExists
+		return nil, apierr.MapWrite(err) // uq_active_ca violation → AlreadyExists
 	}
 	return connect.NewResponse(&vaultv1.InitMeshCAResponse{CaCertPem: certPEM}), nil
 }
@@ -215,7 +218,7 @@ func (s *VaultServer) SetAssetSecret(ctx context.Context, req *connect.Request[v
 	}
 	row, err := s.q.SetAssetSecret(ctx, sqlc.SetAssetSecretParams{AssetID: assetID, Name: req.Msg.Name, Sealed: sealed})
 	if err != nil {
-		return nil, mapWriteErr(err) // bad asset FK → InvalidArgument
+		return nil, apierr.MapWrite(err) // bad asset FK → InvalidArgument
 	}
 	return connect.NewResponse(&vaultv1.SetAssetSecretResponse{Id: row.ID.String()}), nil
 }
@@ -246,7 +249,7 @@ func (s *VaultServer) DeleteAssetSecret(ctx context.Context, req *connect.Reques
 	if err := s.q.DeleteAssetSecret(ctx, id); err != nil {
 		// A secret still referenced by an ssh_asset_config (ON DELETE RESTRICT) is a
 		// client-fixable precondition, not an Internal error.
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&vaultv1.DeleteAssetSecretResponse{}), nil
 }
@@ -262,8 +265,8 @@ func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request
 	if err := s.requireCap(ctx, "vault:secret:read", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +289,7 @@ func (s *VaultServer) ListAssetSecrets(ctx context.Context, req *connect.Request
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeNameToken(last.Name, last.ID)
+		out.NextPageToken = apipage.EncodeNameToken(last.Name, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }

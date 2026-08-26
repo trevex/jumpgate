@@ -11,6 +11,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
@@ -41,7 +44,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
-	policyScope := scopeOfObject(scopeFolder, scopeAsset)
+	policyScope := apiguard.ScopeOfObject(scopeFolder, scopeAsset)
 	if err := s.requireCap(ctx, "access:policy:create", policyScope); err != nil {
 		return nil, err
 	}
@@ -66,7 +69,7 @@ func (s *AccessServer) CreateRequestPolicy(ctx context.Context, req *connect.Req
 		Name:              pgText(strings.ToLower(req.Msg.GetName())),
 	})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&accessv1.CreateRequestPolicyResponse{Policy: toRequestPolicyMsg(policy)}), nil
 }
@@ -100,7 +103,7 @@ func (s *AccessServer) UpdateRequestPolicy(ctx context.Context, req *connect.Req
 		MaxDuration:       secondsToInterval(req.Msg.MaxDurationSeconds),
 	})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&accessv1.UpdateRequestPolicyResponse{Policy: toRequestPolicyMsg(policy)}), nil
 }
@@ -134,8 +137,8 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +161,7 @@ func (s *AccessServer) ListRequestPolicies(ctx context.Context, req *connect.Req
 	// column: here created_at.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -173,8 +176,8 @@ func (s *AccessServer) ListPoliciesForAsset(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +196,7 @@ func (s *AccessServer) ListPoliciesForAsset(ctx context.Context, req *connect.Re
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -208,8 +211,8 @@ func (s *AccessServer) ListPoliciesForGroup(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +231,7 @@ func (s *AccessServer) ListPoliciesForGroup(ctx context.Context, req *connect.Re
 	}
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -287,7 +290,7 @@ func (s *AccessServer) AddPolicySubject(ctx context.Context, req *connect.Reques
 		SubjectGroupID: subjGroup,
 	})
 	if err != nil {
-		return nil, mapWriteErr(err)
+		return nil, apierr.MapWrite(err)
 	}
 	return connect.NewResponse(&accessv1.AddPolicySubjectResponse{Id: ps.ID.String()}), nil
 }
@@ -330,8 +333,8 @@ func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Requ
 	if err := s.requireCap(ctx, "access:policy:read", scope); err != nil {
 		return nil, err
 	}
-	limit := clampPageSize(req.Msg.PageSize)
-	k, err := decodePageToken(req.Msg.PageToken)
+	limit := apipage.ClampPageSize(req.Msg.PageSize)
+	k, err := apipage.DecodePageToken(req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +357,7 @@ func (s *AccessServer) ListPolicySubjects(ctx context.Context, req *connect.Requ
 	// column: here created_at.
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		out.NextPageToken = encodeTimeToken(last.CreatedAt, last.ID)
+		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
 }
