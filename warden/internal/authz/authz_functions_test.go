@@ -216,3 +216,32 @@ SELECT DISTINCT role_id FROM global_held`, pgxNamed(u))
 		t.Fatalf("old=%d new=%d", len(old), len(neu))
 	}
 }
+
+func TestAuthzRoleGoalsBacksHoldsRole(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	_, alice, _, _, _, _, a1, _ := seedTree(t, pool)
+	// find a role alice holds on a1 via the OLD resolver, then confirm the function
+	// yields the same EXISTS answer for that (role, asset).
+	// (seedTree binds alice to some role on a1; discover it.)
+	var roleID uuid.UUID
+	if err := pool.QueryRow(ctx, heldCTE+`
+SELECT role_id FROM held WHERE object_kind='asset' AND object_id=@assetID LIMIT 1`,
+		pgx.NamedArgs{"user": alice, "assetID": a1}).Scan(&roleID); err != nil {
+		t.Skipf("seedTree gave alice no asset role: %v", err)
+	}
+	var ok bool
+	if err := pool.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM authz_role_goals($1,'asset',$2) g
+    JOIN role_bindings rb ON rb.role_id = g.role_id
+      AND rb.scope_asset_id = g.object_id
+      AND (rb.subject_user_id = $3 OR rb.subject_group_id IN (SELECT group_id FROM authz_user_groups($3)))
+    WHERE authz_user_is_active($3)
+)`, roleID, a1, alice).Scan(&ok); err != nil {
+		t.Fatalf("goals: %v", err)
+	}
+	if !ok {
+		t.Fatalf("authz_role_goals failed to back HoldsRole for role %s on %s", roleID, a1)
+	}
+}

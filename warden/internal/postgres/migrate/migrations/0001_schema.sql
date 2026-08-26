@@ -887,6 +887,39 @@ CREATE FUNCTION authz_global_held(p_user uuid)
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- authz_role_goals: the backward goal-expansion closure backing HoldsRole /
+-- HoldsRoleStanding. Seeded with the queried (role, object) — NOT user-scoped —
+-- it expands via role_grants (same_object + parent) into every (role, object)
+-- whose satisfaction would confer the seed. Cycle-safe via UNION dedup.
+CREATE FUNCTION authz_role_goals(p_role uuid, p_object_kind text, p_object_id uuid)
+    RETURNS TABLE(role_id uuid, object_kind text, object_id uuid)
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE goals(role_id, object_kind, object_id) AS (
+        SELECT p_role, p_object_kind, p_object_id
+      UNION
+        SELECT ng.next_role_id, ng.next_kind, ng.next_object_id
+        FROM goals g,
+             LATERAL (
+                 SELECT rg.source_role_id AS next_role_id, g.object_kind AS next_kind, g.object_id AS next_object_id
+                 FROM role_grants rg
+                 WHERE rg.role_id = g.role_id AND rg.via = 'same_object'
+               UNION ALL
+                 SELECT rg.source_role_id, 'folder'::text, a.folder_id
+                 FROM role_grants rg
+                 JOIN assets a ON g.object_kind = 'asset' AND a.id = g.object_id
+                 WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+               UNION ALL
+                 SELECT rg.source_role_id, 'folder'::text, f.parent_id
+                 FROM role_grants rg
+                 JOIN folders f ON g.object_kind = 'folder' AND f.id = g.object_id AND f.parent_id IS NOT NULL
+                 WHERE rg.role_id = g.role_id AND rg.via = 'parent'
+             ) ng
+    )
+    SELECT goals.role_id, goals.object_kind, goals.object_id FROM goals
+$$;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS
