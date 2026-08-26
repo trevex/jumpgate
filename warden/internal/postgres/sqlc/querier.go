@@ -85,8 +85,12 @@ type Querier interface {
 	DeleteSSHAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteStaleWorkerPresence(ctx context.Context, lastSeenAt pgtype.Timestamptz) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	// approvals.EffectiveRule.
+	EffectiveRequestPolicy(ctx context.Context, arg EffectiveRequestPolicyParams) (EffectiveRequestPolicyRow, error)
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
+	// ExplainRole.
+	ExplainRolePaths(ctx context.Context, arg ExplainRolePathsParams) ([]ExplainRolePathsRow, error)
 	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
 	// to the root. Used for folder-scoped role containment checks.
 	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
@@ -132,11 +136,35 @@ type Querier interface {
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// globalHeldCapabilities.
+	GlobalHeldCapabilities(ctx context.Context, user uuid.UUID) ([]GlobalHeldCapabilitiesRow, error)
+	// VisibleAssets active tier.
+	HeldAssets(ctx context.Context, user uuid.UUID) ([]HeldAssetsRow, error)
+	// capsOnFolders.
+	HeldCapabilitiesOnFolders(ctx context.Context, arg HeldCapabilitiesOnFoldersParams) ([]HeldCapabilitiesOnFoldersRow, error)
+	// CapabilitiesOnObject.
+	HeldCapabilitiesOnObject(ctx context.Context, arg HeldCapabilitiesOnObjectParams) ([]HeldCapabilitiesOnObjectRow, error)
+	// Check.
+	HeldCheckAssetCapability(ctx context.Context, arg HeldCheckAssetCapabilityParams) (bool, error)
+	// mgmtScopeFolders.
+	HeldFolderCapabilities(ctx context.Context, user uuid.UUID) ([]HeldFolderCapabilitiesRow, error)
+	// heldRoleIDs.
+	HeldRoleIDs(ctx context.Context, user uuid.UUID) ([]pgtype.UUID, error)
+	// heldRolesAndAssets.
+	HeldRolesAndAssets(ctx context.Context, user uuid.UUID) ([]HeldRolesAndAssetsRow, error)
+	// RolesOnAsset active.
+	HeldRolesOnAsset(ctx context.Context, arg HeldRolesOnAssetParams) ([]pgtype.UUID, error)
+	// RoleResolver.HoldsRole (binding ∪ grant satisfaction over authz_role_goals).
+	HoldsRole(ctx context.Context, arg HoldsRoleParams) (bool, error)
+	// RoleResolver.HoldsRoleStanding (binding satisfaction only).
+	HoldsRoleStanding(ctx context.Context, arg HoldsRoleStandingParams) (bool, error)
 	InsertAssetName(ctx context.Context, arg InsertAssetNameParams) error
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error
+	// visible_tree IsMember.
+	IsMember(ctx context.Context, arg IsMemberParams) (pgtype.Bool, error)
 	IsUserActive(ctx context.Context, id uuid.UUID) (bool, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
@@ -194,6 +222,8 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
+	// memberGroupIDs.
+	MemberGroupIDs(ctx context.Context, user uuid.UUID) ([]pgtype.UUID, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
 	NotifyAuthzChanged(ctx context.Context) error
 	// Clears the approver gate on surviving policies that named the role as their
@@ -218,6 +248,10 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
+	// CapabilitiesOnScope asset arm (global_held ∪ held on the asset or its ancestor-or-self folders).
+	ScopeCapabilitiesAsset(ctx context.Context, arg ScopeCapabilitiesAssetParams) ([]ScopeCapabilitiesAssetRow, error)
+	// CapabilitiesOnScope folder arm (global_held ∪ held on folders in the scope subtree).
+	ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabilitiesFolderParams) ([]ScopeCapabilitiesFolderRow, error)
 	SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error)
 	// Name-matching folders within a visible-id set. The `name ILIKE` predicate is
 	// served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
