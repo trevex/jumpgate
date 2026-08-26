@@ -695,11 +695,11 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 }
 
 // TestCheckExplicitFolderCascade pins the security-critical invariant that
-// heldCTE's forward closure honors ONLY the explicit role_grants graph: a
+// authz_held's forward closure honors ONLY the explicit role_grants graph: a
 // STANDING binding on a folder does NOT reach a descendant asset unless an
 // explicit `parent` self-rule exists. This asserts the negative first, then adds
 // the rule and asserts the flip — a regression reintroducing an implicit folder
-// walk in heldCTE would make the negative assertion fail.
+// walk in authz_held would make the negative assertion fail.
 func TestCheckExplicitFolderCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
@@ -768,7 +768,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Positive: the flip proves heldCTE honors the explicit-only cascade.
+	// Positive: the flip proves authz_held honors the explicit-only cascade.
 	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:read"); err != nil || !ok {
 		t.Fatalf("Check(db:read, asset) after grant = %v, %v; want true", ok, err)
 	}

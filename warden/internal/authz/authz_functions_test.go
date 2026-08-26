@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -102,58 +101,6 @@ func TestAuthzUserGroupsParity(t *testing.T) {
 	}
 }
 
-// pgxNamed is a tiny helper: pgx.NamedArgs{"user": u}.
-func pgxNamed(u uuid.UUID) pgx.NamedArgs { return pgx.NamedArgs{"user": u} }
-
-func TestAuthzHeldParity(t *testing.T) {
-	pool := newPool(t)
-	ctx := context.Background()
-	_, alice, _, _, _, _, a1, _ := seedTree(t, pool) // existing seeder
-
-	// Old builder result (heldCTE is still present during migration).
-	old := map[[2]string]struct{}{}
-	rows, err := pool.Query(ctx, heldCTE+`
-SELECT DISTINCT object_kind, object_id, role_id FROM held`, pgxNamed(alice))
-	if err != nil {
-		t.Fatalf("old: %v", err)
-	}
-	for rows.Next() {
-		var k string
-		var o, r uuid.UUID
-		if err := rows.Scan(&k, &o, &r); err != nil {
-			t.Fatalf("old scan: %v", err)
-		}
-		old[[2]string{k, o.String() + "|" + r.String()}] = struct{}{}
-	}
-	rows.Close()
-
-	// New function result.
-	neu := map[[2]string]struct{}{}
-	rows2, err := pool.Query(ctx, `SELECT object_kind, object_id, role_id FROM authz_held($1)`, alice)
-	if err != nil {
-		t.Fatalf("new: %v", err)
-	}
-	for rows2.Next() {
-		var k string
-		var o, r uuid.UUID
-		if err := rows2.Scan(&k, &o, &r); err != nil {
-			t.Fatalf("new scan: %v", err)
-		}
-		neu[[2]string{k, o.String() + "|" + r.String()}] = struct{}{}
-	}
-	rows2.Close()
-
-	if len(old) != len(neu) {
-		t.Fatalf("cardinality: old=%d new=%d", len(old), len(neu))
-	}
-	for k := range old {
-		if _, ok := neu[k]; !ok {
-			t.Fatalf("row in old missing from new: %v", k)
-		}
-	}
-	_ = a1
-}
-
 // TestAuthzHeldStandingExcludesGrants pins the security invariant that a JIT
 // access_grant confers access (authz_held) but NOT governance (authz_held_standing).
 // A user with a standing binding on one role AND an active grant of a DIFFERENT
@@ -245,54 +192,17 @@ func heldRoleSet(t *testing.T, pool *pgxpool.Pool, query string, user uuid.UUID)
 	return set
 }
 
-func TestAuthzGlobalHeldParity(t *testing.T) {
-	pool := newPool(t)
-	ctx := context.Background()
-	_, _, _, _, _, _, _, _ = seedTree(t, pool)
-	u := mustSeedUser(t, pool, "global@x")
-	old := map[uuid.UUID]struct{}{}
-	rows, err := pool.Query(ctx, globalHeldCTE+`
-SELECT DISTINCT role_id FROM global_held`, pgxNamed(u))
-	if err != nil {
-		t.Fatalf("old: %v", err)
-	}
-	for rows.Next() {
-		var r uuid.UUID
-		if err := rows.Scan(&r); err != nil {
-			t.Fatalf("old scan: %v", err)
-		}
-		old[r] = struct{}{}
-	}
-	rows.Close()
-	neu := map[uuid.UUID]struct{}{}
-	rows2, err := pool.Query(ctx, `SELECT role_id FROM authz_global_held($1)`, u)
-	if err != nil {
-		t.Fatalf("fn: %v", err)
-	}
-	for rows2.Next() {
-		var r uuid.UUID
-		if err := rows2.Scan(&r); err != nil {
-			t.Fatalf("new scan: %v", err)
-		}
-		neu[r] = struct{}{}
-	}
-	rows2.Close()
-	if len(old) != len(neu) {
-		t.Fatalf("old=%d new=%d", len(old), len(neu))
-	}
-}
-
 func TestAuthzRoleGoalsBacksHoldsRole(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	_, alice, _, _, _, _, a1, _ := seedTree(t, pool)
-	// find a role alice holds on a1 via the OLD resolver, then confirm the function
+	// find a role alice holds on a1 (via authz_held), then confirm authz_role_goals
 	// yields the same EXISTS answer for that (role, asset).
 	// (seedTree binds alice to some role on a1; discover it.)
 	var roleID uuid.UUID
-	if err := pool.QueryRow(ctx, heldCTE+`
-SELECT role_id FROM held WHERE object_kind='asset' AND object_id=@assetID LIMIT 1`,
-		pgx.NamedArgs{"user": alice, "assetID": a1}).Scan(&roleID); err != nil {
+	if err := pool.QueryRow(ctx,
+		`SELECT role_id FROM authz_held($1) WHERE object_kind='asset' AND object_id=$2 LIMIT 1`,
+		alice, a1).Scan(&roleID); err != nil {
 		t.Skipf("seedTree gave alice no asset role: %v", err)
 	}
 	var ok bool
@@ -347,9 +257,9 @@ func TestAuthzRoleGoalPathsShape(t *testing.T) {
 	ctx := context.Background()
 	_, alice, _, _, _, _, a1, _ := seedTree(t, pool)
 	var role uuid.UUID
-	if err := pool.QueryRow(ctx, heldCTE+`
-SELECT role_id FROM held WHERE object_kind='asset' AND object_id=@assetID LIMIT 1`,
-		pgx.NamedArgs{"user": alice, "assetID": a1}).Scan(&role); err != nil {
+	if err := pool.QueryRow(ctx,
+		`SELECT role_id FROM authz_held($1) WHERE object_kind='asset' AND object_id=$2 LIMIT 1`,
+		alice, a1).Scan(&role); err != nil {
 		t.Skipf("no role: %v", err)
 	}
 	var n int

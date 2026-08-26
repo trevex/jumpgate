@@ -31,8 +31,8 @@ import (
 //     browse path to a reachable asset is never hidden).
 //
 // A node is visible iff it is visible on EITHER axis (union). Deactivated users
-// are handled by the underlying closures (heldCTE / globalHeldCTE / VisibleAssets
-// all exclude a deactivated user), so no extra guard is needed here for the
+// are handled by the underlying closures (authz_held / authz_global_held /
+// VisibleAssets all exclude a deactivated user), so no extra guard is needed here for the
 // management axis. The asset-browse access axis is covered by VisibleAssets.
 
 // childFolderIDs returns the ids of the folders directly under parent, ordered by
@@ -47,28 +47,6 @@ func (s *sqlAuthorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([
 SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM @parent ORDER BY name, id`, pgx.NamedArgs{"parent": arg})
 	if err != nil {
 		return nil, fmt.Errorf("child folders: %w", err)
-	}
-	defer rows.Close()
-	return scanUUIDs(rows)
-}
-
-// folderSubtreeIDsRecursive returns every folder id in the subtrees rooted at
-// `roots` (inclusive), via a single recursive down-walk (parent_id =
-// ancestor.id). Kept as the differential-test reference implementation; hot
-// paths use folderSubtreeIDs (ltree-backed) instead.
-func (s *sqlAuthorizer) folderSubtreeIDsRecursive(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
-	if len(roots) == 0 {
-		return nil, nil
-	}
-	rows, err := s.pool.Query(ctx, `
-WITH RECURSIVE sub AS (
-    SELECT id FROM folders WHERE id = ANY(@roots::uuid[])
-  UNION
-    SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
-)
-SELECT id FROM sub`, pgx.NamedArgs{"roots": roots})
-	if err != nil {
-		return nil, fmt.Errorf("folder subtree: %w", err)
 	}
 	defer rows.Close()
 	return scanUUIDs(rows)
@@ -167,8 +145,8 @@ func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID
 //
 // SET-BASED: the ACCESS set (VisibleAssets = held asset-objects ∪ requestable) is
 // two small constant closure queries collapsed into a uuid[] param; the candidate
-// selection, management cascade, and connect cascade are ONE query off
-// heldPlusGlobalHeldPrefix. Total is a small constant — no per-folder and no
+// selection, management cascade, and connect cascade are ONE query over
+// authz_held + authz_global_held. Total is a small constant — no per-folder and no
 // per-residual-asset CapabilitiesOnScope loop.
 //
 // An asset (whose folder is in scope under `parent`) is visible iff ANY of:
@@ -180,7 +158,7 @@ func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID
 //     the shared mgmtCascadeCTEs fragment with the asset's NOT-NULL folder as the
 //     node folder); OR
 //   - CONNECT:    the asset declares ≥1 SSH login L (ssh_asset_login) that the user
-//     entitles over the FULL asset-scope cascade — a role in global_held, held on
+//     entitles over the FULL asset-scope cascade — a role in authz_global_held, held on
 //     the asset object, or held on an ancestor-or-self folder of the asset's folder
 //     carries a capability matching ssh:login:L. This reproduces
 //     EntitledLogins on the RAW CapabilitiesOnScope(AssetScope) result: `**`
@@ -423,7 +401,7 @@ func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (an
 	// Anchor sources (b)+(c)+(d): the home folders of visible roles/groups and the
 	// folders of visible assets, where visibility on each kind is (ACCESS set passed
 	// as a uuid[] param) ∪ (MANAGEMENT via the kind's read cap, folded set-based over
-	// the shared held/global_held closures) — and, for assets, ∪ (CONNECT via an
+	// the shared authz_held/authz_global_held closures) — and, for assets, ∪ (CONNECT via an
 	// ssh:login the user entitles over the full asset-scope cascade). The mgmt read
 	// caps are 3-segment concrete (access:role:read / identity:group:read /
 	// catalog:asset:read), so their columns are literals; the three-column glob
@@ -458,10 +436,10 @@ func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (an
 // folder-id anchor sources that hang off folder-homed nodes: the home folders of
 // roles/groups visible to the user and the folders of assets visible to the user.
 // Visibility per kind is (the pre-computed ACCESS id set, passed as a uuid[]) ∪
-// (MANAGEMENT via the kind's read cap over the shared held/global_held closures) —
+// (MANAGEMENT via the kind's read cap over the shared authz_held/authz_global_held closures) —
 // plus, for assets, the CONNECT arm (an ssh:login the user entitles over the full
-// asset-scope cascade). It reuses heldPlusGlobalHeldPrefix (user_groups + held +
-// global_held) so held/global_held cannot drift from Check / CapabilitiesOnScope;
+// asset-scope cascade). It reuses authz_held + authz_global_held so the closures
+// cannot drift from Check / CapabilitiesOnScope;
 // deactivated users are excluded by those closures and by the ACCESS closures that
 // produced the id params.
 //
@@ -598,7 +576,7 @@ func mapKeys(m map[uuid.UUID]struct{}) []uuid.UUID {
 //     closure) or it is REQUESTABLE to them; a group is access-visible when the
 //     user is a (transitive) MEMBER.
 //
-// Deactivated users are excluded by the underlying closures: heldCTE and
+// Deactivated users are excluded by the underlying closures: authz_held and
 // visibleRequestable both carry the `deactivated_at IS NULL` EXISTS guard, and
 // memberGroupIDs carries an explicit EXISTS guard in its final SELECT (see
 // memberGroupIDs below). No extra guard is needed at the VisibleRolesUnder /
@@ -652,12 +630,13 @@ func (s *sqlAuthorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID)
 }
 
 // memberGroupIDs returns the set of group ids the user is a (transitive) member
-// of — the group ACCESS axis. The user_groups CTE is copied VERBATIM from heldCTE
-// / globalHeldCTE (direct membership base + recursive nested-group arm).
+// of — the group ACCESS axis. It reaches the authz_user_groups SQL function (the
+// same transitive group-membership closure authz_held / authz_global_held use)
+// via the MemberGroupIDs query.
 //
-// The final SELECT carries the deactivation guard via an EXISTS sub-select on
-// users.deactivated_at IS NULL (matching the predicate in heldCTE and
-// globalHeldCTE). A deactivated user therefore yields an empty set.
+// The query carries the deactivation guard (authz_user_is_active), matching the
+// predicate in authz_held and authz_global_held: a deactivated user therefore
+// yields an empty set.
 func (s *sqlAuthorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	ids, err := s.queries().MemberGroupIDs(ctx, userID)
 	if err != nil {
@@ -711,7 +690,7 @@ func scanUUIDSet(rows interface {
 // management-visible for cap C is a single set membership with two arms (the
 // shared mgmtCascadeCTEs fragment, also used by VisibleAssetsUnder):
 //
-//   - GLOBAL arm: the user holds C globally → EXISTS over global_held ⋈
+//   - GLOBAL arm: the user holds C globally → EXISTS over authz_global_held ⋈
 //     role_capabilities with the column-match for C (`global_mgmt.ok`). This alone
 //     covers folder-less (folder_id NULL) nodes, which have no folder scope.
 //   - FOLDER-CASCADE arm: ∃ a folder F where the user holds C (held FOLDER closure ⋈
@@ -721,9 +700,8 @@ func scanUUIDSet(rows interface {
 //     homed at/under F. A NULL home folder matches no anchor → global-only, exactly
 //     as the legacy folderManageableFunc treated a nil folder.
 //
-// The closures come from heldPlusGlobalHeldPrefix (user_groups + held + global_held,
-// all composed from the shared closure fragments), so held/global_held here cannot
-// drift from Check / CapabilitiesOnScope. Deactivated users are excluded by those
+// The closures come from authz_held + authz_global_held, so the management arms
+// here cannot drift from Check / CapabilitiesOnScope. Deactivated users are excluded by those
 // closures (and by the accessIDs closures), so no extra guard is needed here.
 type homedTable string
 

@@ -269,6 +269,48 @@ func TestVisibleRolesUnderTiers(t *testing.T) {
 	idSet(t, "roles stranger nil cascade", got, nil)
 }
 
+// TestVisibleRolesUnderRequestableArm pins the REQUESTABLE half of the
+// held ∪ requestable access axis for roles: a role visible ONLY because it is
+// requestable to the user (not held, and the user has no access:role:read cap)
+// must still appear in VisibleRolesUnder. This is the role-side analogue of the
+// requestable-asset arm asserted by TestVisibleAssetsUnder. Uses the base `seed`
+// fixture, where `dba` is a folder-less role that is requestable-but-not-held by
+// alice (via her `viewer` requester_role on pgstaging).
+func TestVisibleRolesUnderRequestableArm(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
+
+	// Precondition: dba is Requestable (not Active) for alice on pgstaging, and
+	// alice has no access:role:read (nothing but the requestable arm can reveal it).
+	roles, err := s.RolesOnAsset(ctx, alice, pgstaging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireContains(t, roles.Requestable, dbaRole)
+	requireNotContains(t, roles.Active, dbaRole)
+
+	// dba is folder-less (global) → appears at the root arm, visible to alice PURELY
+	// via the requestable arm.
+	got, err := s.VisibleRolesUnder(ctx, alice, uuid.Nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireContains(t, got, dbaRole)
+
+	// A stranger with no held/requestable relationship must NOT see it.
+	stranger, err := sqlc.New(pool).CreateUser(ctx, sqlc.CreateUserParams{Email: "stranger-req@x", DisplayName: "S"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sgot, err := s.VisibleRolesUnder(ctx, stranger.ID, uuid.Nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNotContains(t, sgot, dbaRole)
+}
+
 func TestVisibleGroupsUnderTiers(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
@@ -587,7 +629,7 @@ func TestVisibleCascadeNoDuplicates(t *testing.T) {
 
 // TestVisibleDeactivatedRoleHolder pins that a user who holds a folder-homed role
 // via a standing role_binding loses all role visibility after deactivation.
-// This test pins the role arm of VisibleRolesUnder (already guarded by heldCTE).
+// This test pins the role arm of VisibleRolesUnder (already guarded by authz_held).
 func TestVisibleDeactivatedRoleHolder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()

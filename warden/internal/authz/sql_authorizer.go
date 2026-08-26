@@ -5,15 +5,14 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// sqlAuthorizer resolves access with recursive SQL over the control-plane Postgres.
-// The shared authorization closures live in the DB as inlinable SQL functions
+// sqlAuthorizer resolves access over the control-plane Postgres. The shared
+// authorization closures live in the DB as inlinable recursive SQL functions
 // (authz_held / authz_global_held / …); this type reaches them through the static
 // sqlc queries on q. pool is retained for the few remaining ad-hoc queries.
 type sqlAuthorizer struct {
@@ -56,18 +55,13 @@ func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
-// heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
-// a user (@user), every (role, object) the user holds via direct standing bindings,
-// active JIT access_grants, and the explicit role_grants rewrite graph
-// (same_object + parent). It is group-aware and cycle-safe.
-//
-// SINGLE SOURCE OF TRUTH: it is COMPOSED from the shared fragments in
-// heldclosure.go (heldCTEPrefix = cteUserGroups + heldClosureSQL("held", true)),
-// the very same fragments requestable.go composes its `held` / `held_standing`
-// closures from. Because Check's grant decision and the Requestable-tier
-// eligibility draw the closure body from one source, they cannot silently
-// diverge. Each query still appends its own trailing SELECT (below).
-var heldCTE = heldCTEPrefix
+// The forward "held" closure — the (role, object) pairs a user holds via direct
+// standing bindings, active JIT access_grants, and the explicit role_grants
+// rewrite graph (same_object + parent) — is the dual of RoleResolver.HoldsRole.
+// It is group-aware and cycle-safe, and lives in the database as the authz_held
+// SQL function; the queries below reach it through the static sqlc query set.
+// Because Check's grant decision and the Requestable-tier eligibility draw the
+// closure from that one source, they cannot silently diverge.
 
 func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {
@@ -218,28 +212,26 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 // role_grants) ALWAYS apply. For a folder/asset scope, management authority
 // CASCADES STRUCTURALLY down the folder tree: a capability held on folder F
 // applies to F, every sub-folder of F, and every asset beneath them — with NO
-// per-role parent self-grant (unlike the OPT-IN data-plane heldCTE inheritance,
-// which requires a role_grants(R,R,parent) self-edge).
+// per-role parent self-grant (unlike the OPT-IN data-plane authz_held
+// inheritance, which requires a role_grants(R,R,parent) self-edge).
 //
-// SINGLE SET-BASED QUERY. Rather than fanning out into globalHeldCapabilities +
-// folderAncestorsAndSelf + capsOnFolders (+ CapabilitiesOnObject + assetFolderID
-// for assets) — 3–5 round-trips per call — the folder/asset arms issue ONE query
-// off the combined heldPlusGlobalHeldPrefix (user_groups + held + global_held,
-// all composed from the shared closure fragments). The trailing SELECT unions
-// the role ids from:
+// SINGLE SET-BASED QUERY. Rather than fanning out into a global-caps query, a
+// folder-ancestor walk, and a per-folder capability lookup — 3–5 round-trips per
+// call — the folder/asset arms issue ONE query over authz_held ∪
+// authz_global_held. The trailing SELECT unions the role ids from:
 //
-//   - global_held — the ALWAYS-applies global caps; and
-//   - held rows on the in-scope objects: the asset itself (asset scope) and every
-//     ancestor-or-self folder, realizing the structural down-tree cascade via the
-//     ltree `@>` operator keyed off the scope folder (folder scope) or the asset's
-//     containing folder (asset scope).
+//   - authz_global_held — the ALWAYS-applies global caps; and
+//   - authz_held rows on the in-scope objects: the asset itself (asset scope) and
+//     every ancestor-or-self folder, realizing the structural down-tree cascade
+//     via the ltree `@>` operator keyed off the scope folder (folder scope) or the
+//     asset's containing folder (asset scope).
 //
-// GLOBAL-VS-HELD SUBTLETY: global caps are sourced from the global_held closure,
-// NOT from held rows with object_id IS NULL. A scopeless binding appears in the
-// held closure as (role,'folder',NULL), but held's `parent` rewrite arm cannot
-// fire for a NULL object, whereas global_held collapses BOTH rewrite arms to plain
-// source→target edges — so the two closures differ and only global_held is the
-// faithful global source.
+// GLOBAL-VS-HELD SUBTLETY: global caps are sourced from authz_global_held, NOT
+// from authz_held rows with object_id IS NULL. A scopeless binding appears in the
+// held closure as (role,'folder',NULL), but its `parent` rewrite arm cannot fire
+// for a NULL object, whereas authz_global_held collapses BOTH rewrite arms to
+// plain source→target edges — so the two closures differ and only
+// authz_global_held is the faithful global source.
 //
 // EXISTENCE-HIDING: for a nonexistent asset the `@>` ancestor subselect (keyed off
 // the asset's folder via a JOIN on assets) is naturally empty and the asset itself
@@ -248,10 +240,10 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
 	switch scope.Kind {
 	case ScopeGlobal:
-		// Global-only: no object dimension, so the lone global_held closure suffices.
+		// Global-only: no object dimension, so authz_global_held alone suffices.
 		return s.globalHeldCapabilities(ctx, userID)
 	case ScopeFolder:
-		// global_held ∪ held on folders in the scope subtree (ltree @>).
+		// authz_global_held ∪ authz_held on folders in the scope subtree (ltree @>).
 		rows, err := s.queries().ScopeCapabilitiesFolder(ctx, sqlc.ScopeCapabilitiesFolderParams{User: userID, ScopeID: scope.ID})
 		if err != nil {
 			return nil, fmt.Errorf("capabilities on scope: %w", err)
@@ -262,7 +254,7 @@ func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUI
 		}
 		return caps, nil
 	case ScopeAsset:
-		// global_held ∪ held on the asset or its ancestor-or-self folders.
+		// authz_global_held ∪ authz_held on the asset or its ancestor-or-self folders.
 		rows, err := s.queries().ScopeCapabilitiesAsset(ctx, sqlc.ScopeCapabilitiesAssetParams{User: uuidArg(userID), ScopeID: uuidArg(scope.ID)})
 		if err != nil {
 			return nil, fmt.Errorf("capabilities on scope: %w", err)
@@ -275,60 +267,4 @@ func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUI
 	default:
 		return nil, fmt.Errorf("unknown scope kind %d", scope.Kind)
 	}
-}
-
-// capsOnFolders returns the union of the capability patterns the user holds on
-// ANY of folderIDs via the held (standing + active-grant) closure. Callers pass
-// the full folder ancestor chain (FolderAncestorsAndSelf) so a capability held on
-// an ancestor folder cascades down to the scoped object. heldCTE binds the user
-// to @user; the folder-id array is @folderIDs (heldCTE references only @user, so
-// @folderIDs is free).
-func (s *sqlAuthorizer) capsOnFolders(ctx context.Context, userID uuid.UUID, folderIDs []uuid.UUID) (Capabilities, error) {
-	if len(folderIDs) == 0 {
-		return nil, nil
-	}
-	rows, err := s.queries().HeldCapabilitiesOnFolders(ctx, sqlc.HeldCapabilitiesOnFoldersParams{User: userID, FolderIds: folderIDs})
-	if err != nil {
-		return nil, fmt.Errorf("caps on folders: %w", err)
-	}
-	var caps Capabilities
-	for _, r := range rows {
-		caps = append(caps, ReconstructCap(r.Scope, r.Action, r.Qualifier))
-	}
-	return caps, nil
-}
-
-// folderAncestorsAndSelfRecursive returns every ancestor-or-self folder id of
-// id, walking parent links up to the root via a recursive CTE. Copied from the
-// generated FolderAncestorsAndSelf query (db/queries/catalog.sql) to run over
-// s.pool. Kept as the differential-test reference; hot paths use
-// folderAncestorsAndSelf (ltree-backed) instead.
-func (s *sqlAuthorizer) folderAncestorsAndSelfRecursive(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.pool.Query(ctx, `
-WITH RECURSIVE up AS (
-    SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = @id
-    UNION ALL
-    SELECT f.id, f.parent_id FROM folders f JOIN up ON f.id = up.parent_id
-)
-SELECT up.id FROM up`, pgx.NamedArgs{"id": id})
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []uuid.UUID
-	for rows.Next() {
-		var fid uuid.UUID
-		if err := rows.Scan(&fid); err != nil {
-			return nil, err
-		}
-		items = append(items, fid)
-	}
-	return items, rows.Err()
-}
-
-// assetFolderID returns the (NOT NULL) containing folder id of the asset.
-func (s *sqlAuthorizer) assetFolderID(ctx context.Context, assetID uuid.UUID) (uuid.UUID, error) {
-	var folderID uuid.UUID
-	err := s.pool.QueryRow(ctx, `SELECT folder_id FROM assets WHERE id = @assetID`, pgx.NamedArgs{"assetID": assetID}).Scan(&folderID)
-	return folderID, err
 }
