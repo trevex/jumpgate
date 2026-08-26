@@ -18,7 +18,7 @@ cleanup() {
   pg_ctl -D "$PGTMP/data" -m immediate stop >/dev/null 2>&1 || true
   rm -rf "$PGTMP"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 initdb -D "$PGTMP/data" -U postgres --no-sync >/dev/null
 # Socket-only server (no TCP) so parallel runs never contend for a port.
