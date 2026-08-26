@@ -121,8 +121,14 @@ pub async fn handle_connection(state: GatewayState, mut client: TlsStream<tokio:
     // WS handshake, which reads the request itself.
     if is_websocket_upgrade(&head) {
         let limits = state.session_limits;
-        terminal::handle_terminal(state.clone(), head, client, state.console_origin.clone(), limits)
-            .await;
+        terminal::handle_terminal(
+            state.clone(),
+            head,
+            client,
+            state.console_origin.clone(),
+            limits,
+        )
+        .await;
         return;
     }
 

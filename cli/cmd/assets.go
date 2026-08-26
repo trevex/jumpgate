@@ -77,10 +77,7 @@ var assetsSSHLoginListCmd = &cobra.Command{
 	RunE:  runAssetsSSHLoginList,
 }
 
-var (
-	assetsListParent  string
-	assetsListCascade bool
-)
+var assetsListCascade bool
 
 var assetsListCmd = &cobra.Command{
 	Use:   "list [parent]",

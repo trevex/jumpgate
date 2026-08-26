@@ -45,9 +45,9 @@ impl Config {
         /// unparseable value is a hard error (fail fast on misconfiguration).
         fn opt_usize(k: &str, d: usize) -> anyhow::Result<usize> {
             match env::var(k) {
-                Ok(v) => v
-                    .parse()
-                    .map_err(|_| anyhow::anyhow!("env {k} must be a non-negative integer, got {v:?}")),
+                Ok(v) => v.parse().map_err(|_| {
+                    anyhow::anyhow!("env {k} must be a non-negative integer, got {v:?}")
+                }),
                 Err(_) => Ok(d),
             }
         }
@@ -55,10 +55,9 @@ impl Config {
         /// when unset; `0` is a valid value (meaning "off"/"unlimited").
         fn opt_secs(k: &str, d: u64) -> anyhow::Result<Duration> {
             match env::var(k) {
-                Ok(v) => v
-                    .parse::<u64>()
-                    .map(Duration::from_secs)
-                    .map_err(|_| anyhow::anyhow!("env {k} must be a non-negative integer of seconds, got {v:?}")),
+                Ok(v) => v.parse::<u64>().map(Duration::from_secs).map_err(|_| {
+                    anyhow::anyhow!("env {k} must be a non-negative integer of seconds, got {v:?}")
+                }),
                 Err(_) => Ok(Duration::from_secs(d)),
             }
         }

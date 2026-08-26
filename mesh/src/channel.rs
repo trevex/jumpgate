@@ -71,7 +71,8 @@ pub async fn mesh_channel(
     // TLS is handled entirely by the custom connector above, so present the
     // endpoint (and the `dst` URI it hands the connector) with an `http` scheme.
     // The connector still dials the same host:port and wraps it in mesh TLS.
-    let endpoint = Endpoint::from_shared(http_scheme(warden_addr)).context("build mesh endpoint")?;
+    let endpoint =
+        Endpoint::from_shared(http_scheme(warden_addr)).context("build mesh endpoint")?;
     let channel = endpoint
         .connect_with_connector(connector)
         .await
@@ -140,12 +141,18 @@ mod tests {
 
     #[test]
     fn http_scheme_rewrites_https() {
-        assert_eq!(http_scheme("https://warden-mesh:8444"), "http://warden-mesh:8444");
+        assert_eq!(
+            http_scheme("https://warden-mesh:8444"),
+            "http://warden-mesh:8444"
+        );
     }
 
     #[test]
     fn http_scheme_leaves_http_and_others_intact() {
-        assert_eq!(http_scheme("http://warden-mesh:8444"), "http://warden-mesh:8444");
+        assert_eq!(
+            http_scheme("http://warden-mesh:8444"),
+            "http://warden-mesh:8444"
+        );
         assert_eq!(http_scheme("warden-mesh:8444"), "warden-mesh:8444");
     }
 }

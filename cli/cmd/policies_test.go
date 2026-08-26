@@ -52,7 +52,7 @@ func (s *stubPolicies) AddPolicySubject(_ context.Context, req *connect.Request[
 	return connect.NewResponse(&accessv1.AddPolicySubjectResponse{Id: "subject-456"}), nil
 }
 
-func (s *stubPolicies) ResolvePolicy(_ context.Context, req *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
+func (s *stubPolicies) ResolvePolicy(_ context.Context, _ *connect.Request[accessv1.ResolvePolicyRequest]) (*connect.Response[accessv1.ResolvePolicyResponse], error) {
 	return connect.NewResponse(&accessv1.ResolvePolicyResponse{PolicyId: "policy-uuid-1"}), nil
 }
 

@@ -491,7 +491,7 @@ func TestAssetsSSHCreateJSONHasIDAndPath(t *testing.T) {
 		ID   string `json:"id"`
 		Path string `json:"path"`
 	}
-	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("create output not JSON: %v\n%s", err, out.String())
 	}
 	if got.ID == "" || got.Path == "" {
