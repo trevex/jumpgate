@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
@@ -199,7 +200,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Auth:          rpc.NewAuthServer(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
 		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
-		Access:        rpc.NewAccessServer(apiQ, pool, roleResolver, authorizer, arSvc, arSvc),
+		Access:        access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
 		AccessRequest: rpc.NewAccessRequestServer(approvalResolver, arSvc, authorizer, apiQ),
 		Vault:         rpc.NewVaultServer(apiQ, sealer, authorizer),
 		Recording:     rpc.NewRecordingServer(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),

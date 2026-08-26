@@ -1,4 +1,4 @@
-package catalog_test
+package access_test
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
-	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
@@ -35,7 +34,7 @@ import (
 )
 
 // testMasterKeyB64 is a base64-encoded 32-byte KEK used to build a real sealer so the
-// inline-secret sealing write paths are exercised.
+// catalog inline-secret write paths register (the access tests don't seal directly).
 const testMasterKeyB64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 // testSealer builds the shared test sealer from testMasterKeyB64.
@@ -53,11 +52,22 @@ func testSealer(t *testing.T) *secrets.Sealer {
 }
 
 // fakePresigner is a stand-in Presigner for the recording service (never exercised by
-// the catalog tests; present only so the full user-service set registers).
+// the access tests; present only so the full user-service set registers).
 type fakePresigner struct{}
 
 func (fakePresigner) PresignGet(_ context.Context, objectKey string, ttl time.Duration) (string, time.Time, error) {
 	return "https://recordings.test/get?key=" + objectKey, time.Now().Add(ttl), nil
+}
+
+// fakeReqReads is a controllable requestReadAuthorizer for the GetRoleDisplay tests:
+// it grants or denies the request-party path.
+type fakeReqReads struct {
+	allow bool
+	err   error
+}
+
+func (f fakeReqReads) CanReadForRequest(_ context.Context, _ uuid.UUID, _ accessrequest.ReqEntityKind, _ uuid.UUID) (bool, error) {
+	return f.allow, f.err
 }
 
 // testAccessRequestService builds a shared access-request Service for the test server.
@@ -73,9 +83,9 @@ func testAccessRequestService(pool *pgxpool.Pool) *accessrequest.Service {
 }
 
 // newServer spins up an ephemeral Postgres, migrates it, and mounts the full
-// user-facing service set (with the catalog Handler under test) on an httptest
-// server. It returns the pool and the server URL. The catalog tests drive the
-// catalog/auth/access/identity Connect clients over this URL.
+// user-facing service set (with the access Handler under test) on an httptest server.
+// It returns the pool and the server URL. The access tests drive the
+// access/auth/catalog/identity Connect clients over this URL.
 func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	dsn := testsupport.StartPostgres(t)
@@ -209,6 +219,16 @@ func seedCapUserScoped(t *testing.T, pool *pgxpool.Pool, email, pw, capsJSON str
 	return u.ID
 }
 
+// userID returns the id of a previously seeded user by email.
+func userID(t *testing.T, pool *pgxpool.Pool, email string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(context.Background(), `SELECT id FROM users WHERE email=$1`, email).Scan(&id); err != nil {
+		t.Fatalf("lookup user %q: %v", email, err)
+	}
+	return id
+}
+
 // adminToken logs in the seeded admin (admin@x/supersecret) and returns its bearer token.
 func adminToken(t *testing.T, url string) string {
 	t.Helper()
@@ -237,41 +257,8 @@ func withToken[T any](req *connect.Request[T], tok string) *connect.Request[T] {
 	return req
 }
 
-// pgU wraps a uuid.UUID as a valid pgtype.UUID (test helper).
-func pgU(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
-
-// contains reports whether x is in xs.
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
-
 // emptySSHConfig is the minimal valid CreateAssetRequest config oneof: an SSH asset
 // with no logins.
 func emptySSHConfig() *catalogv1.CreateAssetRequest_Ssh {
 	return &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{}}
-}
-
-// newAsset creates a folder + asset (SSH, no logins) and returns the asset. Each call
-// uses a unique folder name to avoid catalog_names collisions.
-func newAsset(t *testing.T, url, tok, _ string) *catalogv1.Asset {
-	t.Helper()
-	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
-	ctx := context.Background()
-	folderName := "f-" + uuid.New().String()
-	f, err := c.CreateFolder(ctx, withToken(connect.NewRequest(&catalogv1.CreateFolderRequest{Name: folderName}), tok))
-	if err != nil {
-		t.Fatalf("create folder: %v", err)
-	}
-	a, err := c.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{
-		FolderId: f.Msg.Folder.Id, Name: "a-" + uuid.New().String(), Config: emptySSHConfig(),
-	}), tok))
-	if err != nil {
-		t.Fatalf("create asset: %v", err)
-	}
-	return a.Msg.Asset
 }

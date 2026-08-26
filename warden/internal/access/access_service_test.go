@@ -1,4 +1,4 @@
-package rpc_test
+package access_test
 
 import (
 	"context"
@@ -14,10 +14,11 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
+	"github.com/trevex/jumpgate/warden/internal/access"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 func TestAccessRoleCRUD(t *testing.T) {
@@ -2211,8 +2212,8 @@ func TestGetRoleDisplay(t *testing.T) {
 	roles := authz.NewRoleResolver(pool)
 	q := sqlc.New(pool)
 
-	allowSrv := rpc.NewAccessServer(q, pool, roles, authorizer, fakeReqReads{allow: true}, nil)
-	denySrv := rpc.NewAccessServer(q, pool, roles, authorizer, fakeReqReads{allow: false}, nil)
+	allowSrv := access.NewHandler(access.NewService(pool, roles, authorizer, nil, fakeReqReads{allow: true}), apiguard.New(authorizer, q))
+	denySrv := access.NewHandler(access.NewService(pool, roles, authorizer, nil, fakeReqReads{allow: false}), apiguard.New(authorizer, q))
 
 	assertRole := func(t *testing.T, resp *accessv1.GetRoleDisplayResponse) {
 		t.Helper()

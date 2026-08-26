@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
+	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/identity"
@@ -30,7 +31,7 @@ type UserServices struct {
 	Auth          *AuthServer
 	Identity      *identity.Handler
 	Catalog       *catalog.Handler
-	Access        *AccessServer
+	Access        *access.Handler
 	AccessRequest *AccessRequestServer
 	Vault         *VaultServer
 	Recording     *RecordingServer

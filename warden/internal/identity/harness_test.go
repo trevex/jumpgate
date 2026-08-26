@@ -15,6 +15,7 @@ import (
 
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
+	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
@@ -106,7 +107,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 		Auth:          rpc.NewAuthServer(q, tokens, authorizer, true),
 		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
-		Access:        rpc.NewAccessServer(q, pool, roles, authorizer, arSvc, arSvc),
+		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
 		AccessRequest: rpc.NewAccessRequestServer(resolver, arSvc, authorizer, q),
 		Vault:         rpc.NewVaultServer(q, sealer, authorizer),
 		Recording:     rpc.NewRecordingServer(q, auditLog, fakePresigner{}, time.Minute, authorizer, arSvc),
