@@ -13,11 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/bootstrap"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
@@ -195,7 +197,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Lookup:        apiLookup,
 		Auth:          rpc.NewAuthServer(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
 		Identity:      rpc.NewIdentityServer(apiQ, pool, apiTokens, arSvc, terminator, authorizer),
-		Catalog:       rpc.NewCatalogServer(apiQ, pool, authorizer, arSvc, sealer, terminator),
+		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
 		Access:        rpc.NewAccessServer(apiQ, pool, roleResolver, authorizer, arSvc, arSvc),
 		AccessRequest: rpc.NewAccessRequestServer(approvalResolver, arSvc, authorizer, apiQ),
 		Vault:         rpc.NewVaultServer(apiQ, sealer, authorizer),

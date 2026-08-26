@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -55,38 +54,33 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 	return folderID, nil
 }
 
-// roleRefs resolves role ids to {id, name, folder_path}, computing each distinct
-// scoped folder's path once. Preserves the input order.
-func roleRefs(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) ([]*catalogv1.RoleRef, error) {
-	if len(ids) == 0 {
-		return nil, nil
+// pgUUIDToString renders a nullable pgtype.UUID as a string ("" for NULL). Shared by
+// the identity/access proto mappers.
+func pgUUIDToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
 	}
-	rows, err := q.ListRolesByIDs(ctx, ids)
+	return uuid.UUID(u.Bytes).String()
+}
+
+// joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
+// its folder's leaf->root path. folderPath is the containing folder's own leaf-first
+// path (empty only defensively — a real asset always has a folder).
+func joinPath(folderPath, name string) string {
+	if folderPath == "" {
+		return name
+	}
+	return name + "." + folderPath
+}
+
+// optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
+func optUUID(s string) (pgtype.UUID, bool, error) {
+	if s == "" {
+		return pgtype.UUID{}, false, nil
+	}
+	id, err := uuid.Parse(s)
 	if err != nil {
-		return nil, err
+		return pgtype.UUID{}, false, err
 	}
-	pathByFolder := map[uuid.UUID]string{}
-	refByID := map[uuid.UUID]*catalogv1.RoleRef{}
-	for _, r := range rows {
-		ref := &catalogv1.RoleRef{Id: r.ID.String(), Name: r.Name}
-		if r.FolderID.Valid {
-			fid := uuid.UUID(r.FolderID.Bytes)
-			p, ok := pathByFolder[fid]
-			if !ok {
-				if p, err = q.FolderPath(ctx, fid); err != nil {
-					return nil, err
-				}
-				pathByFolder[fid] = p
-			}
-			ref.FolderPath = p
-		}
-		refByID[r.ID] = ref
-	}
-	out := make([]*catalogv1.RoleRef, 0, len(ids))
-	for _, id := range ids {
-		if ref, ok := refByID[id]; ok {
-			out = append(out, ref)
-		}
-	}
-	return out, nil
+	return pgUUID(id), true, nil
 }

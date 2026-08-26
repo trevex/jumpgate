@@ -1,4 +1,4 @@
-package rpc_test
+package catalog_test
 
 import (
 	"context"

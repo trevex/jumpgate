@@ -1,4 +1,4 @@
-package rpc
+package catalog
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func homeContained(roleHome pgtype.UUID, targetAncestors map[uuid.UUID]bool) boo
 }
 
 // roleHome returns a role's home folder (invalid pgtype.UUID for a global role).
-func (s *CatalogServer) roleHome(ctx context.Context, q *sqlc.Queries, roleID uuid.UUID) (pgtype.UUID, error) {
+func (s *Service) roleHome(ctx context.Context, q *sqlc.Queries, roleID uuid.UUID) (pgtype.UUID, error) {
 	r, err := q.GetRole(ctx, roleID)
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -61,7 +61,7 @@ func roleRefsOfPolicy(p sqlc.RequestPolicy) []uuid.UUID {
 // validateAssetMove denies (FailedPrecondition) if moving assetID into destFolder
 // would leave any binding or policy scoped to that asset granting a folder-scoped
 // role whose home no longer contains the asset's new location.
-func (s *CatalogServer) validateAssetMove(ctx context.Context, q *sqlc.Queries, assetID, destFolder uuid.UUID) error {
+func (s *Service) validateAssetMove(ctx context.Context, q *sqlc.Queries, assetID, destFolder uuid.UUID) error {
 	destAnc, err := ancestorSet(ctx, q, destFolder)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -112,7 +112,7 @@ func (s *CatalogServer) validateAssetMove(ctx context.Context, q *sqlc.Queries, 
 // second is the new above-portion contributed by the destination parent (empty for a
 // root move). For every affected binding/policy, every referenced folder-scoped
 // role's home must lie in its scope node's newAnc, else the move is denied.
-func (s *CatalogServer) validateFolderMove(ctx context.Context, q *sqlc.Queries, movedFolder uuid.UUID, newParent pgtype.UUID) error {
+func (s *Service) validateFolderMove(ctx context.Context, q *sqlc.Queries, movedFolder uuid.UUID, newParent pgtype.UUID) error {
 	subList, err := q.FolderSubtreeIDs(ctx, movedFolder)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)

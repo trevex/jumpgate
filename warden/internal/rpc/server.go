@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 )
 
 // UserServices is the complete set of already-constructed user-facing Connect
@@ -27,7 +28,7 @@ type UserServices struct {
 	Lookup        auth.Lookup
 	Auth          *AuthServer
 	Identity      *IdentityServer
-	Catalog       *CatalogServer
+	Catalog       *catalog.Handler
 	Access        *AccessServer
 	AccessRequest *AccessRequestServer
 	Vault         *VaultServer

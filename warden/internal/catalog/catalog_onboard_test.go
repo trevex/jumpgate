@@ -1,4 +1,4 @@
-package rpc_test
+package catalog_test
 
 import (
 	"context"
@@ -9,16 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
-// catalogTestEnv is an in-process CatalogServer wired with a real pgx pool, a real
+// catalogTestEnv is an in-process catalog Handler wired with a real pgx pool, a real
 // sealer (so inline-secret sealing is exercised), and an admin-capability context.
 type catalogTestEnv struct {
-	catalog  *rpc.CatalogServer
+	catalog  *catalog.Handler
 	adminCtx context.Context
 	pool     *pgxpool.Pool
 	userID   uuid.UUID
@@ -37,7 +38,7 @@ func newCatalogTestEnv(t *testing.T) *catalogTestEnv {
 
 	q := sqlc.New(pool)
 	authorizer := authz.NewSQLAuthorizer(pool)
-	srv := rpc.NewCatalogServer(q, pool, authorizer, nil, testSealer(t), nil)
+	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
 
 	adminID := userID(t, pool, "admin@x")
 	adminCtx := auth.WithUser(context.Background(), auth.CurrentUser{ID: adminID, Email: "admin@x"})

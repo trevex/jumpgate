@@ -8,10 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
@@ -31,7 +33,7 @@ func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *
 		Lookup:        lookup,
 		Auth:          rpc.NewAuthServer(q, tokens, authorizer, cookieSecure),
 		Identity:      rpc.NewIdentityServer(q, pool, tokens, arSvc, terminator, authorizer),
-		Catalog:       rpc.NewCatalogServer(q, pool, authorizer, arSvc, sealer, terminator),
+		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
 		Access:        rpc.NewAccessServer(q, pool, roles, authorizer, arSvc, arSvc),
 		AccessRequest: rpc.NewAccessRequestServer(resolver, arSvc, authorizer, q),
 		Vault:         rpc.NewVaultServer(q, sealer, authorizer),

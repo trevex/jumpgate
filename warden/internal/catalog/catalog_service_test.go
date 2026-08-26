@@ -1,4 +1,4 @@
-package rpc_test
+package catalog_test
 
 import (
 	"context"
@@ -17,10 +17,11 @@ import (
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 // seedAssetSecret inserts an asset_secrets row directly (a dummy sealed blob is
@@ -391,9 +392,9 @@ func TestGetAssetDisplay(t *testing.T) {
 	q := sqlc.New(pool)
 
 	// A server whose fake authorizes the request-party path.
-	allowSrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: true}, testSealer(t), nil)
+	allowSrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: true}), apiguard.New(authorizer, q))
 	// A server whose fake denies the request-party path (only the cap path can pass).
-	denySrv := rpc.NewCatalogServer(q, pool, authorizer, fakeReqReads{allow: false}, testSealer(t), nil)
+	denySrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: false}), apiguard.New(authorizer, q))
 
 	assertSSH := func(t *testing.T, resp *catalogv1.GetAssetDisplayResponse) {
 		t.Helper()
@@ -830,7 +831,7 @@ func TestSearchCatalog(t *testing.T) {
 	}
 
 	authorizer := authz.NewSQLAuthorizer(pool)
-	srv := rpc.NewCatalogServer(q, pool, authorizer, nil, testSealer(t), nil)
+	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
 	searcherCtx := auth.WithUser(ctx, auth.CurrentUser{ID: su.ID, Email: "searcher@x"})
 
 	// (a) substring "pg" returns the caller's visible matches across multiple kinds.
