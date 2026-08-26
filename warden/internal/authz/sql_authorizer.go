@@ -47,6 +47,15 @@ func uuidArg(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: tr
 // params that are typed pgtype.Text.
 func textArg(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
 
+// nullableUUIDArg maps the browse "parent" convention (uuid.Nil == root/NULL scope)
+// to a pgtype.UUID: uuid.Nil becomes SQL NULL, any other id a non-null value.
+func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
+	if id == uuid.Nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
 // heldCTE is the forward-closure dual of RoleResolver.HoldsRole: it computes, for
 // a user (@user), every (role, object) the user holds via direct standing bindings,
 // active JIT access_grants, and the explicit role_grants rewrite graph

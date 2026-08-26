@@ -216,3 +216,252 @@ WHERE
     )
   )
   AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.role_id);
+
+-- name: VisibleAssetsUnder :many
+-- [13] VisibleAssetsUnder: asset ids under `parent` the user may see, unifying the
+-- ACCESS (access_ids), MANAGEMENT (catalog:asset:read cascade over authz_held /
+-- authz_global_held), and CONNECT (ssh:login entitled over the full asset-scope
+-- cascade) axes. The (parent, cascade) browse level is selected by the nullable
+-- @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
+-- by the caller and never reaches this query).
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT a.id
+FROM assets a
+WHERE (
+        (NOT sqlc.arg('cascade')::boolean AND sqlc.narg('parent')::uuid IS NOT NULL AND a.folder_id = sqlc.narg('parent')::uuid)
+     OR (sqlc.arg('cascade')::boolean AND (
+            sqlc.narg('parent')::uuid IS NULL
+            OR a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = sqlc.narg('parent')::uuid))
+        ))
+      )
+  AND (
+        a.id = ANY(sqlc.arg('access_ids')::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR a.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+     OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM authz_global_held(sqlc.arg('user'))
+                  UNION
+                    SELECT h.role_id FROM authz_held(sqlc.arg('user')) h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id)
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+      )
+      )
+ORDER BY a.id;
+
+-- name: VisibleRolesHomed :many
+-- [18] visibleHomedSetBased(roles): roles homed under `parent` visible to the user,
+-- each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read
+-- cascade over authz_held / authz_global_held). Level selected by @parent/@cascade.
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT n.id, n.folder_id
+FROM roles n
+WHERE (
+        (NOT sqlc.arg('cascade')::boolean AND (
+            (sqlc.narg('parent')::uuid IS NULL AND n.folder_id IS NULL)
+            OR (sqlc.narg('parent')::uuid IS NOT NULL AND n.folder_id = sqlc.narg('parent')::uuid)
+        ))
+     OR (sqlc.arg('cascade')::boolean AND (
+            sqlc.narg('parent')::uuid IS NULL
+            OR n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = sqlc.narg('parent')::uuid))
+        ))
+      )
+  AND (
+        n.id = ANY(sqlc.arg('access_ids')::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+      )
+ORDER BY n.id;
+
+-- name: VisibleGroupsHomed :many
+-- [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
+-- each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
+-- (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
+          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
+          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT n.id, n.folder_id
+FROM groups n
+WHERE (
+        (NOT sqlc.arg('cascade')::boolean AND (
+            (sqlc.narg('parent')::uuid IS NULL AND n.folder_id IS NULL)
+            OR (sqlc.narg('parent')::uuid IS NOT NULL AND n.folder_id = sqlc.narg('parent')::uuid)
+        ))
+     OR (sqlc.arg('cascade')::boolean AND (
+            sqlc.narg('parent')::uuid IS NULL
+            OR n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = sqlc.narg('parent')::uuid))
+        ))
+      )
+  AND (
+        n.id = ANY(sqlc.arg('access_ids')::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+      )
+ORDER BY n.id;
+
+-- name: AnchorHomeFolders :many
+-- [14] anchorHomeFolders: the union of the three folder-id anchor sources hanging
+-- off folder-homed nodes — the home folders of roles/groups visible to the user and
+-- the folders of assets visible to the user. Per kind visibility is (the pre-computed
+-- ACCESS id set) ∪ (MANAGEMENT via the kind's read cap over authz_held /
+-- authz_global_held) ∪ (for assets, CONNECT via an ssh:login entitled over the full
+-- asset-scope cascade). Management cascades DOWN a folder subtree (ltree <@).
+WITH held_folder_caps(folder_id, scope, action, qualifier) AS (
+    SELECT h.object_id, rc.scope, rc.action, rc.qualifier
+    FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+),
+global_caps(scope, action, qualifier) AS (
+    SELECT rc.scope, rc.action, rc.qualifier
+    FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+),
+mgmt_role_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'access' OR hf.scope = '*')
+      AND (hf.action = 'role' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_group_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'identity' OR hf.scope = '*')
+      AND (hf.action = 'group' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_asset_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'catalog' OR hf.scope = '*')
+      AND (hf.action = 'asset' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+)
+SELECT DISTINCT r.folder_id AS folder_id
+FROM roles r
+JOIN folders nf ON nf.id = r.folder_id
+WHERE r.id = ANY(sqlc.arg('role_access')::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'access' OR c.scope = '*')
+                AND (c.action = 'role' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_role_folders)
+UNION
+SELECT DISTINCT g.folder_id AS folder_id
+FROM groups g
+JOIN folders nf ON nf.id = g.folder_id
+WHERE g.id = ANY(sqlc.arg('group_access')::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'identity' OR c.scope = '*')
+                AND (c.action = 'group' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_group_folders)
+UNION
+SELECT DISTINCT a.folder_id AS folder_id
+FROM assets a
+WHERE a.id = ANY(sqlc.arg('asset_access')::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'catalog' OR c.scope = '*')
+                AND (c.action = 'asset' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR a.folder_id IN (SELECT folder_id FROM mgmt_asset_folders)
+   OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM authz_global_held(sqlc.arg('user'))
+                  UNION
+                    SELECT h.role_id FROM authz_held(sqlc.arg('user')) h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id)
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+   );

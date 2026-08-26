@@ -12,6 +12,132 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const anchorHomeFolders = `-- name: AnchorHomeFolders :many
+WITH held_folder_caps(folder_id, scope, action, qualifier) AS (
+    SELECT h.object_id, rc.scope, rc.action, rc.qualifier
+    FROM authz_held($1) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+),
+global_caps(scope, action, qualifier) AS (
+    SELECT rc.scope, rc.action, rc.qualifier
+    FROM authz_global_held($1) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+),
+mgmt_role_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'access' OR hf.scope = '*')
+      AND (hf.action = 'role' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_group_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'identity' OR hf.scope = '*')
+      AND (hf.action = 'group' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+),
+mgmt_asset_folders(folder_id) AS (
+    SELECT DISTINCT nf.id
+    FROM held_folder_caps hf
+    JOIN folders mf ON mf.id = hf.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+    WHERE (hf.scope = 'catalog' OR hf.scope = '*')
+      AND (hf.action = 'asset' OR hf.action = '*')
+      AND (hf.qualifier = 'read' OR hf.qualifier = '*')
+)
+SELECT DISTINCT r.folder_id AS folder_id
+FROM roles r
+JOIN folders nf ON nf.id = r.folder_id
+WHERE r.id = ANY($2::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'access' OR c.scope = '*')
+                AND (c.action = 'role' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_role_folders)
+UNION
+SELECT DISTINCT g.folder_id AS folder_id
+FROM groups g
+JOIN folders nf ON nf.id = g.folder_id
+WHERE g.id = ANY($3::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'identity' OR c.scope = '*')
+                AND (c.action = 'group' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR nf.id IN (SELECT folder_id FROM mgmt_group_folders)
+UNION
+SELECT DISTINCT a.folder_id AS folder_id
+FROM assets a
+WHERE a.id = ANY($4::uuid[])
+   OR EXISTS (SELECT 1 FROM global_caps c
+              WHERE (c.scope = 'catalog' OR c.scope = '*')
+                AND (c.action = 'asset' OR c.action = '*')
+                AND (c.qualifier = 'read' OR c.qualifier = '*'))
+   OR a.folder_id IN (SELECT folder_id FROM mgmt_asset_folders)
+   OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM authz_global_held($1)
+                  UNION
+                    SELECT h.role_id FROM authz_held($1) h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id)
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+   )
+`
+
+type AnchorHomeFoldersParams struct {
+	User        uuid.UUID   `json:"user"`
+	RoleAccess  []uuid.UUID `json:"role_access"`
+	GroupAccess []uuid.UUID `json:"group_access"`
+	AssetAccess []uuid.UUID `json:"asset_access"`
+}
+
+// [14] anchorHomeFolders: the union of the three folder-id anchor sources hanging
+// off folder-homed nodes — the home folders of roles/groups visible to the user and
+// the folders of assets visible to the user. Per kind visibility is (the pre-computed
+// ACCESS id set) ∪ (MANAGEMENT via the kind's read cap over authz_held /
+// authz_global_held) ∪ (for assets, CONNECT via an ssh:login entitled over the full
+// asset-scope cascade). Management cascades DOWN a folder subtree (ltree <@).
+func (q *Queries) AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, anchorHomeFolders,
+		arg.User,
+		arg.RoleAccess,
+		arg.GroupAccess,
+		arg.AssetAccess,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var folder_id pgtype.UUID
+		if err := rows.Scan(&folder_id); err != nil {
+			return nil, err
+		}
+		items = append(items, folder_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const effectiveRequestPolicy = `-- name: EffectiveRequestPolicy :one
 SELECT policy_id, required_approvals, approver_role_id, requester_role_id, max_duration
 FROM authz_effective_request_policy($1, $2)
@@ -654,6 +780,200 @@ func (q *Queries) ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabili
 	return items, nil
 }
 
+const visibleAssetsUnder = `-- name: VisibleAssetsUnder :many
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = $5 OR rc.scope = '*')
+      AND (rc.action = $6 OR rc.action = '*')
+      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = $5 OR rc.scope = '*')
+          AND (rc.action = $6 OR rc.action = '*')
+          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT a.id
+FROM assets a
+WHERE (
+        (NOT $1::boolean AND $2::uuid IS NOT NULL AND a.folder_id = $2::uuid)
+     OR ($1::boolean AND (
+            $2::uuid IS NULL
+            OR a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $2::uuid))
+        ))
+      )
+  AND (
+        a.id = ANY($3::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR a.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+     OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM authz_global_held($4)
+                  UNION
+                    SELECT h.role_id FROM authz_held($4) h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id)
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+      )
+      )
+ORDER BY a.id
+`
+
+type VisibleAssetsUnderParams struct {
+	Cascade   bool        `json:"cascade"`
+	Parent    pgtype.UUID `json:"parent"`
+	AccessIds []uuid.UUID `json:"access_ids"`
+	User      uuid.UUID   `json:"user"`
+	CapScope  string      `json:"cap_scope"`
+	CapAction string      `json:"cap_action"`
+	CapQual   string      `json:"cap_qual"`
+}
+
+// [13] VisibleAssetsUnder: asset ids under `parent` the user may see, unifying the
+// ACCESS (access_ids), MANAGEMENT (catalog:asset:read cascade over authz_held /
+// authz_global_held), and CONNECT (ssh:login entitled over the full asset-scope
+// cascade) axes. The (parent, cascade) browse level is selected by the nullable
+// @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
+// by the caller and never reaches this query).
+func (q *Queries) VisibleAssetsUnder(ctx context.Context, arg VisibleAssetsUnderParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, visibleAssetsUnder,
+		arg.Cascade,
+		arg.Parent,
+		arg.AccessIds,
+		arg.User,
+		arg.CapScope,
+		arg.CapAction,
+		arg.CapQual,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const visibleGroupsHomed = `-- name: VisibleGroupsHomed :many
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = $5 OR rc.scope = '*')
+      AND (rc.action = $6 OR rc.action = '*')
+      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = $5 OR rc.scope = '*')
+          AND (rc.action = $6 OR rc.action = '*')
+          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT n.id, n.folder_id
+FROM groups n
+WHERE (
+        (NOT $1::boolean AND (
+            ($2::uuid IS NULL AND n.folder_id IS NULL)
+            OR ($2::uuid IS NOT NULL AND n.folder_id = $2::uuid)
+        ))
+     OR ($1::boolean AND (
+            $2::uuid IS NULL
+            OR n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $2::uuid))
+        ))
+      )
+  AND (
+        n.id = ANY($3::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+      )
+ORDER BY n.id
+`
+
+type VisibleGroupsHomedParams struct {
+	Cascade   bool        `json:"cascade"`
+	Parent    pgtype.UUID `json:"parent"`
+	AccessIds []uuid.UUID `json:"access_ids"`
+	User      uuid.UUID   `json:"user"`
+	CapScope  string      `json:"cap_scope"`
+	CapAction string      `json:"cap_action"`
+	CapQual   string      `json:"cap_qual"`
+}
+
+type VisibleGroupsHomedRow struct {
+	ID       uuid.UUID   `json:"id"`
+	FolderID pgtype.UUID `json:"folder_id"`
+}
+
+// [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
+// each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
+// (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).
+func (q *Queries) VisibleGroupsHomed(ctx context.Context, arg VisibleGroupsHomedParams) ([]VisibleGroupsHomedRow, error) {
+	rows, err := q.db.Query(ctx, visibleGroupsHomed,
+		arg.Cascade,
+		arg.Parent,
+		arg.AccessIds,
+		arg.User,
+		arg.CapScope,
+		arg.CapAction,
+		arg.CapQual,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisibleGroupsHomedRow
+	for rows.Next() {
+		var i VisibleGroupsHomedRow
+		if err := rows.Scan(&i.ID, &i.FolderID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const visibleRequestable = `-- name: VisibleRequestable :many
 WITH RECURSIVE
 ancestors(asset_id, folder_id, depth) AS (
@@ -724,6 +1044,95 @@ func (q *Queries) VisibleRequestable(ctx context.Context, user pgtype.UUID) ([]V
 	for rows.Next() {
 		var i VisibleRequestableRow
 		if err := rows.Scan(&i.AssetID, &i.RoleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const visibleRolesHomed = `-- name: VisibleRolesHomed :many
+WITH mgmt_anchor_folders AS (
+    SELECT DISTINCT h.object_id AS folder_id
+    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
+    WHERE h.object_kind = 'folder'
+      AND (rc.scope = $5 OR rc.scope = '*')
+      AND (rc.action = $6 OR rc.action = '*')
+      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+),
+global_mgmt AS (
+    SELECT EXISTS (
+        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
+        WHERE (rc.scope = $5 OR rc.scope = '*')
+          AND (rc.action = $6 OR rc.action = '*')
+          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+    ) AS ok
+),
+mgmt_visible_folders AS (
+    SELECT DISTINCT nf.id AS folder_id
+    FROM mgmt_anchor_folders m
+    JOIN folders mf ON mf.id = m.folder_id
+    JOIN folders nf ON nf.path_ids <@ mf.path_ids
+)
+SELECT n.id, n.folder_id
+FROM roles n
+WHERE (
+        (NOT $1::boolean AND (
+            ($2::uuid IS NULL AND n.folder_id IS NULL)
+            OR ($2::uuid IS NOT NULL AND n.folder_id = $2::uuid)
+        ))
+     OR ($1::boolean AND (
+            $2::uuid IS NULL
+            OR n.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $2::uuid))
+        ))
+      )
+  AND (
+        n.id = ANY($3::uuid[])
+     OR (SELECT ok FROM global_mgmt)
+     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+      )
+ORDER BY n.id
+`
+
+type VisibleRolesHomedParams struct {
+	Cascade   bool        `json:"cascade"`
+	Parent    pgtype.UUID `json:"parent"`
+	AccessIds []uuid.UUID `json:"access_ids"`
+	User      uuid.UUID   `json:"user"`
+	CapScope  string      `json:"cap_scope"`
+	CapAction string      `json:"cap_action"`
+	CapQual   string      `json:"cap_qual"`
+}
+
+type VisibleRolesHomedRow struct {
+	ID       uuid.UUID   `json:"id"`
+	FolderID pgtype.UUID `json:"folder_id"`
+}
+
+// [18] visibleHomedSetBased(roles): roles homed under `parent` visible to the user,
+// each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read
+// cascade over authz_held / authz_global_held). Level selected by @parent/@cascade.
+func (q *Queries) VisibleRolesHomed(ctx context.Context, arg VisibleRolesHomedParams) ([]VisibleRolesHomedRow, error) {
+	rows, err := q.db.Query(ctx, visibleRolesHomed,
+		arg.Cascade,
+		arg.Parent,
+		arg.AccessIds,
+		arg.User,
+		arg.CapScope,
+		arg.CapAction,
+		arg.CapQual,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisibleRolesHomedRow
+	for rows.Next() {
+		var i VisibleRolesHomedRow
+		if err := rows.Scan(&i.ID, &i.FolderID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

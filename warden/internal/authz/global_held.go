@@ -63,17 +63,6 @@ const cteGlobalHeld = `global_held(role_id) AS (
     WHERE rg.via IN ('same_object', 'parent')
 )`
 
-// heldPlusGlobalHeldPrefix is the combined `WITH RECURSIVE user_groups(...),
-// held(...), global_held(...)` prefix used by CapabilitiesOnScope's single
-// set-based query. It COMPOSES from the same shared fragments as heldCTEPrefix
-// (cteUserGroups + the grant-augmented `held` closure via heldClosureSQL) and the
-// same cteGlobalHeld fragment as globalHeldCTE, so neither closure can drift from
-// its single source. Callers append their own trailing SELECT (which may
-// reference their own @-named params).
-var heldPlusGlobalHeldPrefix = "\nWITH RECURSIVE\n" + cteUserGroups[1:] + "\n" +
-	heldClosureSQL("held", true) + ",\n" +
-	cteGlobalHeld
-
 // globalHeldCapabilities returns the capability patterns the user holds GLOBALLY
 // via scopeless standing bindings closed over role_grants (see globalHeldCTE).
 func (s *sqlAuthorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {

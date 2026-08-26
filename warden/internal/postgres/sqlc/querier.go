@@ -20,6 +20,13 @@ type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	// [14] anchorHomeFolders: the union of the three folder-id anchor sources hanging
+	// off folder-homed nodes — the home folders of roles/groups visible to the user and
+	// the folders of assets visible to the user. Per kind visibility is (the pre-computed
+	// ACCESS id set) ∪ (MANAGEMENT via the kind's read cap over authz_held /
+	// authz_global_held) ∪ (for assets, CONNECT via an ssh:login entitled over the full
+	// asset-scope cascade). Management cascades DOWN a folder subtree (ltree <@).
+	AnchorHomeFolders(ctx context.Context, arg AnchorHomeFoldersParams) ([]pgtype.UUID, error)
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
 	AuditChainTip(ctx context.Context) (AuditChainTipRow, error)
@@ -281,6 +288,17 @@ type Querier interface {
 	UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error)
 	UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error
 	UpsertWorkerPresence(ctx context.Context, workerID string) error
+	// [13] VisibleAssetsUnder: asset ids under `parent` the user may see, unifying the
+	// ACCESS (access_ids), MANAGEMENT (catalog:asset:read cascade over authz_held /
+	// authz_global_held), and CONNECT (ssh:login entitled over the full asset-scope
+	// cascade) axes. The (parent, cascade) browse level is selected by the nullable
+	// @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
+	// by the caller and never reaches this query).
+	VisibleAssetsUnder(ctx context.Context, arg VisibleAssetsUnderParams) ([]uuid.UUID, error)
+	// [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
+	// each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
+	// (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).
+	VisibleGroupsHomed(ctx context.Context, arg VisibleGroupsHomedParams) ([]VisibleGroupsHomedRow, error)
 	// [3] visibleRequestable: every (asset, role) requestable (and not already active)
 	// for the user across ALL assets. The candidate (asset, role) universe is the union
 	// of asset-scoped, ancestor-folder-scoped, and scopeless request_policies; per pair
@@ -288,6 +306,10 @@ type Querier interface {
 	// eligibility and active-exclusion arms mirror RequestableRolesOnAsset, keyed on the
 	// (asset, role) pair.
 	VisibleRequestable(ctx context.Context, user pgtype.UUID) ([]VisibleRequestableRow, error)
+	// [18] visibleHomedSetBased(roles): roles homed under `parent` visible to the user,
+	// each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read
+	// cascade over authz_held / authz_global_held). Level selected by @parent/@cascade.
+	VisibleRolesHomed(ctx context.Context, arg VisibleRolesHomedParams) ([]VisibleRolesHomedRow, error)
 }
 
 var _ Querier = (*Queries)(nil)
