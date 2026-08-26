@@ -46,11 +46,6 @@ func (g capGuard) scopeOfRole(ctx context.Context, roleID uuid.UUID) (authz.Scop
 	return g.guard.ScopeOfRole(ctx, roleID)
 }
 
-// scopeOfGroup returns a group's governance scope: its folder (FolderScope) or Global.
-func (g capGuard) scopeOfGroup(ctx context.Context, groupID uuid.UUID) (authz.Scope, error) {
-	return g.guard.ScopeOfGroup(ctx, groupID)
-}
-
 // scopeOfBinding loads a role binding by id and returns its scope. NotFound on missing.
 func (g capGuard) scopeOfBinding(ctx context.Context, bindingID uuid.UUID) (authz.Scope, error) {
 	return g.guard.ScopeOfBinding(ctx, bindingID)

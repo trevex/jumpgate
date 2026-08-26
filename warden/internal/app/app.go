@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
+	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/postgres"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
@@ -196,7 +197,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	userServices := rpc.UserServices{
 		Lookup:        apiLookup,
 		Auth:          rpc.NewAuthServer(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
-		Identity:      rpc.NewIdentityServer(apiQ, pool, apiTokens, arSvc, terminator, authorizer),
+		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
 		Access:        rpc.NewAccessServer(apiQ, pool, roleResolver, authorizer, arSvc, arSvc),
 		AccessRequest: rpc.NewAccessRequestServer(approvalResolver, arSvc, authorizer, apiQ),

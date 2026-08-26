@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
@@ -32,7 +33,7 @@ func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *
 	services := rpc.UserServices{
 		Lookup:        lookup,
 		Auth:          rpc.NewAuthServer(q, tokens, authorizer, cookieSecure),
-		Identity:      rpc.NewIdentityServer(q, pool, tokens, arSvc, terminator, authorizer),
+		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
 		Access:        rpc.NewAccessServer(q, pool, roles, authorizer, arSvc, arSvc),
 		AccessRequest: rpc.NewAccessRequestServer(resolver, arSvc, authorizer, q),

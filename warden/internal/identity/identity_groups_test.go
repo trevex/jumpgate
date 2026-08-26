@@ -1,4 +1,4 @@
-package rpc_test
+package identity_test
 
 import (
 	"context"
@@ -7,21 +7,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
-	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 )
-
-func authClient(t *testing.T, url, email, pw string) string {
-	t.Helper()
-	c := authv1connect.NewAuthServiceClient(http.DefaultClient, url)
-	resp, err := c.Login(context.Background(), connect.NewRequest(&authv1.LoginRequest{Email: email, Password: pw}))
-	if err != nil {
-		t.Fatalf("login %s: %v", email, err)
-	}
-	return resp.Msg.Token
-}
 
 func TestGroupsAndMemberships(t *testing.T) {
 	pool, url := newServer(t)

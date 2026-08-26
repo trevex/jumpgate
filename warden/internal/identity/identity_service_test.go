@@ -1,4 +1,4 @@
-package rpc_test
+package identity_test
 
 import (
 	"context"
@@ -8,32 +8,13 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
-	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
-	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
-
-func adminToken(t *testing.T, url string) string {
-	t.Helper()
-	c := authv1connect.NewAuthServiceClient(http.DefaultClient, url)
-	resp, err := c.Login(context.Background(), connect.NewRequest(&authv1.LoginRequest{Email: "admin@x", Password: "supersecret"}))
-	if err != nil {
-		t.Fatalf("admin login: %v", err)
-	}
-	return resp.Msg.Token
-}
-
-func withToken[T any](req *connect.Request[T], tok string) *connect.Request[T] {
-	req.Header().Set("Authorization", "Bearer "+tok)
-	return req
-}
 
 // TestManagementIsCapabilityOnly proves management authz is capability-only:
 // there is no is_admin path. A freshly-created user with NO role bindings is
@@ -109,34 +90,6 @@ func TestUsersCRUDRequiresAdmin(t *testing.T) {
 	if len(list.Msg.Users) < 2 {
 		t.Fatalf("list returned %d users, want >=2", len(list.Msg.Users))
 	}
-}
-
-// seedCapUser creates a non-admin local user bound GLOBALLY to a fresh role
-// carrying the given capabilities, and returns the user id. It mirrors the
-// admin path in seedUser but with a scoped capability set instead of `**`.
-func seedCapUser(t *testing.T, pool *pgxpool.Pool, email, pw string, capsJSON string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	q := sqlc.New(pool)
-	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash, err := auth.HashPassword(pw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
-		t.Fatal(err)
-	}
-	role := createRoleWithCaps(t, ctx, q, "role-"+uuid.NewString(), pgtype.UUID{}, capsJSON)
-	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
-		RoleID:        role.ID,
-		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return u.ID
 }
 
 func TestIdentityCapabilityGating(t *testing.T) {

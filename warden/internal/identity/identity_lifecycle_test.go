@@ -1,4 +1,4 @@
-package rpc_test
+package identity_test
 
 import (
 	"context"

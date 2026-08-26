@@ -54,6 +54,11 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 	return folderID, nil
 }
 
+// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
 // pgUUIDToString renders a nullable pgtype.UUID as a string ("" for NULL). Shared by
 // the identity/access proto mappers.
 func pgUUIDToString(u pgtype.UUID) string {
