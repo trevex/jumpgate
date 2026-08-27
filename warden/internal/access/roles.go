@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -61,7 +62,7 @@ func (s *Service) ResolveRole(ctx context.Context, caller uuid.UUID, ref string)
 		if err != nil {
 			return RoleResult{}, apierr.RoleNotFoundOrInternal(err)
 		}
-		r, err := s.q.GetRoleByFolderAndName(ctx, sqlc.GetRoleByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		r, err := s.q.GetRoleByFolderAndName(ctx, sqlc.GetRoleByFolderAndNameParams{FolderID: pgconv.UUID(folderID), Name: name})
 		if err != nil {
 			return RoleResult{}, apierr.RoleNotFoundOrInternal(err)
 		}
@@ -73,7 +74,7 @@ func (s *Service) ResolveRole(ctx context.Context, caller uuid.UUID, ref string)
 		}
 		role = r
 	}
-	if err := s.requireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(role.FolderID)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(role.FolderID)); err != nil {
 		return RoleResult{}, err
 	}
 	return s.roleResult(ctx, role)
@@ -104,8 +105,8 @@ func (s *Service) ListRoles(ctx context.Context, caller uuid.UUID, parentRef str
 	}
 	params := sqlc.ListRolesByIDsPagedParams{Column1: ids, Lim: limit}
 	if key != nil {
-		params.AfterName = pgText(key.Name)
-		params.AfterID = pgUUID(key.ID)
+		params.AfterName = pgconv.Text(key.Name)
+		params.AfterID = pgconv.UUID(key.ID)
 	}
 	rows, err := s.q.ListRolesByIDsPaged(ctx, params)
 	if err != nil {
@@ -151,7 +152,7 @@ func (s *Service) GetRole(ctx context.Context, caller, id uuid.UUID) (RoleResult
 	if err != nil {
 		return RoleResult{}, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	if err := s.requireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); err != nil {
 		return RoleResult{}, err
 	}
 	return s.roleResult(ctx, r)
@@ -186,7 +187,7 @@ func (s *Service) GetRoleDisplay(ctx context.Context, caller, id uuid.UUID) (Rol
 	// Authorize: access:role:read at the role's folder scope OR party to a pending
 	// access request referencing this role. On cap-deny, preserve the original
 	// PermissionDenied unless the request-party path grants the read.
-	if capErr := s.requireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); capErr != nil {
+	if capErr := s.guard.RequireCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); capErr != nil {
 		if s.reqReads == nil {
 			return RoleResult{}, capErr
 		}

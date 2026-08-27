@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -49,6 +50,7 @@ type requestReadAuthorizer interface {
 type Service struct {
 	pool     *pgxpool.Pool
 	q        *sqlc.Queries
+	guard    apiguard.Guard
 	roles    *authz.RoleResolver
 	authz    *authz.Authorizer
 	deleter  roleDeleter
@@ -60,52 +62,11 @@ type Service struct {
 // DeleteRole closed); reqReads authorizes the request-party path of GetRoleDisplay (a
 // nil reqReads disables it, so only the capability grants the read).
 func NewService(pool *pgxpool.Pool, roles *authz.RoleResolver, a *authz.Authorizer, deleter roleDeleter, reqReads requestReadAuthorizer) *Service {
-	return &Service{pool: pool, q: sqlc.New(pool), roles: roles, authz: a, deleter: deleter, reqReads: reqReads}
-}
-
-// requireCap denies unless caller holds `capability` at `scope`. It mirrors
-// apiguard.Guard.RequireCap so the entangled methods (whose cap checks interleave
-// with DB work — role reads gated after the row is loaded, or a no-escalation subset
-// check) can gate in place with identical behavior.
-func (s *Service) requireCap(ctx context.Context, caller uuid.UUID, capability string, scope authz.Scope) error {
-	return apiguard.New(s.authz, s.q).RequireCap(ctx, caller, capability, scope)
-}
-
-// requireGrantable enforces the no-escalation subset rule: every capability in
-// roleCaps must be subsumed by what caller holds at `scope`.
-func (s *Service) requireGrantable(ctx context.Context, caller uuid.UUID, roleCaps []string, scope authz.Scope) error {
-	return apiguard.New(s.authz, s.q).RequireGrantable(ctx, caller, roleCaps, scope)
-}
-
-// roleCaps loads a role's capability patterns from role_capabilities. NotFound on missing role.
-func (s *Service) roleCaps(ctx context.Context, roleID uuid.UUID) ([]string, error) {
-	return apiguard.New(s.authz, s.q).RoleCaps(ctx, roleID)
+	q := sqlc.New(pool)
+	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), roles: roles, authz: a, deleter: deleter, reqReads: reqReads}
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────
-
-// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
-func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
-
-// pgText maps "" to a NULL pgtype.Text, else a valid one.
-func pgText(s string) pgtype.Text {
-	if s == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: s, Valid: true}
-}
-
-// optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
-func optUUID(s string) (pgtype.UUID, bool, error) {
-	if s == "" {
-		return pgtype.UUID{}, false, nil
-	}
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, false, err
-	}
-	return pgUUID(id), true, nil
-}
 
 // resolveFolderIDByPath walks a DNS-style leaf->root folder path (e.g. "db.prod") to
 // a folder id, matching root->leaf. Returns pgx.ErrNoRows if any segment is missing
@@ -120,7 +81,7 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 			return uuid.Nil, err
 		}
 		folderID = f.ID
-		parent = pgUUID(f.ID)
+		parent = pgconv.UUID(f.ID)
 	}
 	return folderID, nil
 }

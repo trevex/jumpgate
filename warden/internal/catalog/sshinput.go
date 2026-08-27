@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -94,7 +95,7 @@ func (s *Service) resolveSecretSource(ctx context.Context, q *sqlc.Queries, asse
 		if err != nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInternal, err)
 		}
-		return pgUUID(row.ID), nil
+		return pgconv.UUID(row.ID), nil
 	case "existing":
 		if onCreate {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": existing_secret_id cannot be used on create; use new_value"))
@@ -113,7 +114,7 @@ func (s *Service) resolveSecretSource(ctx context.Context, q *sqlc.Queries, asse
 		if sec.AssetID != assetID {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": existing_secret_id does not belong to this asset"))
 		}
-		return pgUUID(sid), nil
+		return pgconv.UUID(sid), nil
 	default:
 		return pgtype.UUID{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": secret source required"))
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -66,7 +67,7 @@ func (s *Service) validateAssetMove(ctx context.Context, q *sqlc.Queries, assetI
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
-	bindings, err := q.ListRoleBindingsByAsset(ctx, pgUUID(assetID))
+	bindings, err := q.ListRoleBindingsByAsset(ctx, pgconv.UUID(assetID))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
@@ -79,7 +80,7 @@ func (s *Service) validateAssetMove(ctx context.Context, q *sqlc.Queries, assetI
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("binding %s grants a folder-scoped role not containing the destination", b.ID))
 		}
 	}
-	policies, err := q.ListRequestPoliciesByAsset(ctx, pgUUID(assetID))
+	policies, err := q.ListRequestPoliciesByAsset(ctx, pgconv.UUID(assetID))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}

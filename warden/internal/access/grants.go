@@ -22,11 +22,11 @@ import (
 // writes the edge. Mirrors the DB constraints: a duplicate rule is AlreadyExists; an
 // unknown role is InvalidArgument.
 func (s *Service) AddRoleGrant(ctx context.Context, caller, roleID, sourceRoleID uuid.UUID, via string, scope authz.Scope) (sqlc.RoleGrant, error) {
-	caps, err := s.roleCaps(ctx, roleID)
+	caps, err := s.guard.RoleCaps(ctx, roleID)
 	if err != nil {
 		return sqlc.RoleGrant{}, err
 	}
-	if err := s.requireGrantable(ctx, caller, caps, scope); err != nil {
+	if err := s.guard.RequireGrantable(ctx, caller, caps, scope); err != nil {
 		return sqlc.RoleGrant{}, err
 	}
 	if via == "same_object" && roleID == sourceRoleID {

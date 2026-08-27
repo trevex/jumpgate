@@ -13,6 +13,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -41,7 +42,7 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 	if err != nil {
 		return AssetWithConfig{}, apierr.MapWrite(err) // a bad folder_id is InvalidArgument, not Internal
 	}
-	if err := qtx.InsertAssetName(ctx, sqlc.InsertAssetNameParams{ParentID: pgUUID(a.FolderID), Name: name, AssetID: pgUUID(a.ID)}); err != nil {
+	if err := qtx.InsertAssetName(ctx, sqlc.InsertAssetNameParams{ParentID: pgconv.UUID(a.FolderID), Name: name, AssetID: pgconv.UUID(a.ID)}); err != nil {
 		return AssetWithConfig{}, apierr.MapWrite(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 	}
 
@@ -148,8 +149,8 @@ func (s *Service) ListAssets(ctx context.Context, caller uuid.UUID, parentRef st
 	}
 	params := sqlc.ListAssetsByIDsPagedParams{Ids: ids, Lim: limit}
 	if key != nil {
-		params.AfterName = pgText(key.Name)
-		params.AfterID = pgUUID(key.ID)
+		params.AfterName = pgconv.Text(key.Name)
+		params.AfterID = pgconv.UUID(key.ID)
 	}
 	rows, err := s.q.ListAssetsByIDsPaged(ctx, params)
 	if err != nil {
@@ -201,7 +202,7 @@ func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string
 				return ResolveResult{}, notFoundOrInternal(err)
 			}
 			fid = f.ID
-			parent = pgUUID(f.ID)
+			parent = pgconv.UUID(f.ID)
 		}
 		a, err := s.q.AssetByFolderName(ctx, sqlc.AssetByFolderNameParams{FolderID: fid, Name: name})
 		if err != nil {
@@ -217,7 +218,7 @@ func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string
 	// OR the CONNECT arm: a folder/global ssh:login cascade entitling ≥1 of the
 	// asset's own logins (authz.AssetVisible), so a folder-scoped ssh:login binding
 	// surfaces its asset without any asset-scoped role or catalog:asset:read.
-	mgmtOK := s.requireCap(ctx, caller, "catalog:asset:read", authz.AssetScope(assetID)) == nil
+	mgmtOK := s.guard.RequireCap(ctx, caller, "catalog:asset:read", authz.AssetScope(assetID)) == nil
 	if !mgmtOK {
 		roles, err := s.authz.RolesOnAsset(ctx, caller, assetID)
 		if err != nil {
@@ -254,7 +255,7 @@ func (s *Service) DeleteAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 	if !visible {
 		return connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
 	}
-	if err := s.requireCap(ctx, caller, "catalog:asset:delete", authz.AssetScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "catalog:asset:delete", authz.AssetScope(id)); err != nil {
 		return err
 	}
 	// Signal teardown while live_sessions rows still exist.
@@ -306,7 +307,7 @@ func (s *Service) UpdateAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 	if !visible {
 		return AssetWithConfig{}, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
 	}
-	if err := s.requireCap(ctx, caller, "catalog:asset:update", authz.AssetScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "catalog:asset:update", authz.AssetScope(id)); err != nil {
 		return AssetWithConfig{}, err
 	}
 	cur, err := s.q.GetAsset(ctx, id)
@@ -326,7 +327,7 @@ func (s *Service) UpdateAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 		}
 		if f != newFolder {
 			// Creating the asset in its new home requires create there.
-			if err := s.requireCap(ctx, caller, "catalog:asset:create", authz.FolderScope(f)); err != nil {
+			if err := s.guard.RequireCap(ctx, caller, "catalog:asset:create", authz.FolderScope(f)); err != nil {
 				return AssetWithConfig{}, err
 			}
 			newFolder, moving = f, true
@@ -352,7 +353,7 @@ func (s *Service) UpdateAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 		if err := q.UpdateAssetName(ctx, sqlc.UpdateAssetNameParams{ID: id, Name: newName}); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
 		}
-		if err := q.UpdateAssetCatalogName(ctx, sqlc.UpdateAssetCatalogNameParams{AssetID: pgUUID(id), ParentID: pgUUID(newFolder), Name: newName}); err != nil {
+		if err := q.UpdateAssetCatalogName(ctx, sqlc.UpdateAssetCatalogNameParams{AssetID: pgconv.UUID(id), ParentID: pgconv.UUID(newFolder), Name: newName}); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err) // sibling collision (incl. vs a folder) -> AlreadyExists
 		}
 	}

@@ -6,12 +6,12 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -42,14 +42,6 @@ func caller(ctx context.Context) (uuid.UUID, error) {
 
 // ── proto mapping ────────────────────────────────────────────────────────────
 
-// pgUUIDToString renders a nullable pgtype.UUID as a string ("" for NULL).
-func pgUUIDToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
-}
-
 func toUserMsg(u sqlc.User) *identityv1.User {
 	return &identityv1.User{Id: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, Active: !u.DeactivatedAt.Valid}
 }
@@ -59,7 +51,7 @@ func groupMsg(res GroupResult) *identityv1.Group {
 	return &identityv1.Group{
 		Id:         res.Group.ID.String(),
 		Name:       res.Group.Name,
-		FolderId:   pgUUIDToString(res.Group.FolderID),
+		FolderId:   pgconv.UUIDString(res.Group.FolderID),
 		FolderPath: res.FolderPath,
 	}
 }
@@ -217,7 +209,7 @@ func (h *Handler) DeleteUser(ctx context.Context, req *connect.Request[identityv
 // CreateGroup gates on identity:group:create at the group's folder scope, then
 // delegates to the service.
 func (h *Handler) CreateGroup(ctx context.Context, req *connect.Request[identityv1.CreateGroupRequest]) (*connect.Response[identityv1.CreateGroupResponse], error) {
-	folderID, _, err := optUUID(req.Msg.FolderId)
+	folderID, _, err := pgconv.OptUUID(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}

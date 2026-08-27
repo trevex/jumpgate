@@ -8,16 +8,15 @@ package catalog
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
 	"github.com/trevex/jumpgate/warden/internal/apierr"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
@@ -45,6 +44,7 @@ type requestReadAuthorizer interface {
 type Service struct {
 	pool       *pgxpool.Pool
 	q          *sqlc.Queries
+	guard      apiguard.Guard
 	sealer     *secrets.Sealer
 	terminator sessionTerminator
 	authz      *authz.Authorizer
@@ -57,40 +57,16 @@ type Service struct {
 // before DeleteAsset (a nil terminator disables teardown); reqReads authorizes the
 // request-party path of GetAssetDisplay (a nil reqReads disables it).
 func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminator, a *authz.Authorizer, rr requestReadAuthorizer) *Service {
-	return &Service{pool: pool, q: sqlc.New(pool), sealer: sealer, terminator: term, authz: a, reqReads: rr}
-}
-
-// requireCap denies unless caller holds `capability` at `scope`. It mirrors
-// apiguard.Guard.RequireCap so the entangled methods (whose cap/visibility checks
-// interleave with DB work) can gate in place with identical behavior.
-func (s *Service) requireCap(ctx context.Context, caller uuid.UUID, capability string, scope authz.Scope) error {
-	caps, err := s.authz.CapabilitiesOnScope(ctx, caller, scope)
-	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
-	}
-	if !caps.Allows(capability) {
-		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("missing capability %q", capability))
-	}
-	return nil
+	q := sqlc.New(pool)
+	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), sealer: sealer, terminator: term, authz: a, reqReads: rr}
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────
-
-// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
-func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
 // mapWrite maps a Postgres write error to an appropriate Connect code (see
 // apierr.MapWrite): bad-input constraint failures surface as
 // InvalidArgument/AlreadyExists rather than Internal.
 func mapWrite(err error) error { return apierr.MapWrite(err) }
-
-// pgText maps "" to a NULL pgtype.Text, else a valid one.
-func pgText(s string) pgtype.Text {
-	if s == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: s, Valid: true}
-}
 
 // joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
 // its folder's leaf->root path. folderPath is the containing folder's own leaf-first

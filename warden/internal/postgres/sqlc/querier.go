@@ -92,11 +92,9 @@ type Querier interface {
 	// Deletes the policies for which the role is the requestable role (meaningless once
 	// the role is gone). Part of the DeleteRole cascade.
 	DeletePoliciesForRole(ctx context.Context, roleID uuid.UUID) error
-	DeletePolicySubjectsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	// Removes the subjects of every policy whose requestable role is $1 (those policies
 	// are about to be deleted). Part of the DeleteRole cascade.
 	DeletePolicySubjectsForRole(ctx context.Context, roleID uuid.UUID) error
-	DeleteRequestPoliciesForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	// Deletes the role row. The role's name uniqueness is enforced by the partial
 	// UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
@@ -104,7 +102,6 @@ type Querier interface {
 	// run only after its bindings/edges/policies are removed and its grants revoked.
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 	DeleteRoleBinding(ctx context.Context, id uuid.UUID) error
-	DeleteRoleBindingsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error
 	// Removes every standing binding of the role. Part of the DeleteRole cascade.
 	DeleteRoleBindingsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeleteRoleGrant(ctx context.Context, id uuid.UUID) error

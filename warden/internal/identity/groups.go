@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -44,7 +45,7 @@ func (s *Service) ResolveGroup(ctx context.Context, caller uuid.UUID, ref string
 		if err != nil {
 			return GroupResult{}, apierr.GroupNotFoundOrInternal(err)
 		}
-		g, err := s.q.GetGroupByFolderAndName(ctx, sqlc.GetGroupByFolderAndNameParams{FolderID: pgUUID(folderID), Name: name})
+		g, err := s.q.GetGroupByFolderAndName(ctx, sqlc.GetGroupByFolderAndNameParams{FolderID: pgconv.UUID(folderID), Name: name})
 		if err != nil {
 			return GroupResult{}, apierr.GroupNotFoundOrInternal(err)
 		}
@@ -58,7 +59,7 @@ func (s *Service) ResolveGroup(ctx context.Context, caller uuid.UUID, ref string
 	}
 	// Existence-hide a read-cap denial as NotFound (must not reveal a group outside
 	// the caller's read scope).
-	if err := s.requireCap(ctx, caller, "identity:group:read", apiguard.ScopeOfFolderID(grp.FolderID)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "identity:group:read", apiguard.ScopeOfFolderID(grp.FolderID)); err != nil {
 		return GroupResult{}, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
 	}
 	return s.groupResult(ctx, grp)
@@ -89,8 +90,8 @@ func (s *Service) ListGroups(ctx context.Context, caller uuid.UUID, parentRef st
 	}
 	params := sqlc.ListGroupsByIDsPagedParams{Column1: ids, Lim: limit}
 	if key != nil {
-		params.AfterName = pgText(key.Name)
-		params.AfterID = pgUUID(key.ID)
+		params.AfterName = pgconv.Text(key.Name)
+		params.AfterID = pgconv.UUID(key.ID)
 	}
 	rows, err := s.q.ListGroupsByIDsPaged(ctx, params)
 	if err != nil {
@@ -127,7 +128,7 @@ func (s *Service) ListGroups(ctx context.Context, caller uuid.UUID, parentRef st
 // AddUserToGroup adds a user as a member of a group. The caller's capability is
 // gated by the handler at the group's folder scope.
 func (s *Service) AddUserToGroup(ctx context.Context, groupID, userID uuid.UUID) error {
-	if err := s.q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: groupID, MemberUserID: pgUUID(userID)}); err != nil {
+	if err := s.q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: groupID, MemberUserID: pgconv.UUID(userID)}); err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	return nil
@@ -147,8 +148,8 @@ func (s *Service) AddGroupToGroup(ctx context.Context, groupID, memberGroupID uu
 			errors.New("group nesting cycle: a group cannot be a member of itself"))
 	}
 	cyclic, err := s.q.GroupNestingCyclic(ctx, sqlc.GroupNestingCyclicParams{
-		GroupID:       pgUUID(groupID),
-		MemberGroupID: pgUUID(memberGroupID),
+		GroupID:       pgconv.UUID(groupID),
+		MemberGroupID: pgconv.UUID(memberGroupID),
 	})
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -157,7 +158,7 @@ func (s *Service) AddGroupToGroup(ctx context.Context, groupID, memberGroupID uu
 		return connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("group nesting cycle: this group is already a transitive member of the group being added"))
 	}
-	if err := s.q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: groupID, MemberGroupID: pgUUID(memberGroupID)}); err != nil {
+	if err := s.q.AddGroupToGroup(ctx, sqlc.AddGroupToGroupParams{GroupID: groupID, MemberGroupID: pgconv.UUID(memberGroupID)}); err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	return nil
@@ -166,7 +167,7 @@ func (s *Service) AddGroupToGroup(ctx context.Context, groupID, memberGroupID uu
 // RemoveUserFromGroup removes a user from a group. No-op if absent. The caller's
 // capability is gated by the handler.
 func (s *Service) RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.UUID) error {
-	if err := s.q.RemoveUserFromGroup(ctx, sqlc.RemoveUserFromGroupParams{GroupID: groupID, MemberUserID: pgUUID(userID)}); err != nil {
+	if err := s.q.RemoveUserFromGroup(ctx, sqlc.RemoveUserFromGroupParams{GroupID: groupID, MemberUserID: pgconv.UUID(userID)}); err != nil {
 		return apierr.MapWrite(err)
 	}
 	return nil
@@ -175,7 +176,7 @@ func (s *Service) RemoveUserFromGroup(ctx context.Context, groupID, userID uuid.
 // RemoveGroupFromGroup removes a nested group membership. No-op if absent. The
 // caller's capability is gated by the handler.
 func (s *Service) RemoveGroupFromGroup(ctx context.Context, groupID, memberGroupID uuid.UUID) error {
-	if err := s.q.RemoveGroupFromGroup(ctx, sqlc.RemoveGroupFromGroupParams{GroupID: groupID, MemberGroupID: pgUUID(memberGroupID)}); err != nil {
+	if err := s.q.RemoveGroupFromGroup(ctx, sqlc.RemoveGroupFromGroupParams{GroupID: groupID, MemberGroupID: pgconv.UUID(memberGroupID)}); err != nil {
 		return apierr.MapWrite(err)
 	}
 	return nil

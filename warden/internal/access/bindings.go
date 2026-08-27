@@ -19,11 +19,11 @@ import (
 // the role grants must be held by the caller at bindScope) and the folder-scoped role
 // containment invariant, before writing the binding.
 func (s *Service) CreateRoleBinding(ctx context.Context, caller, roleID uuid.UUID, scopeFolder, scopeAsset, subjUser, subjGroup pgtype.UUID, bindScope authz.Scope) (sqlc.RoleBinding, error) {
-	caps, err := s.roleCaps(ctx, roleID)
+	caps, err := s.guard.RoleCaps(ctx, roleID)
 	if err != nil {
 		return sqlc.RoleBinding{}, err
 	}
-	if err := s.requireGrantable(ctx, caller, caps, bindScope); err != nil {
+	if err := s.guard.RequireGrantable(ctx, caller, caps, bindScope); err != nil {
 		return sqlc.RoleBinding{}, err
 	}
 	if err := s.containedInRoleSubtree(ctx, roleID, scopeFolder, scopeAsset); err != nil {

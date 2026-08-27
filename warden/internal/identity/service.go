@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -48,6 +49,7 @@ type sessionEvictor interface {
 type Service struct {
 	pool    *pgxpool.Pool
 	q       *sqlc.Queries
+	guard   apiguard.Guard
 	revoker grantRevoker
 	evictor sessionEvictor
 	authz   *authz.Authorizer
@@ -58,40 +60,11 @@ type Service struct {
 // force-evicts the user's remaining live sessions; either may be nil in tests that
 // don't exercise deactivation teardown.
 func NewService(pool *pgxpool.Pool, revoker grantRevoker, evictor sessionEvictor, a *authz.Authorizer) *Service {
-	return &Service{pool: pool, q: sqlc.New(pool), revoker: revoker, evictor: evictor, authz: a}
-}
-
-// requireCap denies unless caller holds `capability` at `scope`. It mirrors
-// apiguard.Guard.RequireCap so the entangled methods (whose cap/visibility checks
-// interleave with DB work) can gate in place with identical behavior.
-func (s *Service) requireCap(ctx context.Context, caller uuid.UUID, capability string, scope authz.Scope) error {
-	return apiguard.New(s.authz, s.q).RequireCap(ctx, caller, capability, scope)
+	q := sqlc.New(pool)
+	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), revoker: revoker, evictor: evictor, authz: a}
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────
-
-// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
-func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
-
-// pgText maps "" to a NULL pgtype.Text, else a valid one.
-func pgText(s string) pgtype.Text {
-	if s == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: s, Valid: true}
-}
-
-// optUUID parses a possibly-empty UUID string. Empty → (pgtype.UUID{}, false, nil).
-func optUUID(s string) (pgtype.UUID, bool, error) {
-	if s == "" {
-		return pgtype.UUID{}, false, nil
-	}
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, false, err
-	}
-	return pgUUID(id), true, nil
-}
 
 // resolveFolderIDByPath walks a DNS-style leaf->root folder path (e.g. "db.prod") to
 // a folder id, matching root->leaf. Returns pgx.ErrNoRows if any segment is missing
@@ -106,7 +79,7 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 			return uuid.Nil, err
 		}
 		folderID = f.ID
-		parent = pgUUID(f.ID)
+		parent = pgconv.UUID(f.ID)
 	}
 	return folderID, nil
 }

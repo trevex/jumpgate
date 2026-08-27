@@ -160,16 +160,6 @@ SELECT up.id FROM up;
 -- name: DeleteAssetSecretsForAsset :exec
 DELETE FROM asset_secrets WHERE asset_id = $1;
 
--- name: DeleteRoleBindingsForAsset :exec
-DELETE FROM role_bindings WHERE scope_asset_id = $1;
-
--- name: DeletePolicySubjectsForAsset :exec
-DELETE FROM request_policy_subjects
-WHERE policy_id IN (SELECT id FROM request_policies WHERE scope_asset_id = $1);
-
--- name: DeleteRequestPoliciesForAsset :exec
-DELETE FROM request_policies WHERE scope_asset_id = $1;
-
 -- name: DeleteAsset :exec
 DELETE FROM assets WHERE id = $1;
 

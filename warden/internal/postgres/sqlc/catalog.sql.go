@@ -132,40 +132,12 @@ func (q *Queries) DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.
 	return err
 }
 
-const deletePolicySubjectsForAsset = `-- name: DeletePolicySubjectsForAsset :exec
-DELETE FROM request_policy_subjects
-WHERE policy_id IN (SELECT id FROM request_policies WHERE scope_asset_id = $1)
-`
-
-func (q *Queries) DeletePolicySubjectsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deletePolicySubjectsForAsset, scopeAssetID)
-	return err
-}
-
-const deleteRequestPoliciesForAsset = `-- name: DeleteRequestPoliciesForAsset :exec
-DELETE FROM request_policies WHERE scope_asset_id = $1
-`
-
-func (q *Queries) DeleteRequestPoliciesForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteRequestPoliciesForAsset, scopeAssetID)
-	return err
-}
-
 const deleteRoleBinding = `-- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1
 `
 
 func (q *Queries) DeleteRoleBinding(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRoleBinding, id)
-	return err
-}
-
-const deleteRoleBindingsForAsset = `-- name: DeleteRoleBindingsForAsset :exec
-DELETE FROM role_bindings WHERE scope_asset_id = $1
-`
-
-func (q *Queries) DeleteRoleBindingsForAsset(ctx context.Context, scopeAssetID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteRoleBindingsForAsset, scopeAssetID)
 	return err
 }
 

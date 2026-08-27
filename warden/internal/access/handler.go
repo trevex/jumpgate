@@ -7,12 +7,12 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -44,20 +44,12 @@ func caller(ctx context.Context) (uuid.UUID, error) {
 
 // ── proto mapping ────────────────────────────────────────────────────────────
 
-// pgUUIDToString renders a nullable pgtype.UUID as a string ("" for NULL).
-func pgUUIDToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
-}
-
 func toAccessRoleMsg(r sqlc.Role, caps []string) *accessv1.Role {
 	return &accessv1.Role{
 		Id:           r.ID.String(),
 		Name:         r.Name,
 		Capabilities: caps,
-		FolderId:     pgUUIDToString(r.FolderID),
+		FolderId:     pgconv.UUIDString(r.FolderID),
 	}
 }
 
@@ -81,10 +73,10 @@ func toRoleBindingMsg(b sqlc.RoleBinding) *accessv1.RoleBinding {
 	return &accessv1.RoleBinding{
 		Id:             b.ID.String(),
 		RoleId:         b.RoleID.String(),
-		ScopeFolderId:  pgUUIDToString(b.ScopeFolderID),
-		ScopeAssetId:   pgUUIDToString(b.ScopeAssetID),
-		SubjectUserId:  pgUUIDToString(b.SubjectUserID),
-		SubjectGroupId: pgUUIDToString(b.SubjectGroupID),
+		ScopeFolderId:  pgconv.UUIDString(b.ScopeFolderID),
+		ScopeAssetId:   pgconv.UUIDString(b.ScopeAssetID),
+		SubjectUserId:  pgconv.UUIDString(b.SubjectUserID),
+		SubjectGroupId: pgconv.UUIDString(b.SubjectGroupID),
 	}
 }
 
@@ -92,11 +84,11 @@ func toRequestPolicyMsg(r sqlc.RequestPolicy) *accessv1.RequestPolicy {
 	return &accessv1.RequestPolicy{
 		Id:                 r.ID.String(),
 		RoleId:             r.RoleID.String(),
-		ScopeFolderId:      pgUUIDToString(r.ScopeFolderID),
-		ScopeAssetId:       pgUUIDToString(r.ScopeAssetID),
+		ScopeFolderId:      pgconv.UUIDString(r.ScopeFolderID),
+		ScopeAssetId:       pgconv.UUIDString(r.ScopeAssetID),
 		RequiredApprovals:  r.RequiredApprovals,
-		RequesterRoleId:    pgUUIDToString(r.RequesterRoleID),
-		ApproverRoleId:     pgUUIDToString(r.ApproverRoleID),
+		RequesterRoleId:    pgconv.UUIDString(r.RequesterRoleID),
+		ApproverRoleId:     pgconv.UUIDString(r.ApproverRoleID),
 		MaxDurationSeconds: intervalToSeconds(r.MaxDuration),
 		Name:               r.Name.String,
 	}
@@ -107,8 +99,8 @@ func toPolicySubjectMsg(s sqlc.RequestPolicySubject) *accessv1.PolicySubject {
 		Id:             s.ID.String(),
 		PolicyId:       s.PolicyID.String(),
 		Kind:           s.Kind,
-		SubjectUserId:  pgUUIDToString(s.SubjectUserID),
-		SubjectGroupId: pgUUIDToString(s.SubjectGroupID),
+		SubjectUserId:  pgconv.UUIDString(s.SubjectUserID),
+		SubjectGroupId: pgconv.UUIDString(s.SubjectGroupID),
 	}
 }
 
@@ -117,7 +109,7 @@ func toPolicySubjectMsg(s sqlc.RequestPolicySubject) *accessv1.PolicySubject {
 // CreateRole gates on access:role:create at the role's (request) folder scope, then
 // delegates to the service (role + capabilities in one transaction).
 func (h *Handler) CreateRole(ctx context.Context, req *connect.Request[accessv1.CreateRoleRequest]) (*connect.Response[accessv1.CreateRoleResponse], error) {
-	folderID, _, err := optUUID(req.Msg.FolderId)
+	folderID, _, err := pgconv.OptUUID(req.Msg.FolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad folder_id"))
 	}
@@ -308,22 +300,22 @@ func (h *Handler) CreateRoleBinding(ctx context.Context, req *connect.Request[ac
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	scopeFolder, hasFolder, err := optUUID(req.Msg.ScopeFolderId)
+	scopeFolder, hasFolder, err := pgconv.OptUUID(req.Msg.ScopeFolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_folder_id"))
 	}
-	scopeAsset, hasAsset, err := optUUID(req.Msg.ScopeAssetId)
+	scopeAsset, hasAsset, err := pgconv.OptUUID(req.Msg.ScopeAssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 	}
 	if hasFolder && hasAsset {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("at most one of scope_folder_id, scope_asset_id may be set"))
 	}
-	subjUser, hasUser, err := optUUID(req.Msg.SubjectUserId)
+	subjUser, hasUser, err := pgconv.OptUUID(req.Msg.SubjectUserId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_user_id"))
 	}
-	subjGroup, hasGroup, err := optUUID(req.Msg.SubjectGroupId)
+	subjGroup, hasGroup, err := pgconv.OptUUID(req.Msg.SubjectGroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
 	}
@@ -372,15 +364,15 @@ func (h *Handler) DeleteRoleBinding(ctx context.Context, req *connect.Request[ac
 // ListRoleBindings lists bindings matching the (all-optional) filters, authorized by
 // access:binding:read at the QUERIED scope (asset > folder > global).
 func (h *Handler) ListRoleBindings(ctx context.Context, req *connect.Request[accessv1.ListRoleBindingsRequest]) (*connect.Response[accessv1.ListRoleBindingsResponse], error) {
-	roleID, _, err := optUUID(req.Msg.RoleId)
+	roleID, _, err := pgconv.OptUUID(req.Msg.RoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	scopeFolder, _, err := optUUID(req.Msg.ScopeFolderId)
+	scopeFolder, _, err := pgconv.OptUUID(req.Msg.ScopeFolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_folder_id"))
 	}
-	scopeAsset, _, err := optUUID(req.Msg.ScopeAssetId)
+	scopeAsset, _, err := pgconv.OptUUID(req.Msg.ScopeAssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 	}
@@ -392,11 +384,11 @@ func (h *Handler) ListRoleBindings(ctx context.Context, req *connect.Request[acc
 	if err := h.guard.RequireCap(ctx, c, "access:binding:read", apiguard.ScopeOfObject(scopeFolder, scopeAsset)); err != nil {
 		return nil, err
 	}
-	subjUser, _, err := optUUID(req.Msg.SubjectUserId)
+	subjUser, _, err := pgconv.OptUUID(req.Msg.SubjectUserId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_user_id"))
 	}
-	subjGroup, _, err := optUUID(req.Msg.SubjectGroupId)
+	subjGroup, _, err := pgconv.OptUUID(req.Msg.SubjectGroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
 	}
@@ -420,11 +412,11 @@ func (h *Handler) CreateRequestPolicy(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
 	}
-	scopeFolder, hasFolder, err := optUUID(req.Msg.ScopeFolderId)
+	scopeFolder, hasFolder, err := pgconv.OptUUID(req.Msg.ScopeFolderId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_folder_id"))
 	}
-	scopeAsset, hasAsset, err := optUUID(req.Msg.ScopeAssetId)
+	scopeAsset, hasAsset, err := pgconv.OptUUID(req.Msg.ScopeAssetId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad scope_asset_id"))
 	}
@@ -432,11 +424,11 @@ func (h *Handler) CreateRequestPolicy(ctx context.Context, req *connect.Request[
 	if hasFolder && hasAsset {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("at most one of scope_folder_id, scope_asset_id may be set"))
 	}
-	requesterRole, _, err := optUUID(req.Msg.RequesterRoleId)
+	requesterRole, _, err := pgconv.OptUUID(req.Msg.RequesterRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad requester_role_id"))
 	}
-	approverRole, _, err := optUUID(req.Msg.ApproverRoleId)
+	approverRole, _, err := pgconv.OptUUID(req.Msg.ApproverRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
@@ -481,11 +473,11 @@ func (h *Handler) UpdateRequestPolicy(ctx context.Context, req *connect.Request[
 	if err := h.guard.RequireCap(ctx, c, "access:policy:update", scope); err != nil {
 		return nil, err
 	}
-	requesterRole, _, err := optUUID(req.Msg.RequesterRoleId)
+	requesterRole, _, err := pgconv.OptUUID(req.Msg.RequesterRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad requester_role_id"))
 	}
-	approverRole, _, err := optUUID(req.Msg.ApproverRoleId)
+	approverRole, _, err := pgconv.OptUUID(req.Msg.ApproverRoleId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad approver_role_id"))
 	}
@@ -629,11 +621,11 @@ func (h *Handler) AddPolicySubject(ctx context.Context, req *connect.Request[acc
 	if err := h.guard.RequireCap(ctx, c, "access:policy:manage-subjects", scope); err != nil {
 		return nil, err
 	}
-	subjUser, hasUser, err := optUUID(req.Msg.SubjectUserId)
+	subjUser, hasUser, err := pgconv.OptUUID(req.Msg.SubjectUserId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_user_id"))
 	}
-	subjGroup, hasGroup, err := optUUID(req.Msg.SubjectGroupId)
+	subjGroup, hasGroup, err := pgconv.OptUUID(req.Msg.SubjectGroupId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad subject_group_id"))
 	}

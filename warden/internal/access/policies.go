@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -34,11 +35,11 @@ type CreateRequestPolicyInput struct {
 // then enforces the no-escalation subset rule (requireGrantable) and the
 // folder-scoped role containment invariant before writing the policy.
 func (s *Service) CreateRequestPolicy(ctx context.Context, caller uuid.UUID, in CreateRequestPolicyInput, policyScope authz.Scope) (sqlc.RequestPolicy, error) {
-	caps, err := s.roleCaps(ctx, in.RoleID)
+	caps, err := s.guard.RoleCaps(ctx, in.RoleID)
 	if err != nil {
 		return sqlc.RequestPolicy{}, err
 	}
-	if err := s.requireGrantable(ctx, caller, caps, policyScope); err != nil {
+	if err := s.guard.RequireGrantable(ctx, caller, caps, policyScope); err != nil {
 		return sqlc.RequestPolicy{}, err
 	}
 	if err := s.containedInRoleSubtree(ctx, in.RoleID, in.ScopeFolder, in.ScopeAsset); err != nil {
@@ -52,7 +53,7 @@ func (s *Service) CreateRequestPolicy(ctx context.Context, caller uuid.UUID, in 
 		ApproverRoleID:    in.ApproverRole,
 		RequesterRoleID:   in.RequesterRole,
 		MaxDuration:       secondsToInterval(in.MaxDurationSeconds),
-		Name:              pgText(in.Name),
+		Name:              pgconv.Text(in.Name),
 	})
 	if err != nil {
 		return sqlc.RequestPolicy{}, apierr.MapWrite(err)
@@ -121,7 +122,7 @@ func (s *Service) ListPoliciesForAsset(ctx context.Context, assetID uuid.UUID, p
 	if err != nil {
 		return nil, "", err
 	}
-	params := sqlc.ListPoliciesForAssetParams{AssetID: pgUUID(assetID), Lim: limit}
+	params := sqlc.ListPoliciesForAssetParams{AssetID: pgconv.UUID(assetID), Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -147,7 +148,7 @@ func (s *Service) ListPoliciesForGroup(ctx context.Context, groupID uuid.UUID, p
 	if err != nil {
 		return nil, "", err
 	}
-	params := sqlc.ListPoliciesForSubjectGroupParams{GroupID: pgUUID(groupID), Lim: limit}
+	params := sqlc.ListPoliciesForSubjectGroupParams{GroupID: pgconv.UUID(groupID), Lim: limit}
 	if k != nil {
 		params.AfterTs = pgtype.Timestamptz{Time: *k.Time, Valid: true}
 		params.AfterID = pgtype.UUID{Bytes: k.ID, Valid: true}
@@ -170,8 +171,8 @@ func (s *Service) ListPoliciesForGroup(ctx context.Context, groupID uuid.UUID, p
 // (lower-cased) by the handler.
 func (s *Service) ResolvePolicy(ctx context.Context, name string, assetID uuid.UUID) (sqlc.RequestPolicy, error) {
 	p, err := s.q.GetPolicyByNameAndAsset(ctx, sqlc.GetPolicyByNameAndAssetParams{
-		Name:         pgText(name),
-		ScopeAssetID: pgUUID(assetID),
+		Name:         pgconv.Text(name),
+		ScopeAssetID: pgconv.UUID(assetID),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -28,7 +29,7 @@ func resolveFolderIDByPath(ctx context.Context, q *sqlc.Queries, path string) (u
 			return uuid.Nil, err
 		}
 		folderID = f.ID
-		parent = pgUUID(f.ID)
+		parent = pgconv.UUID(f.ID)
 	}
 	return folderID, nil
 }
@@ -47,7 +48,7 @@ func (s *Service) CreateFolder(ctx context.Context, parent pgtype.UUID, name str
 	if err != nil {
 		return FolderResult{}, mapWrite(err) // a bad parent_id is InvalidArgument, not Internal
 	}
-	if err := qtx.InsertFolderName(ctx, sqlc.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgUUID(f.ID)}); err != nil {
+	if err := qtx.InsertFolderName(ctx, sqlc.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgconv.UUID(f.ID)}); err != nil {
 		return FolderResult{}, mapWrite(err) // sibling collision -> AlreadyExists
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -141,8 +142,8 @@ func (s *Service) ListFolders(ctx context.Context, caller uuid.UUID, parentRef s
 	}
 	params := sqlc.ListFoldersByIDsPagedParams{Ids: ids, Lim: limit}
 	if key != nil {
-		params.AfterName = pgText(key.Name)
-		params.AfterID = pgUUID(key.ID)
+		params.AfterName = pgconv.Text(key.Name)
+		params.AfterID = pgconv.UUID(key.ID)
 	}
 	rows, err := s.q.ListFoldersByIDsPaged(ctx, params)
 	if err != nil {
@@ -190,7 +191,7 @@ func (s *Service) ResolveFolder(ctx context.Context, caller uuid.UUID, ref strin
 
 	// A caller without the read cap must not be able to distinguish an existing-but-
 	// invisible folder from a nonexistent one, so a denial is reported as NotFound.
-	if s.requireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(folderID)) != nil {
+	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(folderID)) != nil {
 		return ResolveResult{}, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
 
@@ -207,10 +208,10 @@ func (s *Service) ResolveFolder(ctx context.Context, caller uuid.UUID, ref strin
 // read it.
 func (s *Service) DeleteFolder(ctx context.Context, caller uuid.UUID, id uuid.UUID) error {
 	// Existence-hide: a caller who can't read it sees NotFound; then require delete.
-	if s.requireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
+	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
 		return connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
-	if err := s.requireCap(ctx, caller, "catalog:folder:delete", authz.FolderScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:delete", authz.FolderScope(id)); err != nil {
 		return err
 	}
 
@@ -222,7 +223,7 @@ func (s *Service) DeleteFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 			blockers = append(blockers, fmt.Sprintf("%d %s", n, label))
 		}
 	}
-	nChildFolders, err := s.q.CountChildFolders(ctx, pgUUID(id))
+	nChildFolders, err := s.q.CountChildFolders(ctx, pgconv.UUID(id))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
@@ -232,22 +233,22 @@ func (s *Service) DeleteFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	appendBlocker(nAssets, "assets")
-	nRoles, err := s.q.CountRolesHomedInFolder(ctx, pgUUID(id))
+	nRoles, err := s.q.CountRolesHomedInFolder(ctx, pgconv.UUID(id))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	appendBlocker(nRoles, "roles homed here")
-	nGroups, err := s.q.CountGroupsHomedInFolder(ctx, pgUUID(id))
+	nGroups, err := s.q.CountGroupsHomedInFolder(ctx, pgconv.UUID(id))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	appendBlocker(nGroups, "groups homed here")
-	nBindings, err := s.q.CountBindingsScopedToFolder(ctx, pgUUID(id))
+	nBindings, err := s.q.CountBindingsScopedToFolder(ctx, pgconv.UUID(id))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	appendBlocker(nBindings, "bindings scoped here")
-	nPolicies, err := s.q.CountPoliciesScopedToFolder(ctx, pgUUID(id))
+	nPolicies, err := s.q.CountPoliciesScopedToFolder(ctx, pgconv.UUID(id))
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
@@ -277,10 +278,10 @@ type UpdateFolderInput struct {
 // A ParentId of "" moves the folder to the root. Existence-hidden.
 func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UUID, in UpdateFolderInput) (FolderResult, error) {
 	// Existence-hide: a caller who can't read it sees NotFound; then require update.
-	if s.requireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
+	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
 		return FolderResult{}, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
-	if err := s.requireCap(ctx, caller, "catalog:folder:update", authz.FolderScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:update", authz.FolderScope(id)); err != nil {
 		return FolderResult{}, err
 	}
 	cur, err := s.q.GetFolder(ctx, id)
@@ -306,10 +307,10 @@ func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 			}
 			if !cur.ParentID.Valid || uuid.UUID(cur.ParentID.Bytes) != pid {
 				// Placing the folder under its new parent requires create there.
-				if err := s.requireCap(ctx, caller, "catalog:folder:create", authz.FolderScope(pid)); err != nil {
+				if err := s.guard.RequireCap(ctx, caller, "catalog:folder:create", authz.FolderScope(pid)); err != nil {
 					return FolderResult{}, err
 				}
-				newParent, moving = pgUUID(pid), true
+				newParent, moving = pgconv.UUID(pid), true
 			}
 		}
 	}
@@ -350,7 +351,7 @@ func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 		if err := q.UpdateFolderName(ctx, sqlc.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
 			return FolderResult{}, mapWrite(err)
 		}
-		if err := q.UpdateFolderCatalogName(ctx, sqlc.UpdateFolderCatalogNameParams{FolderID: pgUUID(id), ParentID: newParent, Name: newName}); err != nil {
+		if err := q.UpdateFolderCatalogName(ctx, sqlc.UpdateFolderCatalogNameParams{FolderID: pgconv.UUID(id), ParentID: newParent, Name: newName}); err != nil {
 			return FolderResult{}, mapWrite(err) // sibling collision -> AlreadyExists
 		}
 	}

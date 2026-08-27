@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -46,16 +47,8 @@ func caller(ctx context.Context) (uuid.UUID, error) {
 
 // ── proto mapping ────────────────────────────────────────────────────────────
 
-// pgUUIDToString renders a nullable pgtype.UUID as a string ("" for NULL).
-func pgUUIDToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
-}
-
 func toFolderMsg(f sqlc.Folder) *catalogv1.Folder {
-	return &catalogv1.Folder{Id: f.ID.String(), Name: f.Name, ParentId: pgUUIDToString(f.ParentID)}
+	return &catalogv1.Folder{Id: f.ID.String(), Name: f.Name, ParentId: pgconv.UUIDString(f.ParentID)}
 }
 
 func folderMsg(res FolderResult) *catalogv1.Folder {
@@ -77,7 +70,7 @@ func toAssetMsgWithConfig(a sqlc.Asset, cfg sqlc.SshAssetConfig, logins []sqlc.S
 		out = append(out, &catalogv1.SSHLogin{
 			Login:    l.Login,
 			Kind:     l.Kind,
-			SecretId: pgUUIDToString(l.SecretID),
+			SecretId: pgconv.UUIDString(l.SecretID),
 		})
 	}
 	msg.Config = &catalogv1.Asset_Ssh{Ssh: &catalogv1.SSHConfig{
@@ -107,7 +100,7 @@ func toRoleMsg(row RoleRow) *accessv1.Role {
 		Id:           row.Role.ID.String(),
 		Name:         row.Role.Name,
 		Capabilities: row.Caps,
-		FolderId:     pgUUIDToString(row.Role.FolderID),
+		FolderId:     pgconv.UUIDString(row.Role.FolderID),
 		FolderPath:   row.FolderPath,
 	}
 	return m
@@ -118,7 +111,7 @@ func toGroupMsg(row GroupRow) *identityv1.Group {
 	return &identityv1.Group{
 		Id:         row.Group.ID.String(),
 		Name:       row.Group.Name,
-		FolderId:   pgUUIDToString(row.Group.FolderID),
+		FolderId:   pgconv.UUIDString(row.Group.FolderID),
 		FolderPath: row.FolderPath,
 	}
 }
@@ -211,7 +204,7 @@ func (h *Handler) CreateFolder(ctx context.Context, req *connect.Request[catalog
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad parent_id"))
 		}
-		parent = pgUUID(pid)
+		parent = pgconv.UUID(pid)
 	}
 	c, err := caller(ctx)
 	if err != nil {

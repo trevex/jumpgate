@@ -17,13 +17,9 @@ import (
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
-
-// pgUUID wraps a uuid.UUID as a valid pgtype.UUID.
-func pgUUID(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: true}
-}
 
 // workerIdentity returns the authoritative worker id from the request's mesh
 // identity, enforcing that the caller presented a `worker`-role mesh cert whose
@@ -259,7 +255,7 @@ func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *d
 	var grantID pgtype.UUID
 	if g := rec.GetGrantId(); g != "" {
 		if u, err := uuid.Parse(g); err == nil {
-			grantID = pgUUID(u)
+			grantID = pgconv.UUID(u)
 		}
 	}
 
