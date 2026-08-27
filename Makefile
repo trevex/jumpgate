@@ -9,7 +9,7 @@ CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 .PHONY: help gen sqlc build test bench lint fmt ci e2e-local e2e-cluster e2e-ssh kind-e2e web rust-deny \
-        kind-images kind-up kind-down kind-demo ui-e2e \
+        kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build
 
 ui-dev: ## Start the UI dev stack (process-compose: postgres + silo + warden + vite)
@@ -99,6 +99,17 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl apply -f test/env/testworkload/sshd-password.yaml -f test/env/testworkload/sshd-key.yaml
 	kubectl rollout status deploy/ssh-target-password --timeout=120s
 	kubectl rollout status deploy/ssh-target-key --timeout=120s
+
+kind-redeploy: ## Rebuild the app images, reload them into the running kind cluster, helm upgrade, and restart the app deployments
+	$(MAKE) kind-images
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev --name $(KIND_CLUSTER)
+	helm upgrade jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
+	# Images keep the :dev tag, so a manifest-only upgrade won't repull; restart to
+	# pick up the freshly reloaded images.
+	kubectl rollout restart deploy/jumpgate-warden deploy/jumpgate-gateway deploy/jumpgate-ssh-proxy
+	kubectl rollout status deploy/jumpgate-warden --timeout=180s
+	kubectl rollout status deploy/jumpgate-gateway --timeout=180s
+	kubectl rollout status deploy/jumpgate-ssh-proxy --timeout=180s
 
 kind-down: ## Delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER)
