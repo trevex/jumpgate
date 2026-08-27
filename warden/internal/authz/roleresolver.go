@@ -46,11 +46,10 @@ func (r *RoleResolver) HoldsRole(ctx context.Context, userID, roleID uuid.UUID, 
 
 // HoldsRoleStanding reports whether userID holds roleID on the given object via a
 // STANDING role_binding only (governance predicate — active JIT access_grants are
-// EXCLUDED), resolving explicit role_grants rewrite rules (same_object + parent).
-// Same signature/semantics as HoldsRole except the satisfaction base is
-// role_bindings ONLY (the pre-T2 backward closure): a role obtained via a JIT
-// grant gives real access (HoldsRole) but MUST NOT confer governance eligibility,
-// so IsApprover/IsEligibleRequester resolve their role branch through THIS method.
+// EXCLUDED), resolving role_grants rewrite rules (same_object + parent). A role
+// obtained via a JIT grant gives real access (HoldsRole) but MUST NOT confer
+// governance eligibility, so IsApprover/IsEligibleRequester resolve their role
+// branch through THIS method.
 func (r *RoleResolver) HoldsRoleStanding(ctx context.Context, userID, roleID uuid.UUID, objectKind string, objectID uuid.UUID) (bool, error) {
 	ok, err := r.q.HoldsRoleStanding(ctx, sqlc.HoldsRoleStandingParams{
 		RoleID:     roleID,
@@ -92,18 +91,12 @@ type explainStepJSON struct {
 }
 
 // ExplainRole enumerates every derivation by which userID holds roleID on the
-// given asset, resolving explicit role_grants rewrite rules (same_object +
-// parent) down to standing bindings (direct or via nested groups). It mirrors
-// HoldsRole's traversal (see the goals CTE above) but carries the chain as a
-// jsonb path and uses an in-path cycle guard, so it reports "all the ways"
-// rather than a single boolean. holds == (len(paths) > 0), which is equivalent
-// to HoldsRole: the in-path guard only prevents revisiting a (role,object)
-// tuple within one path, so it does not shrink the reachable-and-satisfied goal
-// set; it merely bounds each path to distinct tuples, guaranteeing termination.
-//
-// Unknown-but-parseable userID/roleID/assetID simply match no goals or bindings
-// and yield holds=false, paths=nil (no error): this is intentional for the
-// admin/self introspection tool.
+// given asset, resolving role_grants rewrite rules (same_object + parent) down to
+// standing bindings (direct or via nested groups). It reports "all the ways" as
+// jsonb paths rather than a single boolean; the in-path cycle guard bounds each
+// path to distinct (role,object) tuples (termination) without shrinking the goal
+// set, so holds == (len(paths) > 0) is equivalent to HoldsRole. Unknown-but-
+// parseable ids match nothing and yield holds=false, paths=nil (no error).
 func (r *RoleResolver) ExplainRole(ctx context.Context, userID, roleID, assetID uuid.UUID) (bool, []ExplainPath, error) {
 	rows, err := r.q.ExplainRolePaths(ctx, sqlc.ExplainRolePathsParams{User: userID, RoleID: roleID, AssetID: assetID})
 	if err != nil {

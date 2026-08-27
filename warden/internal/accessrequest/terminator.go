@@ -7,14 +7,13 @@ import (
 )
 
 // GrantTerminator is notified when a grant is revoked or expires so any live
-// sessions relying on it can be torn down. M4 implements this against the gateway;
-// until then NoopTerminator is used. (See docs/security.md — continuous revocation.)
+// sessions relying on it can be torn down. The dataplane terminator implements
+// this against the gateway. (See docs/security.md — continuous revocation.)
 type GrantTerminator interface {
 	TerminateGrant(ctx context.Context, grantID uuid.UUID) error
 }
 
-// NoopTerminator is the default GrantTerminator: it does nothing. It is used
-// until M4 wires session teardown against the gateway.
+// NoopTerminator is the default GrantTerminator: it does nothing.
 type NoopTerminator struct{}
 
 // TerminateGrant does nothing and never errors.

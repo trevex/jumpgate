@@ -486,8 +486,7 @@ func (s *Service) GetFolderAccess(ctx context.Context, caller uuid.UUID, id uuid
 	}
 	if len(caps) == 0 {
 		// No direct caps here: the folder is disclosable only if it is path-visible
-		// (a breadcrumb on the way to something the user can see/administer). This
-		// subsumes the old "has a visible asset in its subtree" check.
+		// (a breadcrumb on the way to something the user can see/administer).
 		vis, err := s.authz.FolderPathVisible(ctx, caller, id)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)

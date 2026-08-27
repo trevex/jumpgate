@@ -9,22 +9,15 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// AssetVisible reports whether assetID is VISIBLE / resolvable to userID under the
-// unified catalog-visibility rule, using the FULL scope cascade
-// CapabilitiesOnScope(AssetScope(assetID)) — global ∪ ancestor folders ∪ asset —
-// WITH the `**` super-capability retained. An asset is visible iff EITHER:
+// AssetVisible reports whether assetID is visible/resolvable to userID, using the
+// FULL scope cascade CapabilitiesOnScope(AssetScope(assetID)) with the `**`
+// super-capability retained. Visible iff EITHER:
+//   - MANAGEMENT: the caps allow "catalog:asset:read" (retain `**` here — do NOT
+//     strip it, unlike the connect DECISION), OR
+//   - CONNECT: the caps entitle ≥1 of the asset's own SSH logins.
 //
-//   - MANAGEMENT arm: the caps allow "catalog:asset:read" (so `**` and any
-//     catalog:asset:read holder see everything they manage — visibility for `**`
-//     MUST be preserved; do NOT strip it here), OR
-//   - CONNECT arm: the caps entitle at least one of the asset's own SSH logins
-//     (folder-scoped ssh:login bindings surface their assets).
-//
-// An asset the caller matches on NEITHER arm stays invisible (existence-hiding).
-//
-// This is the single-asset predicate shared by ResolveAsset and GetAssetAccess;
-// VisibleAssetsUnder implements the same rule in batch (with a manageable
-// short-circuit) rather than calling this per asset in a tight loop.
+// Matching neither arm stays invisible (existence-hiding). Single-asset predicate
+// shared by ResolveAsset and GetAssetAccess; VisibleAssetsUnder is the batch form.
 func AssetVisible(ctx context.Context, a *Authorizer, userID, assetID uuid.UUID) (bool, error) {
 	caps, err := a.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
 	if err != nil {
@@ -85,29 +78,18 @@ func (s *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (
 	return set, nil
 }
 
-// VisibleAssetsUnder returns the asset ids under `parent` the user may see. See the
-// Authorizer interface for the visibility predicate.
+// VisibleAssetsUnder returns the asset ids under `parent` the user may see — the
+// batch, set-based form of AssetVisible. The ACCESS set (VisibleAssets) is passed
+// as a uuid[] param; candidate selection, management cascade, and connect cascade
+// are ONE query over authz_held + authz_global_held (no per-folder loop).
 //
-// SET-BASED: the ACCESS set (VisibleAssets = held asset-objects ∪ requestable) is
-// two small constant closure queries collapsed into a uuid[] param; the candidate
-// selection, management cascade, and connect cascade are ONE query over
-// authz_held + authz_global_held. Total is a small constant — no per-folder and no
-// per-residual-asset CapabilitiesOnScope loop.
-//
-// An asset (whose folder is in scope under `parent`) is visible iff ANY of:
-//
-//   - ACCESS:     a.id ∈ VisibleAssets(user) (a.id = ANY(@accessIDs)); OR
-//   - MANAGEMENT: the user holds "catalog:asset:read" on the asset's folder scope —
-//     GLOBAL (global_mgmt.ok) covers every asset, else the asset's folder is a
-//     descendant-or-self of a folder where the cap is held (mgmt_anchor_folders,
-//     the shared mgmtCascadeCTEs fragment with the asset's NOT-NULL folder as the
-//     node folder); OR
-//   - CONNECT:    the asset declares ≥1 SSH login L (ssh_asset_login) that the user
-//     entitles over the FULL asset-scope cascade — a role in authz_global_held, held on
-//     the asset object, or held on an ancestor-or-self folder of the asset's folder
-//     carries a capability matching ssh:login:L. This reproduces
-//     EntitledLogins on the RAW CapabilitiesOnScope(AssetScope) result: `**`
-//     normalizes to (*,*,*) and the column-match makes it match ssh:login:L, so
+// An asset whose folder is in scope under `parent` is visible iff ANY of:
+//   - ACCESS:     its id ∈ VisibleAssets(user); OR
+//   - MANAGEMENT: the user holds "catalog:asset:read" on the asset's folder scope
+//     (global, or the asset's folder descendant-or-self of a folder where the cap
+//     is held — the shared mgmtCascadeCTEs fragment); OR
+//   - CONNECT:    the asset declares ≥1 SSH login the user entitles over the FULL
+//     asset-scope cascade. `**` normalizes to (*,*,*) and matches ssh:login:L, so
 //     `**` IS RETAINED here (no ConnectCapabilities literal-`**` carve-out).
 func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	// root + no-cascade holds no assets — short-circuit (also makes the level
@@ -116,8 +98,7 @@ func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid
 		return nil, nil
 	}
 
-	// ACCESS set: VisibleAssets (held asset-objects ∪ requestable), one small
-	// constant closure pair, collapsed into a uuid[] param (@accessIDs).
+	// ACCESS set: VisibleAssets, collapsed into a uuid[] param (@accessIDs).
 	accessible, err := s.accessibleAssetSet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -127,10 +108,8 @@ func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid
 		accessIDs = append(accessIDs, id)
 	}
 
-	// The management cascade uses the catalog:asset:read request columns; the
-	// browse level is selected by the nullable parent (uuid.Nil == root/NULL) and
-	// cascade args inside the query. The connect axis is retained verbatim (a `**`
-	// cap normalizes to (*,*,*) and matches ssh:login:L via the column-match).
+	// Browse level is selected by the nullable parent (uuid.Nil == root/NULL) and
+	// cascade args inside the query.
 	reqScope, reqAction, reqQual := NormalizeCap("catalog:asset:read")
 	ids, err := s.queries().VisibleAssetsUnder(ctx, sqlc.VisibleAssetsUnderParams{
 		User:      userID,

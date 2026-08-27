@@ -118,8 +118,8 @@ func (v *Verifier) Verify(token string) (Claims, error) {
 	if err := t.Get("cnf", &cnf); err != nil {
 		return Claims{}, err
 	}
-	// mode and login are optional claims: legacy (CLI/cnf-bearing) tokens minted
-	// before browser terminals omit them, so a missing claim decodes as "".
+	// mode and login are optional claims: CLI (cnf-bearing) tokens omit them, so a
+	// missing claim decodes as "".
 	mode := optString(t, "mode")
 	login := optString(t, "login")
 	// A web ticket carries no client key, so it legitimately has an empty cnf; any

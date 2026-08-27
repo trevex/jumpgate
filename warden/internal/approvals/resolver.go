@@ -66,9 +66,9 @@ func (r *Resolver) EffectiveRule(ctx context.Context, roleID, assetID uuid.UUID)
 // approver_role on the asset, resolved through the explicit role-rewrite graph
 // (HoldsRoleStanding).
 //
-// GOVERNANCE (M3c): the approver_role branch uses HoldsRoleStanding, NOT HoldsRole
-// — a role obtained via a JIT access_grant gives access but MUST NOT confer
-// approver eligibility. Only a standing binding of the approver_role qualifies.
+// GOVERNANCE: the approver_role branch uses HoldsRoleStanding, NOT HoldsRole — a
+// role obtained via a JIT access_grant gives access but MUST NOT confer approver
+// eligibility. Only a standing binding of the approver_role qualifies.
 func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID, assetID uuid.UUID) (bool, error) {
 	rule, err := r.EffectiveRule(ctx, requestRoleID, assetID)
 	if err != nil {
@@ -114,9 +114,9 @@ func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID
 // explicit requester subject (from request_policy_subjects with kind='requester').
 // Mirrors IsApprover.
 //
-// GOVERNANCE (M3c): the requester_role branch uses HoldsRoleStanding, NOT HoldsRole
-// — a role obtained via a JIT access_grant gives access but MUST NOT confer
-// request eligibility. Only a standing binding of the requester_role qualifies.
+// GOVERNANCE: the requester_role branch uses HoldsRoleStanding, NOT HoldsRole — a
+// role obtained via a JIT access_grant gives access but MUST NOT confer request
+// eligibility. Only a standing binding of the requester_role qualifies.
 func (r *Resolver) IsEligibleRequester(ctx context.Context, requesterUserID, requestRoleID, assetID uuid.UUID) (bool, error) {
 	rule, err := r.EffectiveRule(ctx, requestRoleID, assetID)
 	if err != nil {

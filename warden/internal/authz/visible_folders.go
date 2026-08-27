@@ -49,23 +49,12 @@ func (s *Authorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UU
 }
 
 // VisibleFoldersUnder returns the folders under `parent` the user may see, each
-// with a `Governed` flag. See the Authorizer interface for the visibility model.
-//
-// The predicate is PATH-REVEAL. A folder is visible iff it is an ancestor-or-self
-// of an ANCHOR (reveal the browse path to anything the user can see/administer) OR
-// it is inside a folder the user manages (cascade down). `Governed` is the latter:
-// the user holds a management cap at/under the folder — a revealed ancestor is
-// visible but NOT governed (no capability is conferred on it).
-//
-// Anchors = the union of four bounded helper sets (already implemented):
-//   - mgmtScopeFolders:        folders where the user holds a management cap;
-//   - visibleRoleHomeFolders:  home folders of roles visible to the user;
-//   - visibleGroupHomeFolders: home folders of groups visible to the user;
-//   - visibleAssetFolders:     folders of assets visible to the user (access ∪
-//     management ∪ connect).
-//
-// A user with a GLOBAL catalog:folder:read (or `**`) governs and sees the whole
-// tree; that case short-circuits to every folder at the level with governed=true.
+// with a `Governed` flag. The predicate is PATH-REVEAL: a folder is visible iff it
+// is an ancestor-or-self of an anchor (reveal the browse path to anything the user
+// can see/administer) OR inside a folder the user manages (cascade down). `Governed`
+// is the latter (a management cap held at/under the folder); a revealed ancestor is
+// visible but NOT governed. Anchors are the union of the four folderAnchors sources.
+// A global catalog:folder:read / `**` holder governs and sees the whole tree.
 func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
 	// Global management short-circuit: a global catalog:folder:read (or **) holder
 	// governs and sees the whole tree.
@@ -77,8 +66,7 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 		return s.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
 	}
 
-	// Anchors (path-reveal sources) + the governed (managed) folder set, computed
-	// with the shared closures evaluated once each (folderAnchors).
+	// Path-reveal anchors + the governed (managed) folder set (folderAnchors).
 	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -87,11 +75,9 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 		return nil, nil
 	}
 
-	// One ltree query. Level predicate mirrors childCandidateFolderIDs:
-	//   cascade=false -> direct children of parent (NULL-safe);
-	//   cascade=true  -> the subtree under parent (root => whole tree).
-	// A folder is visible if it is an ancestor-or-self of an anchor (path reveal)
-	// OR inside a folder the user manages (cascade down). governed = the latter.
+	// One ltree query. Level mirrors childCandidateFolderIDs (children, or subtree
+	// with cascade); visible = ancestor-or-self of an anchor OR inside a managed
+	// folder (governed).
 	rows, err := s.queries().VisibleFoldersUnder(ctx, sqlc.VisibleFoldersUnderParams{
 		Cascade: cascade,
 		Parent:  nullableUUIDArg(parent),
@@ -108,13 +94,11 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 	return out, nil
 }
 
-// FolderPathVisible reports whether `folderID` is visible to the user under the
-// same path-reveal model as VisibleFoldersUnder: the folder is an ancestor-or-self
-// of an anchor (on the path to something the user can see/administer) OR inside a
-// folder the user manages. GetFolderAccess uses it to decide existence for a folder
-// the user holds no direct capability on — so a delegate can open the breadcrumb
-// ancestors above the subtree they govern. A global catalog:folder:read / ** holder
-// sees every folder that exists.
+// FolderPathVisible reports whether `folderID` is visible under the same path-reveal
+// model as VisibleFoldersUnder (ancestor-or-self of an anchor, or inside a managed
+// folder). GetFolderAccess uses it to decide existence for a folder the user holds
+// no direct capability on, so a delegate can open the breadcrumb ancestors above the
+// subtree they govern. A global catalog:folder:read / `**` holder sees every folder.
 func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
 	global, err := s.globalHeldCapabilities(ctx, userID)
 	if err != nil {
@@ -128,9 +112,8 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 		return exists, nil
 	}
 
-	// Anchors (path-reveal sources) + the governed (managed) folder set, computed
-	// with the shared closures evaluated once each (folderAnchors). The same anchor
-	// logic backs VisibleFoldersUnder, so the two path-reveal predicates cannot drift.
+	// Same folderAnchors as VisibleFoldersUnder, so the two path-reveal predicates
+	// cannot drift.
 	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
 	if err != nil {
 		return false, err
@@ -139,8 +122,6 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 		return false, nil
 	}
 
-	// Visible iff folderID is an ancestor-or-self of an anchor (path reveal) OR
-	// inside a folder the user manages (cascade down) — mirrors VisibleFoldersUnder.
 	vis, err := s.queries().FolderPathVisible(ctx, sqlc.FolderPathVisibleParams{
 		FolderID: uuidArg(folderID),
 		Anchors:  anchors,

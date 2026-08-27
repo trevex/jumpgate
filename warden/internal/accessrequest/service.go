@@ -99,8 +99,8 @@ type Service struct {
 }
 
 // NewService constructs the access-request Service. A nil terminator defaults to
-// NoopTerminator; production wires the real dataplane.Terminator (M4a), which tears
-// down live sessions on revocation via closure re-eval + LISTEN/NOTIFY.
+// NoopTerminator; production wires the real dataplane.Terminator, which tears down
+// live sessions on revocation via closure re-eval + LISTEN/NOTIFY.
 func NewService(pool *pgxpool.Pool, auditLog *audit.Logger, resolver *approvals.Resolver, roles *authz.RoleResolver, terminator GrantTerminator, maxTTL time.Duration) *Service {
 	if maxTTL <= 0 {
 		maxTTL = 8 * time.Hour
@@ -472,24 +472,17 @@ func (s *Service) ListPendingApprovals(ctx context.Context, caller uuid.UUID) ([
 	return s.approvablePending(ctx, caller, nil)
 }
 
-// approvablePending resolves, in ONE set-based query, the pending access requests the
-// caller may approve (with their current approve-count) — reproducing IsApprover over
-// the whole candidate set instead of per row (which was an N+1: EffectiveRule +
-// subject check + optional HoldsRoleStanding + CountApprovals, all per request). A
-// candidate is included when the caller is neither its requester nor deactivated AND,
-// for the request's EFFECTIVE policy (most-specific of asset / folder-ancestor /
-// global by the same precedence as EffectiveRule), the caller is either an explicit
-// `approver` subject (direct or via a nested group) OR holds the policy's approver_role
-// STANDING on the asset. The standing arm reuses the shared authz_held_standing SQL
-// function — the same relation HoldsRoleStanding checks — so governance semantics
-// cannot drift; the effective policy is authz_effective_request_policy. restrict limits the candidate set to those request ids (a
-// keyset page); a nil slice (SQL NULL) considers all pending requests. Results are
-// ordered created_at DESC, id, matching the paged SQL page order.
+// approvablePending resolves, in ONE set-based query, the pending access requests
+// the caller may approve (with their approve-count). A candidate is included when
+// the caller is neither its requester nor deactivated AND, for the request's
+// EFFECTIVE policy (most-specific of asset / folder-ancestor / global), the caller
+// is an explicit `approver` subject (direct or via a nested group) OR holds the
+// policy's approver_role STANDING on the asset. The standing arm reuses
+// authz_held_standing, so governance cannot drift from HoldsRoleStanding. Results
+// are ordered created_at DESC, id.
 //
-// RESTRICT CONTRACT: pass nil for "all". A nil []uuid.UUID encodes as SQL NULL (the
-// `@restrict IS NULL` all-arm); an EMPTY non-nil slice encodes as `'{}'` → `id = ANY('{}')`
-// → zero rows. Callers must never pass []uuid.UUID{} to mean "all" (the paged callers
-// guard this with a len(rows)==0 early return before building the id slice).
+// RESTRICT CONTRACT: pass nil for "all" (SQL NULL). An EMPTY non-nil slice encodes
+// as `'{}'` → zero rows, so callers must never pass []uuid.UUID{} to mean "all".
 func (s *Service) approvablePending(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Request, error) {
 	rows, err := s.q.ApprovablePending(ctx, sqlc.ApprovablePendingParams{Caller: caller, Restrict: restrict})
 	if err != nil {
@@ -755,32 +748,22 @@ func (s *Service) RevokeGrantsForUser(ctx context.Context, actor, userID uuid.UU
 	return len(revoked), nil
 }
 
-// DeleteRoleCascade deletes a role and everything that references it, in one
-// transaction, so that "the role is gone" implies no one holds it and any live
-// sessions it granted are torn down. The blast radius, by table:
+// DeleteRoleCascade deletes a role and everything referencing it, in one
+// transaction, so "the role is gone" implies no one holds it and any live sessions
+// it granted are torn down. By table:
 //
-//   - role_bindings (role_id = role): DELETED — the standing grants of the role.
-//   - role_grants (role_id OR source_role_id = role): DELETED — every rewrite edge
-//     touching the role, in either direction.
-//   - request_policies (role_id = role): DELETED, along with their
-//     request_policy_subjects — a requestability rule is meaningless without its
-//     requestable role.
-//   - request_policies referencing the role only as requester_role_id/approver_role_id:
-//     SURVIVE, with that column set NULL (the policy loses only that gate). The FK on
-//     those columns is ON DELETE RESTRICT, so this NULL-out MUST precede the role
-//     delete or Postgres rejects it.
-//   - access_grants (role_id = role, still live): REVOKED (revoked_at stamped) via the
-//     existing revoke query, so the revocation is audited and the terminator is
-//     notified — tearing down the live sessions those grants authorized. (The grant
-//     rows are then removed by the roles FK cascade; the standing-authz-removal sweep,
-//     triggered by the binding/edge deletes above, is the level-triggered backstop.)
-//   - roles (the role): DELETED last. Its name uniqueness is enforced by partial
-//     UNIQUE indexes on the roles table, so deleting the row frees the name; there is
-//     no separate name-registry entry to clean up.
+//   - role_bindings, role_grants (either direction): DELETED.
+//   - request_policies FOR the role (+ their subjects): DELETED.
+//   - request_policies referencing it only as requester_role_id/approver_role_id:
+//     SURVIVE with that column NULLed. Those FKs are ON DELETE RESTRICT, so the
+//     NULL-out MUST precede the role delete or Postgres rejects it.
+//   - live access_grants: REVOKED via the revoke query (audited + terminator
+//     notified) before the roles FK cascade removes the rows; the standing-authz
+//     sweep is the level-triggered backstop.
+//   - roles: DELETED last (frees the name via the partial UNIQUE indexes).
 //
-// Audit events (each revoked grant) are enqueued INSIDE the tx (atomic with the
-// deletion); terminator notification is POST-COMMIT (it must not fire for a change
-// that then rolls back), mirroring RevokeGrant/RevokeGrantsForUser.
+// Audit events are enqueued INSIDE the tx (atomic with the deletion); terminator
+// notification is POST-COMMIT (must not fire for a change that then rolls back).
 func (s *Service) DeleteRoleCascade(ctx context.Context, actor, roleID uuid.UUID) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -969,17 +952,13 @@ func (s *Service) ListGrantsPaged(ctx context.Context, filter GrantFilter, page 
 	return toGrants(rows), nil
 }
 
-// ListReviewableGrantsPaged returns grants the caller may review — grants where
-// the caller is the subject OR a standing potential approver of the grant's
-// originating (role, asset) — with keyset pagination on (granted_at DESC, id ASC).
-//
-// It fetches an unfiltered SQL page (all subjects, active_only=false so past and
-// revoked grants remain reviewable) then filters in Go per row, exactly like
-// ListPendingApprovalsPaged: the returned cursor tracks the LAST SQL ROW scanned
-// (not the last kept row), so a page emits a next-cursor whenever the SQL page
-// was full even if every row was filtered out — the client then resumes past the
-// filtered rows rather than stopping early. The per-row filter IS the authz for
-// this caller-scoped list (no capability gate).
+// ListReviewableGrantsPaged returns grants the caller may review — subject OR
+// standing potential approver of the grant's originating (role, asset) — with
+// keyset pagination on (granted_at DESC, id ASC). It fetches an unfiltered SQL page
+// (active_only=false, so past/revoked grants remain reviewable) then filters in Go;
+// the returned cursor tracks the LAST SQL ROW scanned (not the last kept row) so a
+// full SQL page always emits a next-cursor, even if every row was filtered out. The
+// per-row filter IS the authz for this caller-scoped list (no capability gate).
 func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUID, page PageParams) ([]Grant, *PageCursor, error) {
 	params := sqlc.ListGrantsFilteredPagedParams{
 		ActiveOnly: false, // include revoked/expired/past grants
@@ -1020,18 +999,14 @@ func (s *Service) ListReviewableGrantsPaged(ctx context.Context, caller uuid.UUI
 	return out, next, nil
 }
 
-// reviewableGrants resolves, in ONE set-based query, the grants the caller may review
-// — reproducing CanReviewGrant over the whole candidate set instead of per row (the
-// per-grant IsApprover N+1). A grant is reviewable when the caller is its subject OR
-// (the caller is active AND, for the grant's (role, asset) EFFECTIVE policy — same
-// asset/folder-ancestor/global precedence as EffectiveRule — an explicit approver
-// subject, direct or via a nested group, OR the approver_role held STANDING on the
-// asset). The subject arm intentionally has no active-user check, matching
-// CanReviewGrant. The standing arm reuses the shared authz_held_standing SQL
-// function, single-sourced with Check/HoldsRoleStanding, and the effective policy is
-// authz_effective_request_policy. restrict limits the candidate set to those grant
-// ids (a keyset page); a nil slice (SQL NULL) considers all grants. Ordered
-// granted_at DESC, id to match the paged SQL page.
+// reviewableGrants resolves, in ONE set-based query, the grants the caller may
+// review (the set form of CanReviewGrant). A grant is reviewable when the caller is
+// its subject OR (active AND, for the grant's (role, asset) EFFECTIVE policy, an
+// explicit approver subject or holds the approver_role STANDING on the asset). The
+// subject arm intentionally has no active-user check, matching CanReviewGrant; the
+// standing arm reuses authz_held_standing (single-sourced with HoldsRoleStanding).
+// restrict limits to those grant ids (nil = SQL NULL = all). Ordered granted_at
+// DESC, id.
 func (s *Service) reviewableGrants(ctx context.Context, caller uuid.UUID, restrict []uuid.UUID) ([]Grant, error) {
 	rows, err := s.q.ReviewableGrants(ctx, sqlc.ReviewableGrantsParams{
 		Caller:   pgtype.UUID{Bytes: caller, Valid: true},

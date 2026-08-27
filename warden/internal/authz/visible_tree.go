@@ -6,34 +6,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// This package implements the "visible under a parent" queries that back the
-// catalog browse (ListFolders / ListAssets / ListRoles / ListGroups). All unify
-// the same two axes:
+// The "visible under a parent" queries back the catalog browse (ListFolders /
+// ListAssets / ListRoles / ListGroups). A node is visible on EITHER axis:
+//   - MANAGEMENT: holding "catalog:folder:read" / "catalog:asset:read" (etc.) at a
+//     scope, independent of any access grant. It cascades structurally down the
+//     folder tree, evaluated set-based (the shared mgmtCascadeCTEs fragment: a
+//     global-cap arm ∪ an ltree <@ folder-cascade arm), never per-candidate.
+//   - ACCESS: an asset the user can reach — VisibleAssets (active or requestable),
+//     or CONNECT-visible (the full CapabilitiesOnScope(AssetScope) cascade entitles
+//     ≥1 of the asset's SSH logins). A folder is access-visible when its subtree
+//     contains such an asset, so the browse path to a reachable asset is not hidden.
 //
-//   - the MANAGEMENT axis: a user who holds "catalog:folder:read" /
-//     "catalog:asset:read" (etc.) at a scope may see the folder/asset as an
-//     administrator, independent of any access grant. Management authority
-//     cascades structurally down the folder tree; the queries evaluate it
-//     set-based (the shared mgmtCascadeCTEs fragment: a global-cap arm ∪ an
-//     ltree <@ folder-cascade arm), never per-candidate.
+// Deactivated users are excluded by the underlying closures (authz_held /
+// authz_global_held / VisibleAssets), so no extra guard is needed here.
 //
-//   - the ACCESS axis: a user may see an asset they can actually reach —
-//     VisibleAssets(user) (active standing role OR requestable), OR an asset they
-//     are CONNECT-visible on: the full CapabilitiesOnScope(AssetScope) cascade
-//     (global ∪ ancestor folders ∪ asset, `**` retained) entitles ≥1 of the asset's
-//     own SSH logins, so a folder-scoped ssh:login binding surfaces its asset. A
-//     folder is access-visible when its subtree contains such an asset (so the
-//     browse path to a reachable asset is never hidden).
-//
-// A node is visible iff it is visible on EITHER axis (union). Deactivated users
-// are handled by the underlying closures (authz_held / authz_global_held /
-// VisibleAssets all exclude a deactivated user), so no extra guard is needed here for the
-// management axis. The asset-browse access axis is covered by VisibleAssets.
-//
-// The concern-specific queries live in visible_assets.go (assets), visible_folders.go
-// (folders + path-reveal), homed_nodes.go (roles/groups homed via folder_id), and
-// folder_anchors.go (the path-reveal anchor computation). This file holds only the
-// shared slice/set helpers used across them.
+// Concern-specific queries live in visible_assets.go, visible_folders.go,
+// homed_nodes.go, and folder_anchors.go; this file holds only the shared
+// slice/set helpers.
 
 // unionKeys collects the union of the keys of the given sets into a slice.
 func unionKeys(maps ...map[uuid.UUID]struct{}) []uuid.UUID {

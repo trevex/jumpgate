@@ -13,24 +13,19 @@ import (
 // asset A iff:
 //  1. an effective request_policy for (R, A) resolves — most-specific by scope:
 //     asset A > nearest ancestor folder > role-default (scope NULL); AND
-//  2. the user is ELIGIBLE for that policy — either the policy names a
-//     requester_role_id the user holds STANDING on A (governance predicate, JIT
-//     grants excluded), OR the user (directly or via a nested group) is a
-//     kind='requester' explicit subject of that policy; AND
-//  3. the user does NOT already hold R active on A (grants count here — active
-//     excludes requestable).
+//  2. the user is ELIGIBLE — either the policy names a requester_role_id the user
+//     holds STANDING on A (governance predicate, JIT grants excluded), OR the user
+//     (directly or via a nested group) is a kind='requester' subject; AND
+//  3. the user does NOT already hold R active on A (grants count — active excludes
+//     requestable).
 //
-// A policy with NO requester_role_id AND no kind='requester' subjects makes
-// nobody eligible: a NULL requester_role is NOT treated as "anyone".
+// A policy with NO requester_role_id AND no kind='requester' subjects makes nobody
+// eligible: a NULL requester_role is NOT "anyone".
 //
-// The two forward closures this relies on live in the database as SQL functions
-// (grants confer access but not governance): authz_held (grant-augmented, used
-// for the active-exclusion of already-held roles — the same closure Check uses)
-// and authz_held_standing (standing-only, used for the requester predicate — the
-// governance membership dual to RoleResolver.HoldsRoleStanding). The effective
-// policy resolution lives in authz_effective_request_policy. The queries below
-// reach them through the static RequestableRolesOnAsset / VisibleRequestable
-// sqlc queries, so requestable eligibility cannot diverge from Check.
+// Grants confer access but not governance, so this uses two closures: authz_held
+// (grant-augmented, for the active-exclusion — the same closure Check uses) and
+// authz_held_standing (standing-only, for the requester predicate). Reached via the
+// static sqlc queries, so eligibility cannot diverge from Check.
 
 // requestableRoles returns the roles requestable (but not already active) for the
 // user on the asset, per the request_policy eligibility model above.

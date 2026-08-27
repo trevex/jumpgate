@@ -71,8 +71,8 @@ type IssueRequest struct {
 	// Login is the requested target login. The broker enforces ssh:login:<Login>
 	// for the caller (all kinds) and selects the login's configured auth kind.
 	Login string
-	// ValidUntil bounds the credential's lifetime. M4 passes the granting
-	// access_grant's remaining TTL so a credential never outlives its grant.
+	// ValidUntil bounds the credential's lifetime — the granting access_grant's
+	// remaining TTL, so a credential never outlives its grant.
 	ValidUntil time.Time
 	// KeyID is an audit handle stamped into the SSH cert's KeyId (e.g. grant id
 	// or user id).
@@ -136,7 +136,7 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 	case "ssh":
 		return b.issueSSH(ctx, userID, asset, req)
 	default:
-		// postgres / k8s providers land in M5.
+		// Only ssh has a credential provider today.
 		return Credential{}, ErrUnsupportedKind
 	}
 }

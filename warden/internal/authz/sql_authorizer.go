@@ -12,9 +12,8 @@ import (
 )
 
 // Authorizer resolves access over the control-plane Postgres. The shared
-// authorization closures live in the DB as inlinable recursive SQL functions
-// (authz_held / authz_global_held / …); this type reaches them through the static
-// sqlc queries on q. pool is retained for the few remaining ad-hoc queries.
+// authorization closures live in the DB as recursive SQL functions (authz_held /
+// authz_global_held / …), reached through the static sqlc queries on q.
 type Authorizer struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
@@ -25,10 +24,8 @@ func New(pool *pgxpool.Pool) *Authorizer {
 	return &Authorizer{pool: pool, q: sqlc.New(pool)}
 }
 
-// queries returns the sqlc query set bound to the authorizer's pool. It lazily
-// initialises q for authorizers built as a bare struct literal (the internal
-// tests) rather than via New, so both construction paths reach the shared authz
-// SQL functions identically.
+// queries returns the sqlc query set, lazily initialising q for authorizers built
+// as a bare struct literal (internal tests) rather than via New.
 func (s *Authorizer) queries() *sqlc.Queries {
 	if s.q == nil {
 		s.q = sqlc.New(s.pool)
@@ -36,18 +33,15 @@ func (s *Authorizer) queries() *sqlc.Queries {
 	return s.q
 }
 
-// uuidArg wraps a uuid.UUID as a non-null pgtype.UUID for the generated sqlc
-// query params that are typed pgtype.UUID (sqlc emits pgtype.UUID for function
-// arguments whose nullability it cannot prove). The authz functions never emit or
-// require NULL ids, so the wrapper is always Valid.
+// uuidArg wraps a uuid.UUID as a non-null pgtype.UUID for sqlc params typed
+// pgtype.UUID (the authz functions never require NULL ids).
 func uuidArg(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
-// textArg wraps a string as a non-null pgtype.Text for the generated sqlc query
-// params that are typed pgtype.Text.
+// textArg wraps a string as a non-null pgtype.Text for sqlc params typed pgtype.Text.
 func textArg(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
 
-// nullableUUIDArg maps the browse "parent" convention (uuid.Nil == root/NULL scope)
-// to a pgtype.UUID: uuid.Nil becomes SQL NULL, any other id a non-null value.
+// nullableUUIDArg maps the browse "parent" convention (uuid.Nil == root/NULL) to a
+// pgtype.UUID: uuid.Nil becomes SQL NULL, any other id a non-null value.
 func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
 	if id == uuid.Nil {
 		return pgtype.UUID{}
@@ -55,18 +49,16 @@ func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
-// The forward "held" closure — the (role, object) pairs a user holds via direct
-// standing bindings, active JIT access_grants, and the explicit role_grants
-// rewrite graph (same_object + parent) — is the dual of RoleResolver.HoldsRole.
-// It is group-aware and cycle-safe, and lives in the database as the authz_held
-// SQL function; the queries below reach it through the static sqlc query set.
-// Because Check's grant decision and the Requestable-tier eligibility draw the
-// closure from that one source, they cannot silently diverge.
+// The forward "held" closure — (role, object) pairs a user holds via standing
+// bindings, active JIT access_grants, and the role_grants rewrite graph — is the
+// dual of RoleResolver.HoldsRole. It is group-aware and cycle-safe, lives in the
+// DB as the authz_held function, and is the single source Check and the
+// Requestable tier draw from, so they cannot diverge.
 
 // VisibleAssets returns every asset the user can see — those on which the user
-// holds at least one Active (standing) role OR has at least one Requestable role
-// (an effective request_policy for which the user is an eligible requester).
-// Assets with neither are omitted entirely (they must not be disclosed).
+// holds ≥1 Active (standing) role OR has ≥1 Requestable role (an effective
+// request_policy for which the user is an eligible requester). Assets with neither
+// are omitted entirely (existence-hiding: they must not be disclosed).
 func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {
 		active bool
@@ -149,21 +141,16 @@ func (s *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID
 }
 
 // CapabilitiesOnAsset returns every capability pattern the user holds on the asset
-// via the held (standing) closure: the union of the capability sets of the roles
-// held on the asset (directly or via the explicit role-rewrite graph). It runs the
-// closure ONCE and flattens all rows' patterns, so callers testing several
-// capabilities (per-login entitlement, record-exempt) pay a single query. Glob
-// matching happens in Go (CapMatch) via Capabilities.Allows, so the '*' / trailing
-// '**' semantics stay in one auditable function rather than embedded regex-in-SQL.
+// via the held (standing) closure. It runs the closure ONCE and flattens all
+// patterns, so callers testing several capabilities pay a single query. Glob
+// matching happens in Go (CapMatch), keeping '*'/'**' semantics in one function.
 func (s *Authorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
 	return s.CapabilitiesOnObject(ctx, userID, assetID, "asset")
 }
 
 // CapabilitiesOnObject returns every capability pattern the user holds on the
-// given object (kind "asset" or "folder") via the held (standing + active-grant)
-// closure — the object-dimension generalization of CapabilitiesOnAsset. It runs
-// the held closure once and flattens all matching roles' patterns into a single
-// Capabilities set (glob matching stays in Go via CapMatch/Allows).
+// object (kind "asset" or "folder") via the held closure — the object-dimension
+// generalization of CapabilitiesOnAsset (glob matching stays in Go via CapMatch).
 func (s *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
 	rows, err := s.queries().HeldCapabilitiesOnObject(ctx, sqlc.HeldCapabilitiesOnObjectParams{
 		User:       uuidArg(userID),
@@ -181,22 +168,15 @@ func (s *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID 
 }
 
 // Check reports whether the user holds a role on the asset whose capability set
-// grants the concrete `capability`. It is the SINGLE-QUERY EXISTS form of the
-// asset-object held closure + a SQL column-match: the closure/object dimension is
-// the SAME one CapabilitiesOnAsset/CapabilitiesOnObject(asset) use (the held
-// closure over standing bindings, active JIT grants, and the role_grants rewrite
-// graph on that exact asset object), and the glob semantics ('*' / trailing '**')
-// are pushed into the three-column predicate proven equivalent to Go CapMatch by
-// TestSQLCapMatchMatchesGo. NormalizeCap decomposes the requested capability into
-// the (@capScope,@capAction,@capQual) request columns exactly as the
-// differential-test harness does.
+// grants the concrete `capability`. Single-query EXISTS over the same asset-object
+// held closure CapabilitiesOnAsset uses, with the glob semantics ('*'/'**') pushed
+// into the three-column predicate proven ≡ Go CapMatch by TestSQLCapMatchMatchesGo.
 //
-// This deliberately does NOT fold in the folder-management cascade or global
-// scopeless bindings — that is CapabilitiesOnScope's job (the management plane).
-// Check is the data-plane grant decision, keyed strictly to the asset object.
-//
-// A nonexistent asset matches no held row, so EXISTS is false with no error.
-// `capability` is internal (from workers) and assumed concrete — not proto-validated.
+// It deliberately does NOT fold in the folder-management cascade or global
+// scopeless bindings — that is CapabilitiesOnScope's job (the management plane);
+// Check is the data-plane grant decision, keyed strictly to the asset object. A
+// nonexistent asset matches no row, so EXISTS is false with no error. `capability`
+// is internal (from workers), assumed concrete, not proto-validated.
 func (s *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(capability)
 	ok, err := s.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{
@@ -213,35 +193,19 @@ func (s *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capab
 }
 
 // CapabilitiesOnScope returns the capability patterns the user holds at a
-// management scope. Global caps (scopeless standing bindings, closed over
-// role_grants) ALWAYS apply. For a folder/asset scope, management authority
-// CASCADES STRUCTURALLY down the folder tree: a capability held on folder F
-// applies to F, every sub-folder of F, and every asset beneath them — with NO
-// per-role parent self-grant (unlike the OPT-IN data-plane authz_held
-// inheritance, which requires a role_grants(R,R,parent) self-edge).
+// management scope. Global caps (scopeless standing bindings) ALWAYS apply. For a
+// folder/asset scope, management authority CASCADES STRUCTURALLY down the folder
+// tree — a cap held on folder F applies to F, its sub-folders, and every asset
+// beneath — with NO per-role parent self-grant (unlike data-plane authz_held
+// inheritance). One set-based query over authz_global_held ∪ authz_held on the
+// in-scope objects (ltree @> for the down-tree cascade) replaces a 3–5 round-trip
+// fan-out.
 //
-// SINGLE SET-BASED QUERY. Rather than fanning out into a global-caps query, a
-// folder-ancestor walk, and a per-folder capability lookup — 3–5 round-trips per
-// call — the folder/asset arms issue ONE query over authz_held ∪
-// authz_global_held. The trailing SELECT unions the role ids from:
-//
-//   - authz_global_held — the ALWAYS-applies global caps; and
-//   - authz_held rows on the in-scope objects: the asset itself (asset scope) and
-//     every ancestor-or-self folder, realizing the structural down-tree cascade
-//     via the ltree `@>` operator keyed off the scope folder (folder scope) or the
-//     asset's containing folder (asset scope).
-//
-// GLOBAL-VS-HELD SUBTLETY: global caps are sourced from authz_global_held, NOT
-// from authz_held rows with object_id IS NULL. A scopeless binding appears in the
-// held closure as (role,'folder',NULL), but its `parent` rewrite arm cannot fire
-// for a NULL object, whereas authz_global_held collapses BOTH rewrite arms to
-// plain source→target edges — so the two closures differ and only
-// authz_global_held is the faithful global source.
-//
-// EXISTENCE-HIDING: for a nonexistent asset the `@>` ancestor subselect (keyed off
-// the asset's folder via a JOIN on assets) is naturally empty and the asset itself
-// matches no held row, so the query yields exactly the global caps with no error —
-// preserving the legacy pgx.ErrNoRows→global-only behaviour.
+// Global caps come from authz_global_held, NOT authz_held rows with NULL object: a
+// scopeless binding's `parent` rewrite arm cannot fire on a NULL object, whereas
+// authz_global_held collapses both rewrite arms to plain edges — only it is the
+// faithful global source. Existence-hiding: a nonexistent asset yields exactly the
+// global caps with no error.
 func (s *Authorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
 	switch scope.Kind {
 	case ScopeGlobal:
