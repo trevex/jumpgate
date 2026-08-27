@@ -16,7 +16,8 @@ import { getRoleAccess } from "@/gen/jumpgate/access/v1/access-AccessService_con
 import { Button } from "@/components/ui/button";
 import type { PickedScope } from "@/components/pickers/scope-picker";
 import { useCapabilities } from "@/lib/capabilities";
-import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
+import { DetailSkeleton, DetailError } from "./shared";
+import { RoleDetailBody } from "@/components/detail/role-detail-body";
 import { canCreateBinding } from "../../access-control/binding-actions";
 import { NewBindingDialog } from "../../access-control/new-binding-dialog";
 
@@ -81,10 +82,15 @@ export function RoleDetail({ id, name, folderId, folderPath }: RoleDetailProps) 
 
       <div className="h-px bg-border" role="separator" />
 
-      {/* Management capabilities */}
-      <DetailSection title="Your management capabilities on this role">
-        <CapList caps={data.capabilities} />
-      </DetailSection>
+      <RoleDetailBody roleId={id} />
+
+      <div className="h-px bg-border" role="separator" />
+
+      {/* Management capabilities (demoted footer) */}
+      <p className="text-micro text-muted-foreground">
+        Your management capabilities on this role:{" "}
+        <span className="font-mono">{(data.capabilities ?? []).join(" ") || "none"}</span>
+      </p>
 
       {/* GetRoleAccess doesn't carry the role's folder path, so pass what the
           tree selection knew: fixedRole shows name + folderPath, and defaultScope
