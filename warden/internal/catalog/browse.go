@@ -161,6 +161,24 @@ func (s *Service) GetAssetAccess(ctx context.Context, caller uuid.UUID, id uuid.
 		return AssetAccess{}, connect.NewError(connect.CodeInternal, err)
 	}
 	out.Capabilities = []string(caps)
+	// EntitledLogins is the connect predicate resolved against reality: the caller's
+	// connect capabilities intersected with the asset's own configured SSH logins.
+	// This is what the UI must show as "usable logins" — a login the caps cover but
+	// the asset does not declare is not usable and must not appear. ListSSHAssetLogins
+	// returns no rows for a non-SSH (config-less) asset, so entitled logins is empty.
+	loginRows, err := s.q.ListSSHAssetLogins(ctx, id)
+	if err != nil {
+		return AssetAccess{}, connect.NewError(connect.CodeInternal, err)
+	}
+	loginNames := make([]string, 0, len(loginRows))
+	for _, l := range loginRows {
+		loginNames = append(loginNames, l.Login)
+	}
+	entitled, err := authz.EntitledLogins(ctx, s.authz, caller, id, loginNames)
+	if err != nil {
+		return AssetAccess{}, connect.NewError(connect.CodeInternal, err)
+	}
+	out.EntitledLogins = entitled
 	// Management capabilities drive the authoring affordances (rename/move/delete/
 	// edit config). These are the full scope-cascade caps WITHOUT the `**` strip —
 	// mirroring GetFolderAccess — so an admin holding `**` can author the asset even

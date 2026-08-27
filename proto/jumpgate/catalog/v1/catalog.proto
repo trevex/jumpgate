@@ -238,6 +238,13 @@ message GetAssetAccessResponse {
   // (rename / move / delete / edit config), which are management actions and must
   // not be gated on the connect set.
   repeated string management_capabilities = 6;
+  // entitled_logins is the set of SSH logins the caller can ACTUALLY use on this
+  // asset = the caller's connect capabilities ∩ the asset's configured ssh logins.
+  // Unlike `capabilities` (raw connect patterns like "ssh:login:*"), this is the
+  // resolved concrete login set: a login the caller's caps cover but the asset does
+  // not declare never appears, and a wildcard cap is expanded to the asset's
+  // matching logins. Empty for a non-SSH asset or a caller with no connect ability.
+  repeated string entitled_logins = 7;
 }
 
 message GetFolderAccessRequest { string folder_id = 1 [(buf.validate.field).string.uuid = true]; }

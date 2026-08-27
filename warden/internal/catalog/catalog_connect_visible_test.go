@@ -42,7 +42,9 @@ func seedFolderCascade(t *testing.T, pool *pgxpool.Pool) (aliceEmail, alicePass,
 		t.Fatal(err)
 	}
 
-	role := createRoleWithCaps(t, ctx, q, "fc-demo", pgtype.UUID{}, `["ssh:login:demo"]`)
+	// Grant demo (declared on the asset) AND ghost (NOT declared) so entitled_logins
+	// can be asserted to intersect down to just demo — the login the asset defines.
+	role := createRoleWithCaps(t, ctx, q, "fc-demo", pgtype.UUID{}, `["ssh:login:demo", "ssh:login:ghost"]`)
 	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeFolderID: pgtype.UUID{Bytes: fc.ID, Valid: true},
@@ -76,6 +78,12 @@ func TestGetAssetAccessConnectVisible(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("alice caps missing ssh:login:demo: %v", acc.Msg.Capabilities)
+	}
+	// entitled_logins is the connect caps ∩ the asset's configured logins: alice
+	// holds ssh:login:demo AND ssh:login:ghost, but the asset declares only `demo`,
+	// so ghost must be excluded — only usable logins appear.
+	if got := acc.Msg.EntitledLogins; len(got) != 1 || got[0] != "demo" {
+		t.Fatalf("alice entitled_logins = %v, want [demo] (ghost is not a configured login on the asset)", got)
 	}
 
 	// Stranger: neither arm → NotFound (existence hiding preserved).

@@ -2108,8 +2108,15 @@ type GetAssetAccessResponse struct {
 	// (rename / move / delete / edit config), which are management actions and must
 	// not be gated on the connect set.
 	ManagementCapabilities []string `protobuf:"bytes,6,rep,name=management_capabilities,json=managementCapabilities,proto3" json:"management_capabilities,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// entitled_logins is the set of SSH logins the caller can ACTUALLY use on this
+	// asset = the caller's connect capabilities ∩ the asset's configured ssh logins.
+	// Unlike `capabilities` (raw connect patterns like "ssh:login:*"), this is the
+	// resolved concrete login set: a login the caller's caps cover but the asset does
+	// not declare never appears, and a wildcard cap is expanded to the asset's
+	// matching logins. Empty for a non-SSH asset or a caller with no connect ability.
+	EntitledLogins []string `protobuf:"bytes,7,rep,name=entitled_logins,json=entitledLogins,proto3" json:"entitled_logins,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetAssetAccessResponse) Reset() {
@@ -2180,6 +2187,13 @@ func (x *GetAssetAccessResponse) GetCapabilities() []string {
 func (x *GetAssetAccessResponse) GetManagementCapabilities() []string {
 	if x != nil {
 		return x.ManagementCapabilities
+	}
+	return nil
+}
+
+func (x *GetAssetAccessResponse) GetEntitledLogins() []string {
+	if x != nil {
+		return x.EntitledLogins
 	}
 	return nil
 }
@@ -2926,14 +2940,15 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\vfolder_path\x18\x03 \x01(\tR\n" +
 	"folderPath\"<\n" +
 	"\x15GetAssetAccessRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xdb\x02\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\x84\x03\n" +
 	"\x16GetAssetAccessResponse\x12&\n" +
 	"\x0factive_role_ids\x18\x01 \x03(\tR\ractiveRoleIds\x120\n" +
 	"\x14requestable_role_ids\x18\x02 \x03(\tR\x12requestableRoleIds\x12?\n" +
 	"\factive_roles\x18\x03 \x03(\v2\x1c.jumpgate.catalog.v1.RoleRefR\vactiveRoles\x12I\n" +
 	"\x11requestable_roles\x18\x04 \x03(\v2\x1c.jumpgate.catalog.v1.RoleRefR\x10requestableRoles\x12\"\n" +
 	"\fcapabilities\x18\x05 \x03(\tR\fcapabilities\x127\n" +
-	"\x17management_capabilities\x18\x06 \x03(\tR\x16managementCapabilities\"?\n" +
+	"\x17management_capabilities\x18\x06 \x03(\tR\x16managementCapabilities\x12'\n" +
+	"\x0fentitled_logins\x18\a \x03(\tR\x0eentitledLogins\"?\n" +
 	"\x16GetFolderAccessRequest\x12%\n" +
 	"\tfolder_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bfolderId\"=\n" +
 	"\x17GetFolderAccessResponse\x12\"\n" +

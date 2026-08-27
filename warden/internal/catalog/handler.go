@@ -493,6 +493,7 @@ func (h *Handler) GetAssetAccess(ctx context.Context, req *connect.Request[catal
 		RequestableRoles:       toRoleRefMsgs(acc.RequestableRoles),
 		Capabilities:           acc.Capabilities,
 		ManagementCapabilities: acc.ManagementCapabilities,
+		EntitledLogins:         acc.EntitledLogins,
 	}), nil
 }
 

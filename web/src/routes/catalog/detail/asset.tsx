@@ -69,22 +69,6 @@ import {
   RolePill,
 } from "./shared";
 
-// ─── SSH connect command derivation ──────────────────────────────────────────
-
-/**
- * Extracts concrete login names from ssh:login:<login> capabilities. The
- * capability format is "ssh:login:<login>" (exactly 3 segments). Glob logins
- * ("*", "**") are intentionally excluded: a wildcard means "any login" and
- * is not a runnable command — the CLI/grant flow covers that case.
- * Returns [] when no concrete SSH connect capabilities are present.
- */
-function sshLoginsCoveredByCaps(caps: string[]): string[] {
-  return caps
-    .filter((c) => c.startsWith("ssh:login:") && c.split(":").length === 3)
-    .map((c) => c.split(":")[2])
-    .filter((login) => login !== "*" && login !== "**");
-}
-
 // ─── SSH connect block ────────────────────────────────────────────────────────
 
 interface ConnectBlockProps {
@@ -306,7 +290,12 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   if (isError) return <DetailError error={error} />;
   if (!data) return null;
 
-  const sshLogins = sshLoginsCoveredByCaps(data.capabilities);
+  // The logins actually usable on THIS asset: the server-resolved intersection of
+  // the caller's connect capabilities with the asset's configured SSH logins. Using
+  // entitledLogins (not the raw `capabilities` patterns) means a login the caller's
+  // caps cover but the asset does not declare never shows a connect affordance, and
+  // wildcard caps are already expanded to the asset's matching logins.
+  const sshLogins = data.entitledLogins;
   const hasRequestable = data.requestableRoles.length > 0;
   // Connect-vs-`**` hint: connect affordances derive from the CONNECT capability
   // set (`data.capabilities`), which STRIPS `**`. A bare-`**` admin therefore

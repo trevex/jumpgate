@@ -153,6 +153,10 @@ type AssetAccess struct {
 	RequestableRoles       []RoleRef
 	Capabilities           []string
 	ManagementCapabilities []string
+	// EntitledLogins is the caller's connect capabilities ∩ the asset's configured
+	// SSH logins — the concrete logins actually usable on THIS asset (empty for a
+	// non-SSH asset or a caller with no connect ability).
+	EntitledLogins []string
 }
 
 // SearchHit is a visibility-filtered catalog search result.
