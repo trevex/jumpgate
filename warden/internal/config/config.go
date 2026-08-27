@@ -65,6 +65,14 @@ type Config struct {
 	SessionTokenTTL time.Duration `env:"SESSION_TOKEN_TTL" envDefault:"60s"`
 	// GatewayEndpoint is the externally reachable gateway address the CLI dials.
 	GatewayEndpoint string `env:"GATEWAY_ENDPOINT" envDefault:"localhost:8443"`
+	// AllowInsecureSessions (DEV ONLY) permits CreateWebSession to hand back the
+	// plaintext gateway endpoint when the browser asks for it. Default false: an
+	// insecure request is silently downgraded to the secure endpoint (fail-closed).
+	AllowInsecureSessions bool `env:"ALLOW_INSECURE_SESSIONS" envDefault:"false"`
+	// GatewayInsecureEndpoint is the plaintext (ws://) gateway address handed to a
+	// browser when insecure sessions are allowed and requested. Empty disables the
+	// insecure path regardless of AllowInsecureSessions (fail-closed).
+	GatewayInsecureEndpoint string `env:"GATEWAY_INSECURE_ENDPOINT" envDefault:""`
 
 	// SSHCertMaxTTL bounds an issued JIT SSH certificate's lifetime. It is a
 	// backstop only: teardown handles in-session revocation, so the cert TTL need

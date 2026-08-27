@@ -67,7 +67,7 @@ func (s *Handler) CreateWebSession(ctx context.Context, req *connect.Request[ses
 	if req.Msg.Login == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("empty login"))
 	}
-	out, err := s.svc.CreateWebSession(ctx, caller.ID, assetID, req.Msg.Login)
+	out, err := s.svc.CreateWebSession(ctx, caller.ID, assetID, req.Msg.Login, req.Msg.Insecure)
 	switch {
 	case errors.Is(err, ErrNoAccess):
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("no session access"))
@@ -78,6 +78,7 @@ func (s *Handler) CreateWebSession(ctx context.Context, req *connect.Request[ses
 		Ticket:          out.Token,
 		GatewayEndpoint: out.Endpoint,
 		ExpiresAt:       timestamppb.New(out.ExpiresAt),
+		Insecure:        out.Insecure,
 	}), nil
 }
 

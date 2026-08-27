@@ -79,8 +79,64 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL)
 	return svc, pub
+}
+
+// testInsecureGatewayEndpoint is the plaintext gateway endpoint used to assert the
+// DEV-ONLY insecure web-session path.
+const testInsecureGatewayEndpoint = "gateway.test:8444"
+
+// newSessionPool spins up an ephemeral migrated Postgres and returns a pool,
+// WITHOUT mounting the RPC server or initializing a session signing key — the
+// caller (insecureSessionService) owns keystore init, so this avoids the
+// double-init that newServerWithSession would cause.
+func newSessionPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// insecureSessionService builds a session.Service configured with the given
+// insecure endpoint + allow flag, over an initialized signing key. Returns the
+// service and the caller's entitled user id on a freshly seeded ssh asset with a
+// "deploy" login the user holds — so CreateWebSession's entitlement check passes.
+func insecureSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer, insecureEndpoint string, allowInsecure bool) (*session.Service, uuid.UUID, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	ks := session.NewKeyStore(sqlc.New(pool), sealer)
+	if err := ks.Init(ctx); err != nil {
+		t.Fatalf("session keystore init: %v", err)
+	}
+	priv, _, err := ks.LoadActive(ctx)
+	if err != nil {
+		t.Fatalf("session keystore load: %v", err)
+	}
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, insecureEndpoint, allowInsecure, testSessionTTL)
+
+	q := sqlc.New(pool)
+	assetID := seedSSHAsset(t, q, []string{"deploy"})
+	role := createRoleWithCaps(t, ctx, q, "web-insecure-"+uuid.NewString(), pgtype.UUID{}, `["ssh:login:deploy"]`)
+	email := "insecure-" + uuid.NewString() + "@sess"
+	seedUser(t, pool, email, "password123", false)
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+		t.Fatalf("lookup user: %v", err)
+	}
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+		RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+	}); err != nil {
+		t.Fatalf("CreateRoleBinding: %v", err)
+	}
+	return svc, uid, assetID
 }
 
 // newServerWithSession spins up an ephemeral Postgres, migrates it, and mounts the

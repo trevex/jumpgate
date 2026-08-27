@@ -258,6 +258,73 @@ func TestCreateWebSessionUnentitledLoginDenied(t *testing.T) {
 	}
 }
 
+// TestCreateWebSessionInsecureFailClosed asserts the DEV-ONLY insecure endpoint
+// selection is fail-closed: an insecure request is honored ONLY when warden both
+// allows it and has an insecure endpoint configured; otherwise it is silently
+// downgraded to the secure endpoint. The ticket itself is unaffected.
+func TestCreateWebSessionInsecureFailClosed(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("not allowed downgrades to secure", func(t *testing.T) {
+		pool := newSessionPool(t)
+		// allowInsecure=false, but an endpoint is still configured — the request
+		// asks for insecure and must be denied the plaintext endpoint.
+		svc, uid, assetID := insecureSessionService(t, pool, testSealer(t), testInsecureGatewayEndpoint, false)
+		out, err := svc.CreateWebSession(ctx, uid, assetID, "deploy", true)
+		if err != nil {
+			t.Fatalf("CreateWebSession: %v", err)
+		}
+		if out.Insecure {
+			t.Fatal("Insecure=true, want false (fail-closed when not allowed)")
+		}
+		if out.Endpoint != testGatewayEndpoint {
+			t.Fatalf("endpoint = %q, want secure %q", out.Endpoint, testGatewayEndpoint)
+		}
+		if out.Token == "" {
+			t.Fatal("empty ticket")
+		}
+	})
+
+	t.Run("allowed with endpoint returns insecure", func(t *testing.T) {
+		pool := newSessionPool(t)
+		svc, uid, assetID := insecureSessionService(t, pool, testSealer(t), testInsecureGatewayEndpoint, true)
+		out, err := svc.CreateWebSession(ctx, uid, assetID, "deploy", true)
+		if err != nil {
+			t.Fatalf("CreateWebSession: %v", err)
+		}
+		if !out.Insecure {
+			t.Fatal("Insecure=false, want true (allowed + endpoint set + requested)")
+		}
+		if out.Endpoint != testInsecureGatewayEndpoint {
+			t.Fatalf("endpoint = %q, want insecure %q", out.Endpoint, testInsecureGatewayEndpoint)
+		}
+	})
+
+	t.Run("allowed but not requested stays secure", func(t *testing.T) {
+		pool := newSessionPool(t)
+		svc, uid, assetID := insecureSessionService(t, pool, testSealer(t), testInsecureGatewayEndpoint, true)
+		out, err := svc.CreateWebSession(ctx, uid, assetID, "deploy", false)
+		if err != nil {
+			t.Fatalf("CreateWebSession: %v", err)
+		}
+		if out.Insecure || out.Endpoint != testGatewayEndpoint {
+			t.Fatalf("insecure=%v endpoint=%q, want secure %q", out.Insecure, out.Endpoint, testGatewayEndpoint)
+		}
+	})
+
+	t.Run("allowed but no endpoint stays secure", func(t *testing.T) {
+		pool := newSessionPool(t)
+		svc, uid, assetID := insecureSessionService(t, pool, testSealer(t), "", true)
+		out, err := svc.CreateWebSession(ctx, uid, assetID, "deploy", true)
+		if err != nil {
+			t.Fatalf("CreateWebSession: %v", err)
+		}
+		if out.Insecure || out.Endpoint != testGatewayEndpoint {
+			t.Fatalf("insecure=%v endpoint=%q, want secure %q (fail-closed on empty endpoint)", out.Insecure, out.Endpoint, testGatewayEndpoint)
+		}
+	})
+}
+
 func TestCreateSessionUnauthenticated(t *testing.T) {
 	_, url, _ := newServerWithSession(t)
 	ctx := context.Background()

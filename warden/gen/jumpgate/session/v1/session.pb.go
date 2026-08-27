@@ -136,9 +136,14 @@ func (x *CreateSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
 }
 
 type CreateWebSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AssetId string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Login   string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	// insecure (DEV ONLY) asks for the plaintext (ws://) gateway endpoint. The
+	// frontend sets it only when the console is itself served over plain http. It
+	// is honored only when warden allows insecure sessions; otherwise the secure
+	// endpoint is returned (fail-closed).
+	Insecure      bool `protobuf:"varint,3,opt,name=insecure,proto3" json:"insecure,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -187,13 +192,23 @@ func (x *CreateWebSessionRequest) GetLogin() string {
 	return ""
 }
 
+func (x *CreateWebSessionRequest) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
 type CreateWebSessionResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Ticket          string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
 	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// insecure is true only when the gateway_endpoint is the plaintext one; the
+	// frontend uses it to pick ws:// vs wss://.
+	Insecure      bool `protobuf:"varint,4,opt,name=insecure,proto3" json:"insecure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateWebSessionResponse) Reset() {
@@ -247,6 +262,13 @@ func (x *CreateWebSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *CreateWebSessionResponse) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -259,15 +281,17 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"]\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"y\n" +
 	"\x17CreateWebSessionRequest\x12#\n" +
 	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12\x1d\n" +
-	"\x05login\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\x98\x01\n" +
+	"\x05login\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12\x1a\n" +
+	"\binsecure\x18\x03 \x01(\bR\binsecure\"\xb4\x01\n" +
 	"\x18CreateWebSessionResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12)\n" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\xed\x01\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
+	"\binsecure\x18\x04 \x01(\bR\binsecure2\xed\x01\n" +
 	"\x0eSessionService\x12h\n" +
 	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
 	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"

@@ -43,6 +43,10 @@ import (
 // Run constructs and runs the Warden application until ctx is cancelled or a
 // server fails. The caller owns process concerns such as signals and logging.
 func Run(ctx context.Context, cfg config.Config) error {
+	if cfg.AllowInsecureSessions {
+		slog.Warn("ALLOW_INSECURE_SESSIONS is enabled — CreateWebSession may hand out a PLAINTEXT (ws://) gateway endpoint; DEV ONLY, never in production",
+			"insecure_endpoint", cfg.GatewayInsecureEndpoint)
+	}
 	if err := migrate.Up(cfg.DatabaseURL); err != nil {
 		return err
 	}
@@ -157,7 +161,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			return err
 		} else {
 			sessionPubKey = pub
-			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.SessionTokenTTL)
+			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.GatewayInsecureEndpoint, cfg.AllowInsecureSessions, cfg.SessionTokenTTL)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)
 			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, cfg.SSHCertMaxTTL)

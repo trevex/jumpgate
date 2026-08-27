@@ -33,10 +33,18 @@ message CreateSessionResponse {
 message CreateWebSessionRequest {
   string asset_id = 1 [(buf.validate.field).string.uuid = true];
   string login = 2 [(buf.validate.field).string.min_len = 1];
+  // insecure (DEV ONLY) asks for the plaintext (ws://) gateway endpoint. The
+  // frontend sets it only when the console is itself served over plain http. It
+  // is honored only when warden allows insecure sessions; otherwise the secure
+  // endpoint is returned (fail-closed).
+  bool insecure = 3;
 }
 
 message CreateWebSessionResponse {
   string ticket = 1;
   string gateway_endpoint = 2;
   google.protobuf.Timestamp expires_at = 3;
+  // insecure is true only when the gateway_endpoint is the plaintext one; the
+  // frontend uses it to pick ws:// vs wss://.
+  bool insecure = 4;
 }

@@ -95,7 +95,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
-	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, time.Minute)
+	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, "", false, time.Minute)
 	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()

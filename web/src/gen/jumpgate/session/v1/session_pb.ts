@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/session/v1/session.proto.
  */
 export const file_jumpgate_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQASJ0ChhDcmVhdGVXZWJTZXNzaW9uUmVzcG9uc2USDgoGdGlja2V0GAEgASgJEhgKEGdhdGV3YXlfZW5kcG9pbnQYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAy7QEKDlNlc3Npb25TZXJ2aWNlEmgKDUNyZWF0ZVNlc3Npb24SKS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiouanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2UiABJxChBDcmVhdGVXZWJTZXNzaW9uEiwuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVXZWJTZXNzaW9uUmVxdWVzdBotLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9zZXNzaW9uL3YxO3Nlc3Npb252MWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIMu0BCg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAQkVaQ2dpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvc2Vzc2lvbi92MTtzZXNzaW9udjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.session.v1.CreateSessionRequest
@@ -77,6 +77,16 @@ export type CreateWebSessionRequest = Message<"jumpgate.session.v1.CreateWebSess
    * @generated from field: string login = 2;
    */
   login: string;
+
+  /**
+   * insecure (DEV ONLY) asks for the plaintext (ws://) gateway endpoint. The
+   * frontend sets it only when the console is itself served over plain http. It
+   * is honored only when warden allows insecure sessions; otherwise the secure
+   * endpoint is returned (fail-closed).
+   *
+   * @generated from field: bool insecure = 3;
+   */
+  insecure: boolean;
 };
 
 /**
@@ -104,6 +114,14 @@ export type CreateWebSessionResponse = Message<"jumpgate.session.v1.CreateWebSes
    * @generated from field: google.protobuf.Timestamp expires_at = 3;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * insecure is true only when the gateway_endpoint is the plaintext one; the
+   * frontend uses it to pick ws:// vs wss://.
+   *
+   * @generated from field: bool insecure = 4;
+   */
+  insecure: boolean;
 };
 
 /**

@@ -28,12 +28,28 @@ type Service struct {
 	authz           *authz.Authorizer
 	minter          *sessiontoken.Minter
 	gatewayEndpoint string
-	ttl             time.Duration
+	// insecureEndpoint is the plaintext (ws://) gateway address handed to a browser
+	// when insecure sessions are allowed AND requested. Empty disables the path.
+	insecureEndpoint string
+	// allowInsecure gates the insecure endpoint. Default false → an insecure
+	// request is silently downgraded to the secure endpoint (fail-closed).
+	allowInsecure bool
+	ttl           time.Duration
 }
 
-// NewService builds the CreateSession domain service.
-func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint string, ttl time.Duration) *Service {
-	return &Service{q: q, authz: a, minter: minter, gatewayEndpoint: gatewayEndpoint, ttl: ttl}
+// NewService builds the CreateSession domain service. insecureEndpoint/allowInsecure
+// are DEV-ONLY: unless allowInsecure is true and insecureEndpoint is non-empty, a
+// browser's insecure request is downgraded to the secure endpoint (fail-closed).
+func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint, insecureEndpoint string, allowInsecure bool, ttl time.Duration) *Service {
+	return &Service{
+		q:                q,
+		authz:            a,
+		minter:           minter,
+		gatewayEndpoint:  gatewayEndpoint,
+		insecureEndpoint: insecureEndpoint,
+		allowInsecure:    allowInsecure,
+		ttl:              ttl,
+	}
 }
 
 // Created is the result of CreateSession.
@@ -41,6 +57,9 @@ type Created struct {
 	Token     string
 	Endpoint  string
 	ExpiresAt time.Time
+	// Insecure is true only when a web session was actually granted the plaintext
+	// endpoint (allowed AND requested). The browser uses it to pick ws:// vs wss://.
+	Insecure bool
 }
 
 // CreateSession authorizes userID to reach assetID (≥1 SSH login via the held
@@ -67,7 +86,7 @@ func (s *Service) CreateSession(ctx context.Context, userID, assetID uuid.UUID, 
 // must be one of the caller's entitled logins on the asset. Existence-hiding:
 // an unknown asset, a non-ssh asset, a no-login asset, and an unentitled login
 // all yield ErrNoAccess.
-func (s *Service) CreateWebSession(ctx context.Context, userID, assetID uuid.UUID, login string) (Created, error) {
+func (s *Service) CreateWebSession(ctx context.Context, userID, assetID uuid.UUID, login string, insecure bool) (Created, error) {
 	logins, err := s.entitledLogins(ctx, userID, assetID)
 	if err != nil {
 		return Created{}, err
@@ -83,7 +102,15 @@ func (s *Service) CreateWebSession(ctx context.Context, userID, assetID uuid.UUI
 	if err != nil {
 		return Created{}, err
 	}
-	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(webTTL)}, nil
+	// Fail-closed endpoint selection: only a browser that both asked for insecure
+	// AND runs against a warden that allows it (with an endpoint configured) gets
+	// the plaintext endpoint. Otherwise it is silently downgraded to secure. The
+	// ticket itself is identical either way — only transport TLS differs.
+	endpoint, isInsecure := s.gatewayEndpoint, false
+	if insecure && s.allowInsecure && s.insecureEndpoint != "" {
+		endpoint, isInsecure = s.insecureEndpoint, true
+	}
+	return Created{Token: tok, Endpoint: endpoint, ExpiresAt: time.Now().Add(webTTL), Insecure: isInsecure}, nil
 }
 
 // entitledLogins returns the caller's entitled SSH logins on the asset, or

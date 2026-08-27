@@ -96,7 +96,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := accessrequest.NewService(pool, auditLog, approvals.New(pool), authz.NewRoleResolver(pool), terminator, 8*time.Hour)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
-	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, time.Minute)
+	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, "", false, time.Minute)
 	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
