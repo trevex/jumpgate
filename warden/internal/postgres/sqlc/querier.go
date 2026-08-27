@@ -256,6 +256,9 @@ type Querier interface {
 	// Bounded (a role appears in few policies); not paginated.
 	ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
+	// All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
+	// resolution.
+	ListPolicySubjectsByKind(ctx context.Context, arg ListPolicySubjectsByKindParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)

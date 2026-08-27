@@ -116,3 +116,8 @@ UNION ALL
 SELECT rp.*, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.approver_role_id = sqlc.arg('role_id')
 ORDER BY usage, created_at DESC, id
 LIMIT 500;
+
+-- name: ListPolicySubjectsByKind :many
+-- All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
+-- resolution.
+SELECT * FROM request_policy_subjects WHERE policy_id = sqlc.arg('policy_id') AND kind = sqlc.arg('kind');

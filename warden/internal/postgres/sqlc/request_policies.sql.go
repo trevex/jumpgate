@@ -436,6 +436,44 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjects
 	return items, nil
 }
 
+const listPolicySubjectsByKind = `-- name: ListPolicySubjectsByKind :many
+SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects WHERE policy_id = $1 AND kind = $2
+`
+
+type ListPolicySubjectsByKindParams struct {
+	PolicyID uuid.UUID `json:"policy_id"`
+	Kind     string    `json:"kind"`
+}
+
+// All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
+// resolution.
+func (q *Queries) ListPolicySubjectsByKind(ctx context.Context, arg ListPolicySubjectsByKindParams) ([]RequestPolicySubject, error) {
+	rows, err := q.db.Query(ctx, listPolicySubjectsByKind, arg.PolicyID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RequestPolicySubject
+	for rows.Next() {
+		var i RequestPolicySubject
+		if err := rows.Scan(
+			&i.ID,
+			&i.PolicyID,
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.CreatedAt,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRequestPolicies = `-- name: ListRequestPolicies :many
 SELECT id, role_id, scope_folder_id, scope_asset_id, required_approvals, approver_role_id, created_at, requester_role_id, max_duration, name FROM request_policies
 WHERE role_id = $1

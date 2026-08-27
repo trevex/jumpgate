@@ -800,9 +800,50 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 	return connect.NewResponse(out), nil
 }
 
-// GetPolicyRoster is a temporary stub; the real implementation lands in a later task.
-func (h *Handler) GetPolicyRoster(_ context.Context, _ *connect.Request[accessv1.GetPolicyRosterRequest]) (*connect.Response[accessv1.GetPolicyRosterResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+func toRosterNodeMsg(v RosterNodeView) *accessv1.RosterNode {
+	return &accessv1.RosterNode{
+		SubjectKind:      v.Subject.Kind,
+		SubjectId:        v.SubjectID,
+		DisplayName:      v.Subject.DisplayName,
+		FolderPath:       v.Subject.FolderPath,
+		GroupMemberCount: v.Subject.MemberCount,
+		Active:           v.Subject.Active,
+		Source:           v.Source,
+		ViaRoleId:        v.ViaRoleID,
+		ViaRoleName:      v.ViaRoleName,
+	}
+}
+
+// GetPolicyRoster resolves the requester + approver rosters for a policy. Gated by
+// access:policy:read at the policy's scope (same gate as ListPolicySubjects).
+func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[accessv1.GetPolicyRosterRequest]) (*connect.Response[accessv1.GetPolicyRosterResponse], error) {
+	policyID, err := uuid.Parse(req.Msg.PolicyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad policy_id"))
+	}
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := h.guard.ScopeOfPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireCap(ctx, c, "access:policy:read", scope); err != nil {
+		return nil, err
+	}
+	reqs, apprs, err := h.svc.PolicyRoster(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	out := &accessv1.GetPolicyRosterResponse{}
+	for i := range reqs {
+		out.Requesters = append(out.Requesters, toRosterNodeMsg(reqs[i]))
+	}
+	for i := range apprs {
+		out.Approvers = append(out.Approvers, toRosterNodeMsg(apprs[i]))
+	}
+	return connect.NewResponse(out), nil
 }
 
 // ListPoliciesUsingRole is a temporary stub; the real implementation lands in a later task.
