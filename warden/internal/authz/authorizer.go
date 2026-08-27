@@ -26,11 +26,11 @@ func New(pool *pgxpool.Pool) *Authorizer {
 
 // queries returns the sqlc query set, lazily initialising q for authorizers built
 // as a bare struct literal (internal tests) rather than via New.
-func (s *Authorizer) queries() *sqlc.Queries {
-	if s.q == nil {
-		s.q = sqlc.New(s.pool)
+func (az *Authorizer) queries() *sqlc.Queries {
+	if az.q == nil {
+		az.q = sqlc.New(az.pool)
 	}
-	return s.q
+	return az.q
 }
 
 // uuidArg wraps a uuid.UUID as a non-null pgtype.UUID for sqlc params typed
@@ -59,7 +59,7 @@ func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
 // holds ≥1 Active (standing) role OR has ≥1 Requestable role (an effective
 // request_policy for which the user is an eligible requester). Assets with neither
 // are omitted entirely (existence-hiding: they must not be disclosed).
-func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
+func (az *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {
 		active bool
 		seen   map[uuid.UUID]struct{}
@@ -84,7 +84,7 @@ func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]Ass
 	}
 
 	// Active tier: assets held via the explicit role-rewrite graph (standing).
-	heldAssets, err := s.queries().HeldAssets(ctx, userID)
+	heldAssets, err := az.queries().HeldAssets(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("visible assets (active): %w", err)
 	}
@@ -96,7 +96,7 @@ func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]Ass
 
 	// Requestable tier: assets with ≥1 role requestable-but-not-active under the
 	// request_policy eligibility model.
-	req, err := s.visibleRequestable(ctx, userID)
+	req, err := az.visibleRequestable(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("visible assets (requestable): %w", err)
 	}
@@ -113,11 +113,11 @@ func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]Ass
 }
 
 // RolesOnAsset returns the user's active and requestable roles on one asset.
-func (s *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error) {
+func (az *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error) {
 	var r AssetRoles
 
 	// Active: roles held on the asset via the explicit role-rewrite graph.
-	activeRoleIDs, err := s.queries().HeldRolesOnAsset(ctx, sqlc.HeldRolesOnAssetParams{User: uuidArg(userID), AssetID: uuidArg(assetID)})
+	activeRoleIDs, err := az.queries().HeldRolesOnAsset(ctx, sqlc.HeldRolesOnAssetParams{User: uuidArg(userID), AssetID: uuidArg(assetID)})
 	if err != nil {
 		return AssetRoles{}, fmt.Errorf("roles on asset (active): %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID
 
 	// Requestable: roles requestable-but-not-active under the request_policy
 	// eligibility model (active-exclusion is already applied inside the query).
-	req, err := s.requestableRoles(ctx, userID, assetID)
+	req, err := az.requestableRoles(ctx, userID, assetID)
 	if err != nil {
 		return AssetRoles{}, fmt.Errorf("roles on asset (requestable): %w", err)
 	}
@@ -144,15 +144,15 @@ func (s *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID
 // via the held (standing) closure. It runs the closure ONCE and flattens all
 // patterns, so callers testing several capabilities pay a single query. Glob
 // matching happens in Go (CapMatch), keeping '*'/'**' semantics in one function.
-func (s *Authorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
-	return s.CapabilitiesOnObject(ctx, userID, assetID, "asset")
+func (az *Authorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
+	return az.CapabilitiesOnObject(ctx, userID, assetID, "asset")
 }
 
 // CapabilitiesOnObject returns every capability pattern the user holds on the
 // object (kind "asset" or "folder") via the held closure — the object-dimension
 // generalization of CapabilitiesOnAsset (glob matching stays in Go via CapMatch).
-func (s *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
-	rows, err := s.queries().HeldCapabilitiesOnObject(ctx, sqlc.HeldCapabilitiesOnObjectParams{
+func (az *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
+	rows, err := az.queries().HeldCapabilitiesOnObject(ctx, sqlc.HeldCapabilitiesOnObjectParams{
 		User:       uuidArg(userID),
 		ObjectKind: textArg(kind),
 		ObjectID:   uuidArg(objectID),
@@ -177,9 +177,9 @@ func (s *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID 
 // Check is the data-plane grant decision, keyed strictly to the asset object. A
 // nonexistent asset matches no row, so EXISTS is false with no error. `capability`
 // is internal (from workers), assumed concrete, not proto-validated.
-func (s *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
+func (az *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(capability)
-	ok, err := s.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{
+	ok, err := az.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{
 		User:      uuidArg(userID),
 		AssetID:   uuidArg(assetID),
 		CapScope:  textArg(reqScope),
@@ -206,14 +206,14 @@ func (s *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capab
 // authz_global_held collapses both rewrite arms to plain edges — only it is the
 // faithful global source. Existence-hiding: a nonexistent asset yields exactly the
 // global caps with no error.
-func (s *Authorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
+func (az *Authorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
 	switch scope.Kind {
 	case ScopeGlobal:
 		// Global-only: no object dimension, so authz_global_held alone suffices.
-		return s.globalHeldCapabilities(ctx, userID)
+		return az.globalHeldCapabilities(ctx, userID)
 	case ScopeFolder:
 		// authz_global_held ∪ authz_held on folders in the scope subtree (ltree @>).
-		rows, err := s.queries().ScopeCapabilitiesFolder(ctx, sqlc.ScopeCapabilitiesFolderParams{User: userID, ScopeID: scope.ID})
+		rows, err := az.queries().ScopeCapabilitiesFolder(ctx, sqlc.ScopeCapabilitiesFolderParams{User: userID, ScopeID: scope.ID})
 		if err != nil {
 			return nil, fmt.Errorf("capabilities on scope: %w", err)
 		}
@@ -224,7 +224,7 @@ func (s *Authorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, 
 		return caps, nil
 	case ScopeAsset:
 		// authz_global_held ∪ authz_held on the asset or its ancestor-or-self folders.
-		rows, err := s.queries().ScopeCapabilitiesAsset(ctx, sqlc.ScopeCapabilitiesAssetParams{User: uuidArg(userID), ScopeID: uuidArg(scope.ID)})
+		rows, err := az.queries().ScopeCapabilitiesAsset(ctx, sqlc.ScopeCapabilitiesAssetParams{User: uuidArg(userID), ScopeID: uuidArg(scope.ID)})
 		if err != nil {
 			return nil, fmt.Errorf("capabilities on scope: %w", err)
 		}

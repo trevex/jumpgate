@@ -51,11 +51,11 @@ func assetLoginNames(ctx context.Context, a *Authorizer, assetID uuid.UUID) ([]s
 // declared on it (ssh_asset_login.login). Assets with no logins are absent from
 // the map. Batched into a single query so the connect-visibility arm never issues
 // a per-asset login lookup.
-func (s *Authorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+func (az *Authorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
 	if len(assetIDs) == 0 {
 		return map[uuid.UUID][]string{}, nil
 	}
-	rows, err := s.queries().AssetLoginsForAssets(ctx, assetIDs)
+	rows, err := az.queries().AssetLoginsForAssets(ctx, assetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("asset logins: %w", err)
 	}
@@ -68,8 +68,8 @@ func (s *Authorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (
 
 // accessibleAssetSet returns the set of asset ids the user can access (VisibleAssets:
 // active or requestable) — the ACCESS axis, computed once per call.
-func (s *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	vis, err := s.VisibleAssets(ctx, userID)
+func (az *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	vis, err := az.VisibleAssets(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (
 //   - CONNECT:    the asset declares ≥1 SSH login the user entitles over the FULL
 //     asset-scope cascade. `**` normalizes to (*,*,*) and matches ssh:login:L, so
 //     `**` IS RETAINED here (no ConnectCapabilities literal-`**` carve-out).
-func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (az *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	// root + no-cascade holds no assets — short-circuit (also makes the level
 	// predicate below never need a FALSE arm).
 	if parent == uuid.Nil && !cascade {
@@ -102,7 +102,7 @@ func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid
 	}
 
 	// ACCESS set: VisibleAssets, collapsed into a uuid[] param (@accessIDs).
-	accessible, err := s.accessibleAssetSet(ctx, userID)
+	accessible, err := az.accessibleAssetSet(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid
 	// Browse level is selected by the nullable parent (uuid.Nil == root/NULL) and
 	// cascade args inside the query.
 	reqScope, reqAction, reqQual := NormalizeCap("catalog:asset:read")
-	ids, err := s.queries().VisibleAssetsUnder(ctx, sqlc.VisibleAssetsUnderParams{
+	ids, err := az.queries().VisibleAssetsUnder(ctx, sqlc.VisibleAssetsUnderParams{
 		User:      userID,
 		Parent:    nullableUUIDArg(parent),
 		Cascade:   cascade,

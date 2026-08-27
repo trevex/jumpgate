@@ -17,8 +17,8 @@ import (
 // heldRolesAndAssets scans the grant-augmented held closure ONCE and projects both
 // ACCESS arms it carries: the role ids the user holds (on ANY object) and the asset
 // ids the user holds a role on directly (object_kind='asset').
-func (s *Authorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
-	rows, err := s.queries().HeldRolesAndAssets(ctx, userID)
+func (az *Authorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
+	rows, err := az.queries().HeldRolesAndAssets(ctx, userID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("held roles and assets: %w", err)
 	}
@@ -45,19 +45,19 @@ func (s *Authorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (
 // combined query. The governed set stays classified in Go over mgmtScopeFolders:
 // its isManagementCap predicate (admits `*`/`**` but NOT a scope='*' connect
 // pattern) is subtler than a SQL scope predicate.
-func (s *Authorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (anchors, mgmtIDs []uuid.UUID, err error) {
+func (az *Authorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (anchors, mgmtIDs []uuid.UUID, err error) {
 	// Shared ACCESS closures, each evaluated once.
-	heldRoles, heldAssets, err := s.heldRolesAndAssets(ctx, userID)
+	heldRoles, heldAssets, err := az.heldRolesAndAssets(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
 	// requestable feeds both the requestable-role and requestable-asset arms.
-	req, err := s.visibleRequestable(ctx, userID)
+	req, err := az.visibleRequestable(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
 	// member: transitive group membership — one closure.
-	member, err := s.memberGroupIDs(ctx, userID)
+	member, err := az.memberGroupIDs(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,14 +78,14 @@ func (s *Authorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (ancho
 	}
 
 	// ── Governed set (a): management-scope folders, isManagementCap in Go ─────
-	mgmt, err := s.mgmtScopeFolders(ctx, userID)
+	mgmt, err := az.mgmtScopeFolders(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
 	mgmtIDs = mapKeys(mgmt)
 
 	// Combined anchor query: role/group/asset home-folder anchors in ONE go.
-	anchorFolders, err := s.anchorHomeFolders(ctx, userID, mapKeys(roleAccess), mapKeys(member), mapKeys(assetAccess))
+	anchorFolders, err := az.anchorHomeFolders(ctx, userID, mapKeys(roleAccess), mapKeys(member), mapKeys(assetAccess))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -114,8 +114,8 @@ func (s *Authorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (ancho
 // assets, CONNECT (an ssh:login the user entitles over the full asset-scope
 // cascade). It reuses authz_held + authz_global_held, so the closures cannot drift
 // from Check / CapabilitiesOnScope and deactivated users are excluded there.
-func (s *Authorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.queries().AnchorHomeFolders(ctx, sqlc.AnchorHomeFoldersParams{
+func (az *Authorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := az.queries().AnchorHomeFolders(ctx, sqlc.AnchorHomeFoldersParams{
 		User:        userID,
 		RoleAccess:  roleAccess,
 		GroupAccess: groupAccess,
@@ -151,8 +151,8 @@ func isManagementCap(pat string) bool {
 // `*`/`**`-yes-but-`*:connect`-no rule is too subtle for a column predicate). These
 // folders are both a path-reveal anchor source and the governed set: a folder is
 // governed iff it is at/under one of these scopes.
-func (s *Authorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	rows, err := s.queries().HeldFolderCapabilities(ctx, userID)
+func (az *Authorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	rows, err := az.queries().HeldFolderCapabilities(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("mgmt scope folders: %w", err)
 	}

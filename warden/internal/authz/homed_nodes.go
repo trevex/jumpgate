@@ -33,8 +33,8 @@ type nodeFolder struct {
 // heldRoleIDs returns the role ids the user holds (standing bindings + active
 // grants, closed over the role_grants rewrite graph), held on ANY object — one
 // arm of the role ACCESS axis.
-func (s *Authorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	ids, err := s.queries().HeldRoleIDs(ctx, userID)
+func (az *Authorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	ids, err := az.queries().HeldRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("held role ids: %w", err)
 	}
@@ -47,8 +47,8 @@ func (s *Authorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uui
 
 // requestableRoleIDs returns the set of role ids requestable to the user across
 // all assets — the other arm of the role ACCESS axis.
-func (s *Authorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	reqs, err := s.visibleRequestable(ctx, userID)
+func (az *Authorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	reqs, err := az.visibleRequestable(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +61,8 @@ func (s *Authorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (
 
 // IsMember reports whether the user is a (transitive) member of groupID. Returns
 // false for deactivated users. One targeted query, never full closure.
-func (s *Authorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
-	ok, err := s.queries().IsMember(ctx, sqlc.IsMemberParams{User: uuidArg(userID), Group: uuidArg(groupID)})
+func (az *Authorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
+	ok, err := az.queries().IsMember(ctx, sqlc.IsMemberParams{User: uuidArg(userID), Group: uuidArg(groupID)})
 	if err != nil {
 		return false, fmt.Errorf("is member: %w", err)
 	}
@@ -72,8 +72,8 @@ func (s *Authorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (b
 // memberGroupIDs returns the group ids the user is a transitive member of — the
 // group ACCESS axis, via the authz_user_groups closure. The query carries the
 // deactivation guard, so a deactivated user yields an empty set.
-func (s *Authorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	ids, err := s.queries().MemberGroupIDs(ctx, userID)
+func (az *Authorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	ids, err := az.queries().MemberGroupIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("member group ids: %w", err)
 	}
@@ -106,7 +106,7 @@ const (
 	groupsTable homedTable = "groups"
 )
 
-func (s *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table homedTable, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
+func (az *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table homedTable, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(mgmtCap)
 	// Browse level is selected inside the query by the nullable parent (uuid.Nil ==
 	// root/NULL) and cascade args; roles/groups are variants of the same query.
@@ -117,7 +117,7 @@ func (s *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID,
 	var rows []homedRow
 	switch table {
 	case rolesTable:
-		rr, err := s.queries().VisibleRolesHomed(ctx, sqlc.VisibleRolesHomedParams{
+		rr, err := az.queries().VisibleRolesHomed(ctx, sqlc.VisibleRolesHomedParams{
 			User: userID, Parent: nullableUUIDArg(parent), Cascade: cascade,
 			CapScope: reqScope, CapAction: reqAction, CapQual: reqQual, AccessIds: accessIDs,
 		})
@@ -128,7 +128,7 @@ func (s *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID,
 			rows = append(rows, homedRow{id: r.ID, folder: r.FolderID})
 		}
 	case groupsTable:
-		gr, err := s.queries().VisibleGroupsHomed(ctx, sqlc.VisibleGroupsHomedParams{
+		gr, err := az.queries().VisibleGroupsHomed(ctx, sqlc.VisibleGroupsHomedParams{
 			User: userID, Parent: nullableUUIDArg(parent), Cascade: cascade,
 			CapScope: reqScope, CapAction: reqAction, CapQual: reqQual, AccessIds: accessIDs,
 		})
@@ -157,24 +157,24 @@ func (s *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID,
 // its home folder (held ∪ requestable ∪ manageable-via access:role:read). Sole
 // owner of the predicate: VisibleRolesUnder maps it to ids and the folder-anchor
 // helper reads its home folders.
-func (s *Authorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+func (az *Authorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	// Access axis: held ∪ requestable, computed once as a single id set.
-	held, err := s.heldRoleIDs(ctx, userID)
+	held, err := az.heldRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	requestable, err := s.requestableRoleIDs(ctx, userID)
+	requestable, err := az.requestableRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	accessIDs := unionKeys(held, requestable)
-	return s.visibleHomedSetBased(ctx, userID, rolesTable, "access:role:read", parent, cascade, accessIDs)
+	return az.visibleHomedSetBased(ctx, userID, rolesTable, "access:role:read", parent, cascade, accessIDs)
 }
 
 // VisibleRolesUnder returns the role ids under `parent` the user may see
 // (held ∪ requestable ∪ manageable-via access:role:read).
-func (s *Authorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
-	nodes, err := s.visibleRolesHomed(ctx, userID, parent, cascade)
+func (az *Authorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := az.visibleRolesHomed(ctx, userID, parent, cascade)
 	if err != nil {
 		return nil, err
 	}
@@ -185,19 +185,19 @@ func (s *Authorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.
 // its home folder (transitive membership ∪ manageable-via identity:group:read).
 // Sole owner of the predicate: VisibleGroupsUnder maps it to ids and the
 // folder-anchor helper reads its home folders.
-func (s *Authorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+func (az *Authorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	// Access axis: transitive membership, computed once as a single id set.
-	member, err := s.memberGroupIDs(ctx, userID)
+	member, err := az.memberGroupIDs(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return s.visibleHomedSetBased(ctx, userID, groupsTable, "identity:group:read", parent, cascade, mapKeys(member))
+	return az.visibleHomedSetBased(ctx, userID, groupsTable, "identity:group:read", parent, cascade, mapKeys(member))
 }
 
 // VisibleGroupsUnder returns the group ids under `parent` the user may see
 // (transitive membership ∪ manageable-via identity:group:read).
-func (s *Authorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
-	nodes, err := s.visibleGroupsHomed(ctx, userID, parent, cascade)
+func (az *Authorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+	nodes, err := az.visibleGroupsHomed(ctx, userID, parent, cascade)
 	if err != nil {
 		return nil, err
 	}

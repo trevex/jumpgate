@@ -12,8 +12,8 @@ import (
 // childFolderIDs returns the ids of the folders directly under parent, ordered by
 // (name, id). parent == uuid.Nil selects the tree root (parent_id IS NULL); the
 // `IS NOT DISTINCT FROM` predicate treats a NULL argument as "match NULL".
-func (s *Authorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uuid.UUID, error) {
-	ids, err := s.queries().ChildFolderIDs(ctx, nullableUUIDArg(parent))
+func (az *Authorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := az.queries().ChildFolderIDs(ctx, nullableUUIDArg(parent))
 	if err != nil {
 		return nil, fmt.Errorf("child folders: %w", err)
 	}
@@ -22,8 +22,8 @@ func (s *Authorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uu
 
 // allFolderIDs returns every folder id (used for the root+cascade case, where the
 // candidate set is the whole tree).
-func (s *Authorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
-	ids, err := s.queries().AllFolderIDs(ctx)
+func (az *Authorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
+	ids, err := az.queries().AllFolderIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("all folders: %w", err)
 	}
@@ -34,18 +34,18 @@ func (s *Authorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
 // `parent` (used by VisibleFoldersUnder): the immediate children of `parent`, or
 // (with cascade) those children expanded to their full subtrees. parent ==
 // uuid.Nil selects the root children (and, with cascade, the whole tree).
-func (s *Authorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (az *Authorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	if parent == uuid.Nil && cascade {
-		return s.allFolderIDs(ctx)
+		return az.allFolderIDs(ctx)
 	}
-	children, err := s.childFolderIDs(ctx, parent)
+	children, err := az.childFolderIDs(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
 	if !cascade {
 		return children, nil
 	}
-	return s.folderSubtreeIDs(ctx, children)
+	return az.folderSubtreeIDs(ctx, children)
 }
 
 // VisibleFoldersUnder returns the folders under `parent` the user may see, each
@@ -55,19 +55,19 @@ func (s *Authorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UU
 // is the latter (a management cap held at/under the folder); a revealed ancestor is
 // visible but NOT governed. Anchors are the union of the four folderAnchors sources.
 // A global catalog:folder:read / `**` holder governs and sees the whole tree.
-func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
+func (az *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
 	// Global management short-circuit: a global catalog:folder:read (or **) holder
 	// governs and sees the whole tree.
-	global, err := s.globalHeldCapabilities(ctx, userID)
+	global, err := az.globalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	if global.Allows("catalog:folder:read") {
-		return s.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
+		return az.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
 	}
 
 	// Path-reveal anchors + the governed (managed) folder set (folderAnchors).
-	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
+	anchors, mgmtIDs, err := az.folderAnchors(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 	// One ltree query. Level mirrors childCandidateFolderIDs (children, or subtree
 	// with cascade); visible = ancestor-or-self of an anchor OR inside a managed
 	// folder (governed).
-	rows, err := s.queries().VisibleFoldersUnder(ctx, sqlc.VisibleFoldersUnderParams{
+	rows, err := az.queries().VisibleFoldersUnder(ctx, sqlc.VisibleFoldersUnderParams{
 		Cascade: cascade,
 		Parent:  nullableUUIDArg(parent),
 		Anchors: anchors,
@@ -99,13 +99,13 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 // folder). GetFolderAccess uses it to decide existence for a folder the user holds
 // no direct capability on, so a delegate can open the breadcrumb ancestors above the
 // subtree they govern. A global catalog:folder:read / `**` holder sees every folder.
-func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
-	global, err := s.globalHeldCapabilities(ctx, userID)
+func (az *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
+	global, err := az.globalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if global.Allows("catalog:folder:read") {
-		exists, err := s.queries().FolderExists(ctx, folderID)
+		exists, err := az.queries().FolderExists(ctx, folderID)
 		if err != nil {
 			return false, fmt.Errorf("folder exists: %w", err)
 		}
@@ -114,7 +114,7 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 
 	// Same folderAnchors as VisibleFoldersUnder, so the two path-reveal predicates
 	// cannot drift.
-	anchors, mgmtIDs, err := s.folderAnchors(ctx, userID)
+	anchors, mgmtIDs, err := az.folderAnchors(ctx, userID)
 	if err != nil {
 		return false, err
 	}
@@ -122,7 +122,7 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 		return false, nil
 	}
 
-	vis, err := s.queries().FolderPathVisible(ctx, sqlc.FolderPathVisibleParams{
+	vis, err := az.queries().FolderPathVisible(ctx, sqlc.FolderPathVisibleParams{
 		FolderID: uuidArg(folderID),
 		Anchors:  anchors,
 		MgmtIds:  mgmtIDs,
@@ -137,8 +137,8 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 // (reusing childCandidateFolderIDs), each with the given `governed` flag. It backs
 // the global-management short-circuit in VisibleFoldersUnder, where the caller sees
 // (and governs) the whole tree without per-folder anchor work.
-func (s *Authorizer) allFoldersAtLevel(ctx context.Context, parent uuid.UUID, cascade, governed bool) ([]VisibleFolder, error) {
-	ids, err := s.childCandidateFolderIDs(ctx, parent, cascade)
+func (az *Authorizer) allFoldersAtLevel(ctx context.Context, parent uuid.UUID, cascade, governed bool) ([]VisibleFolder, error) {
+	ids, err := az.childCandidateFolderIDs(ctx, parent, cascade)
 	if err != nil {
 		return nil, err
 	}

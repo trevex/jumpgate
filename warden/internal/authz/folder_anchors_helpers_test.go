@@ -28,8 +28,8 @@ func nodeHomeFolders(nodes []nodeFolder) map[uuid.UUID]struct{} {
 // visibleRoleHomeFolders returns the set of home folders of every role visible to
 // the user (whole-tree cascade). These folders anchor path-reveal so the browse
 // path down to a visible role is never hidden.
-func (s *Authorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	nodes, err := s.visibleRolesHomed(ctx, userID, uuid.Nil, true)
+func (az *Authorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	nodes, err := az.visibleRolesHomed(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -39,8 +39,8 @@ func (s *Authorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUI
 // visibleGroupHomeFolders returns the set of home folders of every group visible to
 // the user (whole-tree cascade). These folders anchor path-reveal so the browse
 // path down to a visible group is never hidden.
-func (s *Authorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	nodes, err := s.visibleGroupsHomed(ctx, userID, uuid.Nil, true)
+func (az *Authorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	nodes, err := az.visibleGroupsHomed(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +50,15 @@ func (s *Authorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UU
 // visibleAssetFolders returns the home folders of every asset visible to the user
 // (the full VisibleAssetsUnder union: access ∪ management ∪ connect, whole-tree
 // cascade). These folders anchor the path down to a reachable asset.
-func (s *Authorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
-	assetIDs, err := s.VisibleAssetsUnder(ctx, userID, uuid.Nil, true)
+func (az *Authorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	assetIDs, err := az.VisibleAssetsUnder(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err
 	}
 	if len(assetIDs) == 0 {
 		return map[uuid.UUID]struct{}{}, nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT folder_id FROM assets WHERE id = ANY($1::uuid[])`, assetIDs)
+	rows, err := az.pool.Query(ctx, `SELECT DISTINCT folder_id FROM assets WHERE id = ANY($1::uuid[])`, assetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("visible asset folders: %w", err)
 	}
