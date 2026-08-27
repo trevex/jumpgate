@@ -1,0 +1,62 @@
+/* jumpgate docs theme
+ * Brand blue (#2563EB, Tailwind blue-600) applied over the Material base so the
+ * header, links and accents match the web console in both light and dark. */
+
+:root {
+  --jg-blue:        #2563EB;
+  --jg-blue-dark:   #1D4ED8;
+  --jg-blue-bright: #60A5FA;
+}
+
+/* Light scheme */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        var(--jg-blue);
+  --md-primary-fg-color--light: var(--jg-blue-bright);
+  --md-primary-fg-color--dark:  var(--jg-blue-dark);
+  --md-accent-fg-color:         var(--jg-blue-dark);
+  --md-typeset-a-color:         var(--jg-blue);
+}
+
+/* Dark (slate) scheme — brighten links/accents for contrast on dark surfaces */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        var(--jg-blue);
+  --md-primary-fg-color--light: var(--jg-blue-bright);
+  --md-primary-fg-color--dark:  var(--jg-blue-dark);
+  --md-accent-fg-color:         var(--jg-blue-bright);
+  --md-typeset-a-color:         var(--jg-blue-bright);
+}
+
+/* Slightly tighter, more editorial headings */
+.md-typeset h1,
+.md-typeset h2 {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Landing hero */
+.jg-hero {
+  padding: 1.2rem 0 0.4rem;
+}
+.jg-hero .jg-tagline {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  max-width: 46rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Grid cards: a touch more lift and a brand-tinted hover */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border-radius: 0.6rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--jg-blue);
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.14);
+  transform: translateY(-2px);
+}
+
+/* Inline code reads as brand-adjacent without shouting */
+.md-typeset code {
+  border-radius: 0.28rem;
+}

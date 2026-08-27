@@ -8,9 +8,11 @@ KIND_CLUSTER ?= jumpgate
 CERT_MANAGER_VERSION ?= v1.16.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
+ZENSICAL_IMAGE ?= zensical/zensical:latest
+
 .PHONY: help gen sqlc build test bench lint fmt ci e2e-local e2e-cluster e2e-ssh kind-e2e web rust-deny \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
-        ui-dev ui-dev-reset ui-build
+        ui-dev ui-dev-reset ui-build docs docs-serve
 
 ui-dev: ## Start the UI dev stack (process-compose: postgres + silo + warden + vite)
 	process-compose up --port 8088
@@ -21,6 +23,12 @@ ui-dev-reset: ## Wipe all local dev data (.devdata); full re-provision on next u
 ui-build: ## Install web deps and build the SPA (production bundle)
 	pnpm --dir web install --frozen-lockfile
 	pnpm --dir web build
+
+docs: ## Build the docs site into ./site (via the zensical docker image)
+	docker run --rm -v "$(CURDIR)":/docs $(ZENSICAL_IMAGE) build --clean --strict
+
+docs-serve: ## Serve the docs with live reload at http://127.0.0.1:8000/ (Ctrl-C to stop)
+	docker run --rm -it -p 127.0.0.1:8000:8000 -v "$(CURDIR)":/docs $(ZENSICAL_IMAGE) serve --dev-addr 0.0.0.0:8000
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

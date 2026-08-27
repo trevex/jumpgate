@@ -2,6 +2,9 @@
 docs/superpowers/
 AGENTS.md
 
+# Zensical docs build output
+/site/
+
 # direnv / nix
 .direnv/
 result

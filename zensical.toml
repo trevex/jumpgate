@@ -1,0 +1,123 @@
+[project]
+site_url = "https://trevex.github.io/jumpgate/"
+site_name = "jumpgate"
+site_description = "Enterprise, agentless, just-in-time Privileged Access Management — a Go control plane and a Rust data plane."
+site_author = "jumpgate"
+
+copyright = "Copyright &copy; 2026 jumpgate"
+
+repo_url = "https://github.com/trevex/jumpgate"
+repo_name = "trevex/jumpgate"
+edit_uri = "edit/main/docs/"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Concepts" = [
+    { "Architecture" = "architecture.md" },
+    { "Access model" = "access-model.md" },
+    { "Capabilities" = "capabilities.md" },
+    { "Data model" = "data-model.md" },
+  ] },
+  { "Operating" = [
+    { "Development" = "development.md" },
+    { "Testing" = "testing.md" },
+    { "Security" = "security.md" },
+  ] },
+  { "Reference" = [
+    { "Roadmap" = "roadmap.md" },
+    { "Decisions" = "decisions.md" },
+  ] },
+  { "Guides" = [
+    { "CLI walkthrough" = "demo/walkthrough.md" },
+    { "Web console walkthrough" = "demo/walkthrough-ui.md" },
+  ] },
+]
+
+extra_css = ["stylesheets/extra.css"]
+
+[project.theme]
+favicon = "assets/favicon.svg"
+logo = "assets/logo.svg"
+language = "en"
+features = [
+  "announce.dismiss",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+  "toc.follow",
+]
+
+[project.theme.font]
+text = "Inter"
+code = "JetBrains Mono"
+
+# Brand blue (#2563EB) is applied via docs/stylesheets/extra.css so it holds in
+# both light and dark. The palette here only drives the light/dark background
+# scheme and the toggle.
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/trevex/jumpgate"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+# GitHub-compatible heading slugs so the docs' existing cross-page anchor links
+# (authored for GitHub's renderer) resolve on the built site too. pymdownx's
+# slugify keeps consecutive hyphens (from removed `&`, `—`, `/`), matching GitHub.
+toc.slugify = { object = "pymdownx.slugs.slugify", kwds = { case = "lower" } }
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}

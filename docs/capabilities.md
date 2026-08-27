@@ -158,7 +158,7 @@ checks the **recipient** `role_id`, the role that gets conferred.)
   (`ListRoleBindings`, `ListRequestPolicies`, `ListUsers`) require the read cap at
   `Global`; the per-object `Get`/`Resolve` forms use the object's own scope.
   `ListRoles` and `ListGroups` are exceptions — both are *visibility-filtered*
-  path browses (see [Role and group browse](#role-and-group-browse-listroleslistgroups)
+  path browses (see [Role and group browse](#role-and-group-browse--listroleslistgroups)
   below) and do **not** require a global read cap.
 - **Catalog browse is NOT cap-gated.** `ListFolders` / `ListAssets` are
   *visibility-filtered* per-node: a caller sees a node iff it manages it (holds a
@@ -166,7 +166,7 @@ checks the **recipient** `role_id`, the role that gets conferred.)
   (Active ∪ Requestable). A capless caller receives an empty list — not
   `PermissionDenied`. Browsing a folder path the caller cannot see returns
   `NotFound` (existence-hiding). See
-  [Catalog browse](#catalog-browse-listfolderslistassets) below.
+  [Catalog browse](#catalog-browse--listfolderslistassets) below.
 
 **`catalog:folder:read` cascades READ across the whole subtree.** Held on a folder
 `F`, it confers **read/visibility** of everything homed at or under `F` — descendant
@@ -262,7 +262,7 @@ checked at the group's folder scope and cascades down the tree, so
 Membership (incl. group-in-group nesting) is a separate, orthogonal axis and is not
 folder-scoped. `identity:user:*` stays global (users are not folder-homed).
 `ListGroups` is a **visibility-filtered path browse** — see
-[Role and group browse](#role-and-group-browse-listroleslistgroups) below.
+[Role and group browse](#role-and-group-browse--listroleslistgroups) below.
 
 **Deferred:** per-group "owner" delegation (a `scope_group_id` binding scope for
 single-group admin); folder-homing users; a subset guard on membership-adds. See
