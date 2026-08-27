@@ -20,6 +20,7 @@ import {
   createRole,
   listRoles,
 } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
+import { listFolderContents } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import {
   Dialog,
   DialogContent,
@@ -92,7 +93,7 @@ export function NewRoleDialog({
           ? `${name.trim()} was created under ${effectiveFolderPath}.`
           : `${name.trim()} was created as a global role.`,
       });
-      void invalidateList(listRoles);
+      void invalidateList([listRoles, listFolderContents]);
       reset();
       onOpenChange(false);
     },

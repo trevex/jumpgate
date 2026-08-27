@@ -18,6 +18,7 @@ import {
   createGroup,
   listGroups,
 } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
+import { listFolderContents } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import {
   Dialog,
   DialogContent,
@@ -84,7 +85,7 @@ export function NewGroupDialog({
           ? `${name.trim()} was added under ${effectiveFolderPath}.`
           : `${name.trim()} was added as a global group.`,
       });
-      void invalidateList(listGroups);
+      void invalidateList([listGroups, listFolderContents]);
       reset();
       onOpenChange(false);
     },
