@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -323,17 +324,147 @@ func (q *Queries) ListPoliciesForSubjectGroup(ctx context.Context, arg ListPolic
 	return items, nil
 }
 
+const listPoliciesUsingRole = `-- name: ListPoliciesUsingRole :many
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'requestable'::text AS usage FROM request_policies rp WHERE rp.role_id = $1
+UNION ALL
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'requester_source'::text AS usage FROM request_policies rp WHERE rp.requester_role_id = $1
+UNION ALL
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.approver_role_id = $1
+ORDER BY usage, created_at DESC, id
+LIMIT 500
+`
+
+type ListPoliciesUsingRoleRow struct {
+	ID                uuid.UUID       `json:"id"`
+	RoleID            uuid.UUID       `json:"role_id"`
+	ScopeFolderID     pgtype.UUID     `json:"scope_folder_id"`
+	ScopeAssetID      pgtype.UUID     `json:"scope_asset_id"`
+	RequiredApprovals int32           `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID     `json:"approver_role_id"`
+	CreatedAt         time.Time       `json:"created_at"`
+	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
+	MaxDuration       pgtype.Interval `json:"max_duration"`
+	Name              pgtype.Text     `json:"name"`
+	Usage             string          `json:"usage"`
+}
+
+// Every policy that references the role in any position, tagged with how: as the
+// requestable role, as the requester-source role, or as the approver-source role.
+// Bounded (a role appears in few policies); not paginated.
+func (q *Queries) ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error) {
+	rows, err := q.db.Query(ctx, listPoliciesUsingRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPoliciesUsingRoleRow
+	for rows.Next() {
+		var i ListPoliciesUsingRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
+			&i.Usage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPolicyRosterSubjects = `-- name: ListPolicyRosterSubjects :many
+SELECT
+  s.subject_user_id,
+  s.subject_group_id,
+  (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  folder_path(g.folder_id) AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
+) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = $1 AND s.kind = $2
+`
+
+type ListPolicyRosterSubjectsParams struct {
+	PolicyID uuid.UUID `json:"policy_id"`
+	Kind     string    `json:"kind"`
+}
+
+type ListPolicyRosterSubjectsRow struct {
+	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
+	SubjectKind      string      `json:"subject_kind"`
+	DisplayName      string      `json:"display_name"`
+	FolderPath       string      `json:"folder_path"`
+	GroupMemberCount int32       `json:"group_member_count"`
+	Active           pgtype.Bool `json:"active"`
+}
+
+// Explicit requester/approver subjects of a policy, fully resolved for display
+// (name, kind, group home path, member count, active) in one query.
+func (q *Queries) ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRosterSubjectsParams) ([]ListPolicyRosterSubjectsRow, error) {
+	rows, err := q.db.Query(ctx, listPolicyRosterSubjects, arg.PolicyID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPolicyRosterSubjectsRow
+	for rows.Next() {
+		var i ListPolicyRosterSubjectsRow
+		if err := rows.Scan(
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.SubjectKind,
+			&i.DisplayName,
+			&i.FolderPath,
+			&i.GroupMemberCount,
+			&i.Active,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPolicySubjects = `-- name: ListPolicySubjects :many
-SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects
-WHERE policy_id = $1
+SELECT
+  s.id, s.policy_id, s.kind, s.subject_user_id, s.subject_group_id, s.created_at,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = $1
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
     -- time predicate so the id tiebreak is NOT inverted.
     $2::timestamptz IS NULL
-    OR created_at < $2
-    OR (created_at = $2 AND id > $3::uuid)
+    OR s.created_at < $2
+    OR (s.created_at = $2 AND s.id > $3::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY s.created_at DESC, s.id
 LIMIT $4
 `
 
@@ -344,7 +475,21 @@ type ListPolicySubjectsParams struct {
 	Lim      int64              `json:"lim"`
 }
 
-func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error) {
+type ListPolicySubjectsRow struct {
+	ID                 uuid.UUID   `json:"id"`
+	PolicyID           uuid.UUID   `json:"policy_id"`
+	Kind               string      `json:"kind"`
+	SubjectUserID      pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID     pgtype.UUID `json:"subject_group_id"`
+	CreatedAt          time.Time   `json:"created_at"`
+	SubjectDisplayName string      `json:"subject_display_name"`
+	SubjectFolderPath  string      `json:"subject_folder_path"`
+	GroupMemberCount   int32       `json:"group_member_count"`
+}
+
+// Subjects attached to a policy, fully resolved for display in SQL: subject name,
+// group-home path (via folder_path()), and member count. No per-row Go resolution.
+func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error) {
 	rows, err := q.db.Query(ctx, listPolicySubjects,
 		arg.PolicyID,
 		arg.AfterTs,
@@ -355,16 +500,19 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjects
 		return nil, err
 	}
 	defer rows.Close()
-	var items []RequestPolicySubject
+	var items []ListPolicySubjectsRow
 	for rows.Next() {
-		var i RequestPolicySubject
+		var i ListPolicySubjectsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PolicyID,
+			&i.Kind,
 			&i.SubjectUserID,
 			&i.SubjectGroupID,
 			&i.CreatedAt,
-			&i.Kind,
+			&i.SubjectDisplayName,
+			&i.SubjectFolderPath,
+			&i.GroupMemberCount,
 		); err != nil {
 			return nil, err
 		}

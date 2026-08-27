@@ -53,7 +53,7 @@ func (s *Service) DeleteRoleBinding(ctx context.Context, id uuid.UUID) error {
 // (created_at DESC, id) with keyset pagination. The caller's access:binding:read
 // capability at the queried scope is gated by the handler. Returns the page rows and
 // an opaque next-page token.
-func (s *Service) ListRoleBindings(ctx context.Context, roleID, scopeFolder, scopeAsset, subjUser, subjGroup pgtype.UUID, pageSize int32, pageToken string) ([]sqlc.RoleBinding, string, error) {
+func (s *Service) ListRoleBindings(ctx context.Context, roleID, scopeFolder, scopeAsset, subjUser, subjGroup pgtype.UUID, pageSize int32, pageToken string) ([]sqlc.ListRoleBindingsRow, string, error) {
 	limit := apipage.ClampPageSize(pageSize)
 	k, err := apipage.DecodePageToken(pageToken)
 	if err != nil {

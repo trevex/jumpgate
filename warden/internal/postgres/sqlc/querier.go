@@ -58,6 +58,8 @@ type Querier interface {
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
 	CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
 	CountChildFolders(ctx context.Context, parentID pgtype.UUID) (int64, error)
+	// Direct membership count for a group (users + nested groups), for roster/badge display.
+	CountGroupMembers(ctx context.Context, groupID uuid.UUID) (int32, error)
 	CountGroupsHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountOutbox(ctx context.Context) (int64, error)
 	CountPoliciesScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
@@ -249,10 +251,23 @@ type Querier interface {
 	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
 	ListPoliciesForAsset(ctx context.Context, arg ListPoliciesForAssetParams) ([]RequestPolicy, error)
 	ListPoliciesForSubjectGroup(ctx context.Context, arg ListPoliciesForSubjectGroupParams) ([]RequestPolicy, error)
-	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
+	// Every policy that references the role in any position, tagged with how: as the
+	// requestable role, as the requester-source role, or as the approver-source role.
+	// Bounded (a role appears in few policies); not paginated.
+	ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error)
+	// Explicit requester/approver subjects of a policy, fully resolved for display
+	// (name, kind, group home path, member count, active) in one query.
+	ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRosterSubjectsParams) ([]ListPolicyRosterSubjectsRow, error)
+	// Subjects attached to a policy, fully resolved for display in SQL: subject name,
+	// group-home path (via folder_path()), and member count. No per-row Go resolution.
+	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
-	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
+	// Bindings matching the (all-optional) filters, fully resolved for display in SQL:
+	// subject kind/name/group-home path/member count, role name, and the binding's scope
+	// rendered as a dotted path (or 'global'). Single-sources folder-path rendering via
+	// folder_path(); no per-row Go resolution.
+	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]ListRoleBindingsRow, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
@@ -314,6 +329,11 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
+	// Subjects whose standing binding confers p_role on the given object (asset|folder),
+	// mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
+	// returned as NODES (not expanded to members), fully resolved for display, tagged with
+	// the actually-bound role (via_role_name). Deactivated user-subjects excluded.
+	RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error)
 	// CapabilitiesOnScope asset arm (global_held ∪ held on the asset or its ancestor-or-self folders).
 	ScopeCapabilitiesAsset(ctx context.Context, arg ScopeCapabilitiesAssetParams) ([]ScopeCapabilitiesAssetRow, error)
 	// CapabilitiesOnScope folder arm (global_held ∪ held on folders in the scope subtree).

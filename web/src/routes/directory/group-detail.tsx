@@ -15,7 +15,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { GroupMembers } from "@/components/groups/group-members";
+import { GroupDetailBody } from "@/components/detail/group-detail-body";
 
 // ─── Detail Sheet ─────────────────────────────────────────────────────────────
 
@@ -48,12 +48,10 @@ export function GroupDetailSheet({
               </SheetDescription>
             </SheetHeader>
 
-            <GroupMembers
-              group={{
-                groupId: group.id,
-                groupName: group.name,
-                folderPath: group.folderPath,
-              }}
+            <GroupDetailBody
+              groupId={group.id}
+              groupName={group.name}
+              folderPath={group.folderPath}
             />
           </>
         )}

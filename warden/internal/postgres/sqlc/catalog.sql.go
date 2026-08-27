@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -621,21 +622,40 @@ func (q *Queries) ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID p
 }
 
 const listRoleBindings = `-- name: ListRoleBindings :many
-SELECT id, role_id, scope_folder_id, scope_asset_id, subject_user_id, subject_group_id, created_at FROM role_bindings
-WHERE ($1::uuid IS NULL OR role_id = $1)
-  AND ($2::uuid IS NULL OR scope_folder_id = $2)
-  AND ($3::uuid IS NULL OR scope_asset_id = $3)
-  AND ($4::uuid IS NULL OR subject_user_id = $4)
-  AND ($5::uuid IS NULL OR subject_group_id = $5)
+SELECT
+  rb.id, rb.role_id, rb.scope_folder_id, rb.scope_asset_id,
+  rb.subject_user_id, rb.subject_group_id, rb.created_at,
+  (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  r.name AS role_name,
+  (CASE
+     WHEN rb.scope_asset_id IS NOT NULL THEN
+       CASE WHEN folder_path(sa.folder_id) <> '' THEN sa.name || '.' || folder_path(sa.folder_id) ELSE sa.name END
+     WHEN rb.scope_folder_id IS NOT NULL THEN folder_path(rb.scope_folder_id)
+     ELSE 'global'
+   END)::text AS scope_path
+FROM role_bindings rb
+JOIN roles r ON r.id = rb.role_id
+LEFT JOIN users u ON u.id = rb.subject_user_id
+LEFT JOIN groups g ON g.id = rb.subject_group_id
+LEFT JOIN assets sa ON sa.id = rb.scope_asset_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id) gm ON rb.subject_group_id IS NOT NULL
+WHERE ($1::uuid IS NULL OR rb.role_id = $1)
+  AND ($2::uuid IS NULL OR rb.scope_folder_id = $2)
+  AND ($3::uuid IS NULL OR rb.scope_asset_id = $3)
+  AND ($4::uuid IS NULL OR rb.subject_user_id = $4)
+  AND ($5::uuid IS NULL OR rb.subject_group_id = $5)
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
     -- instant with a later id. A row-comparison ` + "`" + `(created_at,id) < (…)` + "`" + ` is WRONG
     -- here — it would invert the id tiebreak.
     $6::timestamptz IS NULL
-    OR created_at < $6
-    OR (created_at = $6 AND id > $7::uuid)
+    OR rb.created_at < $6
+    OR (rb.created_at = $6 AND rb.id > $7::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY rb.created_at DESC, rb.id
 LIMIT $8
 `
 
@@ -650,7 +670,27 @@ type ListRoleBindingsParams struct {
 	Lim            int64              `json:"lim"`
 }
 
-func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error) {
+type ListRoleBindingsRow struct {
+	ID                 uuid.UUID   `json:"id"`
+	RoleID             uuid.UUID   `json:"role_id"`
+	ScopeFolderID      pgtype.UUID `json:"scope_folder_id"`
+	ScopeAssetID       pgtype.UUID `json:"scope_asset_id"`
+	SubjectUserID      pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID     pgtype.UUID `json:"subject_group_id"`
+	CreatedAt          time.Time   `json:"created_at"`
+	SubjectKind        string      `json:"subject_kind"`
+	SubjectDisplayName string      `json:"subject_display_name"`
+	SubjectFolderPath  string      `json:"subject_folder_path"`
+	GroupMemberCount   int32       `json:"group_member_count"`
+	RoleName           string      `json:"role_name"`
+	ScopePath          string      `json:"scope_path"`
+}
+
+// Bindings matching the (all-optional) filters, fully resolved for display in SQL:
+// subject kind/name/group-home path/member count, role name, and the binding's scope
+// rendered as a dotted path (or 'global'). Single-sources folder-path rendering via
+// folder_path(); no per-row Go resolution.
+func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]ListRoleBindingsRow, error) {
 	rows, err := q.db.Query(ctx, listRoleBindings,
 		arg.RoleID,
 		arg.ScopeFolderID,
@@ -665,9 +705,9 @@ func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsPara
 		return nil, err
 	}
 	defer rows.Close()
-	var items []RoleBinding
+	var items []ListRoleBindingsRow
 	for rows.Next() {
-		var i RoleBinding
+		var i ListRoleBindingsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RoleID,
@@ -676,6 +716,12 @@ func (q *Queries) ListRoleBindings(ctx context.Context, arg ListRoleBindingsPara
 			&i.SubjectUserID,
 			&i.SubjectGroupID,
 			&i.CreatedAt,
+			&i.SubjectKind,
+			&i.SubjectDisplayName,
+			&i.SubjectFolderPath,
+			&i.GroupMemberCount,
+			&i.RoleName,
+			&i.ScopePath,
 		); err != nil {
 			return nil, err
 		}

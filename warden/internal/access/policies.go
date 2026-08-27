@@ -211,7 +211,7 @@ func (s *Service) RemovePolicySubject(ctx context.Context, id uuid.UUID) error {
 // ListPolicySubjects lists the subjects attached to a policy, ordered by (created_at
 // DESC, id ASC). The caller's access:policy:read capability at the policy's scope is
 // gated by the handler. Returns the page rows and an opaque next-page token.
-func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pageSize int32, pageToken string) ([]sqlc.RequestPolicySubject, string, error) {
+func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pageSize int32, pageToken string) ([]sqlc.ListPolicySubjectsRow, string, error) {
 	limit := apipage.ClampPageSize(pageSize)
 	k, err := apipage.DecodePageToken(pageToken)
 	if err != nil {
@@ -232,4 +232,31 @@ func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pa
 		next = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return rows, next, nil
+}
+
+// PolicyUsageRow is a policy paired with how the queried role is used by it.
+type PolicyUsageRow struct {
+	Policy sqlc.RequestPolicy
+	Usage  string
+}
+
+// ListPoliciesUsingRole returns every policy referencing roleID, tagged by usage
+// (requestable | requester_source | approver_source). Bounded, unpaginated.
+func (s *Service) ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]PolicyUsageRow, error) {
+	rows, err := s.q.ListPoliciesUsingRole(ctx, roleID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]PolicyUsageRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PolicyUsageRow{
+			Policy: sqlc.RequestPolicy{
+				ID: r.ID, RoleID: r.RoleID, ScopeFolderID: r.ScopeFolderID, ScopeAssetID: r.ScopeAssetID,
+				RequiredApprovals: r.RequiredApprovals, ApproverRoleID: r.ApproverRoleID,
+				CreatedAt: r.CreatedAt, RequesterRoleID: r.RequesterRoleID, MaxDuration: r.MaxDuration, Name: r.Name,
+			},
+			Usage: r.Usage,
+		})
+	}
+	return out, nil
 }

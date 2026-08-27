@@ -52,6 +52,10 @@ service AccessService {
 
   // Introspection (admin-or-self).
   rpc ExplainRole(ExplainRoleRequest) returns (ExplainRoleResponse) {}
+
+  // Detail-panel reads.
+  rpc GetPolicyRoster(GetPolicyRosterRequest) returns (GetPolicyRosterResponse) {}
+  rpc ListPoliciesUsingRole(ListPoliciesUsingRoleRequest) returns (ListPoliciesUsingRoleResponse) {}
 }
 
 message Role {
@@ -133,6 +137,14 @@ message RoleBinding {
   string scope_asset_id = 4;
   string subject_user_id = 5;
   string subject_group_id = 6;
+
+  // Denormalized display (server-resolved; additive, backward compatible).
+  string subject_kind = 7;         // "user" | "group"
+  string subject_display_name = 8;
+  string subject_folder_path = 9;  // group home path; empty for users
+  int32  group_member_count = 10;  // 0 for users
+  string role_name = 11;
+  string scope_path = 12;          // resolved dotted folder/asset path; "global" if scopeless
 }
 
 message CreateRoleBindingRequest {
@@ -227,6 +239,11 @@ message PolicySubject {
   string kind = 3; // requester | approver
   string subject_user_id = 4;
   string subject_group_id = 5;
+
+  // Denormalized display (server-resolved; additive, backward compatible).
+  string subject_display_name = 6;
+  string subject_folder_path = 7;  // group home path; empty for users
+  int32  group_member_count = 8;   // 0 for users
 }
 
 // ResolvePolicy maps a (name, asset scope) to a policy id. Admin only; NotFound if
@@ -254,6 +271,35 @@ message ListPolicySubjectsRequest {
   string page_token = 3;
 }
 message ListPolicySubjectsResponse { repeated PolicySubject subjects = 1; string next_page_token = 2; }
+
+// RosterNode is one entry in a policy's requester/approver roster: a user or a group
+// (groups are nodes, not expanded to members), plus how it qualifies.
+message RosterNode {
+  string subject_kind = 1;        // "user" | "group"
+  string subject_id = 2;
+  string display_name = 3;
+  string folder_path = 4;         // group home path; empty for users
+  int32  group_member_count = 5;  // 0 for users
+  bool   active = 6;              // user active; always true for groups
+  string source = 7;              // "explicit" | "via_role"
+  string via_role_id = 8;         // set when source == "via_role"
+  string via_role_name = 9;
+}
+
+message GetPolicyRosterRequest { string policy_id = 1 [(buf.validate.field).string.uuid = true]; }
+message GetPolicyRosterResponse {
+  repeated RosterNode requesters = 1;
+  repeated RosterNode approvers = 2;
+}
+
+// PolicyUsage tags a policy with how a given role is referenced by it.
+message PolicyUsage {
+  RequestPolicy policy = 1;
+  string usage = 2; // "requestable" | "requester_source" | "approver_source"
+}
+
+message ListPoliciesUsingRoleRequest { string role_id = 1 [(buf.validate.field).string.uuid = true]; }
+message ListPoliciesUsingRoleResponse { repeated PolicyUsage usages = 1; }
 
 message ExplainRoleRequest {
   string user_id  = 1 [(buf.validate.field).string.uuid = true];

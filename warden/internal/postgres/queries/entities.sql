@@ -171,3 +171,7 @@ UPDATE catalog_names SET parent_id = $2, name = $3 WHERE asset_id = $1;
 
 -- name: NotifyAuthzChanged :exec
 SELECT pg_notify('authz_changed', '');
+
+-- name: CountGroupMembers :one
+-- Direct membership count for a group (users + nested groups), for roster/badge display.
+SELECT count(*)::int FROM group_memberships WHERE group_id = $1;

@@ -1115,6 +1115,85 @@ func (q *Queries) ReviewableGrants(ctx context.Context, arg ReviewableGrantsPara
 	return items, nil
 }
 
+const roleStandingHolders = `-- name: RoleStandingHolders :many
+SELECT DISTINCT
+  rb.subject_user_id,
+  rb.subject_group_id,
+  (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  folder_path(g.folder_id) AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active,
+  rb.role_id AS via_role_id,
+  vr.name AS via_role_name
+FROM role_bindings rb
+JOIN authz_role_goals($1, $2, $3) gl
+  ON gl.role_id = rb.role_id
+ AND (
+      (gl.object_kind = 'asset'  AND rb.scope_asset_id  = gl.object_id)
+   OR (gl.object_kind = 'folder' AND rb.scope_folder_id = gl.object_id)
+     )
+JOIN roles vr ON vr.id = rb.role_id
+LEFT JOIN users u ON u.id = rb.subject_user_id
+LEFT JOIN groups g ON g.id = rb.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id
+) gm ON rb.subject_group_id IS NOT NULL
+WHERE (rb.subject_group_id IS NOT NULL OR authz_user_is_active(rb.subject_user_id))
+`
+
+type RoleStandingHoldersParams struct {
+	RoleID     uuid.UUID `json:"role_id"`
+	ObjectKind string    `json:"object_kind"`
+	ObjectID   uuid.UUID `json:"object_id"`
+}
+
+type RoleStandingHoldersRow struct {
+	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
+	SubjectKind      string      `json:"subject_kind"`
+	DisplayName      string      `json:"display_name"`
+	FolderPath       string      `json:"folder_path"`
+	GroupMemberCount int32       `json:"group_member_count"`
+	Active           pgtype.Bool `json:"active"`
+	ViaRoleID        uuid.UUID   `json:"via_role_id"`
+	ViaRoleName      string      `json:"via_role_name"`
+}
+
+// Subjects whose standing binding confers p_role on the given object (asset|folder),
+// mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
+// returned as NODES (not expanded to members), fully resolved for display, tagged with
+// the actually-bound role (via_role_name). Deactivated user-subjects excluded.
+func (q *Queries) RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error) {
+	rows, err := q.db.Query(ctx, roleStandingHolders, arg.RoleID, arg.ObjectKind, arg.ObjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleStandingHoldersRow
+	for rows.Next() {
+		var i RoleStandingHoldersRow
+		if err := rows.Scan(
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.SubjectKind,
+			&i.DisplayName,
+			&i.FolderPath,
+			&i.GroupMemberCount,
+			&i.Active,
+			&i.ViaRoleID,
+			&i.ViaRoleName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scopeCapabilitiesAsset = `-- name: ScopeCapabilitiesAsset :many
 SELECT DISTINCT rc.scope, rc.action, rc.qualifier
 FROM role_capabilities rc

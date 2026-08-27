@@ -664,3 +664,33 @@ WITH f  AS (SELECT path_ids FROM folders WHERE id = sqlc.arg('folder_id')),
      mp AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('mgmt_ids')::uuid[]))
 SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
     OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids);
+
+-- name: RoleStandingHolders :many
+-- Subjects whose standing binding confers p_role on the given object (asset|folder),
+-- mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
+-- returned as NODES (not expanded to members), fully resolved for display, tagged with
+-- the actually-bound role (via_role_name). Deactivated user-subjects excluded.
+SELECT DISTINCT
+  rb.subject_user_id,
+  rb.subject_group_id,
+  (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  folder_path(g.folder_id) AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active,
+  rb.role_id AS via_role_id,
+  vr.name AS via_role_name
+FROM role_bindings rb
+JOIN authz_role_goals(sqlc.arg('role_id'), sqlc.arg('object_kind'), sqlc.arg('object_id')) gl
+  ON gl.role_id = rb.role_id
+ AND (
+      (gl.object_kind = 'asset'  AND rb.scope_asset_id  = gl.object_id)
+   OR (gl.object_kind = 'folder' AND rb.scope_folder_id = gl.object_id)
+     )
+JOIN roles vr ON vr.id = rb.role_id
+LEFT JOIN users u ON u.id = rb.subject_user_id
+LEFT JOIN groups g ON g.id = rb.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id
+) gm ON rb.subject_group_id IS NOT NULL
+WHERE (rb.subject_group_id IS NOT NULL OR authz_user_is_active(rb.subject_user_id));

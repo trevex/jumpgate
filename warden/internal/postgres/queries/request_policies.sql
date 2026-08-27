@@ -69,16 +69,26 @@ SELECT * FROM request_policy_subjects WHERE id = $1;
 DELETE FROM request_policy_subjects WHERE id = $1;
 
 -- name: ListPolicySubjects :many
-SELECT * FROM request_policy_subjects
-WHERE policy_id = sqlc.arg('policy_id')
+-- Subjects attached to a policy, fully resolved for display in SQL: subject name,
+-- group-home path (via folder_path()), and member count. No per-row Go resolution.
+SELECT
+  s.id, s.policy_id, s.kind, s.subject_user_id, s.subject_group_id, s.created_at,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = sqlc.arg('policy_id')
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
     -- time predicate so the id tiebreak is NOT inverted.
     sqlc.narg('after_ts')::timestamptz IS NULL
-    OR created_at < sqlc.narg('after_ts')
-    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+    OR s.created_at < sqlc.narg('after_ts')
+    OR (s.created_at = sqlc.narg('after_ts') AND s.id > sqlc.narg('after_id')::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY s.created_at DESC, s.id
 LIMIT sqlc.arg('lim');
 
 -- name: GetPolicyByNameAndAsset :one
@@ -104,3 +114,34 @@ UPDATE request_policies SET requester_role_id = NULL WHERE requester_role_id = $
 -- Clears the approver gate on surviving policies that named the role as their
 -- approver role (the policy survives, just loses that gate). Part of DeleteRole.
 UPDATE request_policies SET approver_role_id = NULL WHERE approver_role_id = $1;
+
+-- name: ListPoliciesUsingRole :many
+-- Every policy that references the role in any position, tagged with how: as the
+-- requestable role, as the requester-source role, or as the approver-source role.
+-- Bounded (a role appears in few policies); not paginated.
+SELECT rp.*, 'requestable'::text AS usage FROM request_policies rp WHERE rp.role_id = sqlc.arg('role_id')
+UNION ALL
+SELECT rp.*, 'requester_source'::text AS usage FROM request_policies rp WHERE rp.requester_role_id = sqlc.arg('role_id')
+UNION ALL
+SELECT rp.*, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.approver_role_id = sqlc.arg('role_id')
+ORDER BY usage, created_at DESC, id
+LIMIT 500;
+
+-- name: ListPolicyRosterSubjects :many
+-- Explicit requester/approver subjects of a policy, fully resolved for display
+-- (name, kind, group home path, member count, active) in one query.
+SELECT
+  s.subject_user_id,
+  s.subject_group_id,
+  (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  folder_path(g.folder_id) AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
+) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = sqlc.arg('policy_id') AND s.kind = sqlc.arg('kind');

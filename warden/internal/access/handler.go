@@ -69,14 +69,22 @@ func toAccessRoleGrantMsg(g sqlc.RoleGrant) *accessv1.RoleGrant {
 	}
 }
 
-func toRoleBindingMsg(b sqlc.RoleBinding) *accessv1.RoleBinding {
+// toRoleBindingMsg maps a fully-resolved binding row (subject/role/scope display
+// computed in SQL) straight to proto — no per-row Go resolution.
+func toRoleBindingMsg(b sqlc.ListRoleBindingsRow) *accessv1.RoleBinding {
 	return &accessv1.RoleBinding{
-		Id:             b.ID.String(),
-		RoleId:         b.RoleID.String(),
-		ScopeFolderId:  pgconv.UUIDString(b.ScopeFolderID),
-		ScopeAssetId:   pgconv.UUIDString(b.ScopeAssetID),
-		SubjectUserId:  pgconv.UUIDString(b.SubjectUserID),
-		SubjectGroupId: pgconv.UUIDString(b.SubjectGroupID),
+		Id:                 b.ID.String(),
+		RoleId:             b.RoleID.String(),
+		ScopeFolderId:      pgconv.UUIDString(b.ScopeFolderID),
+		ScopeAssetId:       pgconv.UUIDString(b.ScopeAssetID),
+		SubjectUserId:      pgconv.UUIDString(b.SubjectUserID),
+		SubjectGroupId:     pgconv.UUIDString(b.SubjectGroupID),
+		SubjectKind:        b.SubjectKind,
+		SubjectDisplayName: b.SubjectDisplayName,
+		SubjectFolderPath:  b.SubjectFolderPath,
+		GroupMemberCount:   b.GroupMemberCount,
+		RoleName:           b.RoleName,
+		ScopePath:          b.ScopePath,
 	}
 }
 
@@ -94,13 +102,18 @@ func toRequestPolicyMsg(r sqlc.RequestPolicy) *accessv1.RequestPolicy {
 	}
 }
 
-func toPolicySubjectMsg(s sqlc.RequestPolicySubject) *accessv1.PolicySubject {
+// toPolicySubjectMsg maps a fully-resolved policy-subject row (subject display
+// computed in SQL) straight to proto — no per-row Go resolution.
+func toPolicySubjectMsg(s sqlc.ListPolicySubjectsRow) *accessv1.PolicySubject {
 	return &accessv1.PolicySubject{
-		Id:             s.ID.String(),
-		PolicyId:       s.PolicyID.String(),
-		Kind:           s.Kind,
-		SubjectUserId:  pgconv.UUIDString(s.SubjectUserID),
-		SubjectGroupId: pgconv.UUIDString(s.SubjectGroupID),
+		Id:                 s.ID.String(),
+		PolicyId:           s.PolicyID.String(),
+		Kind:               s.Kind,
+		SubjectUserId:      pgconv.UUIDString(s.SubjectUserID),
+		SubjectGroupId:     pgconv.UUIDString(s.SubjectGroupID),
+		SubjectDisplayName: s.SubjectDisplayName,
+		SubjectFolderPath:  s.SubjectFolderPath,
+		GroupMemberCount:   s.GroupMemberCount,
 	}
 }
 
@@ -785,6 +798,87 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 	out := &accessv1.ListRoleGrantsResponse{NextPageToken: next}
 	for i := range rows {
 		out.Grants = append(out.Grants, toAccessRoleGrantMsg(rows[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func toRosterNodeMsg(v RosterNodeView) *accessv1.RosterNode {
+	return &accessv1.RosterNode{
+		SubjectKind:      v.Subject.Kind,
+		SubjectId:        v.SubjectID,
+		DisplayName:      v.Subject.DisplayName,
+		FolderPath:       v.Subject.FolderPath,
+		GroupMemberCount: v.Subject.MemberCount,
+		Active:           v.Subject.Active,
+		Source:           v.Source,
+		ViaRoleId:        v.ViaRoleID,
+		ViaRoleName:      v.ViaRoleName,
+	}
+}
+
+// GetPolicyRoster resolves the requester + approver rosters for a policy. Graduated
+// gate at the policy's scope: access:policy:read (or the subtree-wide
+// catalog:folder:read) admits the rule + explicit subjects; access:binding:read (or
+// catalog:folder:read) additionally reveals the role-derived standing holders.
+func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[accessv1.GetPolicyRosterRequest]) (*connect.Response[accessv1.GetPolicyRosterResponse], error) {
+	policyID, err := uuid.Parse(req.Msg.PolicyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad policy_id"))
+	}
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := h.guard.ScopeOfPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireReadCap(ctx, c, "access:policy:read", scope); err != nil {
+		return nil, err
+	}
+	includeViaRole, err := h.guard.HasReadCap(ctx, c, "access:binding:read", scope)
+	if err != nil {
+		return nil, err
+	}
+	reqs, apprs, err := h.svc.PolicyRoster(ctx, policyID, includeViaRole)
+	if err != nil {
+		return nil, err
+	}
+	out := &accessv1.GetPolicyRosterResponse{}
+	for i := range reqs {
+		out.Requesters = append(out.Requesters, toRosterNodeMsg(reqs[i]))
+	}
+	for i := range apprs {
+		out.Approvers = append(out.Approvers, toRosterNodeMsg(apprs[i]))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func toPolicyUsageMsg(r PolicyUsageRow) *accessv1.PolicyUsage {
+	return &accessv1.PolicyUsage{Policy: toRequestPolicyMsg(r.Policy), Usage: r.Usage}
+}
+
+// ListPoliciesUsingRole lists policies referencing a role in any position. Gated by
+// access:policy:read (global), matching ListRequestPolicies.
+func (h *Handler) ListPoliciesUsingRole(ctx context.Context, req *connect.Request[accessv1.ListPoliciesUsingRoleRequest]) (*connect.Response[accessv1.ListPoliciesUsingRoleResponse], error) {
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+		return nil, err
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	rows, err := h.svc.ListPoliciesUsingRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	out := &accessv1.ListPoliciesUsingRoleResponse{}
+	for i := range rows {
+		out.Usages = append(out.Usages, toPolicyUsageMsg(rows[i]))
 	}
 	return connect.NewResponse(out), nil
 }

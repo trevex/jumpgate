@@ -73,6 +73,18 @@ func (q *Queries) CountChildFolders(ctx context.Context, parentID pgtype.UUID) (
 	return count, err
 }
 
+const countGroupMembers = `-- name: CountGroupMembers :one
+SELECT count(*)::int FROM group_memberships WHERE group_id = $1
+`
+
+// Direct membership count for a group (users + nested groups), for roster/badge display.
+func (q *Queries) CountGroupMembers(ctx context.Context, groupID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countGroupMembers, groupID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countGroupsHomedInFolder = `-- name: CountGroupsHomedInFolder :one
 SELECT count(*) FROM groups WHERE folder_id = $1
 `

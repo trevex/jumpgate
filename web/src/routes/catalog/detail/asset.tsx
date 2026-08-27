@@ -50,7 +50,7 @@ import { canCreatePolicy } from "../../access-control/policy-actions";
 import { NewBindingDialog } from "../../access-control/new-binding-dialog";
 import { NewPolicyDialog } from "../../access-control/new-policy-dialog";
 import { ScopeBindings } from "./scope-bindings";
-import { AssetPolicies } from "./asset-policies";
+import { RequestableVia } from "@/components/detail/requestable-via";
 import { RenameDialog } from "../rename-dialog";
 import { MoveDialog } from "../move-dialog";
 import { DeleteNode } from "../delete-node";
@@ -498,7 +498,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
 
       {/* Requestable via — request policies scoped to this asset (read-only) */}
       <DetailSection title="Requestable via">
-        <AssetPolicies assetId={id} />
+        <RequestableVia assetId={id} />
       </DetailSection>
 
       {mayBind && (

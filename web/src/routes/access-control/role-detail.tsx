@@ -2,9 +2,9 @@
  * role-detail.tsx — Access control ▸ Roles ▸ detail Sheet.
  *
  * A right-hand Sheet showing a selected role's identity (name + folder scope)
- * and its capabilities as chips (enriched via getRoleAccess, which returns the
- * effective capability list; getRoleDisplay backs the header name/folder). A
- * Grant edges section lists the role's userset-rewrite edges (`listRoleGrants`)
+ * and the shared RoleDetailBody (capabilities, held-by bindings, and policy
+ * usage; getRoleDisplay backs the header name/folder). A Grant edges section —
+ * a Sheet-only admin affordance — lists the role's userset-rewrite edges (`listRoleGrants`)
  * — each shows the SOURCE role (enriched via getRoleDisplay) and the `via` mode
  * (same_object | parent), with a Remove. An "Add edge" control (a source-role
  * picker + a via select) adds a new edge. All grant mutations are gated on
@@ -22,7 +22,6 @@ import { toast } from "sonner";
 import {
   listRoles,
   listRoleGrants,
-  getRoleAccess,
   getRoleDisplay,
   addRoleGrant,
   removeRoleGrant,
@@ -44,7 +43,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useCapabilities } from "@/lib/capabilities";
@@ -53,6 +51,7 @@ import { useInvalidateList } from "@/lib/query";
 import { canUpdateRole, canDeleteRole } from "./role-actions";
 import { canCreateBinding } from "./binding-actions";
 import { NewBindingDialog } from "./new-binding-dialog";
+import { RoleDetailBody } from "@/components/detail/role-detail-body";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
 import type { PickedScope } from "@/components/pickers/scope-picker";
 import {
@@ -72,45 +71,6 @@ const VIA_LABEL: Record<string, string> = {
   same_object: "same object",
   parent: "parent",
 };
-
-// ─── Capabilities section ─────────────────────────────────────────────────────
-
-function CapabilitiesSection({ roleId }: { roleId: string }) {
-  const { data, isLoading, isError, error, refetch } = useQuery(getRoleAccess, {
-    roleId,
-  });
-  const capabilities = data?.capabilities ?? [];
-
-  return (
-    <Section title="Capabilities" count={capabilities.length}>
-      {isLoading ? (
-        <LoadingRows count={2} label="Loading capabilities" />
-      ) : isError ? (
-        <ErrorState
-          size="sm"
-          message={connectErrorMessage(error)}
-          onRetry={() => void refetch()}
-        />
-      ) : capabilities.length === 0 ? (
-        <p className="px-1 py-2 text-compact text-muted-foreground">
-          No capabilities.
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5 px-1 py-2">
-          {capabilities.map((cap) => (
-            <Badge
-              key={cap}
-              variant="secondary"
-              className="rounded px-1.5 py-0.5 font-mono text-micro font-medium"
-            >
-              {cap}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-}
 
 // ─── Grant edge row (source enriched via getRoleDisplay) ──────────────────────
 
@@ -448,7 +408,7 @@ export function RoleDetailSheet({
               </SheetDescription>
             </SheetHeader>
 
-            <CapabilitiesSection roleId={role.id} />
+            <RoleDetailBody roleId={role.id} />
             <GrantEdgesSection roleId={role.id} />
             {canDelete && (
               <DeleteRole role={role} onDeleted={() => onOpenChange(false)} />
