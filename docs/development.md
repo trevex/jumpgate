@@ -236,7 +236,7 @@ requires `catalog:asset:read`.
 - **Web:** `make web` installs, typechecks (`tsc --noEmit`), and builds the SPA;
   this runs as part of `make ci`. `make ui-e2e` runs the **Playwright** suite
   (Nix-provided chromium) against the kind environment where warden serves the
-  embedded SPA — it is opt-in and kept out of `ci` (like `kind-e2e`). It first
+  embedded SPA — it is opt-in and kept out of `ci` (like `e2e-cluster`). It first
   seeds the fixtures via the CLI (`TestUISeed` in `test/e2e`: a JIT-requestable
   asset gated by a cross-approval policy, plus a standing-access asset that alice
   connects to so the audit view has a completed recording), then drives the

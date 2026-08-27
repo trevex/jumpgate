@@ -56,7 +56,7 @@ ownership partitioning and orphan GC. SSH sessions are recorded by default
 **Client & environment.** The `jumpgate` CLI drives the whole surface (connect,
 admin, access requests, recordings) with kubectl-style contexts and DNS-style asset
 paths. The stack runs on a local kind cluster from a Helm chart with
-cert-manager-issued mesh certs and a bootstrap Job; `make kind-e2e` runs a Go e2e
+cert-manager-issued mesh certs and a bootstrap Job; `make e2e-cluster` runs a Go e2e
 suite that drives the real CLI through a three-actor cross-approval scenario. A
 narrated walkthrough (`docs/demo/walkthrough.md`) follows the same flow.
 

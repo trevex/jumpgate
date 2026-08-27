@@ -8,7 +8,7 @@ alice connects and runs a command, and the admin (as auditor) downloads the reco
 confirms it captured the session.
 
 > The automated twin of this walkthrough is the Go e2e suite in `test/e2e`
-> (`make kind-e2e`). It runs the same command sequence with assertions — keep the two in
+> (`make e2e-cluster`). It runs the same command sequence with assertions — keep the two in
 > lockstep when either changes.
 
 ## Prerequisites

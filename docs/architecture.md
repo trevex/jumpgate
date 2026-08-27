@@ -487,7 +487,7 @@ end to end without hand-wiring certificates or processes.
   jumpgate, and is applied separately so the chart stays deployment-agnostic.
 - **Make targets.** `make kind-up` creates the cluster, installs cert-manager and
   the chart, and deploys the sshd workload; `make kind-demo` also exports the mesh
-  CA and prints the CLI setup; `make kind-e2e` runs the Go e2e suite (`test/e2e`)
+  CA and prints the CLI setup; `make e2e-cluster` runs the Go e2e suite (`test/e2e`)
   against the live stack — a three-actor cross-approval scenario driving the real
   CLI (an admin onboards an SSH asset and a request policy; two users request and
   approve each other's access; one connects and runs a command; an admin auditor
