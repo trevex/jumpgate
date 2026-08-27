@@ -22,8 +22,7 @@ pub mod token;
 pub use jumpgate_mesh::{connect, pb, tls};
 
 use std::sync::{Arc, RwLock};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio_rustls::server::TlsStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Shared gateway state for the connection handler.
 #[derive(Clone)]
@@ -98,13 +97,21 @@ fn is_websocket_upgrade(head: &[u8]) -> bool {
     })
 }
 
-/// Handle one accepted, TLS-terminated client connection.
+/// Handle one accepted client connection, generic over the transport stream.
 ///
-/// Two ingresses share the external TLS listener: the CLI tunnel (HTTP `CONNECT`)
+/// Two ingresses share the external listener: the CLI tunnel (HTTP `CONNECT`)
 /// and the browser terminal (`GET /terminal?ticket=…` WebSocket upgrade). This
 /// reads the request head, branches on the request line, and runs the matching
 /// path. CONNECT → verify token, pick + dial a worker, reply 200, pump bytes.
-pub async fn handle_connection(state: GatewayState, mut client: TlsStream<tokio::net::TcpStream>) {
+///
+/// The stream is generic so the SAME handler (with the SAME ticket/token
+/// verification) serves both the production TLS listener (`S = TlsStream`) and the
+/// optional DEV-ONLY plaintext listener (`S = TcpStream`). Auth is never bypassed
+/// on the plaintext path — only the transport encryption differs.
+pub async fn handle_connection<S>(state: GatewayState, mut client: S)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     // Read the request head once so we can branch CONNECT vs WebSocket.
     let head = match read_request_head(&mut client).await {
         Ok(h) => h,

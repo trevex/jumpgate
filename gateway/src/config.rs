@@ -15,9 +15,15 @@ pub struct Config {
     pub health_listen: String, // GATEWAY_HEALTH_LISTEN, default 0.0.0.0:8080
     pub tls_cert: String,      // GATEWAY_TLS_CERT (external server cert PEM path)
     pub tls_key: String,       // GATEWAY_TLS_KEY
-    pub mesh_cert: String,     // GATEWAY_MESH_CERT (mesh client cert PEM path)
-    pub mesh_key: String,      // GATEWAY_MESH_KEY
-    pub mesh_ca: String,       // GATEWAY_MESH_CA (mesh CA bundle PEM path)
+    /// GATEWAY_INSECURE_LISTEN (DEV ONLY): when set to a non-empty bind address,
+    /// ALSO bind a plaintext (no-TLS) listener serving the same external handler,
+    /// so a browser console served over plain `http://` can reach the terminal via
+    /// `ws://`. Unset/empty → `None` → disabled (the default, secure). The secure
+    /// TLS listener always runs regardless.
+    pub insecure_listen: Option<String>,
+    pub mesh_cert: String, // GATEWAY_MESH_CERT (mesh client cert PEM path)
+    pub mesh_key: String,  // GATEWAY_MESH_KEY
+    pub mesh_ca: String,   // GATEWAY_MESH_CA (mesh CA bundle PEM path)
     pub warden_mesh_addr: String, // WARDEN_MESH_ADDR (e.g. https://warden:8444)
     pub warden_spiffe: String, // expected SPIFFE id of warden's mesh cert
 
@@ -71,6 +77,10 @@ impl Config {
             health_listen: opt("GATEWAY_HEALTH_LISTEN", "0.0.0.0:8080"),
             tls_cert: req("GATEWAY_TLS_CERT")?,
             tls_key: req("GATEWAY_TLS_KEY")?,
+            insecure_listen: match env::var("GATEWAY_INSECURE_LISTEN") {
+                Ok(v) if !v.trim().is_empty() => Some(v),
+                _ => None,
+            },
             mesh_cert: req("GATEWAY_MESH_CERT")?,
             mesh_key: req("GATEWAY_MESH_KEY")?,
             mesh_ca: req("GATEWAY_MESH_CA")?,

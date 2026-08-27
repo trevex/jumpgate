@@ -103,17 +103,40 @@ async fn main() -> anyhow::Result<()> {
         Ok::<(), anyhow::Error>(())
     });
 
-    // External TLS listener.
+    // External TLS listener (always runs).
     let external = tokio::spawn(run_external_listener(
         config.listen.clone(),
         server_config,
-        state,
+        state.clone(),
         config.max_connections,
     ));
 
-    tokio::select! {
-        r = health => r.map_err(anyhow::Error::from).and_then(|r| r)?,
-        r = external => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+    // Optional DEV-ONLY plaintext listener. Serves the SAME external handler (and
+    // therefore the SAME ticket/token verification) — only transport TLS is
+    // dropped, so a browser console served over plain http:// can use ws://.
+    // Default-off: only spawned when GATEWAY_INSECURE_LISTEN is set.
+    let insecure = config.insecure_listen.clone().map(|addr| {
+        tracing::warn!(
+            %addr,
+            "INSECURE plaintext gateway listener enabled on {addr} — DEV ONLY, terminal/CONNECT traffic + tickets are UNENCRYPTED",
+        );
+        tokio::spawn(run_insecure_listener(
+            addr,
+            state.clone(),
+            config.max_connections,
+        ))
+    });
+
+    match insecure {
+        Some(insecure) => tokio::select! {
+            r = health => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+            r = external => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+            r = insecure => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+        },
+        None => tokio::select! {
+            r = health => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+            r = external => r.map_err(anyhow::Error::from).and_then(|r| r)?,
+        },
     }
 
     Ok(())
@@ -163,6 +186,43 @@ async fn run_external_listener(
                 Ok(tls) => gateway::handle_connection(st, tls).await,
                 Err(e) => tracing::warn!(%peer, error = %e, "tls handshake failed"),
             }
+        });
+    }
+}
+
+/// DEV-ONLY: bind a plaintext (no-TLS) listener and dispatch each accepted socket
+/// straight to the SAME per-connection handler as the TLS listener — the raw
+/// `TcpStream` stands in for the `TlsStream`, and ticket/token verification runs
+/// unchanged. Only the transport encryption is dropped. Never enabled by default.
+async fn run_insecure_listener(
+    addr: String,
+    state: GatewayState,
+    max_connections: usize,
+) -> anyhow::Result<()> {
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    // Same backpressure discipline as the TLS listener: acquire a slot before
+    // accepting the next socket.
+    let limiter = Arc::new(tokio::sync::Semaphore::new(max_connections));
+    tracing::warn!(%addr, max_connections, "gateway INSECURE plaintext listener ready (DEV ONLY)");
+
+    loop {
+        let permit = match limiter.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => anyhow::bail!("connection limiter semaphore closed"),
+        };
+        let (tcp, _peer) = match listener.accept().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(error = %e, "insecure accept failed");
+                drop(permit);
+                continue;
+            }
+        };
+        let st = state.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            // No TLS handshake — hand the raw TCP stream to the shared handler.
+            gateway::handle_connection(st, tcp).await;
         });
     }
 }
