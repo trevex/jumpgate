@@ -69,8 +69,9 @@ func toAccessRoleGrantMsg(g sqlc.RoleGrant) *accessv1.RoleGrant {
 	}
 }
 
-func (h *Handler) toRoleBindingMsg(ctx context.Context, b sqlc.RoleBinding) *accessv1.RoleBinding {
-	view := h.svc.resolveSubject(ctx, b.SubjectUserID, b.SubjectGroupID)
+// toRoleBindingMsg maps a fully-resolved binding row (subject/role/scope display
+// computed in SQL) straight to proto — no per-row Go resolution.
+func toRoleBindingMsg(b sqlc.ListRoleBindingsRow) *accessv1.RoleBinding {
 	return &accessv1.RoleBinding{
 		Id:                 b.ID.String(),
 		RoleId:             b.RoleID.String(),
@@ -78,12 +79,12 @@ func (h *Handler) toRoleBindingMsg(ctx context.Context, b sqlc.RoleBinding) *acc
 		ScopeAssetId:       pgconv.UUIDString(b.ScopeAssetID),
 		SubjectUserId:      pgconv.UUIDString(b.SubjectUserID),
 		SubjectGroupId:     pgconv.UUIDString(b.SubjectGroupID),
-		SubjectKind:        view.Kind,
-		SubjectDisplayName: view.DisplayName,
-		SubjectFolderPath:  view.FolderPath,
-		GroupMemberCount:   view.MemberCount,
-		RoleName:           h.svc.roleName(ctx, b.RoleID),
-		ScopePath:          h.svc.scopePath(ctx, b.ScopeFolderID, b.ScopeAssetID),
+		SubjectKind:        b.SubjectKind,
+		SubjectDisplayName: b.SubjectDisplayName,
+		SubjectFolderPath:  b.SubjectFolderPath,
+		GroupMemberCount:   b.GroupMemberCount,
+		RoleName:           b.RoleName,
+		ScopePath:          b.ScopePath,
 	}
 }
 
@@ -101,17 +102,18 @@ func toRequestPolicyMsg(r sqlc.RequestPolicy) *accessv1.RequestPolicy {
 	}
 }
 
-func (h *Handler) toPolicySubjectMsg(ctx context.Context, s sqlc.RequestPolicySubject) *accessv1.PolicySubject {
-	view := h.svc.resolveSubject(ctx, s.SubjectUserID, s.SubjectGroupID)
+// toPolicySubjectMsg maps a fully-resolved policy-subject row (subject display
+// computed in SQL) straight to proto — no per-row Go resolution.
+func toPolicySubjectMsg(s sqlc.ListPolicySubjectsRow) *accessv1.PolicySubject {
 	return &accessv1.PolicySubject{
 		Id:                 s.ID.String(),
 		PolicyId:           s.PolicyID.String(),
 		Kind:               s.Kind,
 		SubjectUserId:      pgconv.UUIDString(s.SubjectUserID),
 		SubjectGroupId:     pgconv.UUIDString(s.SubjectGroupID),
-		SubjectDisplayName: view.DisplayName,
-		SubjectFolderPath:  view.FolderPath,
-		GroupMemberCount:   view.MemberCount,
+		SubjectDisplayName: s.SubjectDisplayName,
+		SubjectFolderPath:  s.SubjectFolderPath,
+		GroupMemberCount:   s.GroupMemberCount,
 	}
 }
 
@@ -409,7 +411,7 @@ func (h *Handler) ListRoleBindings(ctx context.Context, req *connect.Request[acc
 	}
 	out := &accessv1.ListRoleBindingsResponse{NextPageToken: next}
 	for i := range rows {
-		out.Bindings = append(out.Bindings, h.toRoleBindingMsg(ctx, rows[i]))
+		out.Bindings = append(out.Bindings, toRoleBindingMsg(rows[i]))
 	}
 	return connect.NewResponse(out), nil
 }
@@ -701,7 +703,7 @@ func (h *Handler) ListPolicySubjects(ctx context.Context, req *connect.Request[a
 	}
 	out := &accessv1.ListPolicySubjectsResponse{NextPageToken: next}
 	for i := range rows {
-		out.Subjects = append(out.Subjects, h.toPolicySubjectMsg(ctx, rows[i]))
+		out.Subjects = append(out.Subjects, toPolicySubjectMsg(rows[i]))
 	}
 	return connect.NewResponse(out), nil
 }

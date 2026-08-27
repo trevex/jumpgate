@@ -42,8 +42,8 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 			}
 		}
 		subs, err := s.q.ListPolicyRosterSubjects(ctx, sqlc.ListPolicyRosterSubjectsParams{
-			PolicyID: pgtype.UUID{Bytes: policyID, Valid: true},
-			Kind:     pgtype.Text{String: kind, Valid: true},
+			PolicyID: policyID,
+			Kind:     kind,
 		})
 		if err != nil {
 			return nil, err
@@ -51,10 +51,10 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 		for _, r := range subs {
 			add(&RosterNodeView{
 				Subject: SubjectView{
-					Kind:        r.SubjectKind.String,
-					DisplayName: r.DisplayName.String,
-					FolderPath:  r.FolderPath.String,
-					MemberCount: r.GroupMemberCount.Int32,
+					Kind:        r.SubjectKind,
+					DisplayName: r.DisplayName,
+					FolderPath:  r.FolderPath,
+					MemberCount: r.GroupMemberCount,
 					Active:      r.Active.Bool,
 				},
 				SubjectID: pgUUIDStr(r.SubjectUserID, r.SubjectGroupID),
@@ -63,9 +63,9 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 		}
 		if includeViaRole && roleID.Valid && hasScope {
 			holders, err := s.q.RoleStandingHolders(ctx, sqlc.RoleStandingHoldersParams{
-				RoleID:     roleID,
-				ObjectKind: pgtype.Text{String: objKind, Valid: true},
-				ObjectID:   pgtype.UUID{Bytes: objID, Valid: true},
+				RoleID:     uuid.UUID(roleID.Bytes),
+				ObjectKind: objKind,
+				ObjectID:   objID,
 			})
 			if err != nil {
 				return nil, err
@@ -73,10 +73,10 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 			for _, h := range holders {
 				add(&RosterNodeView{
 					Subject: SubjectView{
-						Kind:        h.SubjectKind.String,
-						DisplayName: h.DisplayName.String,
-						FolderPath:  h.FolderPath.String,
-						MemberCount: h.GroupMemberCount.Int32,
+						Kind:        h.SubjectKind,
+						DisplayName: h.DisplayName,
+						FolderPath:  h.FolderPath,
+						MemberCount: h.GroupMemberCount,
 						Active:      h.Active.Bool,
 					},
 					SubjectID:   pgUUIDStr(h.SubjectUserID, h.SubjectGroupID),

@@ -211,7 +211,7 @@ func (s *Service) RemovePolicySubject(ctx context.Context, id uuid.UUID) error {
 // ListPolicySubjects lists the subjects attached to a policy, ordered by (created_at
 // DESC, id ASC). The caller's access:policy:read capability at the policy's scope is
 // gated by the handler. Returns the page rows and an opaque next-page token.
-func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pageSize int32, pageToken string) ([]sqlc.RequestPolicySubject, string, error) {
+func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pageSize int32, pageToken string) ([]sqlc.ListPolicySubjectsRow, string, error) {
 	limit := apipage.ClampPageSize(pageSize)
 	k, err := apipage.DecodePageToken(pageToken)
 	if err != nil {

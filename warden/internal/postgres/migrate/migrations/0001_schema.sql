@@ -805,6 +805,20 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- folder_path: leaf->root dotted path of a folder ('' for NULL/unknown). STABLE so it
+-- inlines in SELECT lists. Single-sources folder-path rendering for resolved reads.
+CREATE FUNCTION folder_path(p_folder uuid) RETURNS text
+    LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE chain AS (
+        SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = p_folder
+      UNION ALL
+        SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
+    )
+    SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '') FROM chain
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- authz_held_impl: the single forward-closure body. include_grants gates the JIT
 -- grant base arm (held vs held_standing). Deactivated users hold nothing.
 CREATE FUNCTION authz_held_impl(p_user uuid, p_include_grants boolean)
@@ -1022,6 +1036,7 @@ DROP FUNCTION IF EXISTS authz_role_goal_paths(uuid, uuid, uuid),
     authz_held(uuid),
     authz_held_standing(uuid),
     authz_held_impl(uuid, boolean),
+    folder_path(uuid),
     authz_user_groups(uuid),
     authz_user_is_active(uuid);
 DROP VIEW IF EXISTS active_access_grants;

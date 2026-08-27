@@ -258,10 +258,16 @@ type Querier interface {
 	// Explicit requester/approver subjects of a policy, fully resolved for display
 	// (name, kind, group home path, member count, active) in one query.
 	ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRosterSubjectsParams) ([]ListPolicyRosterSubjectsRow, error)
-	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
+	// Subjects attached to a policy, fully resolved for display in SQL: subject name,
+	// group-home path (via folder_path()), and member count. No per-row Go resolution.
+	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
-	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
+	// Bindings matching the (all-optional) filters, fully resolved for display in SQL:
+	// subject kind/name/group-home path/member count, role name, and the binding's scope
+	// rendered as a dotted path (or 'global'). Single-sources folder-path rendering via
+	// folder_path(); no per-row Go resolution.
+	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]ListRoleBindingsRow, error)
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)

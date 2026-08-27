@@ -64,21 +64,44 @@ SELECT * FROM assets WHERE id = ANY($1::uuid[]);
 SELECT * FROM role_bindings WHERE scope_asset_id = $1 ORDER BY id;
 
 -- name: ListRoleBindings :many
-SELECT * FROM role_bindings
-WHERE (sqlc.narg('role_id')::uuid IS NULL OR role_id = sqlc.narg('role_id'))
-  AND (sqlc.narg('scope_folder_id')::uuid IS NULL OR scope_folder_id = sqlc.narg('scope_folder_id'))
-  AND (sqlc.narg('scope_asset_id')::uuid IS NULL OR scope_asset_id = sqlc.narg('scope_asset_id'))
-  AND (sqlc.narg('subject_user_id')::uuid IS NULL OR subject_user_id = sqlc.narg('subject_user_id'))
-  AND (sqlc.narg('subject_group_id')::uuid IS NULL OR subject_group_id = sqlc.narg('subject_group_id'))
+-- Bindings matching the (all-optional) filters, fully resolved for display in SQL:
+-- subject kind/name/group-home path/member count, role name, and the binding's scope
+-- rendered as a dotted path (or 'global'). Single-sources folder-path rendering via
+-- folder_path(); no per-row Go resolution.
+SELECT
+  rb.id, rb.role_id, rb.scope_folder_id, rb.scope_asset_id,
+  rb.subject_user_id, rb.subject_group_id, rb.created_at,
+  (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  r.name AS role_name,
+  (CASE
+     WHEN rb.scope_asset_id IS NOT NULL THEN
+       CASE WHEN folder_path(sa.folder_id) <> '' THEN sa.name || '.' || folder_path(sa.folder_id) ELSE sa.name END
+     WHEN rb.scope_folder_id IS NOT NULL THEN folder_path(rb.scope_folder_id)
+     ELSE 'global'
+   END)::text AS scope_path
+FROM role_bindings rb
+JOIN roles r ON r.id = rb.role_id
+LEFT JOIN users u ON u.id = rb.subject_user_id
+LEFT JOIN groups g ON g.id = rb.subject_group_id
+LEFT JOIN assets sa ON sa.id = rb.scope_asset_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id) gm ON rb.subject_group_id IS NOT NULL
+WHERE (sqlc.narg('role_id')::uuid IS NULL OR rb.role_id = sqlc.narg('role_id'))
+  AND (sqlc.narg('scope_folder_id')::uuid IS NULL OR rb.scope_folder_id = sqlc.narg('scope_folder_id'))
+  AND (sqlc.narg('scope_asset_id')::uuid IS NULL OR rb.scope_asset_id = sqlc.narg('scope_asset_id'))
+  AND (sqlc.narg('subject_user_id')::uuid IS NULL OR rb.subject_user_id = sqlc.narg('subject_user_id'))
+  AND (sqlc.narg('subject_group_id')::uuid IS NULL OR rb.subject_group_id = sqlc.narg('subject_group_id'))
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: strictly older, or same
     -- instant with a later id. A row-comparison `(created_at,id) < (…)` is WRONG
     -- here — it would invert the id tiebreak.
     sqlc.narg('after_ts')::timestamptz IS NULL
-    OR created_at < sqlc.narg('after_ts')
-    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+    OR rb.created_at < sqlc.narg('after_ts')
+    OR (rb.created_at = sqlc.narg('after_ts') AND rb.id > sqlc.narg('after_id')::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY rb.created_at DESC, rb.id
 LIMIT sqlc.arg('lim');
 
 -- name: DeleteRoleBinding :exec

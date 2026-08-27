@@ -389,7 +389,7 @@ SELECT
   s.subject_group_id,
   (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
   COALESCE(u.display_name, g.name, '')::text AS display_name,
-  COALESCE(gfp.path, '')::text AS folder_path,
+  folder_path(g.folder_id) AS folder_path,
   COALESCE(gm.cnt, 0)::int AS group_member_count,
   COALESCE(u.deactivated_at IS NULL, true) AS active
 FROM request_policy_subjects s
@@ -398,29 +398,21 @@ LEFT JOIN groups g ON g.id = s.subject_group_id
 LEFT JOIN LATERAL (
   SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
 ) gm ON s.subject_group_id IS NOT NULL
-LEFT JOIN LATERAL (
-  WITH RECURSIVE chain AS (
-    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
-    UNION ALL
-    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
-  )
-  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
-) gfp ON g.folder_id IS NOT NULL
 WHERE s.policy_id = $1 AND s.kind = $2
 `
 
 type ListPolicyRosterSubjectsParams struct {
-	PolicyID pgtype.UUID `json:"policy_id"`
-	Kind     pgtype.Text `json:"kind"`
+	PolicyID uuid.UUID `json:"policy_id"`
+	Kind     string    `json:"kind"`
 }
 
 type ListPolicyRosterSubjectsRow struct {
 	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
 	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
-	SubjectKind      pgtype.Text `json:"subject_kind"`
-	DisplayName      pgtype.Text `json:"display_name"`
-	FolderPath       pgtype.Text `json:"folder_path"`
-	GroupMemberCount pgtype.Int4 `json:"group_member_count"`
+	SubjectKind      string      `json:"subject_kind"`
+	DisplayName      string      `json:"display_name"`
+	FolderPath       string      `json:"folder_path"`
+	GroupMemberCount int32       `json:"group_member_count"`
 	Active           pgtype.Bool `json:"active"`
 }
 
@@ -455,16 +447,24 @@ func (q *Queries) ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRo
 }
 
 const listPolicySubjects = `-- name: ListPolicySubjects :many
-SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects
-WHERE policy_id = $1
+SELECT
+  s.id, s.policy_id, s.kind, s.subject_user_id, s.subject_group_id, s.created_at,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = $1
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
     -- time predicate so the id tiebreak is NOT inverted.
     $2::timestamptz IS NULL
-    OR created_at < $2
-    OR (created_at = $2 AND id > $3::uuid)
+    OR s.created_at < $2
+    OR (s.created_at = $2 AND s.id > $3::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY s.created_at DESC, s.id
 LIMIT $4
 `
 
@@ -475,7 +475,21 @@ type ListPolicySubjectsParams struct {
 	Lim      int64              `json:"lim"`
 }
 
-func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error) {
+type ListPolicySubjectsRow struct {
+	ID                 uuid.UUID   `json:"id"`
+	PolicyID           uuid.UUID   `json:"policy_id"`
+	Kind               string      `json:"kind"`
+	SubjectUserID      pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID     pgtype.UUID `json:"subject_group_id"`
+	CreatedAt          time.Time   `json:"created_at"`
+	SubjectDisplayName string      `json:"subject_display_name"`
+	SubjectFolderPath  string      `json:"subject_folder_path"`
+	GroupMemberCount   int32       `json:"group_member_count"`
+}
+
+// Subjects attached to a policy, fully resolved for display in SQL: subject name,
+// group-home path (via folder_path()), and member count. No per-row Go resolution.
+func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error) {
 	rows, err := q.db.Query(ctx, listPolicySubjects,
 		arg.PolicyID,
 		arg.AfterTs,
@@ -486,16 +500,19 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjects
 		return nil, err
 	}
 	defer rows.Close()
-	var items []RequestPolicySubject
+	var items []ListPolicySubjectsRow
 	for rows.Next() {
-		var i RequestPolicySubject
+		var i ListPolicySubjectsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PolicyID,
+			&i.Kind,
 			&i.SubjectUserID,
 			&i.SubjectGroupID,
 			&i.CreatedAt,
-			&i.Kind,
+			&i.SubjectDisplayName,
+			&i.SubjectFolderPath,
+			&i.GroupMemberCount,
 		); err != nil {
 			return nil, err
 		}

@@ -1121,7 +1121,7 @@ SELECT DISTINCT
   rb.subject_group_id,
   (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
   COALESCE(u.display_name, g.name, '')::text AS display_name,
-  COALESCE(gfp.path, '')::text AS folder_path,
+  folder_path(g.folder_id) AS folder_path,
   COALESCE(gm.cnt, 0)::int AS group_member_count,
   COALESCE(u.deactivated_at IS NULL, true) AS active,
   rb.role_id AS via_role_id,
@@ -1139,30 +1139,22 @@ LEFT JOIN groups g ON g.id = rb.subject_group_id
 LEFT JOIN LATERAL (
   SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id
 ) gm ON rb.subject_group_id IS NOT NULL
-LEFT JOIN LATERAL (
-  WITH RECURSIVE chain AS (
-    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
-    UNION ALL
-    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
-  )
-  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
-) gfp ON g.folder_id IS NOT NULL
 WHERE (rb.subject_group_id IS NOT NULL OR authz_user_is_active(rb.subject_user_id))
 `
 
 type RoleStandingHoldersParams struct {
-	RoleID     pgtype.UUID `json:"role_id"`
-	ObjectKind pgtype.Text `json:"object_kind"`
-	ObjectID   pgtype.UUID `json:"object_id"`
+	RoleID     uuid.UUID `json:"role_id"`
+	ObjectKind string    `json:"object_kind"`
+	ObjectID   uuid.UUID `json:"object_id"`
 }
 
 type RoleStandingHoldersRow struct {
 	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
 	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
-	SubjectKind      pgtype.Text `json:"subject_kind"`
-	DisplayName      pgtype.Text `json:"display_name"`
-	FolderPath       pgtype.Text `json:"folder_path"`
-	GroupMemberCount pgtype.Int4 `json:"group_member_count"`
+	SubjectKind      string      `json:"subject_kind"`
+	DisplayName      string      `json:"display_name"`
+	FolderPath       string      `json:"folder_path"`
+	GroupMemberCount int32       `json:"group_member_count"`
 	Active           pgtype.Bool `json:"active"`
 	ViaRoleID        uuid.UUID   `json:"via_role_id"`
 	ViaRoleName      string      `json:"via_role_name"`

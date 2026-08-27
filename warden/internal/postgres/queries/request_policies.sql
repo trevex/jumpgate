@@ -69,16 +69,26 @@ SELECT * FROM request_policy_subjects WHERE id = $1;
 DELETE FROM request_policy_subjects WHERE id = $1;
 
 -- name: ListPolicySubjects :many
-SELECT * FROM request_policy_subjects
-WHERE policy_id = sqlc.arg('policy_id')
+-- Subjects attached to a policy, fully resolved for display in SQL: subject name,
+-- group-home path (via folder_path()), and member count. No per-row Go resolution.
+SELECT
+  s.id, s.policy_id, s.kind, s.subject_user_id, s.subject_group_id, s.created_at,
+  COALESCE(u.display_name, g.name, '')::text AS subject_display_name,
+  folder_path(g.folder_id) AS subject_folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id) gm ON s.subject_group_id IS NOT NULL
+WHERE s.policy_id = sqlc.arg('policy_id')
   AND (
     -- keyset for ORDER BY created_at DESC, id ASC: explicitly separate the
     -- time predicate so the id tiebreak is NOT inverted.
     sqlc.narg('after_ts')::timestamptz IS NULL
-    OR created_at < sqlc.narg('after_ts')
-    OR (created_at = sqlc.narg('after_ts') AND id > sqlc.narg('after_id')::uuid)
+    OR s.created_at < sqlc.narg('after_ts')
+    OR (s.created_at = sqlc.narg('after_ts') AND s.id > sqlc.narg('after_id')::uuid)
   )
-ORDER BY created_at DESC, id
+ORDER BY s.created_at DESC, s.id
 LIMIT sqlc.arg('lim');
 
 -- name: GetPolicyByNameAndAsset :one
@@ -125,7 +135,7 @@ SELECT
   s.subject_group_id,
   (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
   COALESCE(u.display_name, g.name, '')::text AS display_name,
-  COALESCE(gfp.path, '')::text AS folder_path,
+  folder_path(g.folder_id) AS folder_path,
   COALESCE(gm.cnt, 0)::int AS group_member_count,
   COALESCE(u.deactivated_at IS NULL, true) AS active
 FROM request_policy_subjects s
@@ -134,12 +144,4 @@ LEFT JOIN groups g ON g.id = s.subject_group_id
 LEFT JOIN LATERAL (
   SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
 ) gm ON s.subject_group_id IS NOT NULL
-LEFT JOIN LATERAL (
-  WITH RECURSIVE chain AS (
-    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
-    UNION ALL
-    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
-  )
-  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
-) gfp ON g.folder_id IS NOT NULL
 WHERE s.policy_id = sqlc.arg('policy_id') AND s.kind = sqlc.arg('kind');
