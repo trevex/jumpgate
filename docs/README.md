@@ -7,10 +7,6 @@ These pages describe how jumpgate works today. Where a capability is not yet bui
 (other protocols, the web UI, enterprise SSO), the page says so explicitly and
 marks it as planned, so the docs never overstate what exists.
 
-> Note: `docs/superpowers/` (brainstorming specs, implementation plans) is a
-> separate, gitignored area for workflow artifacts. It is **not** project
-> documentation — the durable technical docs live here, directly under `docs/`.
-
 ## Contents
 
 | Page | What it covers |
