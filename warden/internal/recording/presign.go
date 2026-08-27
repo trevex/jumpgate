@@ -90,6 +90,16 @@ func (p *S3Presigner) GetObject(ctx context.Context, key string) (io.ReadCloser,
 	return out.Body, nil
 }
 
+// HeadObject verifies key exists and the store is reachable without transferring
+// the body (an S3 HEAD). The cast HEAD probe uses it so a missing object or an
+// unreachable store yields the same failure the streaming GET would.
+func (p *S3Presigner) HeadObject(ctx context.Context, key string) error {
+	if _, err := p.raw.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &p.bucket, Key: &key}); err != nil {
+		return fmt.Errorf("head object: %w", err)
+	}
+	return nil
+}
+
 // Put writes body to key in the bucket. It exists so warden can anchor the audit
 // hash-chain tip to the object store (audit.AnchorStore); recordings themselves
 // are uploaded by the worker, so this is the only write path warden needs.

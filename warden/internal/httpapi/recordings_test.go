@@ -37,6 +37,10 @@ func (f *fakeObjectGetter) GetObject(_ context.Context, _ string) (io.ReadCloser
 	return io.NopCloser(strings.NewReader(f.body)), nil
 }
 
+func (f *fakeObjectGetter) HeadObject(_ context.Context, _ string) error {
+	return f.failErr
+}
+
 // fakeGrantReviewer authorizes review iff (caller, grantID) is in the allow set.
 type fakeGrantReviewer struct{ allow map[[2]uuid.UUID]bool }
 
@@ -415,6 +419,25 @@ func TestCastHeadUnauthorizedOrMissing(t *testing.T) {
 	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("(no token) want 401 for HEAD, got %d", resp2.StatusCode)
+	}
+}
+
+// TestCastHeadObjectUnreachable: an authorized user + existing recording row but
+// an unreachable/missing object → HEAD must 404, mirroring GET. Guards against the
+// HEAD probe returning a false 200 (which made the player mount, then explode on
+// the body GET) when warden cannot reach the object store.
+func TestCastHeadObjectUnreachable(t *testing.T) {
+	getter := &fakeObjectGetter{failErr: fmt.Errorf("connection refused")}
+	pool, srvURL, lookup := castServer(t, getter)
+
+	assetID := uuid.New()
+	userID, tok := seedUserWithCap(t, pool, lookup, "erin@test", true)
+	sessID := seedRecording(t, pool, userID, assetID)
+
+	resp := doHead(t, srvURL+"/api/recordings/"+sessID.String()+"/cast", tok, "")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404 when the object is unreachable, got %d", resp.StatusCode)
 	}
 }
 

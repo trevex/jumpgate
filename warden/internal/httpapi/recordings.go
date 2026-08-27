@@ -19,6 +19,10 @@ import (
 // Satisfied by *recording.S3Presigner in production; a fake in tests.
 type ObjectGetter interface {
 	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
+	// HeadObject verifies the object exists and the store is reachable without
+	// transferring the body. The HEAD handler uses it so its result faithfully
+	// predicts the GET outcome (same object-missing / store-unreachable → 404).
+	HeadObject(ctx context.Context, key string) error
 }
 
 // GrantReviewer authorizes grant-scoped recording review: a recording attributed
@@ -134,13 +138,25 @@ func castHandler(d RouterDeps) http.HandlerFunc {
 }
 
 // castHeadHandler returns a chi handler for HEAD probes against the cast route.
-// It runs the same authorization prelude as the GET handler (same 401/404
-// status codes) so the frontend player's HEAD probe is a faithful predictor of
-// the GET outcome, but writes no body — on success it sets the asciicast
+// It runs the same authorization prelude AND the same object fetch (metadata
+// only, via HeadObject) as the GET handler, so it returns the same 401/404/503
+// status codes — making the frontend player's HEAD probe a faithful predictor of
+// the GET outcome. It writes no body; on success it sets the asciicast
 // Content-Type and returns 200.
 func castHeadHandler(d RouterDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := d.authorizeCast(w, r); !ok {
+		row, ok := d.authorizeCast(w, r)
+		if !ok {
+			return
+		}
+		if d.Getter == nil {
+			http.Error(w, "recording retrieval not configured", http.StatusServiceUnavailable)
+			return
+		}
+		// Mirror GET: a missing object or unreachable store must 404 here too, not
+		// a misleading 200 that lets the player mount and then fail on the body GET.
+		if err := d.Getter.HeadObject(r.Context(), row.ObjectKey); err != nil {
+			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-asciicast")
