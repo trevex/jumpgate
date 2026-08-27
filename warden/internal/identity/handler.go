@@ -406,7 +406,7 @@ func (h *Handler) ListGroupMembers(ctx context.Context, req *connect.Request[ide
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:read", scope); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, "identity:group:read", scope); err != nil {
 		return nil, err
 	}
 	rows, next, err := h.svc.ListGroupMembers(ctx, gid, req.Msg.PageSize, req.Msg.PageToken)

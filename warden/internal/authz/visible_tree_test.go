@@ -537,6 +537,118 @@ func contains(s map[uuid.UUID]struct{}, id uuid.UUID) bool {
 	return ok
 }
 
+// TestVisibleFolderReadCascadesReads pins the new semantics: catalog:folder:read held
+// on a folder F confers READ (visibility) of everything homed at/under F — descendant
+// assets, roles, and groups — NOT just descendant sub-folders. A user holding ONLY
+// catalog:folder:read at f1 (no catalog:asset:read / access:role:read /
+// identity:group:read, no ssh:login, no roles) sees f1's descendant asset a2 (in f2),
+// plus a role and group homed in f2, yet gains no CONNECT (Check(ssh:connect) is false)
+// and no GRANTABLE authority (Covers of the object read caps is false — the escalation
+// boundary). Caps do not leak sideways to a sibling branch.
+func TestVisibleFolderReadCascadesReads(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := New(pool)
+	q := sqlc.New(pool)
+
+	// Tree: root ⊃ f1 ⊃ f2, assets a1∈f1, a2∈f2 (seedTree). Plus a sibling f3 with a3.
+	_, _, _, root, f1, f2, a1, a2 := seedTree(t, pool)
+
+	f3F, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "fr-f3", ParentID: pgUUID(root)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f3 := f3F.ID
+	a3A, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: f3, Name: "fr-a3", Labels: []byte("{}"), Kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a3 := a3A.ID
+
+	// A role and group homed in f2 (a descendant of f1), plus a sibling role/group in f3.
+	f2Role := createRoleWithCaps(t, ctx, q, "fr-f2-role", pgUUID(f2), caps("ssh:connect"))
+	f2Group, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "fr-f2-group", FolderID: pgUUID(f2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f3Role := createRoleWithCaps(t, ctx, q, "fr-f3-role", pgUUID(f3), caps("ssh:connect"))
+	f3Group, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "fr-f3-group", FolderID: pgUUID(f3)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// folderReader holds ONLY catalog:folder:read, bound at f1.
+	fr, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "folder-reader@fr", DisplayName: "FolderReader"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frRole := createRoleWithCaps(t, ctx, q, "fr-reader", pgtype.UUID{}, caps("catalog:folder:read"))
+	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+		RoleID: frRole.ID, ScopeFolderID: pgUUID(f1), SubjectUserID: pgUUID(fr.ID),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	u := fr.ID
+
+	// ── READ broadening (assets) ───────────────────────────────────────────────
+	// Assets under f1 (cascade): folder:read confers read of a1 AND descendant a2.
+	got, err := s.VisibleAssetsUnder(ctx, u, f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idSet(t, "folder-reader: assets under f1 cascade", got, []uuid.UUID{a1, a2})
+
+	// Single-asset predicate agrees: a2 (a descendant asset) is visible via folder:read.
+	if vis, err := AssetVisible(ctx, s, u, a2); err != nil || !vis {
+		t.Fatalf("AssetVisible(a2) via folder:read = %v, err=%v; want true", vis, err)
+	}
+
+	// ── READ broadening (roles / groups) ───────────────────────────────────────
+	gotR, err := s.VisibleRolesUnder(ctx, u, f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireContains(t, gotR, f2Role.ID)
+
+	gotG, err := s.VisibleGroupsUnder(ctx, u, f1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireContains(t, gotG, f2Group.ID)
+
+	// ── No sideways leak to sibling f3 ─────────────────────────────────────────
+	gotA3, err := s.VisibleAssetsUnder(ctx, u, f3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNotContains(t, gotA3, a3)
+	gotR3, err := s.VisibleRolesUnder(ctx, u, f3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNotContains(t, gotR3, f3Role.ID)
+	gotG3, err := s.VisibleGroupsUnder(ctx, u, f3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNotContains(t, gotG3, f3Group.ID)
+
+	// ── Escalation boundary: READ only, never CONNECT or GRANTABLE ─────────────
+	// folder:read confers no CONNECT: the data-plane Check for a connect capability
+	// on the descendant asset is false.
+	if ok, err := s.Check(ctx, u, a2, "ssh:connect"); err != nil || ok {
+		t.Fatalf("Check(ssh:connect on a2) via folder:read = %v, err=%v; want false", ok, err)
+	}
+	// folder:read does NOT subsume the object read caps, so it can never let the holder
+	// GRANT/BIND them (Covers is the no-escalation subset predicate).
+	held := []string{"catalog:folder:read"}
+	for _, target := range []string{"catalog:asset:read", "access:role:read", "identity:group:read"} {
+		if Covers(held, target) {
+			t.Fatalf("Covers(%v, %q) = true; catalog:folder:read must NOT subsume object read caps (escalation boundary)", held, target)
+		}
+	}
+}
+
 // TestVisibleManageOnlyEmptyFolder pins that an empty folder (no assets) still
 // appears in VisibleFoldersUnder for a user with global catalog:folder:read —
 // the management arm fires even when the access arm (subtree assets) is empty.

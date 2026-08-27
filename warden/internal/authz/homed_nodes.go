@@ -13,8 +13,9 @@ import (
 // Role / group visibility. VisibleRolesUnder and VisibleGroupsUnder unify two
 // axes over folder-homed nodes (NULLABLE folder_id, NULL = global/root):
 //   - MANAGEMENT: holding the read cap ("access:role:read"/"identity:group:read")
-//     at the node's home-folder scope; a global hold covers everything, and a
-//     folder-less node is manageable only via that global cap.
+//     OR the subtree-wide "catalog:folder:read" (FolderReadCap, READ-only) at the
+//     node's home-folder scope; a global hold covers everything, and a folder-less
+//     node is manageable only via that global cap.
 //   - ACCESS: a role is visible if held or requestable; a group if the user is a
 //     transitive member.
 //

@@ -775,7 +775,7 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:role:read", scope); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, "access:role:read", scope); err != nil {
 		return nil, err
 	}
 	rows, next, err := h.svc.ListRoleGrants(ctx, roleID, req.Msg.PageSize, req.Msg.PageToken)

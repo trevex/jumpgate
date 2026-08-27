@@ -1212,16 +1212,18 @@ WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = $5 OR rc.scope = '*')
-      AND (rc.action = $6 OR rc.action = '*')
-      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = $5 OR rc.scope = '*')
-          AND (rc.action = $6 OR rc.action = '*')
-          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (
@@ -1279,11 +1281,13 @@ type VisibleAssetsUnderParams struct {
 }
 
 // [13] VisibleAssetsUnder: asset ids under `parent` the user may see, unifying the
-// ACCESS (access_ids), MANAGEMENT (catalog:asset:read cascade over authz_held /
-// authz_global_held), and CONNECT (ssh:login entitled over the full asset-scope
-// cascade) axes. The (parent, cascade) browse level is selected by the nullable
-// @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
-// by the caller and never reaches this query).
+// ACCESS (access_ids), MANAGEMENT (catalog:asset:read OR the subtree-wide
+// catalog:folder:read, cascade over authz_held / authz_global_held), and CONNECT
+// (ssh:login entitled over the full asset-scope cascade) axes. The (parent, cascade)
+// browse level is selected by the nullable @parent and @cascade args (the (NULL
+// parent, non-cascade) case is short-circuited by the caller and never reaches this
+// query). The catalog:folder:read literal arm is the READ-ONLY subtree broadening
+// (see authz.FolderReadCap) — it confers READ, never CONNECT or grantable authority.
 func (q *Queries) VisibleAssetsUnder(ctx context.Context, arg VisibleAssetsUnderParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, visibleAssetsUnder,
 		arg.Cascade,
@@ -1377,16 +1381,18 @@ WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = $5 OR rc.scope = '*')
-      AND (rc.action = $6 OR rc.action = '*')
-      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = $5 OR rc.scope = '*')
-          AND (rc.action = $6 OR rc.action = '*')
-          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (
@@ -1432,7 +1438,9 @@ type VisibleGroupsHomedRow struct {
 
 // [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
 // each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
-// (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).
+// (identity:group:read OR the subtree-wide catalog:folder:read cascade). Table variant
+// of VisibleRolesHomed (FROM groups). The catalog:folder:read literal arm is the
+// READ-ONLY subtree broadening (see authz.FolderReadCap).
 func (q *Queries) VisibleGroupsHomed(ctx context.Context, arg VisibleGroupsHomedParams) ([]VisibleGroupsHomedRow, error) {
 	rows, err := q.db.Query(ctx, visibleGroupsHomed,
 		arg.Cascade,
@@ -1546,16 +1554,18 @@ WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = $5 OR rc.scope = '*')
-      AND (rc.action = $6 OR rc.action = '*')
-      AND (rc.qualifier = $7 OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = $5 OR rc.scope = '*')
-          AND (rc.action = $6 OR rc.action = '*')
-          AND (rc.qualifier = $7 OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (
@@ -1600,8 +1610,10 @@ type VisibleRolesHomedRow struct {
 }
 
 // [18] visibleHomedSetBased(roles): roles homed under `parent` visible to the user,
-// each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read
-// cascade over authz_held / authz_global_held). Level selected by @parent/@cascade.
+// each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read OR
+// the subtree-wide catalog:folder:read, cascade over authz_held / authz_global_held).
+// Level selected by @parent/@cascade. The catalog:folder:read literal arm is the
+// READ-ONLY subtree broadening (see authz.FolderReadCap).
 func (q *Queries) VisibleRolesHomed(ctx context.Context, arg VisibleRolesHomedParams) ([]VisibleRolesHomedRow, error) {
 	rows, err := q.db.Query(ctx, visibleRolesHomed,
 		arg.Cascade,

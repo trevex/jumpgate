@@ -329,7 +329,7 @@ func (h *Handler) GetAsset(ctx context.Context, req *connect.Request[catalogv1.G
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "catalog:asset:read", authz.AssetScope(id)); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, "catalog:asset:read", authz.AssetScope(id)); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.GetAsset(ctx, id)

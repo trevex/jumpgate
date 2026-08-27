@@ -48,6 +48,23 @@ func (g Guard) RequireCap(ctx context.Context, caller uuid.UUID, capability stri
 	return nil
 }
 
+// RequireReadCap is the READ-gate variant of RequireCap: it denies unless caller
+// holds `objectReadCap` OR the subtree-wide catalog:folder:read (authz.FolderReadCap)
+// at `scope`. It is the single-sourced gate for per-object read RPCs (Get/Resolve/
+// *Access of asset/role/group), so a delegate holding catalog:folder:read on an
+// ancestor folder can OPEN the objects it now sees. READ-only: it must NOT be used
+// for authoring/connect gates, and it does not touch grantable/subset logic.
+func (g Guard) RequireReadCap(ctx context.Context, caller uuid.UUID, objectReadCap string, scope authz.Scope) error {
+	caps, err := g.Authz.CapabilitiesOnScope(ctx, caller, scope)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if !caps.ReadAllowed(objectReadCap) {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("missing capability %q", objectReadCap))
+	}
+	return nil
+}
+
 // RequireGrantable enforces the no-escalation subset rule: every capability in
 // roleCaps must be subsumed by what caller holds at `scope`.
 func (g Guard) RequireGrantable(ctx context.Context, caller uuid.UUID, roleCaps []string, scope authz.Scope) error {

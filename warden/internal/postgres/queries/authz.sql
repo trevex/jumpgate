@@ -219,25 +219,29 @@ WHERE
 
 -- name: VisibleAssetsUnder :many
 -- [13] VisibleAssetsUnder: asset ids under `parent` the user may see, unifying the
--- ACCESS (access_ids), MANAGEMENT (catalog:asset:read cascade over authz_held /
--- authz_global_held), and CONNECT (ssh:login entitled over the full asset-scope
--- cascade) axes. The (parent, cascade) browse level is selected by the nullable
--- @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
--- by the caller and never reaches this query).
+-- ACCESS (access_ids), MANAGEMENT (catalog:asset:read OR the subtree-wide
+-- catalog:folder:read, cascade over authz_held / authz_global_held), and CONNECT
+-- (ssh:login entitled over the full asset-scope cascade) axes. The (parent, cascade)
+-- browse level is selected by the nullable @parent and @cascade args (the (NULL
+-- parent, non-cascade) case is short-circuited by the caller and never reaches this
+-- query). The catalog:folder:read literal arm is the READ-ONLY subtree broadening
+-- (see authz.FolderReadCap) — it confers READ, never CONNECT or grantable authority.
 WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (
@@ -285,22 +289,26 @@ ORDER BY a.id;
 
 -- name: VisibleRolesHomed :many
 -- [18] visibleHomedSetBased(roles): roles homed under `parent` visible to the user,
--- each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read
--- cascade over authz_held / authz_global_held). Level selected by @parent/@cascade.
+-- each with its home folder. ACCESS (access_ids) ∪ MANAGEMENT (access:role:read OR
+-- the subtree-wide catalog:folder:read, cascade over authz_held / authz_global_held).
+-- Level selected by @parent/@cascade. The catalog:folder:read literal arm is the
+-- READ-ONLY subtree broadening (see authz.FolderReadCap).
 WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (
@@ -331,21 +339,25 @@ ORDER BY n.id;
 -- name: VisibleGroupsHomed :many
 -- [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
 -- each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
--- (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).
+-- (identity:group:read OR the subtree-wide catalog:folder:read cascade). Table variant
+-- of VisibleRolesHomed (FROM groups). The catalog:folder:read literal arm is the
+-- READ-ONLY subtree broadening (see authz.FolderReadCap).
 WITH mgmt_anchor_folders AS (
     SELECT DISTINCT h.object_id AS folder_id
     FROM authz_held(sqlc.arg('user')) h JOIN role_capabilities rc ON rc.role_id = h.role_id
     WHERE h.object_kind = 'folder'
-      AND (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-      AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-      AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+      AND (
+            ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+      )
 ),
 global_mgmt AS (
     SELECT EXISTS (
         SELECT 1 FROM authz_global_held(sqlc.arg('user')) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*')
-          AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*')
-          AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*')
+        WHERE (
+                ((rc.scope = sqlc.arg('cap_scope') OR rc.scope = '*') AND (rc.action = sqlc.arg('cap_action') OR rc.action = '*') AND (rc.qualifier = sqlc.arg('cap_qual') OR rc.qualifier = '*'))
+             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
+          )
     ) AS ok
 ),
 mgmt_visible_folders AS (

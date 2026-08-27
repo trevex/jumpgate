@@ -23,8 +23,10 @@ func AssetVisible(ctx context.Context, a *Authorizer, userID, assetID uuid.UUID)
 	if err != nil {
 		return false, err
 	}
-	// Management arm: retains `**` (unlike the connect DECISION, which strips it).
-	if caps.Allows("catalog:asset:read") {
+	// Management arm: catalog:asset:read OR the subtree-wide catalog:folder:read held
+	// on an ancestor folder (ReadAllowed). Retains `**` (unlike the connect DECISION,
+	// which strips it).
+	if caps.ReadAllowed("catalog:asset:read") {
 		return true, nil
 	}
 	// Connect arm: any entitled login among the asset's declared logins.
@@ -85,7 +87,8 @@ func (s *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (
 //
 // An asset whose folder is in scope under `parent` is visible iff ANY of:
 //   - ACCESS:     its id ∈ VisibleAssets(user); OR
-//   - MANAGEMENT: the user holds "catalog:asset:read" on the asset's folder scope
+//   - MANAGEMENT: the user holds "catalog:asset:read" OR the subtree-wide
+//     "catalog:folder:read" (FolderReadCap, READ-only) on the asset's folder scope
 //     (global, or the asset's folder descendant-or-self of a folder where the cap
 //     is held — the shared mgmtCascadeCTEs fragment); OR
 //   - CONNECT:    the asset declares ≥1 SSH login the user entitles over the FULL

@@ -11,6 +11,7 @@ import (
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
+	identityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -129,6 +130,69 @@ func TestAuthzFolderScopeIsolation(t *testing.T) {
 	}
 	if _, err := cat.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: tf.pathB}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("ResolveAsset(B) = %v, want NotFound (existence hiding)", connect.CodeOf(err))
+	}
+}
+
+// TestFolderReadCascadesReadRPCs proves the per-object read RPCs honor the
+// subtree-wide catalog:folder:read: a user holding ONLY catalog:folder:read at
+// team-a can OPEN team-a's descendant objects (GetAsset/ResolveAsset, GetRole/
+// GetRoleAccess, GetGroupAccess/ListGroupMembers) even though they hold none of the
+// object-type read caps. It stays READ-ONLY (authoring is still PermissionDenied) and
+// does not leak to sibling team-b (existence-hidden). Complements the authz-level
+// TestVisibleFolderReadCascadesReads (which pins the connect + grantable boundary).
+func TestFolderReadCascadesReadRPCs(t *testing.T) {
+	pool, url := newServer(t)
+	seedUser(t, pool, "admin@x", "supersecret", true)
+	adminTok := adminToken(t, url)
+	tf := setupTwoFolders(t, url, adminTok)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+
+	// A role and a group homed in team-a (so their governance scope is folder team-a).
+	folderA := uuid.MustParse(tf.folderA)
+	aRole := createRoleWithCaps(t, ctx, q, "fa-role-"+uuid.NewString(), pgtype.UUID{Bytes: folderA, Valid: true}, `["ssh:connect"]`)
+	aGroup, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "fa-group-" + uuid.NewString(), FolderID: pgtype.UUID{Bytes: folderA, Valid: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// folderReader: ONLY catalog:folder:read, bound at team-a.
+	seedCapUserScoped(t, pool, "freader@x", "password123", `["catalog:folder:read"]`, folderA, uuid.Nil)
+	tok := authClient(t, url, "freader@x", "password123")
+	gc := newGuardClients(url)
+	cat, acc, ident := gc.catalog, gc.access, gc.identity
+
+	// ── Reads within team-a succeed via folder:read (were PermissionDenied before) ──
+	if _, err := cat.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: tf.assetA}), tok)); err != nil {
+		t.Fatalf("GetAsset(A) via folder:read should succeed: %v", err)
+	}
+	if _, err := cat.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: tf.pathA}), tok)); err != nil {
+		t.Fatalf("ResolveAsset(A) via folder:read should succeed: %v", err)
+	}
+	if _, err := acc.GetRole(ctx, withToken(connect.NewRequest(&accessv1.GetRoleRequest{Id: aRole.ID.String()}), tok)); err != nil {
+		t.Fatalf("GetRole(team-a role) via folder:read should succeed: %v", err)
+	}
+	if _, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: aRole.ID.String()}), tok)); err != nil {
+		t.Fatalf("GetRoleAccess(team-a role) via folder:read should succeed: %v", err)
+	}
+	if _, err := ident.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: aGroup.ID.String()}), tok)); err != nil {
+		t.Fatalf("GetGroupAccess(team-a group) via folder:read should succeed: %v", err)
+	}
+	if _, err := ident.ListGroupMembers(ctx, withToken(connect.NewRequest(&identityv1.ListGroupMembersRequest{GroupId: aGroup.ID.String()}), tok)); err != nil {
+		t.Fatalf("ListGroupMembers(team-a group) via folder:read should succeed: %v", err)
+	}
+
+	// ── READ-ONLY: authoring in team-a is still denied (folder:read confers no create) ──
+	if _, err := cat.CreateAsset(ctx, withToken(connect.NewRequest(&catalogv1.CreateAssetRequest{FolderId: tf.folderA, Name: "should-fail", Config: emptySSHConfig()}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("CreateAsset(A) via folder:read = %v, want PermissionDenied (read-only)", connect.CodeOf(err))
+	}
+
+	// ── No sideways leak to sibling team-b (existence-hidden) ──
+	if _, err := cat.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: tf.assetB}), tok)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("GetAsset(B) via team-a folder:read = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	if _, err := cat.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: tf.pathB}), tok)); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("ResolveAsset(B) via team-a folder:read = %v, want NotFound (existence hiding)", connect.CodeOf(err))
 	}
 }
 

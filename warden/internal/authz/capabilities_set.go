@@ -33,3 +33,22 @@ func (c Capabilities) EntitledLogins(allowedLogins []string) []string {
 	}
 	return out
 }
+
+// FolderReadCap is the subtree-wide catalog READ capability. Held on a folder F it
+// confers READ (visibility + per-object open) of everything homed at or under F —
+// descendant sub-folders, assets, roles, and groups — so a delegate governing a
+// folder need not also be granted each object-type read cap. It is READ-ONLY: it
+// confers neither CONNECT (ssh:login) nor any authoring/grant capability, and it is
+// deliberately NOT part of Covers / the no-escalation subset rule, so holding it can
+// never let a delegate BIND or GRANT an object read cap they do not themselves hold.
+const FolderReadCap = "catalog:folder:read"
+
+// ReadAllowed reports whether these caps satisfy a management READ of an object
+// whose own read cap is objectReadCap, honoring the subtree-wide FolderReadCap: a
+// caller allowed either the object's own read cap OR catalog:folder:read at the
+// object's scope may read it. Single-sourced so every per-object read gate broadens
+// identically. This is a read-visibility predicate ONLY — it must never be consulted
+// by grantable/subset logic (see FolderReadCap).
+func (c Capabilities) ReadAllowed(objectReadCap string) bool {
+	return c.Allows(objectReadCap) || c.Allows(FolderReadCap)
+}

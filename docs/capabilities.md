@@ -168,6 +168,19 @@ checks the **recipient** `role_id`, the role that gets conferred.)
   `NotFound` (existence-hiding). See
   [Catalog browse](#catalog-browse-listfolderslistassets) below.
 
+**`catalog:folder:read` cascades READ across the whole subtree.** Held on a folder
+`F`, it confers **read/visibility** of everything homed at or under `F` — descendant
+sub-folders **and** the assets, roles, and groups within — so a delegate governing a
+folder branch can browse and open its contents without also being granted
+`catalog:asset:read`, `access:role:read`, and `identity:group:read` object-by-object.
+It is the one cross-object read cap: every other read cap stays object-type-specific
+(`catalog:asset:read` reads only assets, `access:role:read` only roles, etc.).
+`catalog:folder:read` is **read-only** — it grants **no** authoring (create/update/
+delete), **no** CONNECT (an `ssh:login:*` entitlement is still required to open a
+session), and it is deliberately **excluded from the no-escalation subset rule**, so
+holding it can never let a delegate bind or grant an object read cap they do not
+themselves hold.
+
 The **Scope** column below names the object whose scope the cap is checked at.
 Where a single cap gates both a per-object read and a list-all, the list case is
 noted in parentheses. User, CA/key, and grant-oversight caps are `Global`; catalog,
@@ -176,7 +189,7 @@ role, binding, policy, secret, recording, and **group** caps are folder/asset-sc
 | Capability | Grants (management RPC) | Scope |
 |---|---|---|
 | `catalog:folder:create` | create a folder | parent folder (`Global` if top-level) |
-| `catalog:folder:read` | resolve a folder by path/id (`ResolveFolder`) | the folder |
+| `catalog:folder:read` | resolve a folder by path/id (`ResolveFolder`); **read everything in the folder's subtree** — descendant sub-folders, assets, roles, and groups (see note below) | the folder |
 | `catalog:folder:update` | rename or move a folder | the folder |
 | `catalog:folder:delete` | delete a folder | the folder |
 | `catalog:asset:create` | onboard an asset | target folder |
