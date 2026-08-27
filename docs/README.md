@@ -20,7 +20,8 @@ marks it as planned, so the docs never overstate what exists.
 | [capabilities.md](capabilities.md) | The capability vocabulary: the `scope:action[:qualifier]` grammar, glob matching, the management-plane and data-plane vocabularies, and the warden-decides / worker-enforces split |
 | [data-model.md](data-model.md) | Schema/entity reference: the Postgres tables, key columns, constraints, and how they relate, with an ER diagram |
 | [security.md](security.md) | Consolidated security posture & threat model: existence-hiding, the token model, account deactivation, continuous revocation, audit integrity, and secrets-at-rest |
-| [development.md](development.md) | Getting started: Nix devshell, repo layout, codegen, data layer, testing, CI conventions |
+| [development.md](development.md) | Getting started: Nix devshell, repo layout, codegen, data layer, the vertical-slice domain/RPC pattern, CI conventions |
+| [testing.md](testing.md) | The test tiers — in-package unit/integration, local data-plane e2e, cluster e2e, and UI e2e — what each proves and how they stay complementary |
 | [roadmap.md](roadmap.md) | What is built and what is planned next |
 | [decisions.md](decisions.md) | The load-bearing architecture decisions and their rationale |
 

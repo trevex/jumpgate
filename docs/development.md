@@ -80,6 +80,13 @@ Makefile            Task entrypoints
 - **Public Go API:** `warden/authz` contains the stable authorization contract,
   scopes, and capability matching helpers. PostgreSQL query construction and
   concrete executors remain under `warden/internal/authz`.
+- **Interface policy:** `warden/authz.Authorizer` is the **one** public interface —
+  the seam that lets an alternate backend (e.g. OpenFGA) drop in. Everything else
+  is concrete: a domain service is a plain `*Service` struct, and where one domain
+  depends on another it declares a **narrow consumer-side interface** naming only the
+  methods it uses (e.g. catalog's `sessionTerminator` / `requestReadAuthorizer`),
+  rather than importing a producer-defined interface. This keeps dependencies
+  explicit and testable without a package of shared mock interfaces.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
 
@@ -97,7 +104,7 @@ Makefile            Task entrypoints
 
 - **Postgres** accessed via **sqlc + pgx/v5**: write SQL in `warden/internal/postgres/queries`, generate typed Go into `warden/internal/postgres/sqlc` with `make sqlc` (config: `sqlc.yaml`). Generated code is committed. `make sqlc` runs sqlc in database-backed analysis mode: it spins an ephemeral Postgres, applies the schema with `goose`, and points sqlc at it (so queries over the `authz_*` SQL functions resolve their return columns); the devshell provides `initdb`/`pg_ctl`/`goose`, so no external database is needed.
 - **Migrations** are goose SQL files in `warden/internal/postgres/migrate/migrations`, embedded in the binary and applied on startup (`migrate.Up`). While Jumpgate is pre-production, `0001_schema.sql` is the canonical fresh-install schema and may be rewritten instead of carrying upgrade history. After a schema rewrite, reset local data with `make ui-dev-reset`; existing databases are not upgrade-compatible.
-- **Authorization** goes through the `internal/authz` `Authorizer` seam; the current backend resolves access with recursive SQL CTEs over Postgres.
+- **Authorization** goes through the `internal/authz` `Authorizer` seam; the current backend resolves access with a set of inlinable PostgreSQL **SQL functions** (`authz_held`, `authz_held_standing`, `authz_global_held`, `authz_user_groups`, `authz_role_goals`, `authz_effective_request_policy`, over the `active_access_grants` view — defined in `0001_schema.sql`) reached through static, typed sqlc queries in `warden/internal/postgres/queries/authz.sql`. Those functions are the **single source** of the recursive-closure logic: a grep-guard (`internal/authz/no_raw_closure_sql_test.go`, `TestNoRawClosureSQLInGo`) fails the build if a `WITH RECURSIVE` closure or a hand-rolled `user_groups`/`held_standing`/`global_held` CTE is re-introduced in Go (outside generated sqlc).
 - **Integration tests** boot an ephemeral Postgres via `internal/testsupport` (uses the devshell's `initdb`/`pg_ctl`, no Docker). They `t.Skip` when that tooling isn't on PATH, so run them inside `nix develop`.
 - Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`, `SHUTDOWN_TIMEOUT`.
 
@@ -106,11 +113,52 @@ Makefile            Task entrypoints
 - The API is split into focused services: `AuthService` (login/whoami), `IdentityService` (users/groups/memberships), `CatalogService` (folders/assets — create / rename+move (`UpdateFolder`/`UpdateAsset`) / delete (`DeleteFolder`/`DeleteAsset`), path-scoped `ListFolders`/`ListAssets` (visibility-filtered, keyset-paginated), `GetAssetAccess`/`GetFolderAccess` (capabilities on selection), and `Resolve*`; asset SSH config is written type-safely — the asset kind and each login's auth kind are `oneof` arms, and onboarding seals secrets + creates the asset in one atomic call — and moves that break folder-scoped-role containment or form a cycle are refused, with an allowed move firing `authz_changed`), `AccessService` (all authorization config — roles, role-grants, standing role-bindings, request-policies + `ExplainRole`), `AccessRequestService` (the JIT runtime — request/approve/deny/cancel/revoke + grants + reaper), `VaultService` (CAs, mesh certs, session key, asset secrets), `SessionService` (`CreateSession` admission tokens), `RecordingService`, `GatewayService`, and a mesh-only `Dataplane` contract for workers. A per-RPC-service breakdown lives in [architecture.md](architecture.md#control-plane--go).
 - Services are defined in `proto/` (buf) and generated to `warden/gen/...` — connect handlers live in the `*connect/` sub-packages. Run `make gen`.
 - Served by `internal/rpc` (mounted on the same HTTP server as `/healthz`; one connect handler speaks Connect + gRPC + gRPC-Web, no Envoy).
-- Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC capability guards (`capGuard.requireCap`) enforce access — management authz is capability-only (no `is_admin` flag; the bootstrap admin holds `**` via a global role binding). Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
+- Auth is a bearer-token Connect interceptor (`internal/auth`): `Authorization: Bearer <token>` → current user in context; per-RPC capability guards (the shared `apiguard.Guard.RequireCap`) enforce access — management authz is capability-only (no `is_admin` flag; the bootstrap admin holds `**` via a global role binding). Tokens are opaque, stored hashed (argon2id passwords), revocable server-side.
 - Validation via protovalidate (CEL constraints in the `.proto`). Errors use Connect codes; non-visible resources return `CodeNotFound` (never `PermissionDenied`) to avoid leaking existence.
 - **Timestamps:** typed control-plane RPCs use `google.protobuf.Timestamp`; the worker/data-plane binary path uses `int64 *_unix_ms` for compactness; RFC3339 strings appear only in human-facing DTO fields (e.g. `created_at`/`expires_at` on access-request DTOs) — legacy; prefer `google.protobuf.Timestamp` for new typed fields.
 - **Pagination:** `List*` RPCs keyset-paginate via `page_token`/`next_page_token`, with `page_size` bounded `[0, 100]`. The lone exception is `CatalogService.ListFolderContents`, which is a bounded *preview* (first ~50 of each kind, `*_has_more` signals truncation, no page tokens); callers needing the full list of a kind must use the per-kind `List*` RPC.
 - Bootstrapping: there is no self-signup — on first startup an initial admin is seeded automatically when `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` are set in the environment. Without those vars no admin is pre-created; subsequent admin creation requires a direct DB seed.
+
+## Adding a domain / RPC (vertical slice)
+
+warden is organized as **vertical-slice domain modules** under `internal/` (`auth`,
+`identity`, `catalog`, `access`, `accessrequest`, `vault`, `recording`, `session`,
+and the mesh-facing `gateway`/`dataplane`). Each module is two files:
+
+- **`service.go` — proto-free domain logic.** Owns the pool (for multi-step
+  transactions), the sqlc `*Queries`, and any collaborators, and carries the
+  transactional/business invariants. It takes the caller's `uuid.UUID` explicitly
+  (never reads the request context) and returns plain domain structs, not proto
+  messages. Cross-domain dependencies are **narrow consumer-side interfaces** defined
+  here (see the interface policy above).
+- **`handler.go` — ConnectRPC transport.** A thin `*Handler` wrapping the service and
+  an `apiguard.Guard`. The generated-interface method does exactly: extract the caller
+  (`caller(ctx)` → `auth.UserFromContext`), apply the coarse capability gate
+  (`h.guard.RequireCap(ctx, caller, "<cap>", scope)`), call **one** service method,
+  map the domain result to/from proto, and translate errors. Methods whose capability
+  and visibility checks are entangled with DB work instead gate *in* the service
+  (which mirrors `RequireCap`), taking the caller explicitly.
+
+The shared **transport leaves** carry the cross-cutting concerns so a handler stays
+thin, and none of them import a domain module (which is what lets `internal/rpc`
+mount every handler without an import cycle):
+
+- **`apiguard`** — `Guard.RequireCap` (deny unless the caller holds a capability at a
+  scope), `Guard.RequireGrantable` (the no-escalation subset rule), and the scope
+  derivations (`ScopeOfFolderID`, `ScopeOfObject`, `ScopeOfRole`, …).
+- **`apierr`** — `MapWrite` (Postgres constraint error → `InvalidArgument`/
+  `AlreadyExists` rather than `Internal`) and the `pgx.ErrNoRows` → `NotFound`
+  existence-hiding mappers.
+- **`apipage`** — the keyset-cursor codec (`ClampPageSize`, `Encode*Token`,
+  `DecodePageToken`) shared by every `List*` RPC.
+
+To add an RPC: define it in `proto/` and `make gen`; add the SQL to
+`warden/internal/postgres/queries` and `make sqlc`; put the logic in the domain
+`service.go`; add the transport method to `handler.go` (gate → call → map); and, if
+the module is new, register its constructed handler in `internal/rpc/services.go`
+(`RegisterUserServices` or `RegisterMeshServices`) and wire its construction in
+`internal/app`. `internal/rpc` is wiring only — it never constructs authorizers,
+audit loggers, or other dependencies.
 
 ## Web UI
 
@@ -232,6 +280,10 @@ requires `catalog:asset:read`.
   capabilities; the server remains the enforcer.
 
 ## Testing
+
+The test **tiers** (in-package unit/integration, local data-plane e2e, cluster e2e,
+UI e2e) — what each proves and which run in CI — are documented in
+[testing.md](testing.md). A quick command reference:
 
 - **Web:** `make web` installs, typechecks (`tsc --noEmit`), and builds the SPA;
   this runs as part of `make ci`. `make ui-e2e` runs the **Playwright** suite

@@ -60,6 +60,16 @@ cert-manager-issued mesh certs and a bootstrap Job; `make e2e-cluster` runs a Go
 suite that drives the real CLI through a three-actor cross-approval scenario. A
 narrated walkthrough (`docs/demo/walkthrough.md`) follows the same flow.
 
+**Code quality.** A structural refactor is complete: the authorization semantics are
+a single source of truth as inlinable PostgreSQL SQL functions (`authz_*` + the
+`active_access_grants` view) consumed via static sqlc, guarded against Go-side
+re-implementation by a grep test; warden is organized as vertical-slice domain
+modules (`internal/<domain>/{service.go,handler.go}`) over shared transport leaves
+(`apiguard`/`apierr`/`apipage`) with `internal/rpc` reduced to wiring and
+`warden/authz` the one public interface; cross-domain cleanup runs off DB FK cascade;
+and the test tiers, package boundaries, and durable docs were consolidated to match
+(see [testing.md](testing.md) and [development.md](development.md)).
+
 ## Beyond the first product (later areas)
 
 | Area | Adds |
