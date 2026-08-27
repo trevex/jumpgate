@@ -1,9 +1,3 @@
-// Package authz defines Jumpgate's reusable authorization contracts and
-// capability vocabulary.
-//
-// The Authorizer interface is the single boundary all callers use to ask access
-// questions. Concrete persistence-backed implementations remain private so this
-// package does not expose database models or query construction as public API.
 package authz
 
 import (
