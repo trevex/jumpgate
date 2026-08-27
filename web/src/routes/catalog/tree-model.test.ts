@@ -52,13 +52,13 @@ describe("folderContentsToNodes", () => {
   it("maps roles to RoleNode array", () => {
     const res = makeResponse({
       roles: [
-        { id: "r1", name: "db-admin", capabilities: [], folderId: "", folderPath: "db.prod" } as never,
+        { id: "r1", name: "db-admin", capabilities: [], folderId: "f1", folderPath: "db.prod" } as never,
       ],
       rolesHasMore: true,
     });
     const { roles, hasMore } = folderContentsToNodes(res);
     expect(roles).toHaveLength(1);
-    expect(roles[0]).toEqual({ id: "r1", name: "db-admin", folderPath: "db.prod" });
+    expect(roles[0]).toEqual({ id: "r1", name: "db-admin", folderId: "f1", folderPath: "db.prod" });
     expect(hasMore.roles).toBe(true);
   });
 

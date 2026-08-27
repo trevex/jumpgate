@@ -27,6 +27,8 @@ export interface AssetNode {
 export interface RoleNode {
   id: string;
   name: string;
+  /** empty = global; else the role's home folder (drives bind default scope) */
+  folderId: string;
   folderPath: string;
 }
 
@@ -75,6 +77,7 @@ export function folderContentsToNodes(
     roles: res.roles.map((r) => ({
       id: r.id,
       name: r.name,
+      folderId: r.folderId,
       folderPath: r.folderPath,
     })),
     groups: res.groups.map((g) => ({

@@ -16,7 +16,7 @@
  * toasts; onError surfaces connectErrorMessage.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
 import {
@@ -54,6 +54,7 @@ import { canUpdateRole, canDeleteRole } from "./role-actions";
 import { canCreateBinding } from "./binding-actions";
 import { NewBindingDialog } from "./new-binding-dialog";
 import { RolePicker, type PickedRole } from "@/components/pickers/role-picker";
+import type { PickedScope } from "@/components/pickers/scope-picker";
 import {
   ShieldCheck,
   GitFork,
@@ -395,6 +396,16 @@ export function RoleDetailSheet({
   const mayBind = canCreateBinding(caps);
   const [bindOpen, setBindOpen] = useState(false);
 
+  // A folder-homed role defaults its binding scope to its home folder (still
+  // editable); a global role stays global.
+  const defaultScope = useMemo<PickedScope | undefined>(
+    () =>
+      role?.folderId
+        ? { kind: "folder", id: role.folderId, path: role.folderPath ?? "" }
+        : undefined,
+    [role?.folderId, role?.folderPath],
+  );
+
   return (
     <Sheet open={role !== null} onOpenChange={onOpenChange}>
       <SheetContent className="flex w-full flex-col gap-6 overflow-y-auto sm:max-w-md">
@@ -452,6 +463,7 @@ export function RoleDetailSheet({
                   name: role.name,
                   folderPath: role.folderPath,
                 }}
+                defaultScope={defaultScope}
               />
             )}
           </>

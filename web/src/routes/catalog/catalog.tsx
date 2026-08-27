@@ -57,7 +57,14 @@ function Detail({ selected, onCleared }: DetailProps) {
         />
       );
     case "role":
-      return <RoleDetail id={selected.id} name={selected.name} />;
+      return (
+        <RoleDetail
+          id={selected.id}
+          name={selected.name}
+          folderId={selected.folderId}
+          folderPath={selected.folderPath}
+        />
+      );
     case "group":
       return <GroupDetail id={selected.id} name={selected.name} />;
     case "folder":

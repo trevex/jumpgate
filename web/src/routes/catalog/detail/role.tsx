@@ -9,11 +9,12 @@
  * DetailError component.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { KeyRound, Link2 } from "lucide-react";
 import { getRoleAccess } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import { Button } from "@/components/ui/button";
+import type { PickedScope } from "@/components/pickers/scope-picker";
 import { useCapabilities } from "@/lib/capabilities";
 import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
 import { canCreateBinding } from "../../access-control/binding-actions";
@@ -22,9 +23,13 @@ import { NewBindingDialog } from "../../access-control/new-binding-dialog";
 export interface RoleDetailProps {
   id: string;
   name: string;
+  /** The role's home folder (from the tree selection). Empty/absent = global.
+   *  When set, the bind dialog opens with this folder preselected as the scope. */
+  folderId?: string;
+  folderPath?: string;
 }
 
-export function RoleDetail({ id, name }: RoleDetailProps) {
+export function RoleDetail({ id, name, folderId, folderPath }: RoleDetailProps) {
   // Binding creation is a GLOBAL `access:*` action, so it's gated on the
   // caller's own global capabilities (as the folder/asset panes do). The
   // server re-checks — including folder-scope containment for scoped roles.
@@ -32,6 +37,16 @@ export function RoleDetail({ id, name }: RoleDetailProps) {
   const mayBind = canCreateBinding(globalCaps);
 
   const [bindOpen, setBindOpen] = useState(false);
+
+  // A folder-homed role should bind AT its home folder by default (the user can
+  // still change it). A global role (no folderId) leaves the scope at global.
+  const defaultScope = useMemo<PickedScope | undefined>(
+    () =>
+      folderId
+        ? { kind: "folder", id: folderId, path: folderPath ?? "" }
+        : undefined,
+    [folderId, folderPath],
+  );
 
   const { data, isLoading, isError, error } = useQuery(
     getRoleAccess,
@@ -71,13 +86,15 @@ export function RoleDetail({ id, name }: RoleDetailProps) {
         <CapList caps={data.capabilities} />
       </DetailSection>
 
-      {/* GetRoleAccess doesn't carry the role's folder path, so omit it — the
-          read-only role row then shows the name + "global". */}
+      {/* GetRoleAccess doesn't carry the role's folder path, so pass what the
+          tree selection knew: fixedRole shows name + folderPath, and defaultScope
+          preselects the role's home folder as the (editable) binding scope. */}
       {mayBind && (
         <NewBindingDialog
           open={bindOpen}
           onOpenChange={setBindOpen}
-          fixedRole={{ id, name }}
+          fixedRole={{ id, name, folderPath }}
+          defaultScope={defaultScope}
         />
       )}
     </article>

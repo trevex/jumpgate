@@ -47,6 +47,10 @@ export interface SelectedNode {
   /** Extra metadata forwarded to the detail pane */
   path?: string;
   assetKind?: string;
+  /** Role only: its home folder (empty/absent = global). Drives the bind
+   *  dialog's default scope so binding a folder-homed role preselects it. */
+  folderId?: string;
+  folderPath?: string;
 }
 
 // ─── Kind filter chips ────────────────────────────────────────────────────────
@@ -174,7 +178,7 @@ function ShowAllRoles({ folderId, onSelect, selected }: ShowAllRolesProps) {
       {roles.map((r) => (
         <RoleLeaf
           key={r.id}
-          role={{ id: r.id, name: r.name, folderPath: r.folderPath }}
+          role={{ id: r.id, name: r.name, folderId: r.folderId, folderPath: r.folderPath }}
           depth={2}
           selected={selected}
           onSelect={onSelect}
@@ -355,7 +359,14 @@ interface RoleLeafProps {
 
 function RoleLeaf({ role, depth, selected, onSelect }: RoleLeafProps) {
   const isSelected = selected?.kind === "role" && selected.id === role.id;
-  const select = () => onSelect({ kind: "role", id: role.id, name: role.name });
+  const select = () =>
+    onSelect({
+      kind: "role",
+      id: role.id,
+      name: role.name,
+      folderId: role.folderId,
+      folderPath: role.folderPath,
+    });
   return (
     <LeafContextMenu node={{ name: role.name }} onOpen={select}>
       <button

@@ -21,7 +21,7 @@
  * duplicate binding).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@connectrpc/connect-query";
 import { toast } from "sonner";
 import { ShieldCheck, User, Users, Folder, Boxes, Globe } from "lucide-react";
@@ -82,6 +82,13 @@ interface NewBindingDialogProps {
    * Independent of and composable with `fixedScope`.
    */
   fixedRole?: FixedRole;
+  /**
+   * The INITIAL scope shown in the (still editable) scope-picker — e.g. a
+   * folder-homed role's home folder, so binding it preselects that folder. The
+   * user can change it. Ignored when `fixedScope` is set (that pins/read-only).
+   * Absent = today's behavior (starts Global).
+   */
+  defaultScope?: PickedScope;
 }
 
 const FIELD_LABEL =
@@ -93,12 +100,24 @@ export function NewBindingDialog({
   onOpenChange,
   fixedScope,
   fixedRole,
+  defaultScope,
 }: NewBindingDialogProps) {
   const invalidateList = useInvalidateList();
 
   const [role, setRole] = useState<PickedRole | null>(null);
   const [subject, setSubject] = useState<PickedSubject | null>(null);
-  const [scope, setScope] = useState<PickedScope>({ kind: "global" });
+  const [scope, setScope] = useState<PickedScope>(
+    defaultScope ?? { kind: "global" },
+  );
+
+  // Re-seed the editable scope to the caller's default whenever the dialog
+  // opens (and if the default itself changes, e.g. switching between two
+  // folder-homed roles that share this mounted dialog). Guarded on `open` so a
+  // user's in-dialog scope pick isn't clobbered mid-edit. No-op under
+  // `fixedScope`, which pins the scope independently of this state.
+  useEffect(() => {
+    if (open) setScope(defaultScope ?? { kind: "global" });
+  }, [open, defaultScope]);
 
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [subjectPickerOpen, setSubjectPickerOpen] = useState(false);
@@ -119,7 +138,7 @@ export function NewBindingDialog({
   function reset() {
     setRole(null);
     setSubject(null);
-    setScope({ kind: "global" });
+    setScope(defaultScope ?? { kind: "global" });
   }
 
   const { mutate: doCreate, isPending } = useMutation(createRoleBinding, {
