@@ -15,7 +15,7 @@ design; Postgres, Kubernetes, and RDP are additive workers and are called out as
 
 ```
                     ┌──────────────── Control plane (Go) ──────────────┐
-                    │ identity · Authorizer (SQL CTEs) · roles/bindings │
+                    │ identity · Authorizer (SQL fns) · roles/bindings  │
                     │ request policies · JIT grants · vault · audit ·   │
                     │ recording metadata · worker registry             │
                     └──────▲───────────────▲──────────────────▲────────┘
@@ -73,9 +73,37 @@ bound globally. See [capabilities.md](capabilities.md) and
 [access-model.md](access-model.md).
 
 **Persistence.** Postgres via sqlc + pgx, with goose migrations embedded in the
-binary and applied on startup. The `Authorizer` seam is backed by recursive SQL
-CTEs; an OpenFGA-backed backend could be dropped in behind the same seam later, so
-the relationship rows are stored tuple-shaped.
+binary and applied on startup. The **authorization semantics live in the database**
+as a set of inlinable PostgreSQL **SQL functions** — `authz_held` /
+`authz_held_standing` (the forward held closure, with and without JIT grants),
+`authz_global_held` (scopeless roles), `authz_user_groups` (the nested-group
+closure), `authz_role_goals` / `authz_role_goal_paths` (backward goal expansion for
+`HoldsRole` and `ExplainRole`), and `authz_effective_request_policy` (most-specific
+policy selection), over the `active_access_grants` view (the single "grant is live"
+predicate). The Go `Authorizer` reaches them through **static, typed sqlc queries**
+(`internal/postgres/queries/authz.sql`), so the recursive-closure logic has one
+source of truth rather than SQL hand-assembled across Go call sites. An
+OpenFGA-backed backend could be dropped in behind the same seam later, so the
+relationship rows are stored tuple-shaped.
+
+**Code structure.** warden is organized as **vertical-slice domain modules** under
+`internal/` — `auth`, `identity`, `catalog`, `access`, `accessrequest`, `vault`,
+`recording`, `session`, plus the mesh-facing `gateway` and `dataplane`. Each module
+splits into a proto-free **`service.go`** (the domain logic: transactions,
+invariants, and narrow consumer-side interfaces onto its dependencies) and a
+**`handler.go`** (the ConnectRPC transport: extract the caller from context, apply
+the capability gate, call one service method, and map the domain result to and from
+proto). Three transport **leaf helpers** are shared across the modules — `apiguard`
+(the capability gate `RequireCap`/`RequireGrantable` and the scope derivations),
+`apierr` (Postgres-error → Connect-code mapping and the existence-hiding
+`NotFound` mappers), and `apipage` (the keyset-cursor pagination codec); each imports
+only `authz`/sqlc/connect/pgx and **never a domain module**, so the wiring package
+can mount every handler without an import cycle. `internal/rpc` is **wiring only**:
+it assembles the already-constructed handlers into the user-facing and mesh-facing
+service sets and mounts them. The one non-internal library package is
+**`warden/authz`** — the stable `Authorizer` interface plus the capability/scope
+vocabulary; the concrete, persistence-backed implementation stays private in
+`internal/authz`, so no database, pgx, or sqlc type is ever public API.
 
 ## Data plane
 
@@ -218,8 +246,8 @@ without capturing an id from a prior create.
 
 ## Access model
 
-Relationship-based (ReBAC), resolved with recursive SQL CTEs over Postgres —
-nested-group membership, an explicit role-rewrite folder cascade, and the
+Relationship-based (ReBAC), resolved by the recursive `authz_*` SQL functions over
+Postgres — nested-group membership, an explicit role-rewrite folder cascade, and the
 Active/Requestable/Invisible visibility tiers. The model separates *what a role
 means* (a bundle of capabilities) from *who holds it* (a standing RoleBinding),
 modeled on Kubernetes RBAC. Folder cascade of standing access is **explicit**: a

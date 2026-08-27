@@ -196,8 +196,8 @@ NULL. Subject is user **xor** group (`one_subject`).
 |---|---|
 | `id` | uuid PK |
 | `role_id` | → `roles(id)` (`ON DELETE CASCADE`) |
-| `scope_folder_id` | scope is a folder → `folders(id)` (nullable) |
-| `scope_asset_id` | scope is an asset → `assets(id)` (nullable) |
+| `scope_folder_id` | scope is a folder → `folders(id)` (`ON DELETE CASCADE`, nullable) |
+| `scope_asset_id` | scope is an asset → `assets(id)` (**`ON DELETE CASCADE`**, nullable) — deleting the asset drops its asset-scoped bindings |
 | `subject_user_id` | subject is a user → `users(id)` (nullable) |
 | `subject_group_id` | subject is a group → `groups(id)` (nullable) |
 
@@ -227,8 +227,8 @@ makes a policy addressable as `<name>@<asset-path>`.
 |---|---|
 | `id` | uuid PK |
 | `role_id` | the requestable role → `roles(id)` (`ON DELETE CASCADE`) |
-| `scope_folder_id` | override scope folder → `folders(id)` (nullable) |
-| `scope_asset_id` | override scope asset → `assets(id)` (nullable); both NULL = role-level default |
+| `scope_folder_id` | override scope folder → `folders(id)` (`ON DELETE CASCADE`, nullable) |
+| `scope_asset_id` | override scope asset → `assets(id)` (**`ON DELETE CASCADE`**, nullable) — deleting the asset drops its asset-scoped policies; both NULL = role-level default |
 | `name` | text, nullable, `^[a-z0-9_-]+$`; unique per scope |
 | `required_approvals` | int, **CHECK ≥ 0** (the N-of-M threshold). `0` = **self-service**: an eligible requester is auto-granted, no approver needed |
 | `approver_role_id` | "holders of this role on the scope may approve" → `roles(id)` (nullable, `ON DELETE RESTRICT`) |
@@ -428,6 +428,65 @@ revocation = delete the row. See [security.md](security.md#authn--token-model).
 | `user_id` | → `users(id)` (`ON DELETE CASCADE`) |
 | `token_hash` | bytea, unique |
 | `expires_at` | timestamptz |
+
+## Authorization SQL functions & the active-grants view
+
+The authorization *semantics* are part of the schema, not just the Go code: the
+migration defines a set of **SQL functions** and one **view** that are the single
+source of the recursive-closure logic. They are `LANGUAGE sql STABLE` so PostgreSQL
+inlines them into the callers, and warden reaches them through static, typed sqlc
+queries in `warden/internal/postgres/queries/authz.sql`.
+
+### `active_access_grants` — the "grant is live" view
+
+```sql
+CREATE VIEW active_access_grants AS
+    SELECT * FROM access_grants WHERE revoked_at IS NULL AND expires_at > now();
+```
+
+The single definition of an active grant, shared by every function's grant arm so
+the `revoked_at IS NULL AND expires_at > now()` predicate is never hand-copied.
+
+### The `authz_*` functions
+
+| Function | Returns | Role |
+|---|---|---|
+| `authz_user_is_active(user)` | `boolean` | the deactivation guard — a deactivated user's closures return nothing |
+| `authz_user_groups(user)` | `group_id` set | the transitive, cycle-safe nested-group membership closure |
+| `authz_held_impl(user, include_grants)` | `(role_id, object_kind, object_id)` | the one forward held-closure body; the `include_grants` flag gates the JIT-grant base arm |
+| `authz_held(user)` | `(role_id, object_kind, object_id)` | held closure **including** active grants (`authz_held_impl(user, true)`) — the everyday visibility/`Check` source |
+| `authz_held_standing(user)` | `(role_id, object_kind, object_id)` | held closure **excluding** grants (`…, false`) — the requester/approver standing-only predicate |
+| `authz_global_held(user)` | `role_id` set | the scopeless analogue: roles held globally via a scopeless binding, closed over `role_grants` (no grant arm — JIT grants are always asset-scoped) |
+| `authz_role_goals(role, object_kind, object_id)` | `(role_id, object_kind, object_id)` | backward goal expansion (not user-scoped) backing `HoldsRole`/`HoldsRoleStanding` |
+| `authz_effective_request_policy(role, asset)` | ≤1 policy row | most-specific request policy: asset override > nearest ancestor folder > role-level default |
+| `authz_role_goal_paths(user, role, asset)` | `(path, binding_id, …)` | the `ExplainRole` derivation enumerator — every jsonb path by which the user holds the role on the asset |
+
+The held/goal functions traverse `role_grants` through both rewrite arms
+(`same_object` role composition and `parent` folder→child cascade over `folders`
+and `assets`), so the folder-cascade and role-rewrite semantics described in
+[access-model.md](access-model.md) live entirely inside these functions. A build-time
+grep-guard (`internal/authz/no_raw_closure_sql_test.go`) forbids re-introducing a
+`WITH RECURSIVE` closure or a hand-rolled `user_groups`/`held_standing`/`global_held`
+CTE in Go, keeping the DB functions the sole source.
+
+## Asset-scoped cascade cleanup
+
+Deleting an asset must not strand governance rows that reference it. Rather than
+imperative cleanup, the schema leans on **`ON DELETE CASCADE`** foreign keys so a
+single `DELETE FROM assets` removes everything asset-scoped in one step:
+
+| Referencing column | FK target | On asset delete |
+|---|---|---|
+| `role_bindings.scope_asset_id` | `assets(id)` | asset-scoped standing bindings dropped |
+| `request_policies.scope_asset_id` | `assets(id)` | asset-scoped request policies dropped |
+| `request_policy_subjects.policy_id` | `request_policies(id)` | subjects of a dropped policy cascade in turn |
+| `access_grants.scope_asset_id` | `assets(id)` | grants against the asset dropped |
+| `access_requests.asset_id`, `ssh_asset_config.asset_id`, `ssh_asset_login.asset_id`, `asset_secrets.asset_id`, `catalog_names.asset_id` | `assets(id)` | requests, SSH config/logins, secrets, and the name-registry row dropped |
+
+`DeleteAsset` first tears down the asset's **live sessions** (an out-of-band
+side effect the database cannot express), then issues the delete and lets these FKs
+do the rest; `live_sessions.asset_id` is itself `ON DELETE CASCADE`. This is why the
+domain code carries no per-table asset-cleanup queries.
 
 ## Related
 
