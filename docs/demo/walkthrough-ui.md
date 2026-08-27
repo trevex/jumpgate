@@ -1,4 +1,4 @@
-# jumpgate demo walkthrough — the console (UI)
+# Web console walkthrough
 
 The same three-actor tour as [`walkthrough.md`](./walkthrough.md), driven entirely through the
 **browser console** instead of the CLI. An **admin** onboards three SSH assets (cert, password,

@@ -1,4 +1,4 @@
-# jumpgate demo walkthrough
+# CLI walkthrough
 
 A narrated, three-actor tour of the whole jumpgate flow, driven entirely through the
 real `jumpgate` CLI against the containerized test environment. An **admin** onboards three
