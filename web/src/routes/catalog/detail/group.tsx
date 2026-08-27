@@ -16,10 +16,8 @@
 import { useQuery } from "@connectrpc/connect-query";
 import { Users } from "lucide-react";
 import { getGroupAccess } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
-import { GroupMembers } from "@/components/groups/group-members";
-import { GroupBindings } from "@/components/groups/group-bindings";
-import { GroupPolicies } from "@/components/groups/group-policies";
-import { CapList, DetailSection, DetailSkeleton, DetailError } from "./shared";
+import { GroupDetailBody } from "@/components/detail/group-detail-body";
+import { DetailSkeleton, DetailError } from "./shared";
 
 export interface GroupDetailProps {
   id: string;
@@ -48,25 +46,15 @@ export function GroupDetail({ id, name }: GroupDetailProps) {
 
       <div className="h-px bg-border" role="separator" />
 
-      {/* Management capabilities */}
-      <DetailSection title="Your management capabilities on this group">
-        <CapList caps={data.capabilities} />
-      </DetailSection>
+      <GroupDetailBody groupId={id} groupName={name} />
 
-      {/* Members */}
-      <DetailSection title="Members">
-        <GroupMembers group={{ groupId: id, groupName: name }} />
-      </DetailSection>
+      <div className="h-px bg-border" role="separator" />
 
-      {/* Bound roles */}
-      <DetailSection title="Bound roles">
-        <GroupBindings groupId={id} />
-      </DetailSection>
-
-      {/* Requestable via — request policies this group is a subject of (read-only) */}
-      <DetailSection title="Requestable via">
-        <GroupPolicies groupId={id} />
-      </DetailSection>
+      {/* Management capabilities — demoted footer */}
+      <p className="text-micro text-muted-foreground">
+        Your management capabilities on this group:{" "}
+        <span className="font-mono">{(data.capabilities ?? []).join(" ") || "none"}</span>
+      </p>
     </article>
   );
 }
