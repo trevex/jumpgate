@@ -34,6 +34,7 @@ nav = [
 ]
 
 extra_css = ["stylesheets/extra.css"]
+extra_javascript = ["javascripts/mermaid-zoom.js"]
 
 [project.theme]
 favicon = "assets/favicon.svg"

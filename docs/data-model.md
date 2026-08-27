@@ -12,43 +12,83 @@ without changing the domain — see [decisions.md](decisions.md).
 
 ## ER diagram
 
-```
-   users ──┐                       group_memberships (nested: member_user | member_group)
- (deactivated_at)  └──────── member ────────┴──────────────┐
-     │  ▲                                                 groups
-     │  │ subject_user_id                          (folder_id — governance)
-     │  │                       subject_group_id      ▲  │
-     │  └──────────┐        ┌──────────────────────────┘  │
-     │             role_bindings ──── role_id ──► roles ◄── role_grants
-     │        (scope_folder|scope_asset|          (folder_id,       (role_id,
-     │         both NULL = global; STANDING)        capabilities)    source_role_id,
-auth_tokens                                          ▲               via same_object|parent)
- (user_id)                          role_id / requester_role_id / approver_role_id
-                                                     │
-                              request_policies ──── request_policy_subjects
-                          (scope NULL=default | folder | asset;   (kind requester|approver;
-                           name, required_approvals, max_duration) subject_user|subject_group)
+```mermaid
+erDiagram
+    users ||--o{ auth_tokens : "owns"
+    users ||--o{ group_memberships : "member_user"
+    groups ||--o{ group_memberships : "member_group · nested"
+    groups }o--o| folders : "folder_id · governance"
+    users ||--o{ role_bindings : "subject_user"
+    groups ||--o{ role_bindings : "subject_group"
+    roles ||--o{ role_bindings : "role_id · STANDING"
+    roles }o--o| folders : "folder_id · scope"
+    roles ||--o{ role_grants : "role_id / source_role_id"
+    folders ||--o{ folders : "parent_id · forest"
+    folders ||--o{ assets : "contains"
+    roles ||--o{ request_policies : "requester / approver role"
+    request_policies ||--o{ request_policy_subjects : "requester / approver"
+    assets ||--|| ssh_asset_config : "target_address"
+    assets ||--o{ ssh_asset_login : "login · kind"
+    assets ||--o{ asset_secrets : "sealed"
+    ssh_asset_login }o--|| asset_secrets : "secret_id · same-asset FK"
+    access_requests ||--o{ access_request_approvals : "approve / deny · unique per approver"
+    access_requests ||--o{ access_grants : "on grant"
+    access_grants ||--o{ live_sessions : "grant_id"
+    assets ||--o{ live_sessions : "on asset"
+    users ||--o{ live_sessions : "for user"
+    access_grants ||--o{ session_recordings : "session_id"
+    audit_outbox ||--|| audit_log : "drained into"
 
-   folders ──parent_id──► folders (forest)      catalog_names (sibling-unique registry:
-      ▲                       │                  one row per folder & asset)
-      │ folder_id             │ contains
-   assets ◄──────────────────┘         ca_keys (ssh|x509|mesh, sealed, active)
- (folder_id, kind, labels)               session_signing_keys (sealed, active)
-      │  ▲
-      │  │ asset_id
-      ├── ssh_asset_config (target_address, host_public_key)
-      ├── ssh_asset_login (login, kind ca|password|key, secret_id ─┐ composite FK
-      └── asset_secrets (name, sealed) ◄───────────────────────────┘  same-asset
-
-   access_requests ──┬── access_request_approvals (decision approve|deny, UNIQUE/approver)
- (status pending →    └── access_grants (role_id, scope_asset_id, subject_user_id,
-  granted|denied|                        expires_at, revoked_*; active ⇔ not revoked & not expired)
-  cancelled; snapshots
-  required_approvals,       live_sessions (user, asset, worker_id, grant_id,   worker_presence
-  granted_duration)          principals, client_key_fp, terminate_requested_at)  (worker_id, last_seen)
-
-   session_recordings (session_id, object_key, sha256, status)
-   audit_log (seq, prev_hash, entry_hash)  ◄── drained from ──  audit_outbox (seq, event)
+    users {
+        uuid id PK
+        timestamptz deactivated_at
+    }
+    roles {
+        uuid id PK
+        uuid folder_id FK
+        text capabilities "scope:action glob"
+    }
+    role_bindings {
+        uuid role_id FK
+        uuid scope_folder_id FK
+        uuid scope_asset_id FK
+        text subject "user / group; both scope NULL = global"
+    }
+    request_policies {
+        text scope "NULL default / folder / asset"
+        int required_approvals
+        interval max_duration
+    }
+    assets {
+        uuid id PK
+        uuid folder_id FK
+        text kind
+        jsonb labels
+    }
+    access_requests {
+        uuid id PK
+        text status "pending to granted / denied / cancelled"
+        int required_approvals
+        interval granted_duration
+    }
+    access_grants {
+        uuid role_id FK
+        uuid scope_asset_id FK
+        uuid subject_user_id FK
+        timestamptz expires_at
+        timestamptz revoked_at "active if not revoked and not expired"
+    }
+    live_sessions {
+        uuid grant_id FK
+        uuid worker_id
+        text principals
+        timestamptz terminate_requested_at
+    }
+    audit_log {
+        bigint seq PK
+        bytea prev_hash
+        bytea entry_hash "hash-chained"
+    }
 ```
 
 ## Identity

@@ -60,3 +60,75 @@
 .md-typeset code {
   border-radius: 0.28rem;
 }
+
+/* ── Mermaid fullscreen + pan/zoom (docs/javascripts/mermaid-zoom.js) ── */
+
+.jg-mermaid-wrap {
+  position: relative;
+}
+
+/* "open fullscreen" affordance, revealed on hover over the diagram */
+.jg-zoom-btn {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.35rem;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.jg-mermaid-wrap:hover .jg-zoom-btn,
+.jg-zoom-btn:focus-visible {
+  opacity: 0.9;
+}
+.jg-zoom-btn:hover {
+  color: var(--jg-blue);
+  border-color: var(--jg-blue);
+}
+
+/* fullscreen presentation of the wrapped diagram */
+.jg-mermaid-wrap:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--md-default-bg-color);
+}
+.jg-mermaid-wrap:fullscreen .mermaid {
+  transform-origin: center center;
+  will-change: transform;
+  cursor: grab;
+  max-width: none;
+}
+.jg-mermaid-wrap:fullscreen.is-dragging .mermaid {
+  cursor: grabbing;
+}
+.jg-mermaid-wrap:fullscreen .jg-zoom-btn {
+  display: none;
+}
+.jg-mermaid-wrap:fullscreen::after {
+  content: "scroll to zoom · drag to pan · Esc to exit";
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.7rem;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 1rem;
+  pointer-events: none;
+}

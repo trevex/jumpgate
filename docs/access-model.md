@@ -445,32 +445,45 @@ path to `admin @ pg`**: nothing confers `admin` on `pg`.
 Each role still carries its own RequestPolicy default, so a composed role like
 `cluster_editor` can require heavier approval than the roles it is built from.
 
-## How the pieces fit (one picture)
+## How the pieces fit
 
+The model has two halves. **Standing structure** is the durable vocabulary — who
+holds which role, where. **Just-in-time** is the runtime pipeline that grants a role
+temporarily. Both land a subject in the same **held set** (`subject holds role @
+scope`), from which the Authorizer resolves capabilities.
+
+### Standing structure — who holds what, where
+
+```mermaid
+flowchart LR
+    User -->|"member of · nested"| Group
+    User -->|subject| RB
+    Group -->|subject| RB
+    RB["RoleBinding<br><i>STANDING · permanent</i>"] -->|"at scope"| Scope["Folder / Asset<br><i>or global</i>"]
+    RB -->|grants| Role
+    Role -->|"scope:action[:qual] · glob"| Caps[["capabilities"]]
+    Role -.->|"role_grants: R ⊇ S<br>same_object / parent"| Role
 ```
-              members (nested)                    parent_id
-   User ─────────────────────► Group        Folder ───────► Folder ──► … (tree)
-    │                            │              │                        │
-    │        subject             │ subject      │ contains               │
-    └───────────────┐   ┌────────┘        ┌─────┘                        │
-                    ▼   ▼                 ▼                              ▼
-                 RoleBinding ── scope ──► Folder / Asset ◄── belongs ── Asset
-                    │  (STANDING only — permanent)                       
-                    │ role                                               
-                    ▼                                                    
-                  Role ──► capabilities [ scope:action[:qual] · glob ]   
-                    ▲     (role_grants: R ⊇ S via same_object | parent — role-rewrite)
-                    │ keyed by (role, scope): existence ⇒ requestable    
-             RequestPolicy (role-default + per-scope override, most-specific wins)
-              ├─ requester = requester_role(HoldsRole) ∪ requester subjects
-              └─ approver  = approver_role(HoldsRole) ∪ approver subjects, N-of-M
-                    │
-                    ▼
-             access_requests → access_request_approvals
-                    │  (N-of-M; self-service at N=0)
-                    ▼
-             access_grants — time-boxed JIT grant ⇒ joins the held set
-                    (revoked by expiry-reaper · manual · self · approver · deactivation)
+
+### Just-in-time — requestable → granted
+
+A `RequestPolicy` keyed by `(role, scope)` is what makes that pairing *requestable*;
+it names the eligible requesters and the N-of-M approvers. A granted request mints a
+time-boxed `access_grant` that **joins the held set** until it expires or is revoked.
+
+```mermaid
+flowchart LR
+    RP["RequestPolicy<br><i>keyed by role @ scope<br>role-default + per-scope override</i>"]
+    RP -->|"eligible requesters"| Req(["requester files request"])
+    RP -->|"approvers · N-of-M"| App([approvers])
+    Req --> AR["access_request"]
+    App -.->|"approve / deny"| AR
+    AR -->|"N-of-M met · self-service at N=0"| AG
+    AG["access_grant<br><i>time-boxed</i>"] ==>|"joins the held set ⇒ active"| Held[["held: subject holds role @ scope"]]
+    AG -.->|"revoked by expiry-reaper · manual<br>self · approver · deactivation"| AG
+
+    classDef held fill:#2563EB,stroke:#1D4ED8,color:#fff;
+    class AG held;
 ```
 
 - **Access** (held): the Authorizer resolves the explicit role-rewrite graph

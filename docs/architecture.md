@@ -13,27 +13,33 @@ design; Postgres, Kubernetes, and RDP are additive workers and are called out as
 
 ## The three planes
 
-```
-                    ┌──────────────── Control plane (Go) ──────────────┐
-                    │ identity · Authorizer (SQL fns) · roles/bindings  │
-                    │ request policies · JIT grants · vault · audit ·   │
-                    │ recording metadata · worker registry             │
-                    └──────▲───────────────▲──────────────────▲────────┘
-              session-token │  mesh gRPC:   │ authz + creds    │ recording /
-              verification  │  worker roster│ + session setup  │ audit events
-                     ┌──────┴──────┐        │                  │
-   client ────TLS───►│   Gateway   │  (only externally exposed component;
- (jumpgate CLI)      │   (Rust)    │   thin, protocol-agnostic session router)
-                     └──────┬──────┘
-                            │ forwards the pinned session stream to a worker
-          ┌─────────────────┼───────────────────┐
-     ┌────▼─────┐     ┌──────▼─────┐     (planned: pg-proxy, k8s-proxy,
-     │ ssh-proxy│     │  pg-proxy  │             rdp-proxy)
-     │  (Rust)  │     │  (planned) │
-     └────┬─────┘     └────────────┘
-          └──────── inject creds · proxy · record ───────┘
-                            │
-                      target assets
+```mermaid
+flowchart TB
+    client["client · jumpgate CLI"]
+
+    subgraph cp["Control plane · Go — warden"]
+        cpbody["identity · Authorizer (SQL fns)<br>roles / bindings · request policies<br>JIT grants · vault · audit<br>recording metadata · worker registry"]
+    end
+
+    subgraph dp["Data plane · Rust"]
+        gw["<b>Gateway</b><br>only externally exposed component<br>thin, protocol-agnostic session router"]
+        ssh["ssh-proxy"]
+        pg["pg-proxy · planned"]
+        rdp["rdp-proxy · planned"]
+    end
+
+    targets[("target assets")]
+
+    client -->|"ConnectRPC API · bearer token<br>CreateSession ⇒ admission token"| cpbody
+    client -->|"TLS + HTTP CONNECT<br>admission token"| gw
+    gw <-->|"mesh gRPC · worker roster<br>authz + creds · session setup<br>token verification · audit"| cpbody
+    gw -->|"forwards the pinned session stream"| ssh
+    gw --> pg
+    gw --> rdp
+    ssh -->|"inject creds · proxy · record"| targets
+
+    classDef planned stroke-dasharray:5 4,opacity:0.55;
+    class pg,rdp planned;
 ```
 
 The control plane **brokers**, the data plane **enforces**. Security-critical
