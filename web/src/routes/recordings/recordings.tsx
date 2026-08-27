@@ -243,7 +243,8 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
   const assetDisplay = useAssetDisplay(recData?.assetId ?? "");
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     setPlayerError(null);
 
     // Dispose previous instance before creating a new one.
@@ -253,17 +254,25 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
     }
 
     // Clear the container so asciinema-player gets a fresh mount.
-    containerRef.current.innerHTML = "";
+    container.innerHTML = "";
 
     const src = `/api/recordings/${sessionId}/cast`;
+
+    let raf = 0;
+    let ro: ResizeObserver | null = null;
 
     try {
       const p = createPlayer(
         { url: src, fetchOpts: { credentials: "include" } },
-        containerRef.current,
+        container,
         {
           autoPlay: true,
-          fit: "width",
+          // Fit within the panel in BOTH axes. Unlike fit:"width", this mode
+          // reacts to the container's own size settling after mount (the
+          // ResizeObserver path), so the terminal renders reliably in the side
+          // panel instead of staying blank until a window resize (opening
+          // devtools) nudges it. A large recording (e.g. 188x99) scales to fit.
+          fit: "both",
           theme: "monokai",
           terminalFontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
           terminalFontSize: "small",
@@ -271,6 +280,27 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
         },
       );
       playerRef.current = p;
+
+      // asciinema-player measures the container once at create() and afterwards
+      // only refits on a window 'resize' — it does not observe the container. In a
+      // side panel the container's final size and the web-font metrics settle a
+      // frame later, so the terminal mounts blank/mis-sized until some resize
+      // (notably: opening devtools) nudges it. Force a refit once layout and fonts
+      // settle, and whenever the panel itself resizes. rAF-coalesced so a refit
+      // (which does not change the container box) can't feed back into a loop.
+      let scheduled = false;
+      const refit = () => {
+        if (scheduled) return;
+        scheduled = true;
+        raf = requestAnimationFrame(() => {
+          scheduled = false;
+          window.dispatchEvent(new Event("resize"));
+        });
+      };
+      refit();
+      void document.fonts?.ready.then(refit).catch(() => {});
+      ro = new ResizeObserver(refit);
+      ro.observe(container);
 
       // The player emits no explicit "error" event on a 404/403 fetch, but the
       // browser will log it. We detect load failure by observing the fetch response.
@@ -284,6 +314,8 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
     }
 
     return () => {
+      if (ro) ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
@@ -314,7 +346,7 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
       </div>
 
       {/* Player area */}
-      <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+      <div className="flex-1 overflow-hidden flex items-center justify-center p-2">
         {playerError ? (
           <div className="flex flex-col items-center gap-3 text-center">
             <AlertTriangle className="h-8 w-8 text-warning-fg" aria-hidden="true" />
@@ -323,7 +355,7 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
         ) : (
           <div
             ref={containerRef}
-            className="w-full max-w-full"
+            className="w-full h-full"
             aria-label={`Terminal recording player for session ${sessionId}`}
           />
         )}
