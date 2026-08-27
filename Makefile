@@ -100,7 +100,7 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl rollout status deploy/ssh-target-password --timeout=120s
 	kubectl rollout status deploy/ssh-target-key --timeout=120s
 
-kind-redeploy: ## Rebuild the app images, reload them into the running kind cluster, helm upgrade, and restart the app deployments
+kind-redeploy: ## Rebuild app images, reload into the running cluster, helm upgrade + restart app pods (NOTE: cannot apply cluster.yaml changes like extraPortMappings — those need kind-down/kind-up)
 	$(MAKE) kind-images
 	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev --name $(KIND_CLUSTER)
 	helm upgrade jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
