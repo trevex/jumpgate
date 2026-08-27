@@ -1,4 +1,7 @@
 # Rust toolchain pinned via rustup, provided by the Nix devshell.
+# Pinned to an exact version so dev and CI use the same rustc/clippy — a
+# floating `stable` lets a new clippy release break CI spontaneously (e.g. the
+# 1.98 result_large_err surfacing on tonic-generated code). Bump deliberately.
 [toolchain]
-channel = "stable"
+channel = "1.98.0"
 components = ["rustfmt", "clippy", "rust-src"]
