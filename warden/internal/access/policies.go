@@ -233,3 +233,30 @@ func (s *Service) ListPolicySubjects(ctx context.Context, policyID uuid.UUID, pa
 	}
 	return rows, next, nil
 }
+
+// PolicyUsageRow is a policy paired with how the queried role is used by it.
+type PolicyUsageRow struct {
+	Policy sqlc.RequestPolicy
+	Usage  string
+}
+
+// ListPoliciesUsingRole returns every policy referencing roleID, tagged by usage
+// (requestable | requester_source | approver_source). Bounded, unpaginated.
+func (s *Service) ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]PolicyUsageRow, error) {
+	rows, err := s.q.ListPoliciesUsingRole(ctx, roleID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := make([]PolicyUsageRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, PolicyUsageRow{
+			Policy: sqlc.RequestPolicy{
+				ID: r.ID, RoleID: r.RoleID, ScopeFolderID: r.ScopeFolderID, ScopeAssetID: r.ScopeAssetID,
+				RequiredApprovals: r.RequiredApprovals, ApproverRoleID: r.ApproverRoleID,
+				CreatedAt: r.CreatedAt, RequesterRoleID: r.RequesterRoleID, MaxDuration: r.MaxDuration, Name: r.Name,
+			},
+			Usage: r.Usage,
+		})
+	}
+	return out, nil
+}

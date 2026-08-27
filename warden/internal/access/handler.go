@@ -846,7 +846,31 @@ func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[acce
 	return connect.NewResponse(out), nil
 }
 
-// ListPoliciesUsingRole is a temporary stub; the real implementation lands in a later task.
-func (h *Handler) ListPoliciesUsingRole(_ context.Context, _ *connect.Request[accessv1.ListPoliciesUsingRoleRequest]) (*connect.Response[accessv1.ListPoliciesUsingRoleResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+func toPolicyUsageMsg(r PolicyUsageRow) *accessv1.PolicyUsage {
+	return &accessv1.PolicyUsage{Policy: toRequestPolicyMsg(r.Policy), Usage: r.Usage}
+}
+
+// ListPoliciesUsingRole lists policies referencing a role in any position. Gated by
+// access:policy:read (global), matching ListRequestPolicies.
+func (h *Handler) ListPoliciesUsingRole(ctx context.Context, req *connect.Request[accessv1.ListPoliciesUsingRoleRequest]) (*connect.Response[accessv1.ListPoliciesUsingRoleResponse], error) {
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+		return nil, err
+	}
+	roleID, err := uuid.Parse(req.Msg.RoleId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad role_id"))
+	}
+	rows, err := h.svc.ListPoliciesUsingRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	out := &accessv1.ListPoliciesUsingRoleResponse{}
+	for i := range rows {
+		out.Usages = append(out.Usages, toPolicyUsageMsg(rows[i]))
+	}
+	return connect.NewResponse(out), nil
 }
