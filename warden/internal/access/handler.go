@@ -814,8 +814,10 @@ func toRosterNodeMsg(v RosterNodeView) *accessv1.RosterNode {
 	}
 }
 
-// GetPolicyRoster resolves the requester + approver rosters for a policy. Gated by
-// access:policy:read at the policy's scope (same gate as ListPolicySubjects).
+// GetPolicyRoster resolves the requester + approver rosters for a policy. Graduated
+// gate at the policy's scope: access:policy:read (or the subtree-wide
+// catalog:folder:read) admits the rule + explicit subjects; access:binding:read (or
+// catalog:folder:read) additionally reveals the role-derived standing holders.
 func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[accessv1.GetPolicyRosterRequest]) (*connect.Response[accessv1.GetPolicyRosterResponse], error) {
 	policyID, err := uuid.Parse(req.Msg.PolicyId)
 	if err != nil {
@@ -829,10 +831,14 @@ func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", scope); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, "access:policy:read", scope); err != nil {
 		return nil, err
 	}
-	reqs, apprs, err := h.svc.PolicyRoster(ctx, policyID)
+	includeViaRole, err := h.guard.HasReadCap(ctx, c, "access:binding:read", scope)
+	if err != nil {
+		return nil, err
+	}
+	reqs, apprs, err := h.svc.PolicyRoster(ctx, policyID, includeViaRole)
 	if err != nil {
 		return nil, err
 	}

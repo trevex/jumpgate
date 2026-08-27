@@ -20,10 +20,12 @@ type RosterNodeView struct {
 }
 
 // PolicyRoster resolves the requester and approver rosters for a policy: explicit
-// subjects of each kind, plus standing holders of the policy's requester/approver
-// role on the policy's scope object. Groups are returned as nodes (not expanded).
-// Role-default policies (no scope object) resolve explicit subjects only.
-func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID) (requesters, approvers []RosterNodeView, err error) {
+// subjects of each kind, plus (when includeViaRole is set) standing holders of the
+// policy's requester/approver role on the policy's scope object. Every subject is
+// fully resolved for display in SQL — there is no per-row Go resolution here. Groups
+// are returned as nodes (not expanded). Role-default policies (no scope object) and
+// callers without binding-read (includeViaRole=false) resolve explicit subjects only.
+func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeViaRole bool) (requesters, approvers []RosterNodeView, err error) {
 	p, err := s.q.GetRequestPolicy(ctx, policyID)
 	if err != nil {
 		return nil, nil, connect.NewError(connect.CodeNotFound, err)
@@ -39,29 +41,48 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID) (request
 				order = append(order, v.SubjectID)
 			}
 		}
-		subs, err := s.q.ListPolicySubjectsByKind(ctx, sqlc.ListPolicySubjectsByKindParams{PolicyID: policyID, Kind: kind})
+		subs, err := s.q.ListPolicyRosterSubjects(ctx, sqlc.ListPolicyRosterSubjectsParams{
+			PolicyID: pgtype.UUID{Bytes: policyID, Valid: true},
+			Kind:     pgtype.Text{String: kind, Valid: true},
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, sub := range subs {
-			id := pgUUIDStr(sub.SubjectUserID, sub.SubjectGroupID)
-			add(&RosterNodeView{Subject: s.resolveSubject(ctx, sub.SubjectUserID, sub.SubjectGroupID), SubjectID: id, Source: "explicit"})
+		for _, r := range subs {
+			add(&RosterNodeView{
+				Subject: SubjectView{
+					Kind:        r.SubjectKind.String,
+					DisplayName: r.DisplayName.String,
+					FolderPath:  r.FolderPath.String,
+					MemberCount: r.GroupMemberCount.Int32,
+					Active:      r.Active.Bool,
+				},
+				SubjectID: pgUUIDStr(r.SubjectUserID, r.SubjectGroupID),
+				Source:    "explicit",
+			})
 		}
-		if roleID.Valid && hasScope {
+		if includeViaRole && roleID.Valid && hasScope {
 			holders, err := s.q.RoleStandingHolders(ctx, sqlc.RoleStandingHoldersParams{
-				RoleID: uuid.UUID(roleID.Bytes), ObjectKind: objKind, ObjectID: objID,
+				RoleID:     roleID,
+				ObjectKind: pgtype.Text{String: objKind, Valid: true},
+				ObjectID:   pgtype.UUID{Bytes: objID, Valid: true},
 			})
 			if err != nil {
 				return nil, err
 			}
 			for _, h := range holders {
-				id := pgUUIDStr(h.SubjectUserID, h.SubjectGroupID)
 				add(&RosterNodeView{
-					Subject:     s.resolveSubject(ctx, h.SubjectUserID, h.SubjectGroupID),
-					SubjectID:   id,
+					Subject: SubjectView{
+						Kind:        h.SubjectKind.String,
+						DisplayName: h.DisplayName.String,
+						FolderPath:  h.FolderPath.String,
+						MemberCount: h.GroupMemberCount.Int32,
+						Active:      h.Active.Bool,
+					},
+					SubjectID:   pgUUIDStr(h.SubjectUserID, h.SubjectGroupID),
 					Source:      "via_role",
 					ViaRoleID:   h.ViaRoleID.String(),
-					ViaRoleName: s.roleName(ctx, h.ViaRoleID),
+					ViaRoleName: h.ViaRoleName,
 				})
 			}
 		}

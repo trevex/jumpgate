@@ -383,6 +383,77 @@ func (q *Queries) ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) (
 	return items, nil
 }
 
+const listPolicyRosterSubjects = `-- name: ListPolicyRosterSubjects :many
+SELECT
+  s.subject_user_id,
+  s.subject_group_id,
+  (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  COALESCE(gfp.path, '')::text AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
+) gm ON s.subject_group_id IS NOT NULL
+LEFT JOIN LATERAL (
+  WITH RECURSIVE chain AS (
+    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
+    UNION ALL
+    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
+  )
+  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
+) gfp ON g.folder_id IS NOT NULL
+WHERE s.policy_id = $1 AND s.kind = $2
+`
+
+type ListPolicyRosterSubjectsParams struct {
+	PolicyID pgtype.UUID `json:"policy_id"`
+	Kind     pgtype.Text `json:"kind"`
+}
+
+type ListPolicyRosterSubjectsRow struct {
+	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
+	SubjectKind      pgtype.Text `json:"subject_kind"`
+	DisplayName      pgtype.Text `json:"display_name"`
+	FolderPath       pgtype.Text `json:"folder_path"`
+	GroupMemberCount pgtype.Int4 `json:"group_member_count"`
+	Active           pgtype.Bool `json:"active"`
+}
+
+// Explicit requester/approver subjects of a policy, fully resolved for display
+// (name, kind, group home path, member count, active) in one query.
+func (q *Queries) ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRosterSubjectsParams) ([]ListPolicyRosterSubjectsRow, error) {
+	rows, err := q.db.Query(ctx, listPolicyRosterSubjects, arg.PolicyID, arg.Kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPolicyRosterSubjectsRow
+	for rows.Next() {
+		var i ListPolicyRosterSubjectsRow
+		if err := rows.Scan(
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.SubjectKind,
+			&i.DisplayName,
+			&i.FolderPath,
+			&i.GroupMemberCount,
+			&i.Active,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPolicySubjects = `-- name: ListPolicySubjects :many
 SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects
 WHERE policy_id = $1
@@ -411,44 +482,6 @@ func (q *Queries) ListPolicySubjects(ctx context.Context, arg ListPolicySubjects
 		arg.AfterID,
 		arg.Lim,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RequestPolicySubject
-	for rows.Next() {
-		var i RequestPolicySubject
-		if err := rows.Scan(
-			&i.ID,
-			&i.PolicyID,
-			&i.SubjectUserID,
-			&i.SubjectGroupID,
-			&i.CreatedAt,
-			&i.Kind,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPolicySubjectsByKind = `-- name: ListPolicySubjectsByKind :many
-SELECT id, policy_id, subject_user_id, subject_group_id, created_at, kind FROM request_policy_subjects WHERE policy_id = $1 AND kind = $2
-`
-
-type ListPolicySubjectsByKindParams struct {
-	PolicyID uuid.UUID `json:"policy_id"`
-	Kind     string    `json:"kind"`
-}
-
-// All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
-// resolution.
-func (q *Queries) ListPolicySubjectsByKind(ctx context.Context, arg ListPolicySubjectsByKindParams) ([]RequestPolicySubject, error) {
-	rows, err := q.db.Query(ctx, listPolicySubjectsByKind, arg.PolicyID, arg.Kind)
 	if err != nil {
 		return nil, err
 	}

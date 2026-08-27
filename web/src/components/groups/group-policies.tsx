@@ -1,5 +1,5 @@
 /**
- * group-policies.tsx — request policies a group is a subject of ("Requestable via").
+ * group-policies.tsx — request policies a group is a subject of ("Policy participation").
  *
  * A read-only, keyset-paginated list of the request policies that name one group
  * as a subject (requester or approver) — `listPoliciesForGroup`. Each row shows

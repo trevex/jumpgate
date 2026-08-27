@@ -1116,35 +1116,62 @@ func (q *Queries) ReviewableGrants(ctx context.Context, arg ReviewableGrantsPara
 }
 
 const roleStandingHolders = `-- name: RoleStandingHolders :many
-SELECT DISTINCT rb.subject_user_id, rb.subject_group_id, rb.role_id AS via_role_id
+SELECT DISTINCT
+  rb.subject_user_id,
+  rb.subject_group_id,
+  (CASE WHEN rb.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  COALESCE(gfp.path, '')::text AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active,
+  rb.role_id AS via_role_id,
+  vr.name AS via_role_name
 FROM role_bindings rb
-JOIN authz_role_goals($1, $2, $3) g
-  ON g.role_id = rb.role_id
+JOIN authz_role_goals($1, $2, $3) gl
+  ON gl.role_id = rb.role_id
  AND (
-      (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
-   OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id)
+      (gl.object_kind = 'asset'  AND rb.scope_asset_id  = gl.object_id)
+   OR (gl.object_kind = 'folder' AND rb.scope_folder_id = gl.object_id)
      )
-WHERE rb.subject_group_id IS NOT NULL
-   OR authz_user_is_active(rb.subject_user_id)
+JOIN roles vr ON vr.id = rb.role_id
+LEFT JOIN users u ON u.id = rb.subject_user_id
+LEFT JOIN groups g ON g.id = rb.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = rb.subject_group_id
+) gm ON rb.subject_group_id IS NOT NULL
+LEFT JOIN LATERAL (
+  WITH RECURSIVE chain AS (
+    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
+    UNION ALL
+    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
+  )
+  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
+) gfp ON g.folder_id IS NOT NULL
+WHERE (rb.subject_group_id IS NOT NULL OR authz_user_is_active(rb.subject_user_id))
 `
 
 type RoleStandingHoldersParams struct {
-	RoleID     uuid.UUID `json:"role_id"`
-	ObjectKind string    `json:"object_kind"`
-	ObjectID   uuid.UUID `json:"object_id"`
+	RoleID     pgtype.UUID `json:"role_id"`
+	ObjectKind pgtype.Text `json:"object_kind"`
+	ObjectID   pgtype.UUID `json:"object_id"`
 }
 
 type RoleStandingHoldersRow struct {
-	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
-	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
-	ViaRoleID      uuid.UUID   `json:"via_role_id"`
+	SubjectUserID    pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID   pgtype.UUID `json:"subject_group_id"`
+	SubjectKind      pgtype.Text `json:"subject_kind"`
+	DisplayName      pgtype.Text `json:"display_name"`
+	FolderPath       pgtype.Text `json:"folder_path"`
+	GroupMemberCount pgtype.Int4 `json:"group_member_count"`
+	Active           pgtype.Bool `json:"active"`
+	ViaRoleID        uuid.UUID   `json:"via_role_id"`
+	ViaRoleName      string      `json:"via_role_name"`
 }
 
-// The subjects (users or groups) whose standing binding confers p_role on the given
-// object (asset|folder), mirroring the base arm of authz_held over the backward
-// goal-expansion (authz_role_goals closes over role_grants). Subjects are returned as
-// nodes (NOT expanded to individual members); the matched role is returned so the
-// caller can label "holds <role> (standing)". Deactivated user-subjects are excluded.
+// Subjects whose standing binding confers p_role on the given object (asset|folder),
+// mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
+// returned as NODES (not expanded to members), fully resolved for display, tagged with
+// the actually-bound role (via_role_name). Deactivated user-subjects excluded.
 func (q *Queries) RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error) {
 	rows, err := q.db.Query(ctx, roleStandingHolders, arg.RoleID, arg.ObjectKind, arg.ObjectID)
 	if err != nil {
@@ -1154,7 +1181,17 @@ func (q *Queries) RoleStandingHolders(ctx context.Context, arg RoleStandingHolde
 	var items []RoleStandingHoldersRow
 	for rows.Next() {
 		var i RoleStandingHoldersRow
-		if err := rows.Scan(&i.SubjectUserID, &i.SubjectGroupID, &i.ViaRoleID); err != nil {
+		if err := rows.Scan(
+			&i.SubjectUserID,
+			&i.SubjectGroupID,
+			&i.SubjectKind,
+			&i.DisplayName,
+			&i.FolderPath,
+			&i.GroupMemberCount,
+			&i.Active,
+			&i.ViaRoleID,
+			&i.ViaRoleName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -117,7 +117,29 @@ SELECT rp.*, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.
 ORDER BY usage, created_at DESC, id
 LIMIT 500;
 
--- name: ListPolicySubjectsByKind :many
--- All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
--- resolution.
-SELECT * FROM request_policy_subjects WHERE policy_id = sqlc.arg('policy_id') AND kind = sqlc.arg('kind');
+-- name: ListPolicyRosterSubjects :many
+-- Explicit requester/approver subjects of a policy, fully resolved for display
+-- (name, kind, group home path, member count, active) in one query.
+SELECT
+  s.subject_user_id,
+  s.subject_group_id,
+  (CASE WHEN s.subject_group_id IS NOT NULL THEN 'group' ELSE 'user' END)::text AS subject_kind,
+  COALESCE(u.display_name, g.name, '')::text AS display_name,
+  COALESCE(gfp.path, '')::text AS folder_path,
+  COALESCE(gm.cnt, 0)::int AS group_member_count,
+  COALESCE(u.deactivated_at IS NULL, true) AS active
+FROM request_policy_subjects s
+LEFT JOIN users u ON u.id = s.subject_user_id
+LEFT JOIN groups g ON g.id = s.subject_group_id
+LEFT JOIN LATERAL (
+  SELECT count(*)::int AS cnt FROM group_memberships m WHERE m.group_id = s.subject_group_id
+) gm ON s.subject_group_id IS NOT NULL
+LEFT JOIN LATERAL (
+  WITH RECURSIVE chain AS (
+    SELECT id, parent_id, name, 0 AS depth FROM folders WHERE id = g.folder_id
+    UNION ALL
+    SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folders f JOIN chain c ON f.id = c.parent_id
+  )
+  SELECT COALESCE(string_agg(name, '.' ORDER BY depth ASC), '')::text AS path FROM chain
+) gfp ON g.folder_id IS NOT NULL
+WHERE s.policy_id = sqlc.arg('policy_id') AND s.kind = sqlc.arg('kind');

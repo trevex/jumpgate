@@ -34,7 +34,9 @@ func TestRoleStandingHoldersAndPolicyUsage(t *testing.T) {
 	}
 
 	holders, err := q.RoleStandingHolders(ctx, sqlc.RoleStandingHoldersParams{
-		RoleID: roleID, ObjectKind: "asset", ObjectID: f.asset,
+		RoleID:     pgtype.UUID{Bytes: roleID, Valid: true},
+		ObjectKind: pgtype.Text{String: "asset", Valid: true},
+		ObjectID:   pgtype.UUID{Bytes: f.asset, Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("RoleStandingHolders: %v", err)

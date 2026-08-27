@@ -65,6 +65,16 @@ func (g Guard) RequireReadCap(ctx context.Context, caller uuid.UUID, objectReadC
 	return nil
 }
 
+// HasReadCap reports whether caller holds objectReadCap (or subtree-wide
+// catalog:folder:read) at scope. Non-erroring companion to RequireReadCap.
+func (g Guard) HasReadCap(ctx context.Context, caller uuid.UUID, objectReadCap string, scope authz.Scope) (bool, error) {
+	caps, err := g.Authz.CapabilitiesOnScope(ctx, caller, scope)
+	if err != nil {
+		return false, connect.NewError(connect.CodeInternal, err)
+	}
+	return caps.ReadAllowed(objectReadCap), nil
+}
+
 // RequireGrantable enforces the no-escalation subset rule: every capability in
 // roleCaps must be subsumed by what caller holds at `scope`.
 func (g Guard) RequireGrantable(ctx context.Context, caller uuid.UUID, roleCaps []string, scope authz.Scope) error {

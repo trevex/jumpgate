@@ -255,10 +255,10 @@ type Querier interface {
 	// requestable role, as the requester-source role, or as the approver-source role.
 	// Bounded (a role appears in few policies); not paginated.
 	ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error)
+	// Explicit requester/approver subjects of a policy, fully resolved for display
+	// (name, kind, group home path, member count, active) in one query.
+	ListPolicyRosterSubjects(ctx context.Context, arg ListPolicyRosterSubjectsParams) ([]ListPolicyRosterSubjectsRow, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
-	// All subjects of one kind (requester|approver) for a policy — unpaginated, for roster
-	// resolution.
-	ListPolicySubjectsByKind(ctx context.Context, arg ListPolicySubjectsByKindParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
 	ListRoleBindings(ctx context.Context, arg ListRoleBindingsParams) ([]RoleBinding, error)
@@ -323,11 +323,10 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
-	// The subjects (users or groups) whose standing binding confers p_role on the given
-	// object (asset|folder), mirroring the base arm of authz_held over the backward
-	// goal-expansion (authz_role_goals closes over role_grants). Subjects are returned as
-	// nodes (NOT expanded to individual members); the matched role is returned so the
-	// caller can label "holds <role> (standing)". Deactivated user-subjects are excluded.
+	// Subjects whose standing binding confers p_role on the given object (asset|folder),
+	// mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
+	// returned as NODES (not expanded to members), fully resolved for display, tagged with
+	// the actually-bound role (via_role_name). Deactivated user-subjects excluded.
 	RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error)
 	// CapabilitiesOnScope asset arm (global_held ∪ held on the asset or its ancestor-or-self folders).
 	ScopeCapabilitiesAsset(ctx context.Context, arg ScopeCapabilitiesAssetParams) ([]ScopeCapabilitiesAssetRow, error)
