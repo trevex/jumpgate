@@ -788,3 +788,13 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 	}
 	return connect.NewResponse(out), nil
 }
+
+// GetPolicyRoster is a temporary stub; the real implementation lands in a later task.
+func (h *Handler) GetPolicyRoster(_ context.Context, _ *connect.Request[accessv1.GetPolicyRosterRequest]) (*connect.Response[accessv1.GetPolicyRosterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}
+
+// ListPoliciesUsingRole is a temporary stub; the real implementation lands in a later task.
+func (h *Handler) ListPoliciesUsingRole(_ context.Context, _ *connect.Request[accessv1.ListPoliciesUsingRoleRequest]) (*connect.Response[accessv1.ListPoliciesUsingRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("not implemented"))
+}

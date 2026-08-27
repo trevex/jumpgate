@@ -103,6 +103,12 @@ const (
 	// AccessServiceExplainRoleProcedure is the fully-qualified name of the AccessService's ExplainRole
 	// RPC.
 	AccessServiceExplainRoleProcedure = "/jumpgate.access.v1.AccessService/ExplainRole"
+	// AccessServiceGetPolicyRosterProcedure is the fully-qualified name of the AccessService's
+	// GetPolicyRoster RPC.
+	AccessServiceGetPolicyRosterProcedure = "/jumpgate.access.v1.AccessService/GetPolicyRoster"
+	// AccessServiceListPoliciesUsingRoleProcedure is the fully-qualified name of the AccessService's
+	// ListPoliciesUsingRole RPC.
+	AccessServiceListPoliciesUsingRoleProcedure = "/jumpgate.access.v1.AccessService/ListPoliciesUsingRole"
 )
 
 // AccessServiceClient is a client for the jumpgate.access.v1.AccessService service.
@@ -145,6 +151,9 @@ type AccessServiceClient interface {
 	ListPolicySubjects(context.Context, *connect.Request[v1.ListPolicySubjectsRequest]) (*connect.Response[v1.ListPolicySubjectsResponse], error)
 	// Introspection (admin-or-self).
 	ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error)
+	// Detail-panel reads.
+	GetPolicyRoster(context.Context, *connect.Request[v1.GetPolicyRosterRequest]) (*connect.Response[v1.GetPolicyRosterResponse], error)
+	ListPoliciesUsingRole(context.Context, *connect.Request[v1.ListPoliciesUsingRoleRequest]) (*connect.Response[v1.ListPoliciesUsingRoleResponse], error)
 }
 
 // NewAccessServiceClient constructs a client for the jumpgate.access.v1.AccessService service. By
@@ -302,35 +311,49 @@ func NewAccessServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(accessServiceMethods.ByName("ExplainRole")),
 			connect.WithClientOptions(opts...),
 		),
+		getPolicyRoster: connect.NewClient[v1.GetPolicyRosterRequest, v1.GetPolicyRosterResponse](
+			httpClient,
+			baseURL+AccessServiceGetPolicyRosterProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("GetPolicyRoster")),
+			connect.WithClientOptions(opts...),
+		),
+		listPoliciesUsingRole: connect.NewClient[v1.ListPoliciesUsingRoleRequest, v1.ListPoliciesUsingRoleResponse](
+			httpClient,
+			baseURL+AccessServiceListPoliciesUsingRoleProcedure,
+			connect.WithSchema(accessServiceMethods.ByName("ListPoliciesUsingRole")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // accessServiceClient implements AccessServiceClient.
 type accessServiceClient struct {
-	createRole           *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
-	listRoles            *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
-	getRole              *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
-	getRoleDisplay       *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
-	resolveRole          *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
-	getRoleAccess        *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
-	deleteRole           *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
-	addRoleGrant         *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
-	removeRoleGrant      *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
-	listRoleGrants       *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
-	createRoleBinding    *connect.Client[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse]
-	deleteRoleBinding    *connect.Client[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse]
-	listRoleBindings     *connect.Client[v1.ListRoleBindingsRequest, v1.ListRoleBindingsResponse]
-	createRequestPolicy  *connect.Client[v1.CreateRequestPolicyRequest, v1.CreateRequestPolicyResponse]
-	updateRequestPolicy  *connect.Client[v1.UpdateRequestPolicyRequest, v1.UpdateRequestPolicyResponse]
-	deleteRequestPolicy  *connect.Client[v1.DeleteRequestPolicyRequest, v1.DeleteRequestPolicyResponse]
-	listRequestPolicies  *connect.Client[v1.ListRequestPoliciesRequest, v1.ListRequestPoliciesResponse]
-	listPoliciesForAsset *connect.Client[v1.ListPoliciesForAssetRequest, v1.ListPoliciesForAssetResponse]
-	listPoliciesForGroup *connect.Client[v1.ListPoliciesForGroupRequest, v1.ListPoliciesForGroupResponse]
-	addPolicySubject     *connect.Client[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse]
-	resolvePolicy        *connect.Client[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse]
-	removePolicySubject  *connect.Client[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse]
-	listPolicySubjects   *connect.Client[v1.ListPolicySubjectsRequest, v1.ListPolicySubjectsResponse]
-	explainRole          *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
+	createRole            *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
+	listRoles             *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
+	getRole               *connect.Client[v1.GetRoleRequest, v1.GetRoleResponse]
+	getRoleDisplay        *connect.Client[v1.GetRoleDisplayRequest, v1.GetRoleDisplayResponse]
+	resolveRole           *connect.Client[v1.ResolveRoleRequest, v1.ResolveRoleResponse]
+	getRoleAccess         *connect.Client[v1.GetRoleAccessRequest, v1.GetRoleAccessResponse]
+	deleteRole            *connect.Client[v1.DeleteRoleRequest, v1.DeleteRoleResponse]
+	addRoleGrant          *connect.Client[v1.AddRoleGrantRequest, v1.AddRoleGrantResponse]
+	removeRoleGrant       *connect.Client[v1.RemoveRoleGrantRequest, v1.RemoveRoleGrantResponse]
+	listRoleGrants        *connect.Client[v1.ListRoleGrantsRequest, v1.ListRoleGrantsResponse]
+	createRoleBinding     *connect.Client[v1.CreateRoleBindingRequest, v1.CreateRoleBindingResponse]
+	deleteRoleBinding     *connect.Client[v1.DeleteRoleBindingRequest, v1.DeleteRoleBindingResponse]
+	listRoleBindings      *connect.Client[v1.ListRoleBindingsRequest, v1.ListRoleBindingsResponse]
+	createRequestPolicy   *connect.Client[v1.CreateRequestPolicyRequest, v1.CreateRequestPolicyResponse]
+	updateRequestPolicy   *connect.Client[v1.UpdateRequestPolicyRequest, v1.UpdateRequestPolicyResponse]
+	deleteRequestPolicy   *connect.Client[v1.DeleteRequestPolicyRequest, v1.DeleteRequestPolicyResponse]
+	listRequestPolicies   *connect.Client[v1.ListRequestPoliciesRequest, v1.ListRequestPoliciesResponse]
+	listPoliciesForAsset  *connect.Client[v1.ListPoliciesForAssetRequest, v1.ListPoliciesForAssetResponse]
+	listPoliciesForGroup  *connect.Client[v1.ListPoliciesForGroupRequest, v1.ListPoliciesForGroupResponse]
+	addPolicySubject      *connect.Client[v1.AddPolicySubjectRequest, v1.AddPolicySubjectResponse]
+	resolvePolicy         *connect.Client[v1.ResolvePolicyRequest, v1.ResolvePolicyResponse]
+	removePolicySubject   *connect.Client[v1.RemovePolicySubjectRequest, v1.RemovePolicySubjectResponse]
+	listPolicySubjects    *connect.Client[v1.ListPolicySubjectsRequest, v1.ListPolicySubjectsResponse]
+	explainRole           *connect.Client[v1.ExplainRoleRequest, v1.ExplainRoleResponse]
+	getPolicyRoster       *connect.Client[v1.GetPolicyRosterRequest, v1.GetPolicyRosterResponse]
+	listPoliciesUsingRole *connect.Client[v1.ListPoliciesUsingRoleRequest, v1.ListPoliciesUsingRoleResponse]
 }
 
 // CreateRole calls jumpgate.access.v1.AccessService.CreateRole.
@@ -453,6 +476,16 @@ func (c *accessServiceClient) ExplainRole(ctx context.Context, req *connect.Requ
 	return c.explainRole.CallUnary(ctx, req)
 }
 
+// GetPolicyRoster calls jumpgate.access.v1.AccessService.GetPolicyRoster.
+func (c *accessServiceClient) GetPolicyRoster(ctx context.Context, req *connect.Request[v1.GetPolicyRosterRequest]) (*connect.Response[v1.GetPolicyRosterResponse], error) {
+	return c.getPolicyRoster.CallUnary(ctx, req)
+}
+
+// ListPoliciesUsingRole calls jumpgate.access.v1.AccessService.ListPoliciesUsingRole.
+func (c *accessServiceClient) ListPoliciesUsingRole(ctx context.Context, req *connect.Request[v1.ListPoliciesUsingRoleRequest]) (*connect.Response[v1.ListPoliciesUsingRoleResponse], error) {
+	return c.listPoliciesUsingRole.CallUnary(ctx, req)
+}
+
 // AccessServiceHandler is an implementation of the jumpgate.access.v1.AccessService service.
 type AccessServiceHandler interface {
 	// Roles.
@@ -493,6 +526,9 @@ type AccessServiceHandler interface {
 	ListPolicySubjects(context.Context, *connect.Request[v1.ListPolicySubjectsRequest]) (*connect.Response[v1.ListPolicySubjectsResponse], error)
 	// Introspection (admin-or-self).
 	ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error)
+	// Detail-panel reads.
+	GetPolicyRoster(context.Context, *connect.Request[v1.GetPolicyRosterRequest]) (*connect.Response[v1.GetPolicyRosterResponse], error)
+	ListPoliciesUsingRole(context.Context, *connect.Request[v1.ListPoliciesUsingRoleRequest]) (*connect.Response[v1.ListPoliciesUsingRoleResponse], error)
 }
 
 // NewAccessServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -646,6 +682,18 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(accessServiceMethods.ByName("ExplainRole")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accessServiceGetPolicyRosterHandler := connect.NewUnaryHandler(
+		AccessServiceGetPolicyRosterProcedure,
+		svc.GetPolicyRoster,
+		connect.WithSchema(accessServiceMethods.ByName("GetPolicyRoster")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accessServiceListPoliciesUsingRoleHandler := connect.NewUnaryHandler(
+		AccessServiceListPoliciesUsingRoleProcedure,
+		svc.ListPoliciesUsingRole,
+		connect.WithSchema(accessServiceMethods.ByName("ListPoliciesUsingRole")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.access.v1.AccessService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccessServiceCreateRoleProcedure:
@@ -696,6 +744,10 @@ func NewAccessServiceHandler(svc AccessServiceHandler, opts ...connect.HandlerOp
 			accessServiceListPolicySubjectsHandler.ServeHTTP(w, r)
 		case AccessServiceExplainRoleProcedure:
 			accessServiceExplainRoleHandler.ServeHTTP(w, r)
+		case AccessServiceGetPolicyRosterProcedure:
+			accessServiceGetPolicyRosterHandler.ServeHTTP(w, r)
+		case AccessServiceListPoliciesUsingRoleProcedure:
+			accessServiceListPoliciesUsingRoleHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -799,4 +851,12 @@ func (UnimplementedAccessServiceHandler) ListPolicySubjects(context.Context, *co
 
 func (UnimplementedAccessServiceHandler) ExplainRole(context.Context, *connect.Request[v1.ExplainRoleRequest]) (*connect.Response[v1.ExplainRoleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ExplainRole is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) GetPolicyRoster(context.Context, *connect.Request[v1.GetPolicyRosterRequest]) (*connect.Response[v1.GetPolicyRosterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.GetPolicyRoster is not implemented"))
+}
+
+func (UnimplementedAccessServiceHandler) ListPoliciesUsingRole(context.Context, *connect.Request[v1.ListPoliciesUsingRoleRequest]) (*connect.Response[v1.ListPoliciesUsingRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.access.v1.AccessService.ListPoliciesUsingRole is not implemented"))
 }

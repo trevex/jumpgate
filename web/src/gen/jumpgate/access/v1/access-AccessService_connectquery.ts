@@ -145,3 +145,15 @@ export const listPolicySubjects = AccessService.method.listPolicySubjects;
  * @generated from rpc jumpgate.access.v1.AccessService.ExplainRole
  */
 export const explainRole = AccessService.method.explainRole;
+
+/**
+ * Detail-panel reads.
+ *
+ * @generated from rpc jumpgate.access.v1.AccessService.GetPolicyRoster
+ */
+export const getPolicyRoster = AccessService.method.getPolicyRoster;
+
+/**
+ * @generated from rpc jumpgate.access.v1.AccessService.ListPoliciesUsingRole
+ */
+export const listPoliciesUsingRole = AccessService.method.listPoliciesUsingRole;
