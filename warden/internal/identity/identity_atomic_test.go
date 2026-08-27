@@ -25,7 +25,7 @@ func TestCreateUserAtomicOnPasswordFailure(t *testing.T) {
 		t.Fatalf("add check constraint: %v", err)
 	}
 
-	svc := identity.NewService(pool, nil, nil, authz.NewSQLAuthorizer(pool))
+	svc := identity.NewService(pool, nil, nil, authz.New(pool))
 	if _, err := svc.CreateUser(ctx, "atomic@x", "Atomic", "password123"); err == nil {
 		t.Fatal("CreateUser succeeded, want error from the failing password write")
 	}

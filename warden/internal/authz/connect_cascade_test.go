@@ -19,7 +19,7 @@ func TestConnCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	a := New(pool)
 
 	// Roles: a concrete ssh:login:deploy role and the `**` super-role.
 	deployRole := createRoleWithCaps(t, ctx, q, "cc-deploy", pgtype.UUID{}, caps("ssh:login:deploy"))

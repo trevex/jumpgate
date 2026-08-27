@@ -27,12 +27,12 @@ import (
 // Guard performs management-plane capability checks. Q is used for scope-derivation
 // lookups.
 type Guard struct {
-	Authz authz.Authorizer
+	Authz *authz.Authorizer
 	Q     *sqlc.Queries
 }
 
 // New constructs a Guard.
-func New(a authz.Authorizer, q *sqlc.Queries) Guard {
+func New(a *authz.Authorizer, q *sqlc.Queries) Guard {
 	return Guard{Authz: a, Q: q}
 }
 

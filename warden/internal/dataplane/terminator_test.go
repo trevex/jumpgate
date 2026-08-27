@@ -29,7 +29,7 @@ type termFixture struct {
 	q    *sqlc.Queries
 	ctx  context.Context
 	term *dataplane.Terminator
-	az   authz.Authorizer
+	az   *authz.Authorizer
 
 	user  uuid.UUID
 	asset uuid.UUID
@@ -79,7 +79,7 @@ func setupTerm(t *testing.T) *termFixture {
 		t.Fatalf("InsertLiveSession: %v", err)
 	}
 
-	az := authz.NewSQLAuthorizer(pool)
+	az := authz.New(pool)
 	return &termFixture{
 		pool: pool, q: q, ctx: ctx,
 		term: dataplane.NewTerminator(pool, az, audit.New(pool)),

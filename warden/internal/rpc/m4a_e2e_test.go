@@ -91,7 +91,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 		t.Fatalf("CreateCAKey: %v", err)
 	}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := accessrequest.NewService(pool, auditLog, approvals.New(pool), authz.NewRoleResolver(pool), terminator, 8*time.Hour)

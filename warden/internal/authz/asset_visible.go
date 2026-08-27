@@ -22,7 +22,7 @@ import (
 // This is the single-asset predicate shared by ResolveAsset and GetAssetAccess;
 // VisibleAssetsUnder implements the same rule in batch (with a manageable
 // short-circuit) rather than calling this per asset in a tight loop.
-func AssetVisible(ctx context.Context, a Authorizer, userID, assetID uuid.UUID) (bool, error) {
+func AssetVisible(ctx context.Context, a *Authorizer, userID, assetID uuid.UUID) (bool, error) {
 	caps, err := a.CapabilitiesOnScope(ctx, userID, AssetScope(assetID))
 	if err != nil {
 		return false, err
@@ -39,16 +39,10 @@ func AssetVisible(ctx context.Context, a Authorizer, userID, assetID uuid.UUID) 
 	return len(caps.EntitledLogins(logins)) > 0, nil
 }
 
-// assetLoginNames returns the SSH login names declared on assetID. It uses the
-// sqlAuthorizer's batched login fetch when available; otherwise (a non-SQL
-// Authorizer) it returns no logins, so the connect arm is a no-op — such an
-// Authorizer must implement visibility another way.
-func assetLoginNames(ctx context.Context, a Authorizer, assetID uuid.UUID) ([]string, error) {
-	s, ok := a.(*sqlAuthorizer)
-	if !ok {
-		return nil, nil
-	}
-	byID, err := s.assetLoginsFor(ctx, []uuid.UUID{assetID})
+// assetLoginNames returns the SSH login names declared on assetID via the
+// Authorizer's batched login fetch.
+func assetLoginNames(ctx context.Context, a *Authorizer, assetID uuid.UUID) ([]string, error) {
+	byID, err := a.assetLoginsFor(ctx, []uuid.UUID{assetID})
 	if err != nil {
 		return nil, err
 	}

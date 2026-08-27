@@ -30,7 +30,7 @@ func TestDeactivatedUserStandingBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 	rr := NewRoleResolver(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-standing@x", DisplayName: "U"})
@@ -97,7 +97,7 @@ func TestDeactivatedUserGroupBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-group@x", DisplayName: "U"})
 	if err != nil {
@@ -143,7 +143,7 @@ func TestDeactivatedUserActiveGrant(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	fabricateGrant(t, pool, alice, dbaRole, pgstaging, grantOpts{expiresIn: time.Hour})
 
@@ -167,7 +167,7 @@ func TestDeactivatedUserExplicitRequesterSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "deact-requester@x", DisplayName: "U"})
 	if err != nil {
@@ -240,7 +240,7 @@ func containsRole(roles []uuid.UUID, roleID uuid.UUID) bool {
 
 // assetRequestable reports whether (asset, role) appears as a requestable pair in
 // the user's VisibleAssets (i.e. the asset is listed with the role among RoleIDs).
-func assetRequestable(t *testing.T, a Authorizer, user, asset, role uuid.UUID) bool {
+func assetRequestable(t *testing.T, a *Authorizer, user, asset, role uuid.UUID) bool {
 	t.Helper()
 	vis, err := a.VisibleAssets(context.Background(), user)
 	if err != nil {
@@ -256,7 +256,7 @@ func assetRequestable(t *testing.T, a Authorizer, user, asset, role uuid.UUID) b
 
 // assetActive reports whether the asset appears as Active in the user's
 // VisibleAssets.
-func assetActive(t *testing.T, a Authorizer, user, asset uuid.UUID) bool {
+func assetActive(t *testing.T, a *Authorizer, user, asset uuid.UUID) bool {
 	t.Helper()
 	vis, err := a.VisibleAssets(context.Background(), user)
 	if err != nil {

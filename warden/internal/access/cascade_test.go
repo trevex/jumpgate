@@ -79,7 +79,7 @@ func setupCascade(t *testing.T) *cascadeFixture {
 	// so SweepOwned will re-evaluate its live sessions.
 	reg := dataplane.NewRegistry()
 	reg.Add("w1", make(chan dataplane.Signal, 8))
-	term := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	term := dataplane.NewTerminator(pool, authz.New(pool), audit.New(pool))
 	swp := dataplane.NewSweeper(pool, reg, term)
 
 	return &cascadeFixture{

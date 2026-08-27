@@ -65,7 +65,7 @@ func setupSweep(t *testing.T) *sweepFixture {
 		t.Fatalf("CreateRole: %v", err)
 	}
 
-	az := authz.NewSQLAuthorizer(pool)
+	az := authz.New(pool)
 	reg := dataplane.NewRegistry()
 	term := dataplane.NewTerminator(pool, az, audit.New(pool))
 	return &sweepFixture{

@@ -28,7 +28,7 @@ func nodeHomeFolders(nodes []nodeFolder) map[uuid.UUID]struct{} {
 // visibleRoleHomeFolders returns the set of home folders of every role visible to
 // the user (whole-tree cascade). These folders anchor path-reveal so the browse
 // path down to a visible role is never hidden.
-func (s *sqlAuthorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	nodes, err := s.visibleRolesHomed(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (s *sqlAuthorizer) visibleRoleHomeFolders(ctx context.Context, userID uuid.
 // visibleGroupHomeFolders returns the set of home folders of every group visible to
 // the user (whole-tree cascade). These folders anchor path-reveal so the browse
 // path down to a visible group is never hidden.
-func (s *sqlAuthorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	nodes, err := s.visibleGroupsHomed(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (s *sqlAuthorizer) visibleGroupHomeFolders(ctx context.Context, userID uuid
 // visibleAssetFolders returns the home folders of every asset visible to the user
 // (the full VisibleAssetsUnder union: access ∪ management ∪ connect, whole-tree
 // cascade). These folders anchor the path down to a reachable asset.
-func (s *sqlAuthorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) visibleAssetFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	assetIDs, err := s.VisibleAssetsUnder(ctx, userID, uuid.Nil, true)
 	if err != nil {
 		return nil, err

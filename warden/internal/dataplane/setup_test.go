@@ -210,8 +210,8 @@ func setup(t *testing.T) *fixture {
 	// the key warden certifies for the target hop.
 	workerPub := newSSHKeypair(t)
 
-	broker := vault.NewBroker(pool, sealer, authz.NewSQLAuthorizer(pool), audit.New(pool))
-	svc := dataplane.NewSetupService(pool, verifier, authz.NewSQLAuthorizer(pool), broker, audit.New(pool), time.Hour)
+	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
+	svc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, audit.New(pool), time.Hour)
 
 	return &fixture{
 		pool: pool, q: q, svc: svc, ctx: ctx,

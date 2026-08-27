@@ -11,25 +11,25 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// sqlAuthorizer resolves access over the control-plane Postgres. The shared
+// Authorizer resolves access over the control-plane Postgres. The shared
 // authorization closures live in the DB as inlinable recursive SQL functions
 // (authz_held / authz_global_held / …); this type reaches them through the static
 // sqlc queries on q. pool is retained for the few remaining ad-hoc queries.
-type sqlAuthorizer struct {
+type Authorizer struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
 }
 
-// NewSQLAuthorizer returns an Authorizer backed by Postgres.
-func NewSQLAuthorizer(pool *pgxpool.Pool) Authorizer {
-	return &sqlAuthorizer{pool: pool, q: sqlc.New(pool)}
+// New returns an Authorizer backed by Postgres.
+func New(pool *pgxpool.Pool) *Authorizer {
+	return &Authorizer{pool: pool, q: sqlc.New(pool)}
 }
 
 // queries returns the sqlc query set bound to the authorizer's pool. It lazily
 // initialises q for authorizers built as a bare struct literal (the internal
-// tests) rather than via NewSQLAuthorizer, so both construction paths reach the
-// shared authz SQL functions identically.
-func (s *sqlAuthorizer) queries() *sqlc.Queries {
+// tests) rather than via New, so both construction paths reach the shared authz
+// SQL functions identically.
+func (s *Authorizer) queries() *sqlc.Queries {
 	if s.q == nil {
 		s.q = sqlc.New(s.pool)
 	}
@@ -63,7 +63,11 @@ func nullableUUIDArg(id uuid.UUID) pgtype.UUID {
 // Because Check's grant decision and the Requestable-tier eligibility draw the
 // closure from that one source, they cannot silently diverge.
 
-func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
+// VisibleAssets returns every asset the user can see — those on which the user
+// holds at least one Active (standing) role OR has at least one Requestable role
+// (an effective request_policy for which the user is an eligible requester).
+// Assets with neither are omitted entirely (they must not be disclosed).
+func (s *Authorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]AssetVisibility, error) {
 	type acc struct {
 		active bool
 		seen   map[uuid.UUID]struct{}
@@ -116,7 +120,8 @@ func (s *sqlAuthorizer) VisibleAssets(ctx context.Context, userID uuid.UUID) ([]
 	return out, nil
 }
 
-func (s *sqlAuthorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error) {
+// RolesOnAsset returns the user's active and requestable roles on one asset.
+func (s *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (AssetRoles, error) {
 	var r AssetRoles
 
 	// Active: roles held on the asset via the explicit role-rewrite graph.
@@ -150,7 +155,7 @@ func (s *sqlAuthorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.U
 // capabilities (per-login entitlement, record-exempt) pay a single query. Glob
 // matching happens in Go (CapMatch) via Capabilities.Allows, so the '*' / trailing
 // '**' semantics stay in one auditable function rather than embedded regex-in-SQL.
-func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
+func (s *Authorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
 	return s.CapabilitiesOnObject(ctx, userID, assetID, "asset")
 }
 
@@ -159,7 +164,7 @@ func (s *sqlAuthorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID
 // closure — the object-dimension generalization of CapabilitiesOnAsset. It runs
 // the held closure once and flattens all matching roles' patterns into a single
 // Capabilities set (glob matching stays in Go via CapMatch/Allows).
-func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
+func (s *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID uuid.UUID, kind string) (Capabilities, error) {
 	rows, err := s.queries().HeldCapabilitiesOnObject(ctx, sqlc.HeldCapabilitiesOnObjectParams{
 		User:       uuidArg(userID),
 		ObjectKind: textArg(kind),
@@ -192,7 +197,7 @@ func (s *sqlAuthorizer) CapabilitiesOnObject(ctx context.Context, userID, object
 //
 // A nonexistent asset matches no held row, so EXISTS is false with no error.
 // `capability` is internal (from workers) and assumed concrete — not proto-validated.
-func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
+func (s *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(capability)
 	ok, err := s.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{
 		User:      uuidArg(userID),
@@ -237,7 +242,7 @@ func (s *sqlAuthorizer) Check(ctx context.Context, userID, assetID uuid.UUID, ca
 // the asset's folder via a JOIN on assets) is naturally empty and the asset itself
 // matches no held row, so the query yields exactly the global caps with no error —
 // preserving the legacy pgx.ErrNoRows→global-only behaviour.
-func (s *sqlAuthorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
+func (s *Authorizer) CapabilitiesOnScope(ctx context.Context, userID uuid.UUID, scope Scope) (Capabilities, error) {
 	switch scope.Kind {
 	case ScopeGlobal:
 		// Global-only: no object dimension, so authz_global_held alone suffices.

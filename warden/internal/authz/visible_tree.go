@@ -38,7 +38,7 @@ import (
 // childFolderIDs returns the ids of the folders directly under parent, ordered by
 // (name, id). parent == uuid.Nil selects the tree root (parent_id IS NULL); the
 // `IS NOT DISTINCT FROM` predicate treats a NULL argument as "match NULL".
-func (s *sqlAuthorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uuid.UUID, error) {
+func (s *Authorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uuid.UUID, error) {
 	var arg *uuid.UUID
 	if parent != uuid.Nil {
 		arg = &parent
@@ -54,7 +54,7 @@ SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM @parent ORDER BY nam
 
 // allFolderIDs returns every folder id (used for the root+cascade case, where the
 // candidate set is the whole tree).
-func (s *sqlAuthorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
+func (s *Authorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id FROM folders`)
 	if err != nil {
 		return nil, fmt.Errorf("all folders: %w", err)
@@ -67,7 +67,7 @@ func (s *sqlAuthorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
 // declared on it (ssh_asset_login.login). Assets with no logins are absent from
 // the map. Batched into a single query so the connect-visibility arm never issues
 // a per-asset login lookup.
-func (s *sqlAuthorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+func (s *Authorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
 	if len(assetIDs) == 0 {
 		return map[uuid.UUID][]string{}, nil
 	}
@@ -112,7 +112,7 @@ func scanUUIDs(rows interface {
 // `parent` (used by VisibleFoldersUnder): the immediate children of `parent`, or
 // (with cascade) those children expanded to their full subtrees. parent ==
 // uuid.Nil selects the root children (and, with cascade, the whole tree).
-func (s *sqlAuthorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (s *Authorizer) childCandidateFolderIDs(ctx context.Context, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	if parent == uuid.Nil && cascade {
 		return s.allFolderIDs(ctx)
 	}
@@ -128,7 +128,7 @@ func (s *sqlAuthorizer) childCandidateFolderIDs(ctx context.Context, parent uuid
 
 // accessibleAssetSet returns the set of asset ids the user can access (VisibleAssets:
 // active or requestable) — the ACCESS axis, computed once per call.
-func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	vis, err := s.VisibleAssets(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (s *sqlAuthorizer) accessibleAssetSet(ctx context.Context, userID uuid.UUID
 //     EntitledLogins on the RAW CapabilitiesOnScope(AssetScope) result: `**`
 //     normalizes to (*,*,*) and the column-match makes it match ssh:login:L, so
 //     `**` IS RETAINED here (no ConnectCapabilities literal-`**` carve-out).
-func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (s *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	// root + no-cascade holds no assets — short-circuit (also makes the level
 	// predicate below never need a FALSE arm).
 	if parent == uuid.Nil && !cascade {
@@ -220,7 +220,7 @@ func (s *sqlAuthorizer) VisibleAssetsUnder(ctx context.Context, userID, parent u
 //
 // A user with a GLOBAL catalog:folder:read (or `**`) governs and sees the whole
 // tree; that case short-circuits to every folder at the level with governed=true.
-func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
+func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]VisibleFolder, error) {
 	// Global management short-circuit: a global catalog:folder:read (or **) holder
 	// governs and sees the whole tree.
 	global, err := s.globalHeldCapabilities(ctx, userID)
@@ -270,7 +270,7 @@ func (s *sqlAuthorizer) VisibleFoldersUnder(ctx context.Context, userID, parent 
 // the user holds no direct capability on — so a delegate can open the breadcrumb
 // ancestors above the subtree they govern. A global catalog:folder:read / ** holder
 // sees every folder that exists.
-func (s *sqlAuthorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
+func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uuid.UUID) (bool, error) {
 	global, err := s.globalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return false, err
@@ -317,7 +317,7 @@ SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
 // role on directly (object_kind='asset'). Folding both projections into a single
 // `held` scan avoids the two separate closure round-trips (heldRoleIDs + the
 // VisibleAssets active tier) the legacy anchor path issued.
-func (s *sqlAuthorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
+func (s *Authorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID) (roles, assets map[uuid.UUID]struct{}, err error) {
 	rows, err := s.queries().HeldRolesAndAssets(ctx, userID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("held roles and assets: %w", err)
@@ -355,7 +355,7 @@ func (s *sqlAuthorizer) heldRolesAndAssets(ctx context.Context, userID uuid.UUID
 //
 // Round-trips (non-admin): heldRolesAndAssets (1) + visibleRequestable (1) +
 // memberGroupIDs (1) + mgmtScopeFolders (1) + the combined anchor query (1) = 5.
-func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (anchors, mgmtIDs []uuid.UUID, err error) {
+func (s *Authorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (anchors, mgmtIDs []uuid.UUID, err error) {
 	// ── Shared ACCESS closures, each evaluated once ──────────────────────────
 	// held: role ids (any object) + asset ids held directly — one closure scan.
 	heldRoles, heldAssets, err := s.heldRolesAndAssets(ctx, userID)
@@ -445,7 +445,7 @@ func (s *sqlAuthorizer) folderAnchors(ctx context.Context, userID uuid.UUID) (an
 //
 //   - @user (bound by the closure prefix);
 //   - @roleAccess role-access ids; @groupAccess group-access ids; @assetAccess asset-access ids.
-func (s *sqlAuthorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
+func (s *Authorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, roleAccess, groupAccess, assetAccess []uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := s.queries().AnchorHomeFolders(ctx, sqlc.AnchorHomeFoldersParams{
 		User:        userID,
 		RoleAccess:  roleAccess,
@@ -469,7 +469,7 @@ func (s *sqlAuthorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID,
 // (parent, cascade) case exactly as childCandidateFolderIDs computes the browse
 // level; a nil `parent` is bound as SQL NULL via `parent_id IS NOT DISTINCT FROM`
 // (matching childFolderIDs) or, for cascade, means the whole tree (no predicate).
-func (s *sqlAuthorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, pgx.NamedArgs) {
+func (s *Authorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, pgx.NamedArgs) {
 	// @anchors, @mgmtIDs; @parent (when present) is the parent binding.
 	na := pgx.NamedArgs{"anchors": anchors, "mgmtIDs": mgmtIDs}
 	var level string
@@ -507,7 +507,7 @@ ORDER BY f.name, f.id`
 // (reusing childCandidateFolderIDs), each with the given `governed` flag. It backs
 // the global-management short-circuit in VisibleFoldersUnder, where the caller sees
 // (and governs) the whole tree without per-folder anchor work.
-func (s *sqlAuthorizer) allFoldersAtLevel(ctx context.Context, parent uuid.UUID, cascade, governed bool) ([]VisibleFolder, error) {
+func (s *Authorizer) allFoldersAtLevel(ctx context.Context, parent uuid.UUID, cascade, governed bool) ([]VisibleFolder, error) {
 	ids, err := s.childCandidateFolderIDs(ctx, parent, cascade)
 	if err != nil {
 		return nil, err
@@ -593,7 +593,7 @@ type nodeFolder struct {
 // active grants, closed over the role_grants rewrite graph) — one arm of the
 // role ACCESS axis. Object dimension is dropped: a role is "held" if held on ANY
 // object.
-func (s *sqlAuthorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	ids, err := s.queries().HeldRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("held role ids: %w", err)
@@ -607,7 +607,7 @@ func (s *sqlAuthorizer) heldRoleIDs(ctx context.Context, userID uuid.UUID) (map[
 
 // requestableRoleIDs returns the set of role ids requestable to the user across
 // all assets — the other arm of the role ACCESS axis.
-func (s *sqlAuthorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	reqs, err := s.visibleRequestable(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -621,7 +621,7 @@ func (s *sqlAuthorizer) requestableRoleIDs(ctx context.Context, userID uuid.UUID
 
 // IsMember reports whether the user is a (transitive) member of groupID. Returns
 // false for deactivated users. One targeted query, never full closure.
-func (s *sqlAuthorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
+func (s *Authorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
 	ok, err := s.queries().IsMember(ctx, sqlc.IsMemberParams{User: uuidArg(userID), Group: uuidArg(groupID)})
 	if err != nil {
 		return false, fmt.Errorf("is member: %w", err)
@@ -637,7 +637,7 @@ func (s *sqlAuthorizer) IsMember(ctx context.Context, userID, groupID uuid.UUID)
 // The query carries the deactivation guard (authz_user_is_active), matching the
 // predicate in authz_held and authz_global_held: a deactivated user therefore
 // yields an empty set.
-func (s *sqlAuthorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) memberGroupIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	ids, err := s.queries().MemberGroupIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("member group ids: %w", err)
@@ -710,7 +710,7 @@ const (
 	groupsTable homedTable = "groups"
 )
 
-func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table homedTable, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
+func (s *Authorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UUID, table homedTable, mgmtCap string, parent uuid.UUID, cascade bool, accessIDs []uuid.UUID) ([]nodeFolder, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(mgmtCap)
 	// The management cascade uses the mgmtCap request columns; the browse level is
 	// selected inside the query by the nullable parent (uuid.Nil == root/NULL) and
@@ -768,7 +768,7 @@ func (s *sqlAuthorizer) visibleHomedSetBased(ctx context.Context, userID uuid.UU
 // queries; the management cascade + candidate selection + union are ONE query via
 // visibleHomedSetBased. Total is a small constant, independent of the candidate
 // count (no per-folder CapabilitiesOnScope loop).
-func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+func (s *Authorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	// Access axis: held ∪ requestable, computed once as a single id set.
 	held, err := s.heldRoleIDs(ctx, userID)
 	if err != nil {
@@ -784,7 +784,7 @@ func (s *sqlAuthorizer) visibleRolesHomed(ctx context.Context, userID, parent uu
 
 // VisibleRolesUnder returns the role ids under `parent` the user may see. See the
 // Authorizer interface for the visibility predicate.
-func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (s *Authorizer) VisibleRolesUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	nodes, err := s.visibleRolesHomed(ctx, userID, parent, cascade)
 	if err != nil {
 		return nil, err
@@ -797,7 +797,7 @@ func (s *sqlAuthorizer) VisibleRolesUnder(ctx context.Context, userID, parent uu
 // membership ∪ manageable-via identity:group:read). Single source of truth for the
 // predicate: VisibleGroupsUnder maps it to ids and the folder-anchor helper reads
 // its home folders.
-func (s *sqlAuthorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
+func (s *Authorizer) visibleGroupsHomed(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]nodeFolder, error) {
 	// Access axis: transitive membership, computed once as a single id set.
 	member, err := s.memberGroupIDs(ctx, userID)
 	if err != nil {
@@ -808,7 +808,7 @@ func (s *sqlAuthorizer) visibleGroupsHomed(ctx context.Context, userID, parent u
 
 // VisibleGroupsUnder returns the group ids under `parent` the user may see. See
 // the Authorizer interface for the visibility predicate.
-func (s *sqlAuthorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
+func (s *Authorizer) VisibleGroupsUnder(ctx context.Context, userID, parent uuid.UUID, cascade bool) ([]uuid.UUID, error) {
 	nodes, err := s.visibleGroupsHomed(ctx, userID, parent, cascade)
 	if err != nil {
 		return nil, err
@@ -864,7 +864,7 @@ func isManagementCap(pat string) bool {
 // joined to the held closure; each row is reconstructed via ReconstructCap and
 // classified by isManagementCap in Go (the `*`/`**`-yes-but-`*:connect`-no rule is
 // too subtle to translate into a column predicate).
-func (s *sqlAuthorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (s *Authorizer) mgmtScopeFolders(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	rows, err := s.queries().HeldFolderCapabilities(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("mgmt scope folders: %w", err)

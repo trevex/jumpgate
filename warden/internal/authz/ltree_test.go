@@ -13,7 +13,7 @@ import (
 // every node in the tree.
 func TestLtreeMatchesRecursive(t *testing.T) {
 	pool := newPool(t)
-	s := &sqlAuthorizer{pool: pool}
+	s := &Authorizer{pool: pool}
 	ctx := context.Background()
 
 	ids := insertTree(t, pool, 3, 4)
@@ -44,7 +44,7 @@ func TestLtreeMatchesRecursive(t *testing.T) {
 //     path_ids is built from UUIDs, not names.
 func TestLtreeMoveRewritesSubtree(t *testing.T) {
 	pool := newPool(t)
-	s := &sqlAuthorizer{pool: pool}
+	s := &Authorizer{pool: pool}
 	ctx := context.Background()
 
 	// Tree: a → b → c; d is a separate root.

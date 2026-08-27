@@ -15,7 +15,7 @@ import (
 func TestMgmtScopeFolders(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := &sqlAuthorizer{pool: pool}
+	s := &Authorizer{pool: pool}
 	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "ma-root", nil)
@@ -68,7 +68,7 @@ func TestIsManagementCap(t *testing.T) {
 func TestVisibleNodeHomeAnchors(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := &sqlAuthorizer{pool: pool}
+	s := &Authorizer{pool: pool}
 	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "an-root", nil)
@@ -109,7 +109,7 @@ func TestVisibleNodeHomeAnchors(t *testing.T) {
 func TestVisibleAssetFolders(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := &sqlAuthorizer{pool: pool}
+	s := &Authorizer{pool: pool}
 	q := sqlc.New(pool)
 
 	root := mustCreateFolder(t, q, "af-root", nil)

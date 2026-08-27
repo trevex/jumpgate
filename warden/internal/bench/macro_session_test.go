@@ -25,7 +25,7 @@ func BenchmarkCreateSession(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.NewSQLAuthorizer(pool),
+	svc := session.NewService(sqlc.New(pool), authz.New(pool),
 		sessiontoken.NewMinter(priv), "gw.bench:8443", time.Minute)
 	ctx := context.Background()
 	runAcross(b, func(b *testing.B, w *World) {
@@ -41,7 +41,7 @@ func BenchmarkCreateSession(b *testing.B) {
 // continuous revocation. The deep subject retains access, so no teardown occurs.
 func BenchmarkReevaluate(b *testing.B) {
 	pool, _ := sharedDB(b)
-	term := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	term := dataplane.NewTerminator(pool, authz.New(pool), audit.New(pool))
 	ctx := context.Background()
 	runAcross(b, func(b *testing.B, w *World) {
 		for i := 0; i < b.N; i++ {
@@ -56,7 +56,7 @@ func BenchmarkReevaluate(b *testing.B) {
 // predicate for the live (user,asset) pairs on the connected workers.
 func BenchmarkSweepOwned(b *testing.B) {
 	pool, _ := sharedDB(b)
-	term := dataplane.NewTerminator(pool, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	term := dataplane.NewTerminator(pool, authz.New(pool), audit.New(pool))
 	ctx := context.Background()
 	runAcross(b, func(b *testing.B, w *World) {
 		reg := dataplane.NewRegistry()

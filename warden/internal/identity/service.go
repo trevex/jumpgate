@@ -50,14 +50,14 @@ type Service struct {
 	q       *sqlc.Queries
 	revoker grantRevoker
 	evictor sessionEvictor
-	authz   authz.Authorizer
+	authz   *authz.Authorizer
 }
 
 // NewService constructs the identity Service over pool, building its own sqlc
 // queries. revoker cascades JIT grant revocation on DeactivateUser and evictor
 // force-evicts the user's remaining live sessions; either may be nil in tests that
 // don't exercise deactivation teardown.
-func NewService(pool *pgxpool.Pool, revoker grantRevoker, evictor sessionEvictor, a authz.Authorizer) *Service {
+func NewService(pool *pgxpool.Pool, revoker grantRevoker, evictor sessionEvictor, a *authz.Authorizer) *Service {
 	return &Service{pool: pool, q: sqlc.New(pool), revoker: revoker, evictor: evictor, authz: a}
 }
 

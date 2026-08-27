@@ -100,10 +100,10 @@ proto). Three transport **leaf helpers** are shared across the modules — `apig
 only `authz`/sqlc/connect/pgx and **never a domain module**, so the wiring package
 can mount every handler without an import cycle. `internal/rpc` is **wiring only**:
 it assembles the already-constructed handlers into the user-facing and mesh-facing
-service sets and mounts them. The one non-internal library package is
-**`warden/authz`** — the stable `Authorizer` interface plus the capability/scope
-vocabulary; the concrete, persistence-backed implementation stays private in
-`internal/authz`, so no database, pgx, or sqlc type is ever public API.
+service sets and mounts them. Warden exposes **no public library API** — every
+package lives under `internal/`. The authorization contract and the capability/scope
+vocabulary live in **`internal/authz`** as a concrete `*authz.Authorizer` (built with
+`authz.New`), so no database, pgx, or sqlc type is ever exported.
 
 ## Data plane
 

@@ -388,7 +388,7 @@ func TestGetAssetDisplay(t *testing.T) {
 	party := auth.CurrentUser{ID: userID(t, pool, "party@x"), Email: "party@x"}
 	capper := auth.CurrentUser{ID: userID(t, pool, "capper@x"), Email: "capper@x"}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	q := sqlc.New(pool)
 
 	// A server whose fake authorizes the request-party path.
@@ -830,7 +830,7 @@ func TestSearchCatalog(t *testing.T) {
 		t.Fatalf("bind reader role: %v", err)
 	}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
 	searcherCtx := auth.WithUser(ctx, auth.CurrentUser{ID: su.ID, Email: "searcher@x"})
 

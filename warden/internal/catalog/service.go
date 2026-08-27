@@ -47,7 +47,7 @@ type Service struct {
 	q          *sqlc.Queries
 	sealer     *secrets.Sealer
 	terminator sessionTerminator
-	authz      authz.Authorizer
+	authz      *authz.Authorizer
 	reqReads   requestReadAuthorizer
 }
 
@@ -56,7 +56,7 @@ type Service struct {
 // fails those write paths closed); terminator tears down an asset's live sessions
 // before DeleteAsset (a nil terminator disables teardown); reqReads authorizes the
 // request-party path of GetAssetDisplay (a nil reqReads disables it).
-func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminator, a authz.Authorizer, rr requestReadAuthorizer) *Service {
+func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminator, a *authz.Authorizer, rr requestReadAuthorizer) *Service {
 	return &Service{pool: pool, q: sqlc.New(pool), sealer: sealer, terminator: term, authz: a, reqReads: rr}
 }
 

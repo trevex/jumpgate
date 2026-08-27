@@ -50,7 +50,7 @@ type Service struct {
 	pool     *pgxpool.Pool
 	q        *sqlc.Queries
 	roles    *authz.RoleResolver
-	authz    authz.Authorizer
+	authz    *authz.Authorizer
 	deleter  roleDeleter
 	reqReads requestReadAuthorizer
 }
@@ -59,7 +59,7 @@ type Service struct {
 // roles backs ExplainRole; deleter runs the DeleteRole cascade (a nil deleter fails
 // DeleteRole closed); reqReads authorizes the request-party path of GetRoleDisplay (a
 // nil reqReads disables it, so only the capability grants the read).
-func NewService(pool *pgxpool.Pool, roles *authz.RoleResolver, a authz.Authorizer, deleter roleDeleter, reqReads requestReadAuthorizer) *Service {
+func NewService(pool *pgxpool.Pool, roles *authz.RoleResolver, a *authz.Authorizer, deleter roleDeleter, reqReads requestReadAuthorizer) *Service {
 	return &Service{pool: pool, q: sqlc.New(pool), roles: roles, authz: a, deleter: deleter, reqReads: reqReads}
 }
 

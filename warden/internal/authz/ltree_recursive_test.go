@@ -18,7 +18,7 @@ import (
 
 // folderSubtreeIDsRecursive returns every folder id in the subtrees rooted at
 // `roots` (inclusive), via a single recursive down-walk (parent_id = ancestor.id).
-func (s *sqlAuthorizer) folderSubtreeIDsRecursive(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
+func (s *Authorizer) folderSubtreeIDsRecursive(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
 	if len(roots) == 0 {
 		return nil, nil
 	}
@@ -38,7 +38,7 @@ SELECT id FROM sub`, pgx.NamedArgs{"roots": roots})
 
 // folderAncestorsAndSelfRecursive returns every ancestor-or-self folder id of id,
 // walking parent links up to the root via a recursive CTE.
-func (s *sqlAuthorizer) folderAncestorsAndSelfRecursive(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+func (s *Authorizer) folderAncestorsAndSelfRecursive(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := s.pool.Query(ctx, `
 WITH RECURSIVE up AS (
     SELECT folders.id, folders.parent_id FROM folders WHERE folders.id = @id

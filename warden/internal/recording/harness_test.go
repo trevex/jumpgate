@@ -83,7 +83,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 
 	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
 	auditLog := audit.New(pool)

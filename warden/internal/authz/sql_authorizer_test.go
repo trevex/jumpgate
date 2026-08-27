@@ -181,7 +181,7 @@ func TestGrantConfersAccess(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// Pre: alice does NOT hold dba's db:admin on pgstaging (only Requestable there).
 	if ok, err := a.Check(ctx, alice, pgstaging, "db:admin"); err != nil || ok {
@@ -216,7 +216,7 @@ func TestGrantFlowsThroughRewriteGraph(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 	rr := NewRoleResolver(pool)
 
 	alice, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grantflow@x", DisplayName: "Alice"})
@@ -265,7 +265,7 @@ func TestExpiredGrantDoesNotConfer(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	fabricateGrant(t, pool, alice, dbaRole, pgstaging, grantOpts{expiresIn: -time.Minute})
 
@@ -289,7 +289,7 @@ func TestRevokedGrantDoesNotConfer(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	fabricateGrant(t, pool, alice, dbaRole, pgstaging, grantOpts{expiresIn: time.Hour, revoked: true})
 
@@ -315,7 +315,7 @@ func TestActiveGrantExcludesRequestable(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// Pre: dba is Requestable (not Active) for alice on pgstaging.
 	pre, err := a.RolesOnAsset(ctx, alice, pgstaging)
@@ -370,7 +370,7 @@ func TestExplainRoleReflectsGrant(t *testing.T) {
 func TestVisibleAssetsTiers(t *testing.T) {
 	pool := newPool(t)
 	alice, pgprod, apiprod, pgstaging, topsecret, _, viewerRole, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	vis, err := a.VisibleAssets(context.Background(), alice)
 	if err != nil {
@@ -423,7 +423,7 @@ func TestRequestableViaExplicitSubject(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	carol, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "carol@x", DisplayName: "Carol"})
 	if err != nil {
@@ -527,7 +527,7 @@ func TestRequestableIneligibleNoRequesterMatch(t *testing.T) {
 	ctx := context.Background()
 	_, _, _, pgstaging, _, _, _, _ := seed(t, pool)
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	bob, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "bob-ineligible@x", DisplayName: "Bob"})
 	if err != nil {
@@ -560,7 +560,7 @@ func TestActiveExcludesRequestable(t *testing.T) {
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// Pre-condition: dba is Requestable (not Active) for alice on pgstaging.
 	pre, err := a.RolesOnAsset(ctx, alice, pgstaging)
@@ -601,7 +601,7 @@ func TestActiveExcludesRequestable(t *testing.T) {
 func TestCheckCapability(t *testing.T) {
 	pool := newPool(t)
 	alice, pgprod, _, pgstaging, topsecret, _, _, _ := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 	ctx := context.Background()
 
 	if ok, err := a.Check(ctx, alice, pgprod, "db:write"); err != nil || !ok {
@@ -672,7 +672,7 @@ func TestThreeLevelFolderInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 	if ok, err := a.Check(ctx, alice.ID, deepAsset.ID, "db:read"); err != nil || !ok {
 		t.Fatalf("Check(db:read, deepAsset via 3-level inheritance) = %v, %v; want true", ok, err)
 	}
@@ -738,7 +738,7 @@ func TestCheckExplicitFolderCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// Negative: without an explicit `parent` rule the folder binding must NOT
 	// reach the descendant asset.
@@ -842,7 +842,7 @@ func TestCheckSameObjectComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// super's own capability holds directly.
 	if ok, err := a.Check(ctx, user.ID, asset.ID, "db:write"); err != nil || !ok {
@@ -866,7 +866,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "glob@x", DisplayName: "Glob"})
 	if err != nil {
@@ -942,7 +942,7 @@ func TestCheckGlobCapabilities(t *testing.T) {
 func TestRolesOnAsset(t *testing.T) {
 	pool := newPool(t)
 	alice, pgprod, _, pgstaging, _, operatorRole, viewerRole, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 	ctx := context.Background()
 
 	r, err := a.RolesOnAsset(ctx, alice, pgprod)
@@ -982,7 +982,7 @@ func TestRequestableRequesterRoleViaNestedGroupCascade(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	dave, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "dave@x", DisplayName: "Dave"})
 	if err != nil {
@@ -1062,7 +1062,7 @@ func TestCapabilitiesOnAsset(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "cap-on-asset@x", DisplayName: "U"})
 	if err != nil {
@@ -1173,7 +1173,7 @@ func TestGrantedRequesterRoleNotRequestable(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "grr@x", DisplayName: "U"})
 	if err != nil {
@@ -1263,7 +1263,7 @@ func TestActiveExclusionStillCountsGrants(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// Pre: dba is Requestable on pgstaging (alice holds viewer requester standing).
 	pre, err := a.RolesOnAsset(ctx, alice, pgstaging)

@@ -1,33 +1,28 @@
-//nolint:revive // Compatibility aliases are documented by the public package.
 package authz
 
-import publicauthz "github.com/trevex/jumpgate/warden/authz"
+import "github.com/google/uuid"
 
-// Keep the implementation package source-compatible while callers migrate to
-// the public authorization contracts. These are aliases, so the PostgreSQL
-// implementation satisfies publicauthz.Authorizer without adapters.
-type (
-	Authorizer      = publicauthz.Authorizer
-	AssetVisibility = publicauthz.AssetVisibility
-	AssetRoles      = publicauthz.AssetRoles
-	VisibleFolder   = publicauthz.VisibleFolder
-	Capabilities    = publicauthz.Capabilities
-	ScopeKind       = publicauthz.ScopeKind
-	Scope           = publicauthz.Scope
-)
+// AssetVisibility describes a user's relationship to one asset.
+type AssetVisibility struct {
+	AssetID uuid.UUID
+	// Active is true when the user holds at least one Active (standing) role on the
+	// asset (directly or via the role_grants rewrite graph / group nesting). If
+	// false but the asset appears in VisibleAssets, the user is Requestable-only.
+	Active bool
+	// RoleIDs are the roles granting the user access to this asset (active and/or
+	// requestable), deduplicated.
+	RoleIDs []uuid.UUID
+}
 
-const (
-	ScopeGlobal = publicauthz.ScopeGlobal
-	ScopeFolder = publicauthz.ScopeFolder
-	ScopeAsset  = publicauthz.ScopeAsset
-)
+// AssetRoles splits the roles a user holds on an asset into active vs requestable.
+type AssetRoles struct {
+	Active      []uuid.UUID
+	Requestable []uuid.UUID
+}
 
-var (
-	CapMatch       = publicauthz.CapMatch
-	Covers         = publicauthz.Covers
-	NormalizeCap   = publicauthz.NormalizeCap
-	ReconstructCap = publicauthz.ReconstructCap
-	GlobalScope    = publicauthz.GlobalScope
-	FolderScope    = publicauthz.FolderScope
-	AssetScope     = publicauthz.AssetScope
-)
+// VisibleFolder is one visible folder plus whether the caller governs it (holds a
+// management cap at/under it) vs sees it only as a breadcrumb on the path to an anchor.
+type VisibleFolder struct {
+	ID       uuid.UUID
+	Governed bool
+}

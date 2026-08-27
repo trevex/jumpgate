@@ -46,7 +46,7 @@ func TestGenerateProducesReachableDeepSubject(t *testing.T) {
 func TestGenerateDeepSubjectHoldsRoleViaClosure(t *testing.T) {
 	pool, _ := sharedDB(t)
 	w := Generate(t, tinyProfile)
-	a := authz.NewSQLAuthorizer(pool)
+	a := authz.New(pool)
 	ok, err := a.Check(context.Background(), w.DeepSubject, w.LeafAsset, "ssh:connect")
 	if err != nil {
 		t.Fatalf("check: %v", err)

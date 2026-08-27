@@ -157,7 +157,7 @@ func TestBootstrapProvisions(t *testing.T) {
 	}
 
 	// The admin holds `**` at global scope: any concrete capability is allowed.
-	caps, err := authz.NewSQLAuthorizer(pool).CapabilitiesOnScope(ctx, admin.ID, authz.GlobalScope())
+	caps, err := authz.New(pool).CapabilitiesOnScope(ctx, admin.ID, authz.GlobalScope())
 	if err != nil {
 		t.Fatalf("CapabilitiesOnScope(admin, global): %v", err)
 	}

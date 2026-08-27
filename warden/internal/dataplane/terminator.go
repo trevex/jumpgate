@@ -21,12 +21,12 @@ import (
 // those that no longer pass. A session that still has a standing login survives.
 type Terminator struct {
 	pool  *pgxpool.Pool
-	authz authz.Authorizer
+	authz *authz.Authorizer
 	audit *audit.Logger
 }
 
 // NewTerminator builds the terminator.
-func NewTerminator(pool *pgxpool.Pool, a authz.Authorizer, log *audit.Logger) *Terminator {
+func NewTerminator(pool *pgxpool.Pool, a *authz.Authorizer, log *audit.Logger) *Terminator {
 	return &Terminator{pool: pool, authz: a, audit: log}
 }
 

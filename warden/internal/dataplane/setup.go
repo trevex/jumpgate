@@ -44,14 +44,14 @@ var (
 type SetupService struct {
 	pool       *pgxpool.Pool
 	verifier   *sessiontoken.Verifier
-	authz      authz.Authorizer
+	authz      *authz.Authorizer
 	broker     *vault.Broker
 	audit      *audit.Logger
 	certMaxTTL time.Duration
 }
 
 // NewSetupService builds the session-setup service.
-func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a authz.Authorizer, b *vault.Broker, log *audit.Logger, certMaxTTL time.Duration) *SetupService {
+func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a *authz.Authorizer, b *vault.Broker, log *audit.Logger, certMaxTTL time.Duration) *SetupService {
 	return &SetupService{pool: pool, verifier: v, authz: a, broker: b, audit: log, certMaxTTL: certMaxTTL}
 }
 

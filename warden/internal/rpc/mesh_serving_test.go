@@ -92,7 +92,7 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 		t.Fatalf("CreateCAKey: %v", err)
 	}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, time.Minute)

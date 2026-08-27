@@ -16,7 +16,7 @@ import (
 // an ssh:login:<login> binding held globally, on any ancestor folder, or on the
 // asset itself all confer connect — with the sole carve-out that the literal `**`
 // super-capability does NOT grant proxy access on its own.
-func EntitledLogins(ctx context.Context, a Authorizer, userID, assetID uuid.UUID, allowedLogins []string) ([]string, error) {
+func EntitledLogins(ctx context.Context, a scopeCapabilitiesReader, userID, assetID uuid.UUID, allowedLogins []string) ([]string, error) {
 	caps, err := ConnectCapabilities(ctx, a, userID, assetID)
 	if err != nil {
 		return nil, err

@@ -19,12 +19,12 @@ const tokenTTL = 12 * time.Hour
 type Handler struct {
 	q            *sqlc.Queries
 	tokens       *TokenService
-	authorizer   authz.Authorizer
+	authorizer   *authz.Authorizer
 	cookieSecure bool
 }
 
 // NewHandler constructs the AuthService implementation.
-func NewHandler(q *sqlc.Queries, tokens *TokenService, authorizer authz.Authorizer, cookieSecure bool) *Handler {
+func NewHandler(q *sqlc.Queries, tokens *TokenService, authorizer *authz.Authorizer, cookieSecure bool) *Handler {
 	return &Handler{q: q, tokens: tokens, authorizer: authorizer, cookieSecure: cookieSecure}
 }
 

@@ -70,7 +70,7 @@ func assertMgmtCapPathReveal(t *testing.T, roleName string, capabilities ...stri
 	t.Helper()
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	user, root, team, other := seedPathReveal(t, pool, roleName, capabilities...)
 
 	// Level under root: team is revealed as governed (mgmt anchor); other is absent.
@@ -133,7 +133,7 @@ func TestPathRevealForGroupAdmin(t *testing.T) {
 func TestFolderPathVisible(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	user, root, team, other := seedPathReveal(t, pool, "fpv-admin", "catalog:asset:read")
 
 	for _, tc := range []struct {
@@ -178,7 +178,7 @@ func TestFolderPathVisible(t *testing.T) {
 func TestGovernedFalseForBreadcrumb(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	// Tree a ⊃ b ⊃ c, asset deep ∈ c.
@@ -262,7 +262,7 @@ func TestGovernedFalseForBreadcrumb(t *testing.T) {
 func TestDeactivatedUserSeesNoFolders(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	user, root, team, _ := seedPathReveal(t, pool, "pr-deact", "catalog:folder:read")
 
 	// Sanity: before deactivation the user governs team and sees the path.
@@ -296,7 +296,7 @@ func TestDeactivatedUserSeesNoFolders(t *testing.T) {
 func TestGlobalFolderReadGovernsWholeTree(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	// admin (from seedTree) holds catalog:folder:read globally; tree root ⊃ f1 ⊃ f2.
@@ -337,7 +337,7 @@ func TestGlobalFolderReadGovernsWholeTree(t *testing.T) {
 func TestCascadeUnderParentExcludesSelf(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	// Tree: P (parent), Q (child of P).

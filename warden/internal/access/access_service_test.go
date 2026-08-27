@@ -2208,7 +2208,7 @@ func TestGetRoleDisplay(t *testing.T) {
 	capperID := seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
 	capper := auth.CurrentUser{ID: capperID, Email: "roleadmin@x"}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	roles := authz.NewRoleResolver(pool)
 	q := sqlc.New(pool)
 

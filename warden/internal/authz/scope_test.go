@@ -94,7 +94,7 @@ func TestCapabilitiesOnScope(t *testing.T) {
 	// STRUCTURALLY down the folder tree (via the folder ancestor walk in
 	// CapabilitiesOnScope), not via the opt-in data-plane parent inheritance.
 
-	a := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	a := New(pool)
 
 	// --- scopeless global standing binding ---
 	gUser, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "scope-global@x", DisplayName: "G"})

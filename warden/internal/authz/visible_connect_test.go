@@ -90,7 +90,7 @@ func seedConnectCascade(t *testing.T, pool *pgxpool.Pool) (admin, alice, carol, 
 func TestConnectCascadeVisible(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	_, alice, _, _, root, cf, cbox := seedConnectCascade(t, pool)
 
 	assets, err := s.VisibleAssetsUnder(ctx, alice, cf, false)
@@ -118,7 +118,7 @@ func TestConnectCascadeVisible(t *testing.T) {
 func TestConnectCascadeAdminSeesAll(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, _, _, _, root, cf, cbox := seedConnectCascade(t, pool)
 
 	assets, err := s.VisibleAssetsUnder(ctx, admin, cf, false)
@@ -143,7 +143,7 @@ func TestConnectCascadeAdminSeesAll(t *testing.T) {
 func TestConnectCascadeNoEntitledLogin(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	_, _, carol, _, root, cf, cbox := seedConnectCascade(t, pool)
 
 	assets, err := s.VisibleAssetsUnder(ctx, carol, cf, false)
@@ -169,7 +169,7 @@ func TestConnectCascadeNoEntitledLogin(t *testing.T) {
 func TestConnectCascadeNobody(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	_, _, _, nobody, root, cf, _ := seedConnectCascade(t, pool)
 
 	assets, err := s.VisibleAssetsUnder(ctx, nobody, cf, false)

@@ -44,7 +44,7 @@ type Handler struct {
 
 // NewHandler constructs the VaultService implementation. A nil sealer
 // disables the sealing write paths (vault disabled).
-func NewHandler(q *sqlc.Queries, sealer *secrets.Sealer, a authz.Authorizer) *Handler {
+func NewHandler(q *sqlc.Queries, sealer *secrets.Sealer, a *authz.Authorizer) *Handler {
 	return &Handler{q: q, sealer: sealer, guard: apiguard.New(a, q)}
 }
 

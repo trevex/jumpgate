@@ -64,7 +64,7 @@ func castServer(t *testing.T, getter httpapi.ObjectGetter) (*pgxpool.Pool, strin
 	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
-	a := authz.NewSQLAuthorizer(pool)
+	a := authz.New(pool)
 
 	router := httpapi.NewRouter(pool, httpapi.RouterDeps{
 		Queries:    q,
@@ -95,7 +95,7 @@ func castServerWithReviewer(t *testing.T, getter httpapi.ObjectGetter, reviewer 
 	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
-	a := authz.NewSQLAuthorizer(pool)
+	a := authz.New(pool)
 
 	router := httpapi.NewRouter(pool, httpapi.RouterDeps{
 		Queries:       q,

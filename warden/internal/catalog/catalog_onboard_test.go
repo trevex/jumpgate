@@ -37,7 +37,7 @@ func newCatalogTestEnv(t *testing.T) *catalogTestEnv {
 	seedUser(t, pool, "admin@x", "supersecret", true)
 
 	q := sqlc.New(pool)
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
 
 	adminID := userID(t, pool, "admin@x")

@@ -10,9 +10,9 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 )
 
-func benchAuthz(b *testing.B) authz.Authorizer {
+func benchAuthz(b *testing.B) *authz.Authorizer {
 	pool, _ := sharedDB(b)
-	return authz.NewSQLAuthorizer(pool)
+	return authz.New(pool)
 }
 
 func BenchmarkCheck(b *testing.B) {

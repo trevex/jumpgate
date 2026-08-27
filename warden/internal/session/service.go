@@ -25,14 +25,14 @@ var ErrNoAccess = errors.New("no session access to asset")
 // Service authorizes and mints data-plane admission tokens.
 type Service struct {
 	q               *sqlc.Queries
-	authz           authz.Authorizer
+	authz           *authz.Authorizer
 	minter          *sessiontoken.Minter
 	gatewayEndpoint string
 	ttl             time.Duration
 }
 
 // NewService builds the CreateSession domain service.
-func NewService(q *sqlc.Queries, a authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint string, ttl time.Duration) *Service {
+func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint string, ttl time.Duration) *Service {
 	return &Service{q: q, authz: a, minter: minter, gatewayEndpoint: gatewayEndpoint, ttl: ttl}
 }
 

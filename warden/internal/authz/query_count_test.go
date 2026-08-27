@@ -179,7 +179,7 @@ func TestBrowseQueryCountIsO1(t *testing.T) {
 		}
 	}
 
-	a := NewSQLAuthorizer(pool)
+	a := New(pool)
 
 	// measure runs fn with the counter reset, returning the round-trip count.
 	measure := func(fn func()) int64 {

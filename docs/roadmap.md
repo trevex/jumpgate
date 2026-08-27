@@ -65,8 +65,9 @@ a single source of truth as inlinable PostgreSQL SQL functions (`authz_*` + the
 `active_access_grants` view) consumed via static sqlc, guarded against Go-side
 re-implementation by a grep test; warden is organized as vertical-slice domain
 modules (`internal/<domain>/{service.go,handler.go}`) over shared transport leaves
-(`apiguard`/`apierr`/`apipage`) with `internal/rpc` reduced to wiring and
-`warden/authz` the one public interface; cross-domain cleanup runs off DB FK cascade;
+(`apiguard`/`apierr`/`apipage`) with `internal/rpc` reduced to wiring and no public
+library API (everything, including `authz`, lives under `internal/`); cross-domain
+cleanup runs off DB FK cascade;
 and the test tiers, package boundaries, and durable docs were consolidated to match
 (see [testing.md](testing.md) and [development.md](development.md)).
 

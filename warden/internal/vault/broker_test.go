@@ -269,7 +269,7 @@ func caAuthority(t *testing.T, line string) ssh.PublicKey {
 }
 
 func newBroker(pool *pgxpool.Pool, sealer *secrets.Sealer) *Broker {
-	return NewBroker(pool, sealer, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	return NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
 }
 
 // TestIssueCaHostScopedPrincipals: a ca login yields a cert whose
@@ -550,7 +550,7 @@ func TestIssueVaultDisabled(t *testing.T) {
 	setSSHConfig(t, q, asset)
 	setLogin(t, q, asset, "root", "ca", pgtype.UUID{})
 
-	b := NewBroker(pool, nil, authz.NewSQLAuthorizer(pool), audit.New(pool))
+	b := NewBroker(pool, nil, authz.New(pool), audit.New(pool))
 	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ClientSSHPubKey: clientKey(t), ValidUntil: time.Now().Add(time.Hour), KeyID: "g10"}); !errors.Is(err, ErrVaultNotConfigured) {
 		t.Fatalf("Issue err = %v, want ErrVaultNotConfigured", err)
 	}

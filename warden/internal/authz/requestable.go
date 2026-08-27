@@ -34,7 +34,7 @@ import (
 
 // requestableRoles returns the roles requestable (but not already active) for the
 // user on the asset, per the request_policy eligibility model above.
-func (s *sqlAuthorizer) requestableRoles(ctx context.Context, userID, assetID uuid.UUID) ([]uuid.UUID, error) {
+func (s *Authorizer) requestableRoles(ctx context.Context, userID, assetID uuid.UUID) ([]uuid.UUID, error) {
 	out, err := s.queries().RequestableRolesOnAsset(ctx, sqlc.RequestableRolesOnAssetParams{User: uuidArg(userID), AssetID: uuidArg(assetID)})
 	if err != nil {
 		return nil, fmt.Errorf("requestable roles: %w", err)
@@ -50,7 +50,7 @@ type requestableAsset struct {
 
 // visibleRequestable returns every (asset, role) requestable pair for the user
 // across all assets, per the request_policy eligibility model above.
-func (s *sqlAuthorizer) visibleRequestable(ctx context.Context, userID uuid.UUID) ([]requestableAsset, error) {
+func (s *Authorizer) visibleRequestable(ctx context.Context, userID uuid.UUID) ([]requestableAsset, error) {
 	rows, err := s.queries().VisibleRequestable(ctx, uuidArg(userID))
 	if err != nil {
 		return nil, fmt.Errorf("visible requestable: %w", err)

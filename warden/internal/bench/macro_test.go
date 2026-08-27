@@ -34,7 +34,7 @@ func benchAccessService(b *testing.B) *accessrequest.Service {
 func benchCatalog(b *testing.B) *rpc.CatalogServer {
 	pool, _ := sharedDB(b)
 	q := sqlc.New(pool)
-	a := authz.NewSQLAuthorizer(pool)
+	a := authz.New(pool)
 	return rpc.NewCatalogServer(q, pool, a, benchAccessService(b), nil, nil)
 }
 

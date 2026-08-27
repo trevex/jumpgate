@@ -158,7 +158,7 @@ type RouterDeps struct {
 	Queries *sqlc.Queries
 	// Authorizer checks the caller's recording:read capability. If nil, the
 	// cast route returns 503.
-	Authorizer authz.Authorizer
+	Authorizer *authz.Authorizer
 	// Getter streams asciicast objects from the object store. If nil, the cast
 	// route returns 503 (recording retrieval not configured).
 	Getter ObjectGetter

@@ -86,7 +86,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// the real grant-keyed dataplane.Terminator (stateless): grant revocation/expiry/
 	// deactivation now re-evaluates closures and tears down live sessions via
 	// LISTEN/NOTIFY. The same instance is injected into the user and mesh adapters.
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	roleResolver := authz.NewRoleResolver(pool)
 	approvalResolver := approvals.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)

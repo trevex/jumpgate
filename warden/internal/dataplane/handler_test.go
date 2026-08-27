@@ -52,7 +52,7 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 	sealer := testSealer(t)
 	_, pub := testSessionService(t, p, sealer)
 
-	authorizer := authz.NewSQLAuthorizer(p)
+	authorizer := authz.New(p)
 	auditLog := audit.New(p)
 	broker := vault.NewBroker(p, sealer, authorizer, auditLog)
 	verifier := sessiontoken.NewVerifier(pub)
@@ -238,7 +238,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 		t.Fatalf("CreateCAKey: %v", err)
 	}
 
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)

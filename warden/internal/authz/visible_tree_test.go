@@ -220,7 +220,7 @@ func seedRolesGroups(t *testing.T, pool *pgxpool.Pool) (admin, holder, member, s
 func TestVisibleRolesUnderTiers(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, holder, _, stranger, _, f1, groleG, frole, _, _, adminRoleID := seedRolesGroups(t, pool)
 
 	// admin (global access:role:read): whole tree cascade → every role. Besides the
@@ -279,7 +279,7 @@ func TestVisibleRolesUnderTiers(t *testing.T) {
 func TestVisibleRolesUnderRequestableArm(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	alice, _, _, pgstaging, _, _, _, dbaRole := seed(t, pool)
 
 	// Precondition: dba is Requestable (not Active) for alice on pgstaging, and
@@ -314,7 +314,7 @@ func TestVisibleRolesUnderRequestableArm(t *testing.T) {
 func TestVisibleGroupsUnderTiers(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, _, member, stranger, _, f1, _, _, ggroupG, fgroup, _ := seedRolesGroups(t, pool)
 
 	// admin (global identity:group:read): whole tree cascade → both groups.
@@ -356,7 +356,7 @@ func TestVisibleGroupsUnderTiers(t *testing.T) {
 func TestVisibleAssetsUnder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, alice, bob, root, f1, f2, a1, a2 := seedTree(t, pool)
 
 	stranger, err := sqlc.New(pool).CreateUser(ctx, sqlc.CreateUserParams{Email: "stranger@tree", DisplayName: "S"})
@@ -453,7 +453,7 @@ func TestVisibleAssetsUnder(t *testing.T) {
 func TestVisibleScopedNonGlobalAdmin(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	// Tree: root ⊃ f1 ⊃ f2  (from seedTree) + root ⊃ f3
@@ -543,7 +543,7 @@ func contains(s map[uuid.UUID]struct{}, id uuid.UUID) bool {
 func TestVisibleManageOnlyEmptyFolder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	admin, _, _, root, f1, _, _, _ := seedTree(t, pool)
@@ -569,7 +569,7 @@ func TestVisibleManageOnlyEmptyFolder(t *testing.T) {
 func TestVisibleNonexistentParent(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, _, _, _, _, _, _, _ := seedTree(t, pool)
 
 	ghost := uuid.New()
@@ -593,7 +593,7 @@ func TestVisibleNonexistentParent(t *testing.T) {
 func TestVisibleLeafFolderHasNoChildren(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, _, _, _, _, f2, _, _ := seedTree(t, pool)
 
 	gotF, err := s.VisibleFoldersUnder(ctx, admin, f2, false)
@@ -609,7 +609,7 @@ func TestVisibleLeafFolderHasNoChildren(t *testing.T) {
 func TestVisibleCascadeNoDuplicates(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	admin, _, _, _, _, _, a1, a2 := seedTree(t, pool)
 
 	// Cascade from uuid.Nil (root sentinel) covers the whole tree.
@@ -633,7 +633,7 @@ func TestVisibleCascadeNoDuplicates(t *testing.T) {
 func TestVisibleDeactivatedRoleHolder(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, frole, _, _, _ := seedRolesGroups(t, pool)
@@ -676,7 +676,7 @@ func TestVisibleDeactivatedRoleHolder(t *testing.T) {
 func TestVisibleDeactivatedGroupMember(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, _, _, fgroup, _ := seedRolesGroups(t, pool)
@@ -714,7 +714,7 @@ func TestVisibleDeactivatedGroupMember(t *testing.T) {
 func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	_, _, _, _, root, f1, _, frole, _, fgroup, _ := seedRolesGroups(t, pool)
@@ -808,7 +808,7 @@ func TestVisibleScopedNonGlobalAdminRolesGroups(t *testing.T) {
 func TestVisibleNestedSubgroupMember(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	_, _, _, _, _, f1, _, _, _, _, _ := seedRolesGroups(t, pool)
@@ -865,7 +865,7 @@ func TestVisibleNestedSubgroupMember(t *testing.T) {
 func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
-	s := NewSQLAuthorizer(pool).(*sqlAuthorizer)
+	s := New(pool)
 	q := sqlc.New(pool)
 
 	_, _, _, root, f1, _, a1, _ := seedTree(t, pool)
@@ -917,7 +917,7 @@ func TestVisibleDeactivatedUserStandingBinding(t *testing.T) {
 // returns false.
 func TestIsMember(t *testing.T) {
 	pool := newPool(t)
-	s := NewSQLAuthorizer(pool)
+	s := New(pool)
 	ctx := context.Background()
 	q := sqlc.New(pool)
 

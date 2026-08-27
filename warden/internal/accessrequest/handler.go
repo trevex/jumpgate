@@ -29,7 +29,7 @@ type Handler struct {
 }
 
 // NewHandler constructs the AccessRequestService implementation.
-func NewHandler(resolver *approvals.Resolver, svc *Service, a authz.Authorizer, q *sqlc.Queries) *Handler {
+func NewHandler(resolver *approvals.Resolver, svc *Service, a *authz.Authorizer, q *sqlc.Queries) *Handler {
 	return &Handler{resolver: resolver, svc: svc, guard: apiguard.New(a, q)}
 }
 

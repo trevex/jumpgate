@@ -44,7 +44,7 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.NewSQLAuthorizer(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
 	return svc, pub
 }
 
@@ -96,7 +96,7 @@ func createRoleWithCaps(t *testing.T, ctx context.Context, q *sqlc.Queries, name
 // registerMeshServices mounts the mesh service set (Gateway + Dataplane) on the mux,
 // mirroring the wiring in main.go / rpc.RegisterMeshServices.
 func registerMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, pubKey ed25519.PublicKey) error {
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	services := rpc.MeshServices{Gateway: gateway.NewHandler(registry, pubKey)}
 	if setupSvc != nil {

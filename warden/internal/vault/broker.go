@@ -99,13 +99,13 @@ type Credential struct {
 type Broker struct {
 	q      *sqlc.Queries
 	sealer *secrets.Sealer
-	authz  authz.Authorizer
+	authz  *authz.Authorizer
 	audit  *audit.Logger
 }
 
 // NewBroker constructs a Broker. A nil sealer disables the vault: Issue returns
 // ErrVaultNotConfigured (fail closed).
-func NewBroker(pool *pgxpool.Pool, sealer *secrets.Sealer, authorizer authz.Authorizer, auditLog *audit.Logger) *Broker {
+func NewBroker(pool *pgxpool.Pool, sealer *secrets.Sealer, authorizer *authz.Authorizer, auditLog *audit.Logger) *Broker {
 	return &Broker{
 		q:      sqlc.New(pool),
 		sealer: sealer,

@@ -77,16 +77,17 @@ Makefile            Task entrypoints
 - **Composition root:** `warden/internal/app` constructs production dependencies.
   Transport registration accepts already-built services and must not create
   alternate authorizers, audit loggers, resolvers, or lifecycle components.
-- **Public Go API:** `warden/authz` contains the stable authorization contract,
-  scopes, and capability matching helpers. PostgreSQL query construction and
-  concrete executors remain under `warden/internal/authz`.
-- **Interface policy:** `warden/authz.Authorizer` is the **one** public interface —
-  the seam that lets an alternate backend (e.g. OpenFGA) drop in. Everything else
-  is concrete: a domain service is a plain `*Service` struct, and where one domain
-  depends on another it declares a **narrow consumer-side interface** naming only the
-  methods it uses (e.g. catalog's `sessionTerminator` / `requestReadAuthorizer`),
-  rather than importing a producer-defined interface. This keeps dependencies
-  explicit and testable without a package of shared mock interfaces.
+- **No public Go API:** every package lives under `warden/internal/`. The
+  authorization contract, scopes, and capability matching helpers live in
+  `warden/internal/authz`, alongside the concrete PostgreSQL executor.
+- **Interface policy:** authorization is a concrete `*authz.Authorizer` struct
+  (`authz.New(pool)`), not an interface — consistent with every other domain. A
+  domain service is a plain `*Service` struct, and where one domain depends on
+  another it declares a **narrow consumer-side interface** naming only the methods
+  it uses (e.g. catalog's `sessionTerminator` / `requestReadAuthorizer`, or the
+  local scope-capability seam the connect helpers consume), rather than importing a
+  producer-defined interface. This keeps dependencies explicit and testable without
+  a package of shared mock interfaces.
 - **Rust workspace:** members under the root `Cargo.toml`; shared deps in
   `[workspace.dependencies]`. `Cargo.lock` is committed (binary workspace).
 

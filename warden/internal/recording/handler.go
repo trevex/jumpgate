@@ -62,7 +62,7 @@ type Handler struct {
 // be nil, in which case GetRecordingDownload returns FailedPrecondition. reviewer
 // authorizes grant-scoped review (subject or potential approver) on top of the
 // recording:read gate; a nil reviewer disables that additive path.
-func NewHandler(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a authz.Authorizer, reviewer grantReviewer) *Handler {
+func NewHandler(q *sqlc.Queries, auditLog *audit.Logger, presign Presigner, urlTTL time.Duration, a *authz.Authorizer, reviewer grantReviewer) *Handler {
 	return &Handler{q: q, audit: auditLog, presign: presign, urlTTL: urlTTL, reviewer: reviewer, guard: apiguard.New(a, q)}
 }
 

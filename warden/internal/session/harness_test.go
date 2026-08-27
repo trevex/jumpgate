@@ -79,7 +79,7 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.NewSQLAuthorizer(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, testSessionTTL)
 	return svc, pub
 }
 
@@ -102,7 +102,7 @@ func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKe
 
 	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
 	auditLog := audit.New(pool)

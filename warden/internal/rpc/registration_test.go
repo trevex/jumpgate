@@ -30,7 +30,7 @@ func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *
 	q := sqlc.New(pool)
 	tokens := auth.NewTokenService(q)
 	lookup := auth.Lookup{Tokens: tokens, Q: q}
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	roles := authz.NewRoleResolver(pool)
 	resolver := approvals.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
@@ -56,7 +56,7 @@ func registerUserServices(mux *http.ServeMux, pool *pgxpool.Pool, arSvc *accessr
 }
 
 func registerMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audit.Logger, setupSvc *dataplane.SetupService, registry *dataplane.Registry, pubKey ed25519.PublicKey) error {
-	authorizer := authz.NewSQLAuthorizer(pool)
+	authorizer := authz.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	services := rpc.MeshServices{Gateway: gateway.NewHandler(registry, pubKey)}
 	if setupSvc != nil {

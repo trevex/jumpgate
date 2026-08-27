@@ -13,7 +13,7 @@ import (
 // database as the authz_global_held SQL function (the scopeless analogue of
 // authz_held); this method reaches it through the static GlobalHeldCapabilities
 // query. A deactivated user holds nothing (enforced inside the function).
-func (s *sqlAuthorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {
+func (s *Authorizer) globalHeldCapabilities(ctx context.Context, userID uuid.UUID) (Capabilities, error) {
 	rows, err := s.queries().GlobalHeldCapabilities(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("global held: %w", err)
