@@ -10,11 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trevex/jumpgate/warden/internal/postgres"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
 const teardownChannel = "session_teardown"
-const listenTeardownSQL = "LISTEN session_teardown"
 
 type teardownPayload struct {
 	SessionID string `json:"session_id"`
@@ -25,7 +25,7 @@ type teardownPayload struct {
 // channel. Any replica LISTENing will deliver it if it owns that worker's stream.
 func NotifyTeardown(ctx context.Context, pool *pgxpool.Pool, sessionID, reason string) error {
 	p, _ := json.Marshal(teardownPayload{SessionID: sessionID, Reason: reason})
-	if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", teardownChannel, string(p)); err != nil {
+	if err := sqlc.New(pool).NotifyChannel(ctx, sqlc.NotifyChannelParams{Channel: teardownChannel, Payload: string(p)}); err != nil {
 		return fmt.Errorf("notify teardown: %w", err)
 	}
 	return nil
@@ -64,11 +64,11 @@ func (l *Listener) listenLoop(ctx context.Context) error {
 		return err
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, listenTeardownSQL); err != nil {
+	if err := postgres.Listen(ctx, conn.Conn(), teardownChannel); err != nil {
 		return err
 	}
 	for {
-		n, err := conn.Conn().WaitForNotification(ctx)
+		n, err := postgres.WaitNotification(ctx, conn.Conn())
 		if err != nil {
 			return err
 		}

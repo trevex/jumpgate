@@ -19,6 +19,17 @@ INSERT INTO group_memberships (group_id, member_user_id) VALUES ($1, $2);
 -- name: AddGroupToGroup :exec
 INSERT INTO group_memberships (group_id, member_group_id) VALUES ($1, $2);
 
+-- name: GroupNestingCyclic :one
+-- AddGroupToGroup cycle check: whether making member_group_id a member of group_id
+-- would close a cycle — true iff group_id is ALREADY a transitive supergroup of
+-- member_group_id (walking member->super edges up from group_id).
+WITH RECURSIVE supergroups(gid) AS (
+    SELECT group_id FROM group_memberships WHERE member_group_id = sqlc.arg('group_id')
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN supergroups sg ON gm.member_group_id = sg.gid
+)
+SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = sqlc.arg('member_group_id'));
+
 -- name: RemoveUserFromGroup :exec
 DELETE FROM group_memberships WHERE group_id = $1 AND member_user_id = $2;
 

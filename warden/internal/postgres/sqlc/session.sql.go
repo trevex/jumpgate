@@ -413,6 +413,21 @@ func (q *Queries) MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) 
 	return result.RowsAffected(), nil
 }
 
+const notifyChannel = `-- name: NotifyChannel :exec
+SELECT pg_notify($1, $2)
+`
+
+type NotifyChannelParams struct {
+	Channel string `json:"channel"`
+	Payload string `json:"payload"`
+}
+
+// NotifyTeardown: publish a payload on a NOTIFY channel via pg_notify.
+func (q *Queries) NotifyChannel(ctx context.Context, arg NotifyChannelParams) error {
+	_, err := q.db.Exec(ctx, notifyChannel, arg.Channel, arg.Payload)
+	return err
+}
+
 const upsertWorkerPresence = `-- name: UpsertWorkerPresence :exec
 INSERT INTO worker_presence (worker_id, last_seen_at) VALUES ($1, now())
 ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now()

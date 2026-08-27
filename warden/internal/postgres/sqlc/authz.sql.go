@@ -12,6 +12,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const allFolderIDs = `-- name: AllFolderIDs :many
+SELECT id FROM folders
+`
+
+// allFolderIDs: every folder id (root+cascade candidate set = the whole tree).
+func (q *Queries) AllFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, allFolderIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const anchorHomeFolders = `-- name: AnchorHomeFolders :many
 WITH held_folder_caps(folder_id, scope, action, qualifier) AS (
     SELECT h.object_id, rc.scope, rc.action, rc.qualifier
@@ -266,6 +291,62 @@ func (q *Queries) ApproverSubjectExists(ctx context.Context, arg ApproverSubject
 	return exists, err
 }
 
+const assetLoginsForAssets = `-- name: AssetLoginsForAssets :many
+SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY($1::uuid[]) ORDER BY login
+`
+
+type AssetLoginsForAssetsRow struct {
+	AssetID uuid.UUID `json:"asset_id"`
+	Login   string    `json:"login"`
+}
+
+// assetLoginsFor: the SSH login names declared on each asset in `asset_ids`.
+func (q *Queries) AssetLoginsForAssets(ctx context.Context, assetIds []uuid.UUID) ([]AssetLoginsForAssetsRow, error) {
+	rows, err := q.db.Query(ctx, assetLoginsForAssets, assetIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetLoginsForAssetsRow
+	for rows.Next() {
+		var i AssetLoginsForAssetsRow
+		if err := rows.Scan(&i.AssetID, &i.Login); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const childFolderIDs = `-- name: ChildFolderIDs :many
+SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM $1::uuid ORDER BY name, id
+`
+
+// childFolderIDs: the ids of folders directly under `parent`, ordered by (name, id).
+// A NULL parent selects the tree root (parent_id IS NULL).
+func (q *Queries) ChildFolderIDs(ctx context.Context, parent pgtype.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, childFolderIDs, parent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const effectiveRequestPolicy = `-- name: EffectiveRequestPolicy :one
 SELECT policy_id, required_approvals, approver_role_id, requester_role_id, max_duration
 FROM authz_effective_request_policy($1, $2)
@@ -335,6 +416,108 @@ func (q *Queries) ExplainRolePaths(ctx context.Context, arg ExplainRolePathsPara
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const folderAncestorsByPath = `-- name: FolderAncestorsByPath :many
+SELECT f.id FROM folders f
+WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = $1)
+`
+
+// folderAncestorsAndSelf: every ancestor-or-self folder id of `id`, via the ltree
+// ancestor operator (@>).
+func (q *Queries) FolderAncestorsByPath(ctx context.Context, id pgtype.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, folderAncestorsByPath, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const folderExists = `-- name: FolderExists :one
+SELECT EXISTS(SELECT 1 FROM folders WHERE id = $1)
+`
+
+// FolderPathVisible global short-circuit: whether a folder id exists.
+func (q *Queries) FolderExists(ctx context.Context, folderID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, folderExists, folderID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const folderPathIDs = `-- name: FolderPathIDs :one
+SELECT path_ids::text FROM folders WHERE id = $1
+`
+
+// folderPathIDs: the ltree path text of one folder. pgx.ErrNoRows for a missing folder.
+func (q *Queries) FolderPathIDs(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, folderPathIDs, id)
+	var path_ids string
+	err := row.Scan(&path_ids)
+	return path_ids, err
+}
+
+const folderPathVisible = `-- name: FolderPathVisible :one
+WITH f  AS (SELECT path_ids FROM folders WHERE id = $1),
+     ap AS (SELECT path_ids FROM folders WHERE id = ANY($2::uuid[])),
+     mp AS (SELECT path_ids FROM folders WHERE id = ANY($3::uuid[]))
+SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
+    OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids)
+`
+
+type FolderPathVisibleParams struct {
+	FolderID pgtype.UUID `json:"folder_id"`
+	Anchors  []uuid.UUID `json:"anchors"`
+	MgmtIds  []uuid.UUID `json:"mgmt_ids"`
+}
+
+// FolderPathVisible: whether `folder_id` is an ancestor-or-self of an anchor (path reveal)
+// OR inside a folder the user manages (cascade down) — the same predicate as
+// VisibleFoldersUnder, for one folder.
+func (q *Queries) FolderPathVisible(ctx context.Context, arg FolderPathVisibleParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, folderPathVisible, arg.FolderID, arg.Anchors, arg.MgmtIds)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const folderSubtreeIDsByRoots = `-- name: FolderSubtreeIDsByRoots :many
+SELECT f.id FROM folders f
+WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY($1::uuid[]))
+`
+
+// folderSubtreeIDs: every folder id in the subtrees rooted at `roots` (inclusive),
+// via the GiST-indexed ltree descendant operator (<@).
+func (q *Queries) FolderSubtreeIDsByRoots(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, folderSubtreeIDsByRoots, roots)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1122,6 +1305,66 @@ func (q *Queries) VisibleAssetsUnder(ctx context.Context, arg VisibleAssetsUnder
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const visibleFoldersUnder = `-- name: VisibleFoldersUnder :many
+WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY($3::uuid[])),
+     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY($4::uuid[]))
+SELECT f.id,
+       EXISTS (SELECT 1 FROM mgmt_paths m WHERE f.path_ids <@ m.path_ids) AS governed
+FROM folders f
+WHERE (
+        (NOT $1::boolean AND f.parent_id IS NOT DISTINCT FROM $2::uuid)
+     OR ($1::boolean AND $2::uuid IS NULL)
+     OR ($1::boolean AND $2::uuid IS NOT NULL
+         AND f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $2::uuid)
+         AND f.id <> $2::uuid)
+      )
+  AND ( EXISTS (SELECT 1 FROM anchor_paths a WHERE f.path_ids @> a.path_ids)
+     OR EXISTS (SELECT 1 FROM mgmt_paths  m WHERE f.path_ids <@ m.path_ids) )
+ORDER BY f.name, f.id
+`
+
+type VisibleFoldersUnderParams struct {
+	Cascade bool        `json:"cascade"`
+	Parent  pgtype.UUID `json:"parent"`
+	Anchors []uuid.UUID `json:"anchors"`
+	MgmtIds []uuid.UUID `json:"mgmt_ids"`
+}
+
+type VisibleFoldersUnderRow struct {
+	ID       uuid.UUID `json:"id"`
+	Governed bool      `json:"governed"`
+}
+
+// VisibleFoldersUnder: folders under `parent` visible to the user under the path-reveal
+// model, each with a `governed` flag. `anchors` are the folders whose browse PATH must be
+// revealed (ancestor-or-self); `mgmt_ids` are the folders the user manages (their subtrees
+// are visible AND governed). The (parent, cascade) browse level is selected by the nullable
+// @parent and @cascade args, mirroring childCandidateFolderIDs.
+func (q *Queries) VisibleFoldersUnder(ctx context.Context, arg VisibleFoldersUnderParams) ([]VisibleFoldersUnderRow, error) {
+	rows, err := q.db.Query(ctx, visibleFoldersUnder,
+		arg.Cascade,
+		arg.Parent,
+		arg.Anchors,
+		arg.MgmtIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VisibleFoldersUnderRow
+	for rows.Next() {
+		var i VisibleFoldersUnderRow
+		if err := rows.Scan(&i.ID, &i.Governed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -5,17 +5,12 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // folderPathIDs returns the ltree path text of one folder. Propagates
 // pgx.ErrNoRows for a missing folder (callers decide how to treat "no folder").
 func (s *Authorizer) folderPathIDs(ctx context.Context, id uuid.UUID) (string, error) {
-	var p string
-	if err := s.pool.QueryRow(ctx, `SELECT path_ids::text FROM folders WHERE id = @id`, pgx.NamedArgs{"id": id}).Scan(&p); err != nil {
-		return "", err
-	}
-	return p, nil
+	return s.queries().FolderPathIDs(ctx, id)
 }
 
 // folderSubtreeIDs returns every folder id in the subtrees rooted at `roots`
@@ -26,14 +21,11 @@ func (s *Authorizer) folderSubtreeIDs(ctx context.Context, roots []uuid.UUID) ([
 	if len(roots) == 0 {
 		return nil, nil
 	}
-	rows, err := s.pool.Query(ctx, `
-SELECT f.id FROM folders f
-WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY(@roots::uuid[]))`, pgx.NamedArgs{"roots": roots})
+	ids, err := s.queries().FolderSubtreeIDsByRoots(ctx, roots)
 	if err != nil {
 		return nil, fmt.Errorf("folder subtree (ltree): %w", err)
 	}
-	defer rows.Close()
-	return scanUUIDs(rows)
+	return ids, nil
 }
 
 // folderAncestorsAndSelf returns every ancestor-or-self folder id of id, using
@@ -41,12 +33,9 @@ WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY(@roots::uui
 // production callers use this version while the recursive variant is retained
 // only for differential testing.
 func (s *Authorizer) folderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.pool.Query(ctx, `
-SELECT f.id FROM folders f
-WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = @id)`, pgx.NamedArgs{"id": id})
+	ids, err := s.queries().FolderAncestorsByPath(ctx, uuidArg(id))
 	if err != nil {
 		return nil, fmt.Errorf("folder ancestors (ltree): %w", err)
 	}
-	defer rows.Close()
-	return scanUUIDs(rows)
+	return ids, nil
 }

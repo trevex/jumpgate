@@ -20,6 +20,8 @@ type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	// allFolderIDs: every folder id (root+cascade candidate set = the whole tree).
+	AllFolderIDs(ctx context.Context) ([]uuid.UUID, error)
 	// [14] anchorHomeFolders: the union of the three folder-id anchor sources hanging
 	// off folder-homed nodes — the home folders of roles/groups visible to the user and
 	// the folders of assets visible to the user. Per kind visibility is (the pre-computed
@@ -44,9 +46,14 @@ type Querier interface {
 	ApproverSubjectExists(ctx context.Context, arg ApproverSubjectExistsParams) (bool, error)
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
+	// assetLoginsFor: the SSH login names declared on each asset in `asset_ids`.
+	AssetLoginsForAssets(ctx context.Context, assetIds []uuid.UUID) ([]AssetLoginsForAssetsRow, error)
 	AuditChainTip(ctx context.Context) (AuditChainTipRow, error)
 	AuditEntryHashAtSeq(ctx context.Context, seq int64) ([]byte, error)
 	BindingsScopedToFoldersOrAssets(ctx context.Context, arg BindingsScopedToFoldersOrAssetsParams) ([]RoleBinding, error)
+	// childFolderIDs: the ids of folders directly under `parent`, ordered by (name, id).
+	// A NULL parent selects the tree root (parent_id IS NULL).
+	ChildFolderIDs(ctx context.Context, parent pgtype.UUID) ([]uuid.UUID, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
 	CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
@@ -116,15 +123,29 @@ type Querier interface {
 	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
 	// to the root. Used for folder-scoped role containment checks.
 	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
+	// folderAncestorsAndSelf: every ancestor-or-self folder id of `id`, via the ltree
+	// ancestor operator (@>).
+	FolderAncestorsByPath(ctx context.Context, id pgtype.UUID) ([]uuid.UUID, error)
 	// One folder by (parent, name). parent_id NULL matches a top-level folder
 	// (IS NOT DISTINCT FROM treats NULL = NULL as a match).
 	FolderByParentName(ctx context.Context, arg FolderByParentNameParams) (Folder, error)
+	// FolderPathVisible global short-circuit: whether a folder id exists.
+	FolderExists(ctx context.Context, folderID uuid.UUID) (bool, error)
 	// Dotted leaf->root path of a single folder (the folder's own name first).
 	FolderPath(ctx context.Context, id uuid.UUID) (string, error)
+	// folderPathIDs: the ltree path text of one folder. pgx.ErrNoRows for a missing folder.
+	FolderPathIDs(ctx context.Context, id uuid.UUID) (string, error)
+	// FolderPathVisible: whether `folder_id` is an ancestor-or-self of an anchor (path reveal)
+	// OR inside a folder the user manages (cascade down) — the same predicate as
+	// VisibleFoldersUnder, for one folder.
+	FolderPathVisible(ctx context.Context, arg FolderPathVisibleParams) (pgtype.Bool, error)
 	// Every folder's full leaf->root dotted path in one query (for list responses).
 	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
 	// All folder ids in the subtree rooted at $1 (including $1 itself).
 	FolderSubtreeIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
+	// folderSubtreeIDs: every folder id in the subtrees rooted at `roots` (inclusive),
+	// via the GiST-indexed ltree descendant operator (<@).
+	FolderSubtreeIDsByRoots(ctx context.Context, roots []uuid.UUID) ([]uuid.UUID, error)
 	GetAccessRequestForUpdate(ctx context.Context, id uuid.UUID) (AccessRequest, error)
 	GetActiveCA(ctx context.Context, kind string) (CaKey, error)
 	GetActiveSessionSigningKey(ctx context.Context) (SessionSigningKey, error)
@@ -160,6 +181,10 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// globalHeldCapabilities.
 	GlobalHeldCapabilities(ctx context.Context, user uuid.UUID) ([]GlobalHeldCapabilitiesRow, error)
+	// AddGroupToGroup cycle check: whether making member_group_id a member of group_id
+	// would close a cycle — true iff group_id is ALREADY a transitive supergroup of
+	// member_group_id (walking member->super edges up from group_id).
+	GroupNestingCyclic(ctx context.Context, arg GroupNestingCyclicParams) (bool, error)
 	// VisibleAssets active tier.
 	HeldAssets(ctx context.Context, user uuid.UUID) ([]HeldAssetsRow, error)
 	// capsOnFolders.
@@ -248,6 +273,8 @@ type Querier interface {
 	MemberGroupIDs(ctx context.Context, user uuid.UUID) ([]pgtype.UUID, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
 	NotifyAuthzChanged(ctx context.Context) error
+	// NotifyTeardown: publish a payload on a NOTIFY channel via pg_notify.
+	NotifyChannel(ctx context.Context, arg NotifyChannelParams) error
 	// Clears the approver gate on surviving policies that named the role as their
 	// approver role (the policy survives, just loses that gate). Part of DeleteRole.
 	NullApproverRoleForRole(ctx context.Context, approverRoleID pgtype.UUID) error
@@ -322,6 +349,12 @@ type Querier interface {
 	// @parent and @cascade args (the (NULL parent, non-cascade) case is short-circuited
 	// by the caller and never reaches this query).
 	VisibleAssetsUnder(ctx context.Context, arg VisibleAssetsUnderParams) ([]uuid.UUID, error)
+	// VisibleFoldersUnder: folders under `parent` visible to the user under the path-reveal
+	// model, each with a `governed` flag. `anchors` are the folders whose browse PATH must be
+	// revealed (ancestor-or-self); `mgmt_ids` are the folders the user manages (their subtrees
+	// are visible AND governed). The (parent, cascade) browse level is selected by the nullable
+	// @parent and @cascade args, mirroring childCandidateFolderIDs.
+	VisibleFoldersUnder(ctx context.Context, arg VisibleFoldersUnderParams) ([]VisibleFoldersUnderRow, error)
 	// [18] visibleHomedSetBased(groups): groups homed under `parent` visible to the user,
 	// each with its home folder. ACCESS (access_ids = transitive membership) ∪ MANAGEMENT
 	// (identity:group:read cascade). Table variant of VisibleRolesHomed (FROM groups).

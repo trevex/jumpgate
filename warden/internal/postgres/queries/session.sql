@@ -57,3 +57,7 @@ WHERE wp.last_seen_at < $1
 
 -- name: ListLiveSessionsByAsset :many
 SELECT * FROM live_sessions WHERE asset_id = $1;
+
+-- name: NotifyChannel :exec
+-- NotifyTeardown: publish a payload on a NOTIFY channel via pg_notify.
+SELECT pg_notify(sqlc.arg('channel'), sqlc.arg('payload'));

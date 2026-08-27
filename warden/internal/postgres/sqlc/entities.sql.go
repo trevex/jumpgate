@@ -402,6 +402,30 @@ func (q *Queries) GetGroupByNameGlobal(ctx context.Context, name string) (Group,
 	return i, err
 }
 
+const groupNestingCyclic = `-- name: GroupNestingCyclic :one
+WITH RECURSIVE supergroups(gid) AS (
+    SELECT group_id FROM group_memberships WHERE member_group_id = $2
+  UNION
+    SELECT gm.group_id FROM group_memberships gm JOIN supergroups sg ON gm.member_group_id = sg.gid
+)
+SELECT EXISTS (SELECT 1 FROM supergroups WHERE gid = $1)
+`
+
+type GroupNestingCyclicParams struct {
+	MemberGroupID pgtype.UUID `json:"member_group_id"`
+	GroupID       pgtype.UUID `json:"group_id"`
+}
+
+// AddGroupToGroup cycle check: whether making member_group_id a member of group_id
+// would close a cycle — true iff group_id is ALREADY a transitive supergroup of
+// member_group_id (walking member->super edges up from group_id).
+func (q *Queries) GroupNestingCyclic(ctx context.Context, arg GroupNestingCyclicParams) (bool, error) {
+	row := q.db.QueryRow(ctx, groupNestingCyclic, arg.MemberGroupID, arg.GroupID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const insertAssetName = `-- name: InsertAssetName :exec
 INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3)
 `

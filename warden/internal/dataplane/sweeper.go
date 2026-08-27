@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trevex/jumpgate/warden/internal/postgres"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -134,7 +135,7 @@ func (s *Sweeper) RunGC(ctx context.Context, interval, orphanGrace, teardownGrac
 	}
 }
 
-const listenAuthzChangedSQL = "LISTEN authz_changed"
+const authzChangedChannel = "authz_changed"
 
 // RunAuthzSweeper LISTENs on authz_changed and runs a debounced sweep on each
 // notification, plus a full SweepOwned on a periodic ticker (the pull-sweep backstop).
@@ -258,13 +259,13 @@ func (s *Sweeper) listenAuthzLoop(ctx context.Context, trigger chan<- string) er
 		return err
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, listenAuthzChangedSQL); err != nil {
+	if err := postgres.Listen(ctx, conn.Conn(), authzChangedChannel); err != nil {
 		return err
 	}
 	// On (re)connect, force a full sweep to reconcile anything missed while detached.
 	sendTrigger(ctx, trigger, "")
 	for {
-		n, err := conn.Conn().WaitForNotification(ctx)
+		n, err := postgres.WaitNotification(ctx, conn.Conn())
 		if err != nil {
 			return err
 		}

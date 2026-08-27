@@ -587,3 +587,68 @@ WHERE g.subject_user_id = sqlc.arg('caller')
        )
    )
 ORDER BY g.granted_at DESC, g.id;
+
+-- name: FolderPathIDs :one
+-- folderPathIDs: the ltree path text of one folder. pgx.ErrNoRows for a missing folder.
+SELECT path_ids::text FROM folders WHERE id = sqlc.arg('id');
+
+-- name: FolderSubtreeIDsByRoots :many
+-- folderSubtreeIDs: every folder id in the subtrees rooted at `roots` (inclusive),
+-- via the GiST-indexed ltree descendant operator (<@).
+SELECT f.id FROM folders f
+WHERE f.path_ids <@ ANY (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('roots')::uuid[]));
+
+-- name: FolderAncestorsByPath :many
+-- folderAncestorsAndSelf: every ancestor-or-self folder id of `id`, via the ltree
+-- ancestor operator (@>).
+SELECT f.id FROM folders f
+WHERE f.path_ids @> (SELECT path_ids FROM folders WHERE id = sqlc.arg('id'));
+
+-- name: ChildFolderIDs :many
+-- childFolderIDs: the ids of folders directly under `parent`, ordered by (name, id).
+-- A NULL parent selects the tree root (parent_id IS NULL).
+SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM sqlc.narg('parent')::uuid ORDER BY name, id;
+
+-- name: AllFolderIDs :many
+-- allFolderIDs: every folder id (root+cascade candidate set = the whole tree).
+SELECT id FROM folders;
+
+-- name: AssetLoginsForAssets :many
+-- assetLoginsFor: the SSH login names declared on each asset in `asset_ids`.
+SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY(sqlc.arg('asset_ids')::uuid[]) ORDER BY login;
+
+-- name: FolderExists :one
+-- FolderPathVisible global short-circuit: whether a folder id exists.
+SELECT EXISTS(SELECT 1 FROM folders WHERE id = sqlc.arg('folder_id'));
+
+-- name: VisibleFoldersUnder :many
+-- VisibleFoldersUnder: folders under `parent` visible to the user under the path-reveal
+-- model, each with a `governed` flag. `anchors` are the folders whose browse PATH must be
+-- revealed (ancestor-or-self); `mgmt_ids` are the folders the user manages (their subtrees
+-- are visible AND governed). The (parent, cascade) browse level is selected by the nullable
+-- @parent and @cascade args, mirroring childCandidateFolderIDs.
+WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('anchors')::uuid[])),
+     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('mgmt_ids')::uuid[]))
+SELECT f.id,
+       EXISTS (SELECT 1 FROM mgmt_paths m WHERE f.path_ids <@ m.path_ids) AS governed
+FROM folders f
+WHERE (
+        (NOT sqlc.arg('cascade')::boolean AND f.parent_id IS NOT DISTINCT FROM sqlc.narg('parent')::uuid)
+     OR (sqlc.arg('cascade')::boolean AND sqlc.narg('parent')::uuid IS NULL)
+     OR (sqlc.arg('cascade')::boolean AND sqlc.narg('parent')::uuid IS NOT NULL
+         AND f.path_ids <@ (SELECT path_ids FROM folders WHERE id = sqlc.narg('parent')::uuid)
+         AND f.id <> sqlc.narg('parent')::uuid)
+      )
+  AND ( EXISTS (SELECT 1 FROM anchor_paths a WHERE f.path_ids @> a.path_ids)
+     OR EXISTS (SELECT 1 FROM mgmt_paths  m WHERE f.path_ids <@ m.path_ids) )
+ORDER BY f.name, f.id;
+
+-- name: FolderPathVisible :one
+-- FolderPathVisible: whether `folder_id` is an ancestor-or-self of an anchor (path reveal)
+-- OR inside a folder the user manages (cascade down) — the same predicate as
+-- VisibleFoldersUnder, for one folder.
+WITH f  AS (SELECT path_ids FROM folders WHERE id = sqlc.arg('folder_id')),
+     ap AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('anchors')::uuid[])),
+     mp AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('mgmt_ids')::uuid[]))
+SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
+    OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids);

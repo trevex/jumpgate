@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -39,28 +38,21 @@ import (
 // (name, id). parent == uuid.Nil selects the tree root (parent_id IS NULL); the
 // `IS NOT DISTINCT FROM` predicate treats a NULL argument as "match NULL".
 func (s *Authorizer) childFolderIDs(ctx context.Context, parent uuid.UUID) ([]uuid.UUID, error) {
-	var arg *uuid.UUID
-	if parent != uuid.Nil {
-		arg = &parent
-	}
-	rows, err := s.pool.Query(ctx, `
-SELECT id FROM folders WHERE parent_id IS NOT DISTINCT FROM @parent ORDER BY name, id`, pgx.NamedArgs{"parent": arg})
+	ids, err := s.queries().ChildFolderIDs(ctx, nullableUUIDArg(parent))
 	if err != nil {
 		return nil, fmt.Errorf("child folders: %w", err)
 	}
-	defer rows.Close()
-	return scanUUIDs(rows)
+	return ids, nil
 }
 
 // allFolderIDs returns every folder id (used for the root+cascade case, where the
 // candidate set is the whole tree).
 func (s *Authorizer) allFolderIDs(ctx context.Context) ([]uuid.UUID, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM folders`)
+	ids, err := s.queries().AllFolderIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("all folders: %w", err)
 	}
-	defer rows.Close()
-	return scanUUIDs(rows)
+	return ids, nil
 }
 
 // assetLoginsFor returns, for each asset in assetIDs, the set of SSH login names
@@ -71,24 +63,15 @@ func (s *Authorizer) assetLoginsFor(ctx context.Context, assetIDs []uuid.UUID) (
 	if len(assetIDs) == 0 {
 		return map[uuid.UUID][]string{}, nil
 	}
-	rows, err := s.pool.Query(ctx, `
-SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY(@assetIDs::uuid[]) ORDER BY login`, pgx.NamedArgs{"assetIDs": assetIDs})
+	rows, err := s.queries().AssetLoginsForAssets(ctx, assetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("asset logins: %w", err)
 	}
-	defer rows.Close()
 	out := map[uuid.UUID][]string{}
-	for rows.Next() {
-		var (
-			assetID uuid.UUID
-			login   string
-		)
-		if err := rows.Scan(&assetID, &login); err != nil {
-			return nil, fmt.Errorf("scan asset login: %w", err)
-		}
-		out[assetID] = append(out[assetID], login)
+	for _, r := range rows {
+		out[r.AssetID] = append(out[r.AssetID], r.Login)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // scanUUIDs collects a single-column uuid result into a slice.
@@ -246,21 +229,20 @@ func (s *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uui
 	//   cascade=true  -> the subtree under parent (root => whole tree).
 	// A folder is visible if it is an ancestor-or-self of an anchor (path reveal)
 	// OR inside a folder the user manages (cascade down). governed = the latter.
-	sql, na := s.visibleFoldersQuery(parent, cascade, anchors, mgmtIDs)
-	rows, err := s.pool.Query(ctx, sql, na)
+	rows, err := s.queries().VisibleFoldersUnder(ctx, sqlc.VisibleFoldersUnderParams{
+		Cascade: cascade,
+		Parent:  nullableUUIDArg(parent),
+		Anchors: anchors,
+		MgmtIds: mgmtIDs,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("visible folders (ltree): %w", err)
 	}
-	defer rows.Close()
-	var out []VisibleFolder
-	for rows.Next() {
-		var vf VisibleFolder
-		if err := rows.Scan(&vf.ID, &vf.Governed); err != nil {
-			return nil, fmt.Errorf("scan visible folder: %w", err)
-		}
-		out = append(out, vf)
+	out := make([]VisibleFolder, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, VisibleFolder{ID: r.ID, Governed: r.Governed})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // FolderPathVisible reports whether `folderID` is visible to the user under the
@@ -276,9 +258,8 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 		return false, err
 	}
 	if global.Allows("catalog:folder:read") {
-		var exists bool
-		if err := s.pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM folders WHERE id = @folderID)`, pgx.NamedArgs{"folderID": folderID}).Scan(&exists); err != nil {
+		exists, err := s.queries().FolderExists(ctx, folderID)
+		if err != nil {
 			return false, fmt.Errorf("folder exists: %w", err)
 		}
 		return exists, nil
@@ -296,19 +277,16 @@ func (s *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uui
 	}
 
 	// Visible iff folderID is an ancestor-or-self of an anchor (path reveal) OR
-	// inside a folder the user manages (cascade down) — mirrors visibleFoldersQuery.
-	var vis bool
-	err = s.pool.QueryRow(ctx, `
-WITH f  AS (SELECT path_ids FROM folders WHERE id = @folderID),
-     ap AS (SELECT path_ids FROM folders WHERE id = ANY(@anchors::uuid[])),
-     mp AS (SELECT path_ids FROM folders WHERE id = ANY(@mgmtIDs::uuid[]))
-SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
-    OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids)`,
-		pgx.NamedArgs{"folderID": folderID, "anchors": anchors, "mgmtIDs": mgmtIDs}).Scan(&vis)
+	// inside a folder the user manages (cascade down) — mirrors VisibleFoldersUnder.
+	vis, err := s.queries().FolderPathVisible(ctx, sqlc.FolderPathVisibleParams{
+		FolderID: uuidArg(folderID),
+		Anchors:  anchors,
+		MgmtIds:  mgmtIDs,
+	})
 	if err != nil {
 		return false, fmt.Errorf("folder path visible: %w", err)
 	}
-	return vis, nil
+	return vis.Bool, nil
 }
 
 // heldRolesAndAssets scans the grant-augmented held closure ONCE and projects both
@@ -460,47 +438,6 @@ func (s *Authorizer) anchorHomeFolders(ctx context.Context, userID uuid.UUID, ro
 		out = append(out, uuid.UUID(id.Bytes))
 	}
 	return out, nil
-}
-
-// visibleFoldersQuery builds the single-query, two-anchor-set path-reveal SELECT
-// used by VisibleFoldersUnder. `anchors` are the folders whose path must be
-// revealed (ancestor-or-self); `mgmtIDs` are the folders the user manages (their
-// subtrees are visible AND governed). The `<LEVEL>` predicate is inlined per the
-// (parent, cascade) case exactly as childCandidateFolderIDs computes the browse
-// level; a nil `parent` is bound as SQL NULL via `parent_id IS NOT DISTINCT FROM`
-// (matching childFolderIDs) or, for cascade, means the whole tree (no predicate).
-func (s *Authorizer) visibleFoldersQuery(parent uuid.UUID, cascade bool, anchors, mgmtIDs []uuid.UUID) (string, pgx.NamedArgs) {
-	// @anchors, @mgmtIDs; @parent (when present) is the parent binding.
-	na := pgx.NamedArgs{"anchors": anchors, "mgmtIDs": mgmtIDs}
-	var level string
-	switch {
-	case cascade && parent == uuid.Nil:
-		// Whole tree: every folder is at the level.
-		level = "TRUE"
-	case cascade:
-		// Subtree strictly under parent (children only, parent excluded).
-		na["parent"] = parent
-		level = "f.path_ids <@ (SELECT path_ids FROM folders WHERE id = @parent) AND f.id <> @parent"
-	case parent == uuid.Nil:
-		// Direct children of the root (parent_id IS NULL), bound NULL-safe.
-		na["parent"] = (*uuid.UUID)(nil)
-		level = "f.parent_id IS NOT DISTINCT FROM @parent"
-	default:
-		// Direct children of parent.
-		na["parent"] = parent
-		level = "f.parent_id IS NOT DISTINCT FROM @parent"
-	}
-	sql := `
-WITH anchor_paths AS (SELECT path_ids FROM folders WHERE id = ANY(@anchors::uuid[])),
-     mgmt_paths   AS (SELECT path_ids FROM folders WHERE id = ANY(@mgmtIDs::uuid[]))
-SELECT f.id,
-       EXISTS (SELECT 1 FROM mgmt_paths m WHERE f.path_ids <@ m.path_ids) AS governed
-FROM folders f
-WHERE ` + level + `
-  AND ( EXISTS (SELECT 1 FROM anchor_paths a WHERE f.path_ids @> a.path_ids)
-     OR EXISTS (SELECT 1 FROM mgmt_paths  m WHERE f.path_ids <@ m.path_ids) )
-ORDER BY f.name, f.id`
-	return sql, na
 }
 
 // allFoldersAtLevel returns every folder at the browse level under `parent`
