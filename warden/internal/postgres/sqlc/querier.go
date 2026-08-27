@@ -58,6 +58,8 @@ type Querier interface {
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
 	CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
 	CountChildFolders(ctx context.Context, parentID pgtype.UUID) (int64, error)
+	// Direct membership count for a group (users + nested groups), for roster/badge display.
+	CountGroupMembers(ctx context.Context, groupID uuid.UUID) (int32, error)
 	CountGroupsHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountOutbox(ctx context.Context) (int64, error)
 	CountPoliciesScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
@@ -249,6 +251,10 @@ type Querier interface {
 	ListPendingRequestsPaged(ctx context.Context, arg ListPendingRequestsPagedParams) ([]AccessRequest, error)
 	ListPoliciesForAsset(ctx context.Context, arg ListPoliciesForAssetParams) ([]RequestPolicy, error)
 	ListPoliciesForSubjectGroup(ctx context.Context, arg ListPoliciesForSubjectGroupParams) ([]RequestPolicy, error)
+	// Every policy that references the role in any position, tagged with how: as the
+	// requestable role, as the requester-source role, or as the approver-source role.
+	// Bounded (a role appears in few policies); not paginated.
+	ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error)
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]RequestPolicySubject, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
@@ -314,6 +320,12 @@ type Querier interface {
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
+	// The subjects (users or groups) whose standing binding confers p_role on the given
+	// object (asset|folder), mirroring the base arm of authz_held over the backward
+	// goal-expansion (authz_role_goals closes over role_grants). Subjects are returned as
+	// nodes (NOT expanded to individual members); the matched role is returned so the
+	// caller can label "holds <role> (standing)". Deactivated user-subjects are excluded.
+	RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error)
 	// CapabilitiesOnScope asset arm (global_held ∪ held on the asset or its ancestor-or-self folders).
 	ScopeCapabilitiesAsset(ctx context.Context, arg ScopeCapabilitiesAssetParams) ([]ScopeCapabilitiesAssetRow, error)
 	// CapabilitiesOnScope folder arm (global_held ∪ held on folders in the scope subtree).

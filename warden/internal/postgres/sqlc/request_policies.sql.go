@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -312,6 +313,65 @@ func (q *Queries) ListPoliciesForSubjectGroup(ctx context.Context, arg ListPolic
 			&i.RequesterRoleID,
 			&i.MaxDuration,
 			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPoliciesUsingRole = `-- name: ListPoliciesUsingRole :many
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'requestable'::text AS usage FROM request_policies rp WHERE rp.role_id = $1
+UNION ALL
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'requester_source'::text AS usage FROM request_policies rp WHERE rp.requester_role_id = $1
+UNION ALL
+SELECT rp.id, rp.role_id, rp.scope_folder_id, rp.scope_asset_id, rp.required_approvals, rp.approver_role_id, rp.created_at, rp.requester_role_id, rp.max_duration, rp.name, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.approver_role_id = $1
+ORDER BY usage, created_at DESC, id
+LIMIT 500
+`
+
+type ListPoliciesUsingRoleRow struct {
+	ID                uuid.UUID       `json:"id"`
+	RoleID            uuid.UUID       `json:"role_id"`
+	ScopeFolderID     pgtype.UUID     `json:"scope_folder_id"`
+	ScopeAssetID      pgtype.UUID     `json:"scope_asset_id"`
+	RequiredApprovals int32           `json:"required_approvals"`
+	ApproverRoleID    pgtype.UUID     `json:"approver_role_id"`
+	CreatedAt         time.Time       `json:"created_at"`
+	RequesterRoleID   pgtype.UUID     `json:"requester_role_id"`
+	MaxDuration       pgtype.Interval `json:"max_duration"`
+	Name              pgtype.Text     `json:"name"`
+	Usage             string          `json:"usage"`
+}
+
+// Every policy that references the role in any position, tagged with how: as the
+// requestable role, as the requester-source role, or as the approver-source role.
+// Bounded (a role appears in few policies); not paginated.
+func (q *Queries) ListPoliciesUsingRole(ctx context.Context, roleID uuid.UUID) ([]ListPoliciesUsingRoleRow, error) {
+	rows, err := q.db.Query(ctx, listPoliciesUsingRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPoliciesUsingRoleRow
+	for rows.Next() {
+		var i ListPoliciesUsingRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoleID,
+			&i.ScopeFolderID,
+			&i.ScopeAssetID,
+			&i.RequiredApprovals,
+			&i.ApproverRoleID,
+			&i.CreatedAt,
+			&i.RequesterRoleID,
+			&i.MaxDuration,
+			&i.Name,
+			&i.Usage,
 		); err != nil {
 			return nil, err
 		}

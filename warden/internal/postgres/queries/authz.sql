@@ -664,3 +664,20 @@ WITH f  AS (SELECT path_ids FROM folders WHERE id = sqlc.arg('folder_id')),
      mp AS (SELECT path_ids FROM folders WHERE id = ANY(sqlc.arg('mgmt_ids')::uuid[]))
 SELECT EXISTS (SELECT 1 FROM f, ap WHERE f.path_ids @> ap.path_ids)
     OR EXISTS (SELECT 1 FROM f, mp WHERE f.path_ids <@ mp.path_ids);
+
+-- name: RoleStandingHolders :many
+-- The subjects (users or groups) whose standing binding confers p_role on the given
+-- object (asset|folder), mirroring the base arm of authz_held over the backward
+-- goal-expansion (authz_role_goals closes over role_grants). Subjects are returned as
+-- nodes (NOT expanded to individual members); the matched role is returned so the
+-- caller can label "holds <role> (standing)". Deactivated user-subjects are excluded.
+SELECT DISTINCT rb.subject_user_id, rb.subject_group_id, rb.role_id AS via_role_id
+FROM role_bindings rb
+JOIN authz_role_goals(sqlc.arg('role_id'), sqlc.arg('object_kind'), sqlc.arg('object_id')) g
+  ON g.role_id = rb.role_id
+ AND (
+      (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
+   OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id)
+     )
+WHERE rb.subject_group_id IS NOT NULL
+   OR authz_user_is_active(rb.subject_user_id);

@@ -1115,6 +1115,56 @@ func (q *Queries) ReviewableGrants(ctx context.Context, arg ReviewableGrantsPara
 	return items, nil
 }
 
+const roleStandingHolders = `-- name: RoleStandingHolders :many
+SELECT DISTINCT rb.subject_user_id, rb.subject_group_id, rb.role_id AS via_role_id
+FROM role_bindings rb
+JOIN authz_role_goals($1, $2, $3) g
+  ON g.role_id = rb.role_id
+ AND (
+      (g.object_kind = 'asset'  AND rb.scope_asset_id  = g.object_id)
+   OR (g.object_kind = 'folder' AND rb.scope_folder_id = g.object_id)
+     )
+WHERE rb.subject_group_id IS NOT NULL
+   OR authz_user_is_active(rb.subject_user_id)
+`
+
+type RoleStandingHoldersParams struct {
+	RoleID     uuid.UUID `json:"role_id"`
+	ObjectKind string    `json:"object_kind"`
+	ObjectID   uuid.UUID `json:"object_id"`
+}
+
+type RoleStandingHoldersRow struct {
+	SubjectUserID  pgtype.UUID `json:"subject_user_id"`
+	SubjectGroupID pgtype.UUID `json:"subject_group_id"`
+	ViaRoleID      uuid.UUID   `json:"via_role_id"`
+}
+
+// The subjects (users or groups) whose standing binding confers p_role on the given
+// object (asset|folder), mirroring the base arm of authz_held over the backward
+// goal-expansion (authz_role_goals closes over role_grants). Subjects are returned as
+// nodes (NOT expanded to individual members); the matched role is returned so the
+// caller can label "holds <role> (standing)". Deactivated user-subjects are excluded.
+func (q *Queries) RoleStandingHolders(ctx context.Context, arg RoleStandingHoldersParams) ([]RoleStandingHoldersRow, error) {
+	rows, err := q.db.Query(ctx, roleStandingHolders, arg.RoleID, arg.ObjectKind, arg.ObjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleStandingHoldersRow
+	for rows.Next() {
+		var i RoleStandingHoldersRow
+		if err := rows.Scan(&i.SubjectUserID, &i.SubjectGroupID, &i.ViaRoleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scopeCapabilitiesAsset = `-- name: ScopeCapabilitiesAsset :many
 SELECT DISTINCT rc.scope, rc.action, rc.qualifier
 FROM role_capabilities rc

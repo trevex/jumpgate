@@ -104,3 +104,15 @@ UPDATE request_policies SET requester_role_id = NULL WHERE requester_role_id = $
 -- Clears the approver gate on surviving policies that named the role as their
 -- approver role (the policy survives, just loses that gate). Part of DeleteRole.
 UPDATE request_policies SET approver_role_id = NULL WHERE approver_role_id = $1;
+
+-- name: ListPoliciesUsingRole :many
+-- Every policy that references the role in any position, tagged with how: as the
+-- requestable role, as the requester-source role, or as the approver-source role.
+-- Bounded (a role appears in few policies); not paginated.
+SELECT rp.*, 'requestable'::text AS usage FROM request_policies rp WHERE rp.role_id = sqlc.arg('role_id')
+UNION ALL
+SELECT rp.*, 'requester_source'::text AS usage FROM request_policies rp WHERE rp.requester_role_id = sqlc.arg('role_id')
+UNION ALL
+SELECT rp.*, 'approver_source'::text AS usage FROM request_policies rp WHERE rp.approver_role_id = sqlc.arg('role_id')
+ORDER BY usage, created_at DESC, id
+LIMIT 500;
