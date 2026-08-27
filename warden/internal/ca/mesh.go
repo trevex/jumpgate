@@ -156,8 +156,3 @@ func (c *MeshCA) SignCSR(csrDER []byte, expectURI string, ttl time.Duration) (le
 	leafPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	return leafPEM, c.certPEM, nil
 }
-
-// CertPEM returns the mesh CA certificate in PEM form.
-func (c *MeshCA) CertPEM() []byte {
-	return c.certPEM
-}
