@@ -1,0 +1,5 @@
+# `tonic::Status` is ~176 bytes, so every generated gRPC method signature
+# (`Result<Response<T>, tonic::Status>`) trips clippy's `result_large_err` lint
+# (default threshold 128). The error type is fixed by tonic and lives in
+# generated code we don't hand-edit, so raise the threshold instead.
+large-error-threshold = 256
