@@ -202,6 +202,9 @@ function GroupOptions({
   const { data, isLoading, isError } = useQuery(listGroups, {
     pageSize: LIST_PAGE_SIZE,
     pageToken: "",
+    // Descend the whole folder tree so folder-homed groups appear, not only
+    // root/global ones (parent defaults to "").
+    cascade: true,
   });
 
   const q = query.trim().toLowerCase();
