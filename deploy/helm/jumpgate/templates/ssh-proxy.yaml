@@ -26,6 +26,8 @@ spec:
           ports:
             - name: dataplane
               containerPort: 9000
+            - name: health
+              containerPort: 9001
           env:
             - name: WORKER_ID
               value: {{ .Values.worker.id | quote }}
@@ -39,6 +41,11 @@ spec:
                   fieldPath: status.podIP
             - name: WORKER_DATAPLANE_ADDR
               value: "$(POD_IP):9000"
+            # Plaintext health listener for kubelet probes. The data-plane port is
+            # mesh mTLS and cannot be probed by a bare tcpSocket probe (the TLS
+            # handshake fails), so liveness/readiness target this port instead.
+            - name: WORKER_HEALTH_ADDR
+              value: "0.0.0.0:9001"
             - name: WORKER_MESH_CERT
               value: /mesh/tls.crt
             - name: WORKER_MESH_KEY
@@ -75,12 +82,12 @@ spec:
               readOnly: true
           readinessProbe:
             tcpSocket:
-              port: 9000
+              port: 9001
             initialDelaySeconds: 3
             periodSeconds: 5
           livenessProbe:
             tcpSocket:
-              port: 9000
+              port: 9001
             initialDelaySeconds: 10
             periodSeconds: 10
           {{- with .Values.resources }}

@@ -890,6 +890,27 @@ pub async fn run_dataplane_server(
     }
 }
 
+/// Serve a minimal plaintext TCP health listener for kubelet probes.
+///
+/// The data-plane port is mesh mTLS: a bare `tcpSocket` probe against it fails
+/// the TLS handshake (and logs a spurious error every probe interval), so probes
+/// target this port instead. A `tcpSocket` probe only needs a successful TCP
+/// accept, so we accept each connection and immediately drop it — no protocol,
+/// no crypto, no framework.
+pub async fn run_health_listener(addr: &str) -> anyhow::Result<()> {
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("bind health listener {addr}"))?;
+    tracing::info!(%addr, "ssh-proxy health listener ready");
+    loop {
+        match listener.accept().await {
+            // Accept-and-drop: the probe's successful TCP connect is the signal.
+            Ok((stream, _peer)) => drop(stream),
+            Err(e) => tracing::warn!(error = %e, "health listener accept failed"),
+        }
+    }
+}
+
 /// Build the russh server config with a fresh ephemeral ed25519 host key.
 fn build_ssh_server_config() -> anyhow::Result<russh::server::Config> {
     let host_key = PrivateKey::random(&mut rand::rng(), russh::keys::ssh_key::Algorithm::Ed25519)

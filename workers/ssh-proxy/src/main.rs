@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use ssh_proxy::config::Config;
 use ssh_proxy::control::{run_control, SessionRegistry};
-use ssh_proxy::server::run_dataplane_server;
+use ssh_proxy::server::{run_dataplane_server, run_health_listener};
 use tokio::sync::Notify;
 
 #[tokio::main]
@@ -58,6 +58,15 @@ async fn main() -> anyhow::Result<()> {
     // accepting and force-close its live sessions, then return.
     let shutdown = Arc::new(Notify::new());
     tokio::spawn(watch_for_signals(shutdown.clone()));
+
+    // Plaintext health listener for kubelet probes: the data-plane port is mesh
+    // mTLS and cannot be probed by a bare TCP `tcpSocket` probe.
+    let health_addr = config.health_addr.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_health_listener(&health_addr).await {
+            tracing::error!(error = %e, "health listener exited");
+        }
+    });
 
     run_dataplane_server(&config, registry, session_ended_tx, shutdown).await
 }

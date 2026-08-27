@@ -8,6 +8,10 @@ pub struct Config {
     pub worker_id: String,
     /// WORKER_DATAPLANE_ADDR — the mTLS data-plane listener the gateway dials.
     pub dataplane_addr: String,
+    /// WORKER_HEALTH_ADDR — a plaintext TCP listener for kubelet liveness/
+    /// readiness probes. The data-plane port is mesh mTLS and cannot be probed by
+    /// a bare TCP/`tcpSocket` probe (the handshake fails), so probes target this.
+    pub health_addr: String,
     /// WORKER_MESH_CERT — this worker's mesh leaf cert PEM path.
     pub mesh_cert: String,
     /// WORKER_MESH_KEY — this worker's mesh leaf key PEM path.
@@ -66,6 +70,7 @@ impl Config {
         Ok(Self {
             worker_id: req("WORKER_ID")?,
             dataplane_addr: opt("WORKER_DATAPLANE_ADDR", "0.0.0.0:9000"),
+            health_addr: opt("WORKER_HEALTH_ADDR", "0.0.0.0:9001"),
             mesh_cert: req("WORKER_MESH_CERT")?,
             mesh_key: req("WORKER_MESH_KEY")?,
             mesh_ca: req("WORKER_MESH_CA")?,
