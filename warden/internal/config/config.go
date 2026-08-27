@@ -92,12 +92,19 @@ type Config struct {
 	MeshCAFile   string `env:"MESH_CA_FILE"`
 
 	// RecordingBucket / RecordingS3Endpoint / RecordingS3Region configure the object
-	// store warden presigns recording download URLs against. An empty bucket disables
-	// recording retrieval (RecordingService mounts but download fails closed).
-	RecordingBucket     string        `env:"RECORDING_BUCKET"`
-	RecordingS3Endpoint string        `env:"RECORDING_S3_ENDPOINT"`
-	RecordingS3Region   string        `env:"RECORDING_S3_REGION" envDefault:"us-east-1"`
-	RecordingURLTTL     time.Duration `env:"RECORDING_URL_TTL" envDefault:"5m"`
+	// store warden reads recordings from (server-side cast streaming) and anchors the
+	// audit chain into. An empty bucket disables recording retrieval (RecordingService
+	// mounts but download fails closed). RecordingS3Endpoint must be reachable FROM
+	// warden (in-cluster service DNS in Kubernetes), not a client-only NodePort/ingress.
+	//
+	// RecordingS3PublicEndpoint is the host baked into presigned download URLs handed
+	// to an off-cluster client (an auditor's CLI). Presigning is offline, so it need
+	// not be reachable from warden. Empty falls back to RecordingS3Endpoint.
+	RecordingBucket           string        `env:"RECORDING_BUCKET"`
+	RecordingS3Endpoint       string        `env:"RECORDING_S3_ENDPOINT"`
+	RecordingS3PublicEndpoint string        `env:"RECORDING_S3_PUBLIC_ENDPOINT"`
+	RecordingS3Region         string        `env:"RECORDING_S3_REGION" envDefault:"us-east-1"`
+	RecordingURLTTL           time.Duration `env:"RECORDING_URL_TTL" envDefault:"5m"`
 
 	// CookieInsecure controls whether Set-Cookie omits the Secure flag. The
 	// logical accessor is CookieSecure() (returns !CookieInsecure, default true);

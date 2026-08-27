@@ -26,7 +26,19 @@ type S3Presigner struct {
 // NewS3Presigner builds a presigner against an S3-compatible endpoint. A custom
 // endpoint + path-style addressing supports self-hosted stores; credentials come
 // from the standard AWS SDK chain (env, IRSA, ...).
-func NewS3Presigner(ctx context.Context, bucket, endpoint, region string) (*S3Presigner, error) {
+//
+// endpoint and publicEndpoint separate two distinct roles that a single endpoint
+// cannot serve when warden and its download clients sit on different networks
+// (e.g. warden in a Kubernetes pod, an auditor's CLI on the host):
+//
+//   - endpoint is where warden itself reaches the store for server-side reads and
+//     writes (GetObject for the cast proxy, Put for the audit anchor). It must be
+//     reachable FROM warden — in-cluster service DNS, not a NodePort/ingress that
+//     only resolves off-cluster.
+//   - publicEndpoint is the host baked into presigned download URLs handed to an
+//     external client. Presigning is offline (no network from warden), so this only
+//     needs to be reachable by whoever downloads. Empty falls back to endpoint.
+func NewS3Presigner(ctx context.Context, bucket, endpoint, publicEndpoint, region string) (*S3Presigner, error) {
 	if bucket == "" {
 		return nil, errors.New("recording bucket not configured")
 	}
@@ -34,13 +46,27 @@ func NewS3Presigner(ctx context.Context, bucket, endpoint, region string) (*S3Pr
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	raw := s3.NewFromConfig(cfg, func(o *s3.Options) {
+	// raw: server-side GetObject/Put. Targets the warden-reachable endpoint.
+	raw := s3.NewFromConfig(cfg, endpointOpts(endpoint))
+	// presign client: generates the download URL host. Signed against
+	// publicEndpoint (falling back to endpoint) so an off-cluster client can fetch.
+	presignEndpoint := publicEndpoint
+	if presignEndpoint == "" {
+		presignEndpoint = endpoint
+	}
+	presignRaw := s3.NewFromConfig(cfg, endpointOpts(presignEndpoint))
+	return &S3Presigner{raw: raw, client: s3.NewPresignClient(presignRaw), bucket: bucket}, nil
+}
+
+// endpointOpts returns an s3.Options mutator that pins a custom, path-style
+// endpoint when one is set (self-hosted stores), or leaves AWS defaults otherwise.
+func endpointOpts(endpoint string) func(*s3.Options) {
+	return func(o *s3.Options) {
 		if endpoint != "" {
 			o.BaseEndpoint = &endpoint
 			o.UsePathStyle = true
 		}
-	})
-	return &S3Presigner{raw: raw, client: s3.NewPresignClient(raw), bucket: bucket}, nil
+	}
 }
 
 // PresignGet returns a presigned GET URL for objectKey valid for ttl.

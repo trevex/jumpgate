@@ -49,11 +49,14 @@ worker:
 recording:
   bucket: jumpgate-recordings
   s3:
-    endpoint: ""           # worker upload endpoint; default http://<release>-silo:9000 when silo.enabled
-    # publicEndpoint is the host warden signs into download URLs. Presigning is
-    # offline, so this only sets the URL host — it must be reachable by whoever
-    # downloads (an auditor), which the in-cluster endpoint usually is not. Empty
-    # falls back to the worker endpoint.
+    endpoint: ""           # in-cluster S3 endpoint; default http://<release>-silo:9000 when silo.enabled.
+                           # warden reads recordings + anchors audit here, and the worker uploads here —
+                           # so it must be reachable from inside the cluster.
+    # publicEndpoint is the host warden bakes into presigned download URLs. Presigning
+    # is offline, so it only needs to be reachable by whoever downloads (an auditor's
+    # CLI) — typically a NodePort/ingress, which the in-cluster endpoint is not. It is
+    # NOT used for warden's own server-side reads (those use `endpoint`). Empty falls
+    # back to the in-cluster endpoint.
     publicEndpoint: ""
     region: us-east-1
     accessKey: minioadmin

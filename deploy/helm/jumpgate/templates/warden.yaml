@@ -82,16 +82,24 @@ spec:
               value: {{ .Values.recording.bucket | quote }}
             - name: RECORDING_S3_REGION
               value: {{ .Values.recording.s3.region | quote }}
-            # Warden only presigns (offline), so this sets the download URL host.
-            # Prefer the client-reachable publicEndpoint; else the worker endpoint.
+            # Server-side reads/writes — the cast-proxy GetObject and the audit-anchor
+            # Put — hit this endpoint, so it must be reachable FROM warden: the
+            # in-cluster silo Service, never a client-only NodePort/ingress (which a
+            # pod cannot reach at its own localhost).
             - name: RECORDING_S3_ENDPOINT
-              {{- if .Values.recording.s3.publicEndpoint }}
-              value: {{ .Values.recording.s3.publicEndpoint | quote }}
-              {{- else if .Values.silo.enabled }}
+              {{- if .Values.silo.enabled }}
               value: "http://{{ include "jumpgate.siloHost" . }}:9000"
               {{- else }}
               value: {{ .Values.recording.s3.endpoint | quote }}
               {{- end }}
+            # Presigned download URLs handed to an off-cluster client (an auditor's
+            # CLI) are signed against this host. Presigning is offline, so it need not
+            # be warden-reachable — only client-reachable. Omitted → warden falls back
+            # to RECORDING_S3_ENDPOINT for presigning.
+            {{- if .Values.recording.s3.publicEndpoint }}
+            - name: RECORDING_S3_PUBLIC_ENDPOINT
+              value: {{ .Values.recording.s3.publicEndpoint | quote }}
+            {{- end }}
             - name: AWS_ACCESS_KEY_ID
               value: {{ .Values.recording.s3.accessKey | quote }}
             - name: AWS_SECRET_ACCESS_KEY

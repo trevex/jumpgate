@@ -177,7 +177,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	var recordingPresign recording.Presigner
 	var castGetter httpapi.ObjectGetter
 	if cfg.RecordingBucket != "" {
-		presign, err := recording.NewS3Presigner(ctx, cfg.RecordingBucket, cfg.RecordingS3Endpoint, cfg.RecordingS3Region)
+		presign, err := recording.NewS3Presigner(ctx, cfg.RecordingBucket, cfg.RecordingS3Endpoint, cfg.RecordingS3PublicEndpoint, cfg.RecordingS3Region)
 		if err != nil {
 			return err
 		}
