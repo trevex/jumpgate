@@ -14,6 +14,20 @@ warden:
   gatewayEndpoint: ""      # external addr the CLI dials; default localhost:<gateway nodePort>
   logLevel: info
   cookieInsecure: false    # dev/demo only: drop the Secure cookie flag (HTTP access); prod keeps false
+  # DEV ONLY: host:port the browser uses to reach the gateway's plaintext (ws://)
+  # listener for the in-browser terminal. Only consulted when gateway.insecure.enabled.
+  # Empty leaves the insecure path disabled in warden (fail-closed).
+  gatewayInsecureEndpoint: ""
+
+# DEV ONLY: an optional plaintext (no-TLS) gateway listener so a browser console
+# served over plain http can use the in-browser terminal over ws:// (the mesh-CA
+# external cert isn't browser-trusted). DEFAULT OFF and fail-closed to secure:
+# enabling it also flips warden's ALLOW_INSECURE_SESSIONS. Auth is unchanged —
+# only transport TLS is dropped. NEVER enable in production.
+gateway:
+  insecure:
+    enabled: false
+    port: 8444             # plaintext listener + container port
 
 masterKey:
   existingSecret: ""       # Secret containing key VAULT_MASTER_KEY; else generated
@@ -77,7 +91,9 @@ certManager:
 
 service:
   warden:  { nodePort: 30080 }
-  gateway: { nodePort: 30443 }
+  # insecureNodePort exposes the DEV-ONLY plaintext gateway listener (only when
+  # gateway.insecure.enabled). Reach it from the host via a kind extraPortMapping.
+  gateway: { nodePort: 30443, insecureNodePort: 30444 }
   # Optional NodePort exposing silo's S3 port so a host client can fetch presigned
   # download URLs. Empty = ClusterIP only (no external S3 access).
   silo:    { nodePort: "" }

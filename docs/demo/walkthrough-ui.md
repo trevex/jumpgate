@@ -21,8 +21,10 @@ make kind-demo      # or: make kind-up
 ```
 
 Open the console at **http://localhost:8080**. Recording playback and the in-browser terminal work
-out of the box (the gateway's terminal WSS uses the mesh CA; your browser will prompt once to accept
-it the first time you open a terminal).
+out of the box — no certificate step. Because the console is served over plain HTTP in this kind dev
+env, the gateway also exposes a **DEV-ONLY plaintext listener** and the terminal connects over
+`ws://` (authentication is unchanged — only transport TLS is dropped). In production the console is
+served over HTTPS and the terminal uses `wss://` with a browser-trusted certificate.
 
 **One step has no UI — and shouldn't.** A CA SSH target only trusts a certificate whose *principal*
 it has been told about. Provisioning the target's `AuthorizedPrincipalsFile` is a **target-host**

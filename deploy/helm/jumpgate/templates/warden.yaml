@@ -47,6 +47,15 @@ spec:
                   key: VAULT_MASTER_KEY
             - name: GATEWAY_ENDPOINT
               value: {{ .Values.warden.gatewayEndpoint | default "localhost:8443" | quote }}
+            {{- if .Values.gateway.insecure.enabled }}
+            # DEV ONLY: allow CreateWebSession to hand the browser the plaintext
+            # (ws://) endpoint. Fail-closed: without both of these, an insecure
+            # request is downgraded to the secure endpoint.
+            - name: ALLOW_INSECURE_SESSIONS
+              value: "true"
+            - name: GATEWAY_INSECURE_ENDPOINT
+              value: {{ .Values.warden.gatewayInsecureEndpoint | quote }}
+            {{- end }}
             {{- if .Values.warden.cookieInsecure }}
             # Dev/demo only: kind serves warden over plain HTTP, so the browser
             # rejects Secure cookies. Prod keeps this false so cookies stay Secure.

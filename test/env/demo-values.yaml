@@ -10,6 +10,16 @@ warden:
   # kind serves the warden API (and the embedded SPA) over plain HTTP, so the
   # browser rejects Secure cookies. Drop the Secure flag for the demo/e2e env.
   cookieInsecure: true
+  # DEV ONLY: host:port the browser uses for the plaintext (ws://) gateway. Matches
+  # the insecure gateway NodePort forwarded to localhost:8444 (cluster.yaml).
+  gatewayInsecureEndpoint: "localhost:8444"
+
+# DEV ONLY: enable the plaintext gateway listener so the in-browser terminal works
+# over ws:// against the http kind console (no browser-trusted cert). This also
+# flips warden's ALLOW_INSECURE_SESSIONS. The chart default is OFF/secure.
+gateway:
+  insecure:
+    enabled: true
 
 masterKey:
   # STABLE base64-encoded 32-byte demo vault master key. Kept constant so that

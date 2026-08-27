@@ -15,6 +15,9 @@ nodes:
       - containerPort: 30443   # gateway external (service.gateway.nodePort)
         hostPort: 8443
         protocol: TCP
+      - containerPort: 30444   # gateway insecure ws:// (service.gateway.insecureNodePort) — DEV ONLY
+        hostPort: 8444
+        protocol: TCP
       - containerPort: 30900   # silo S3      (service.silo.nodePort) for presigned downloads
         hostPort: 30900
         protocol: TCP

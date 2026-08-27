@@ -6,9 +6,11 @@
  * terminal filling the rest of the viewport.
  *
  * Flow on mount:
- *   1. CreateWebSession({assetId, login}) → {ticket, gatewayEndpoint} — fetched
- *      right before the socket opens (the ticket is short-lived, ~60s).
- *   2. Open  wss://<gatewayEndpoint>/terminal?ticket=<ticket>  (arraybuffer).
+ *   1. CreateWebSession({assetId, login}) → {ticket, gatewayEndpoint, insecure} —
+ *      fetched right before the socket opens (the ticket is short-lived, ~60s).
+ *   2. Open  wss://<gatewayEndpoint>/terminal?ticket=<ticket>  (arraybuffer). In the
+ *      DEV plaintext env (console over http) warden may grant an insecure endpoint;
+ *      then the scheme is ws:// instead. Production is always wss://.
  *   3. Bridge xterm.js ⇄ WebSocket via the [opcode][payload] frame protocol.
  *
  * Connection is explicit: on close/exit/error we surface a status and a
@@ -215,18 +217,30 @@ export function TerminalPage() {
 
       let ticket: string;
       let gatewayEndpoint: string;
+      let insecure: boolean;
       try {
-        const resp = await createSession({ assetId, login });
+        // Ask for the plaintext (ws://) endpoint only when the console itself is
+        // served over plain http (dev). Warden honors it only if it allows insecure
+        // sessions; otherwise it returns the secure endpoint (fail-closed).
+        const resp = await createSession({
+          assetId,
+          login,
+          insecure: window.location.protocol === "http:",
+        });
         ticket = resp.ticket;
         gatewayEndpoint = resp.gatewayEndpoint;
+        insecure = resp.insecure;
       } catch (err) {
         if (!disposed) setStatus({ kind: "error", message: connectErrorMessage(err) });
         return;
       }
       if (disposed) return;
 
+      // Scheme follows the response: ws:// only when warden granted the insecure
+      // endpoint, wss:// otherwise.
+      const scheme = insecure ? "ws" : "wss";
       ws = new WebSocket(
-        `wss://${gatewayEndpoint}/terminal?ticket=${encodeURIComponent(ticket)}`,
+        `${scheme}://${gatewayEndpoint}/terminal?ticket=${encodeURIComponent(ticket)}`,
       );
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;

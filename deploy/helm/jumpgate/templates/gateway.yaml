@@ -26,11 +26,21 @@ spec:
               containerPort: 8443
             - name: health
               containerPort: 8081
+            {{- if .Values.gateway.insecure.enabled }}
+            - name: insecure
+              containerPort: {{ .Values.gateway.insecure.port }}
+            {{- end }}
           env:
             - name: GATEWAY_LISTEN
               value: "0.0.0.0:8443"
             - name: GATEWAY_HEALTH_LISTEN
               value: "0.0.0.0:8081"
+            {{- if .Values.gateway.insecure.enabled }}
+            # DEV ONLY: plaintext (no-TLS) listener for the in-browser terminal over
+            # ws://. Auth is unchanged; only transport TLS is dropped.
+            - name: GATEWAY_INSECURE_LISTEN
+              value: "0.0.0.0:{{ .Values.gateway.insecure.port }}"
+            {{- end }}
             - name: RUST_LOG
               value: "info"
             - name: GATEWAY_TLS_CERT
@@ -95,3 +105,9 @@ spec:
       port: 8443
       targetPort: 8443
       nodePort: {{ .Values.service.gateway.nodePort }}
+    {{- if .Values.gateway.insecure.enabled }}
+    - name: insecure
+      port: {{ .Values.gateway.insecure.port }}
+      targetPort: {{ .Values.gateway.insecure.port }}
+      nodePort: {{ .Values.service.gateway.insecureNodePort }}
+    {{- end }}
