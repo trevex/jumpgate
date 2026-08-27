@@ -4,14 +4,45 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
+
+      # Fast, single-user Nix install that pairs with cache-nix-action below.
+      - uses: nixbuild/nix-quick-install-action@v35
         with:
-          extra_nix_config: |
+          nix_conf: |
             experimental-features = nix-command flakes
+            keep-outputs = true
+            keep-derivations = true
+
+      # Persist /nix/store across runs so the devshell is restored from the
+      # GitHub Actions cache instead of re-fetched from cache.nixos.org.
+      # Keyed on the flake + Go toolchain pin; a miss still restores the closest
+      # previous store (prefix match) so only the delta is downloaded.
+      - name: Cache the Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'warden/go.mod', 'rust-toolchain.toml') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          # Garbage-collect down to a bounded size before saving, keeping the
+          # rooted devshell closure, so the cache stays well under the 10 GB limit.
+          gc-max-store-size-linux: 5G
+          # Evict caches not read in the last 7 days; never drop the exact match.
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-last-accessed: 604800
+          purge-primary-key: never
+
+      # Build the devshell into a profile — this registers a GC root so the
+      # cache step's garbage collection keeps the whole toolchain closure.
+      - name: Build devshell
+        run: nix develop --profile "$RUNNER_TEMP/devshell" -c true
+
       - name: Run CI pipeline
-        run: nix develop -c make ci
+        run: nix develop --profile "$RUNNER_TEMP/devshell" -c make ci
