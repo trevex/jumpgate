@@ -26,8 +26,3 @@ export function rosterNodeLabel(node: RosterNode): RosterNodeLabel {
     inactive: node.subjectKind === "user" && !node.active,
   };
 }
-
-/** Empty-roster copy for the given kind. */
-export function emptyRosterMessage(kind: "request" | "approve"): string {
-  return kind === "request" ? "No eligible requesters." : "No eligible approvers.";
-}

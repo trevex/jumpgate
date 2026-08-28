@@ -14,80 +14,15 @@
  * "Load more" appends the next page.
  */
 
-import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
-import {
-  listRoleBindings,
-  getRoleDisplay,
-} from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
-import {
-  resolveFolder,
-  getAssetDisplay,
-} from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
-import type { RoleBinding } from "@/gen/jumpgate/access/v1/access_pb";
+import { useInfiniteQuery } from "@connectrpc/connect-query";
+import { listRoleBindings } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
-import { connectErrorMessage, shortId } from "@/lib/format";
-import { ShieldCheck, Folder, Boxes, Globe, Link2 } from "lucide-react";
+import { RoleLabel, ScopeLabel } from "@/components/detail/labels";
+import { connectErrorMessage } from "@/lib/format";
+import { Link2 } from "lucide-react";
 
 const PAGE_SIZE = 50;
-
-// ─── Role label (enriched via getRoleDisplay) ─────────────────────────────────
-
-function RoleLabel({ roleId }: { roleId: string }) {
-  const { data } = useQuery(
-    getRoleDisplay,
-    { id: roleId },
-    { enabled: Boolean(roleId) },
-  );
-  const name = data?.role?.name || shortId(roleId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate font-medium text-foreground" title={name}>
-        {name}
-      </span>
-    </span>
-  );
-}
-
-// ─── Scope label (folder path / asset path / global) ──────────────────────────
-
-function FolderScope({ folderId }: { folderId: string }) {
-  const { data } = useQuery(resolveFolder, { ref: folderId }, { enabled: true });
-  const path = data?.path || shortId(folderId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-compact text-muted-foreground">
-      <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="truncate" title={path}>
-        {path}
-      </span>
-    </span>
-  );
-}
-
-function AssetScope({ assetId }: { assetId: string }) {
-  const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: true });
-  const path = data?.asset?.path || data?.asset?.name || shortId(assetId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-compact text-muted-foreground">
-      <Boxes className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="truncate" title={path}>
-        {path}
-      </span>
-    </span>
-  );
-}
-
-function ScopeLabel({ binding }: { binding: RoleBinding }) {
-  if (binding.scopeFolderId) return <FolderScope folderId={binding.scopeFolderId} />;
-  if (binding.scopeAssetId) return <AssetScope assetId={binding.scopeAssetId} />;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-compact text-muted-foreground">
-      <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-      global
-    </span>
-  );
-}
 
 // ─── Bound-roles view ─────────────────────────────────────────────────────────
 
@@ -138,7 +73,7 @@ export function GroupBindings({ groupId }: { groupId: string }) {
             className="flex items-center justify-between gap-3 px-1 py-2"
           >
             <RoleLabel roleId={binding.roleId} />
-            <ScopeLabel binding={binding} />
+            <ScopeLabel scope={binding} />
           </li>
         ))}
       </ul>

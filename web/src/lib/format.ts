@@ -92,6 +92,16 @@ export function shortId(id: string): string {
   return id.split("-")[0] ?? id;
 }
 
+// ─── String casing ────────────────────────────────────────────────────────────
+
+/**
+ * Uppercases the first character of a string, leaving the rest unchanged.
+ * "asset" → "Asset", "" → "".
+ */
+export function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 // ─── ConnectError message extraction ─────────────────────────────────────────
 
 /**

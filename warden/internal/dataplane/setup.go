@@ -23,9 +23,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
-	"github.com/trevex/jumpgate/warden/internal/postgres/pgerr"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/vault"
@@ -184,7 +184,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		Principals:  []string{login},
 		ClientKeyFp: claims.ClientKeyFingerprint,
 	}); err != nil {
-		if pgerr.IsUniqueViolation(err) {
+		if apierr.IsUniqueViolation(err) {
 			return SetupResult{}, ErrReplay
 		}
 		return SetupResult{}, fmt.Errorf("insert live session: %w", err)

@@ -46,6 +46,12 @@ func MapWrite(err error) error {
 	return connect.NewError(connect.CodeInternal, err)
 }
 
+// IsUniqueViolation reports whether err is a Postgres unique-constraint violation.
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgerrcodeUniqueViolation
+}
+
 // RoleNotFoundOrInternal maps pgx.ErrNoRows to NotFound and anything else to Internal.
 func RoleNotFoundOrInternal(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {

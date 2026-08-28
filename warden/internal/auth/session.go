@@ -9,10 +9,10 @@ import (
 // token (the same token TokenService issues for bearer use).
 const SessionCookie = "jumpgate_session"
 
-// extractToken pulls the caller's raw token from request headers. A Bearer
+// ExtractToken pulls the caller's raw token from request headers. A Bearer
 // Authorization header takes precedence (CLI); otherwise the jumpgate_session
 // cookie is used (browser). fromCookie reports which source supplied it.
-func extractToken(h http.Header) (raw string, fromCookie bool) {
+func ExtractToken(h http.Header) (raw string, fromCookie bool) {
 	if b, ok := strings.CutPrefix(h.Get("Authorization"), "Bearer "); ok && b != "" {
 		return b, false
 	}
@@ -26,7 +26,3 @@ func extractToken(h http.Header) (raw string, fromCookie bool) {
 	}
 	return "", false
 }
-
-// ExtractToken is the exported form for callers outside this package (e.g. the
-// Logout RPC re-deriving the caller's token to revoke it).
-func ExtractToken(h http.Header) (raw string, fromCookie bool) { return extractToken(h) }

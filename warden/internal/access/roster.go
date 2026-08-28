@@ -10,9 +10,15 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// RosterNodeView is one resolved roster entry (a user or group node).
+// RosterNodeView is one resolved roster entry (a user or group node). The subject
+// display fields (Kind, DisplayName, FolderPath, MemberCount, Active) are populated
+// directly from fully-resolved SQL read rows — there is no per-row Go resolution.
 type RosterNodeView struct {
-	Subject     SubjectView
+	Kind        string // "user" | "group"
+	DisplayName string
+	FolderPath  string // group home; empty for users
+	MemberCount int32  // 0 for users
+	Active      bool   // user active; true for groups
 	SubjectID   string
 	Source      string // "explicit" | "via_role"
 	ViaRoleID   string
@@ -50,15 +56,13 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 		}
 		for _, r := range subs {
 			add(&RosterNodeView{
-				Subject: SubjectView{
-					Kind:        r.SubjectKind,
-					DisplayName: r.DisplayName,
-					FolderPath:  r.FolderPath,
-					MemberCount: r.GroupMemberCount,
-					Active:      r.Active.Bool,
-				},
-				SubjectID: pgUUIDStr(r.SubjectUserID, r.SubjectGroupID),
-				Source:    "explicit",
+				Kind:        r.SubjectKind,
+				DisplayName: r.DisplayName,
+				FolderPath:  r.FolderPath,
+				MemberCount: r.GroupMemberCount,
+				Active:      r.Active.Bool,
+				SubjectID:   pgUUIDStr(r.SubjectUserID, r.SubjectGroupID),
+				Source:      "explicit",
 			})
 		}
 		if includeViaRole && roleID.Valid && hasScope {
@@ -72,13 +76,11 @@ func (s *Service) PolicyRoster(ctx context.Context, policyID uuid.UUID, includeV
 			}
 			for _, h := range holders {
 				add(&RosterNodeView{
-					Subject: SubjectView{
-						Kind:        h.SubjectKind,
-						DisplayName: h.DisplayName,
-						FolderPath:  h.FolderPath,
-						MemberCount: h.GroupMemberCount,
-						Active:      h.Active.Bool,
-					},
+					Kind:        h.SubjectKind,
+					DisplayName: h.DisplayName,
+					FolderPath:  h.FolderPath,
+					MemberCount: h.GroupMemberCount,
+					Active:      h.Active.Bool,
 					SubjectID:   pgUUIDStr(h.SubjectUserID, h.SubjectGroupID),
 					Source:      "via_role",
 					ViaRoleID:   h.ViaRoleID.String(),

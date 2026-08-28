@@ -15,10 +15,7 @@
  */
 
 import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
-import {
-  listRoleBindings,
-  getRoleDisplay,
-} from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
+import { listRoleBindings } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import {
   getUserDisplay,
   listGroups,
@@ -26,30 +23,12 @@ import {
 import type { RoleBinding } from "@/gen/jumpgate/access/v1/access_pb";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
+import { RoleLabel } from "@/components/detail/labels";
 import { connectErrorMessage, shortId } from "@/lib/format";
-import { ShieldCheck, User, Users, Link2 } from "lucide-react";
+import { User, Users, Link2 } from "lucide-react";
 
 const PAGE_SIZE = 50;
 const GROUPS_PAGE_SIZE = 100;
-
-// ─── Role label (enriched via getRoleDisplay) ─────────────────────────────────
-
-function RoleLabel({ roleId }: { roleId: string }) {
-  const { data } = useQuery(
-    getRoleDisplay,
-    { id: roleId },
-    { enabled: Boolean(roleId) },
-  );
-  const name = data?.role?.name || shortId(roleId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate font-medium text-foreground" title={name}>
-        {name}
-      </span>
-    </span>
-  );
-}
 
 // ─── Subject label (user email via getUserDisplay, or group name via map) ─────
 

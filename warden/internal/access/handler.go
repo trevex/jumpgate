@@ -804,12 +804,12 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 
 func toRosterNodeMsg(v RosterNodeView) *accessv1.RosterNode {
 	return &accessv1.RosterNode{
-		SubjectKind:      v.Subject.Kind,
+		SubjectKind:      v.Kind,
 		SubjectId:        v.SubjectID,
-		DisplayName:      v.Subject.DisplayName,
-		FolderPath:       v.Subject.FolderPath,
-		GroupMemberCount: v.Subject.MemberCount,
-		Active:           v.Subject.Active,
+		DisplayName:      v.DisplayName,
+		FolderPath:       v.FolderPath,
+		GroupMemberCount: v.MemberCount,
+		Active:           v.Active,
 		Source:           v.Source,
 		ViaRoleId:        v.ViaRoleID,
 		ViaRoleName:      v.ViaRoleName,

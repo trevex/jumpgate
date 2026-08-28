@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -85,24 +86,13 @@ func RenderProtoList(w io.Writer, format string, msgs []proto.Message, tv *Table
 
 func renderTable(w io.Writer, tv *Table) error {
 	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, joinTabs(tv.Headers)); err != nil {
+	if _, err := fmt.Fprintln(tw, strings.Join(tv.Headers, "\t")); err != nil {
 		return err
 	}
 	for _, row := range tv.Rows {
-		if _, err := fmt.Fprintln(tw, joinTabs(row)); err != nil {
+		if _, err := fmt.Fprintln(tw, strings.Join(row, "\t")); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
-}
-
-func joinTabs(cols []string) string {
-	out := ""
-	for i, c := range cols {
-		if i > 0 {
-			out += "\t"
-		}
-		out += c
-	}
-	return out
 }

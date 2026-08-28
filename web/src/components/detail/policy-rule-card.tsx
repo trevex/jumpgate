@@ -11,12 +11,8 @@ import { LoadingRows, ErrorState } from "@/components/states/states";
 import { connectErrorMessage } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SubjectRow } from "./subject-row";
-import { rosterNodeLabel, emptyRosterMessage } from "./roster-model";
+import { rosterNodeLabel } from "./roster-model";
 import { policyRuleSummary } from "./policy-usage-model";
-
-function roleName(roleId: string, fallback = ""): string {
-  return fallback || roleId.slice(0, 8);
-}
 
 /** Fetches a role's display name (best-effort) for the rule summary. */
 function useRoleName(roleId: string): string {
@@ -34,7 +30,7 @@ export function PolicyRuleCard({ policy }: { policy: RequestPolicy }) {
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="truncate text-body font-medium text-foreground">{grantName || roleName(policy.roleId)}</span>
+          <span className="truncate text-body font-medium text-foreground">{grantName || policy.roleId.slice(0, 8)}</span>
         </span>
         <Badge variant="secondary" className="shrink-0 rounded px-1.5 py-0 text-micro font-semibold tabular-nums">
           {policy.requiredApprovals} approval{policy.requiredApprovals === 1 ? "" : "s"}
@@ -69,9 +65,9 @@ function RosterDisclosure({ policyId }: { policyId: string }) {
       </button>
       {open && (
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <RosterColumn title="Requesters" empty={emptyRosterMessage("request")}
+          <RosterColumn title="Requesters" empty="No eligible requesters."
             isLoading={isLoading} isError={isError} error={error} nodes={data?.requesters ?? []} />
-          <RosterColumn title="Approvers" empty={emptyRosterMessage("approve")}
+          <RosterColumn title="Approvers" empty="No eligible approvers."
             isLoading={isLoading} isError={isError} error={error} nodes={data?.approvers ?? []} />
         </div>
       )}

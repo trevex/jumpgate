@@ -53,7 +53,7 @@ func NewInterceptor(lookup userLookup) connect.UnaryInterceptorFunc {
 			if req.Spec().IsClient {
 				return next(ctx, req)
 			}
-			raw, fromCookie := extractToken(req.Header())
+			raw, fromCookie := ExtractToken(req.Header())
 			if raw != "" && (!fromCookie || req.Header().Get("Sec-Fetch-Site") == "same-origin") {
 				if id, err := lookup.Validate(ctx, raw); err == nil {
 					if u, err := lookup.Load(ctx, id); err == nil {

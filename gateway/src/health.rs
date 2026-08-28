@@ -1,16 +1,18 @@
 //! HTTP health surface for the gateway. M1 serves only `/healthz`; session
 //! routing/load-balancing is added in M4.
 
-use axum::{routing::get, Json, Router};
-use serde_json::{json, Value};
+use axum::{http::header, response::IntoResponse, routing::get, Router};
 
 /// Build the gateway HTTP router.
 pub fn router() -> Router {
     Router::new().route("/healthz", get(healthz))
 }
 
-async fn healthz() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
+async fn healthz() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/json")],
+        r#"{"status":"ok"}"#,
+    )
 }
 
 #[cfg(test)]
@@ -19,6 +21,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
+    use serde_json::Value;
     use tower::ServiceExt; // for `oneshot`
 
     #[tokio::test]

@@ -38,7 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState, ErrorState } from "@/components/states/states";
 import { cn } from "@/lib/utils";
-import { connectErrorMessage, shortId } from "@/lib/format";
+import { connectErrorMessage, relativeTime, shortId } from "@/lib/format";
 import {
   Film,
   RefreshCw,
@@ -67,23 +67,7 @@ function formatDuration(startMs: bigint, endMs: bigint): string {
 /** Relative time from a unix-ms timestamp. */
 function relativeTimeMs(unixMs: bigint): string {
   if (!unixMs) return "—";
-  const diffMs = Number(unixMs) - Date.now();
-  const absMs = Math.abs(diffMs);
-  const past = diffMs < 0;
-  if (absMs < 60_000) return "just now";
-  let value: number;
-  let unit: string;
-  if (absMs < 3_600_000) {
-    value = Math.floor(absMs / 60_000);
-    unit = value === 1 ? "minute" : "minutes";
-  } else if (absMs < 86_400_000) {
-    value = Math.floor(absMs / 3_600_000);
-    unit = value === 1 ? "hour" : "hours";
-  } else {
-    value = Math.floor(absMs / 86_400_000);
-    unit = value === 1 ? "day" : "days";
-  }
-  return past ? `${value} ${unit} ago` : `in ${value} ${unit}`;
+  return relativeTime(new Date(Number(unixMs)).toISOString());
 }
 
 // ─── Recording status badge ───────────────────────────────────────────────────

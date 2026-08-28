@@ -33,7 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
 import { cn } from "@/lib/utils";
-import { relativeTime, timeRemaining, isExpired, connectErrorMessage, shortId } from "@/lib/format";
+import { relativeTime, timeRemaining, isExpired, connectErrorMessage, shortId, capitalize } from "@/lib/format";
 import { useInvalidateList } from "@/lib/query";
 import { CopyButton } from "@/components/copy-button";
 import {
@@ -59,7 +59,7 @@ const STATUS_VARIANTS: Record<
 
 function StatusBadge({ status }: { status: string }) {
   const variant = STATUS_VARIANTS[status] ?? "neutral";
-  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  const label = capitalize(status);
   return (
     <Badge
       variant={variant}
