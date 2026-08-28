@@ -20,6 +20,7 @@ func TestAuthzVisibility(t *testing.T) {
 		t.Skip("no live cluster (set JUMPGATE_E2E=1)")
 	}
 	e := shared
+	e.reset(t)
 
 	folderA := e.name("az-a")
 	folderB := e.name("az-b")

@@ -33,6 +33,7 @@ func TestScenario(t *testing.T) {
 		t.Skip("no live cluster (set JUMPGATE_E2E=1)")
 	}
 	e := shared
+	e.reset(t)
 	st := &scenarioState{
 		aliceEmail: e.name("alice") + "@demo.test",
 		bobEmail:   e.name("bob") + "@demo.test",
