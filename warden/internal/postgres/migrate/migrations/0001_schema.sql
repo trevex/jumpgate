@@ -623,6 +623,32 @@ CREATE TRIGGER trg_folders_path_ins BEFORE INSERT ON public.folders FOR EACH ROW
 
 CREATE TRIGGER trg_folders_path_move AFTER UPDATE OF parent_id ON public.folders FOR EACH ROW WHEN ((old.parent_id IS DISTINCT FROM new.parent_id)) EXECUTE FUNCTION public.folders_move_path_ids();
 
+-- Every asset/folder gets its catalog_names entry registered automatically on INSERT,
+-- so a resolvable name is an intrinsic property of the row: it is impossible to create
+-- an asset or folder that ResolveAsset/path-resolution cannot find. Sibling-name
+-- collisions surface as the catalog_names unique-index violation, aborting the INSERT.
+CREATE FUNCTION public.catalog_register_asset_name() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO catalog_names (parent_id, name, asset_id) VALUES (NEW.folder_id, NEW.name, NEW.id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.catalog_register_folder_name() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO catalog_names (parent_id, name, folder_id) VALUES (NEW.parent_id, NEW.name, NEW.id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_assets_register_name AFTER INSERT ON public.assets FOR EACH ROW EXECUTE FUNCTION public.catalog_register_asset_name();
+
+CREATE TRIGGER trg_folders_register_name AFTER INSERT ON public.folders FOR EACH ROW EXECUTE FUNCTION public.catalog_register_folder_name();
+
 CREATE TRIGGER trg_group_memberships_authz AFTER DELETE ON public.group_memberships FOR EACH ROW EXECUTE FUNCTION public.notify_authz_changed_membership_delete();
 
 CREATE TRIGGER trg_role_bindings_authz AFTER DELETE ON public.role_bindings FOR EACH ROW EXECUTE FUNCTION public.notify_authz_changed_binding_delete();
@@ -1039,6 +1065,9 @@ DROP FUNCTION IF EXISTS authz_role_goal_paths(uuid, uuid, uuid),
     folder_path(uuid),
     authz_user_groups(uuid),
     authz_user_is_active(uuid);
+-- CASCADE so the AFTER INSERT triggers on assets/folders drop with the functions,
+-- independent of table-drop order below.
+DROP FUNCTION IF EXISTS catalog_register_asset_name() CASCADE, catalog_register_folder_name() CASCADE;
 DROP VIEW IF EXISTS active_access_grants;
 -- NB: group_memberships must be listed explicitly — dropping groups/users CASCADE
 -- only removes its FK constraints, not the table, leaving trg_group_memberships_authz

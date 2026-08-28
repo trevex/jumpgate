@@ -37,6 +37,10 @@ async function selectFolder(page: Page, name: string): Promise<void> {
   const collapse = tree(page).getByRole("button", {
     name: new RegExp(`Collapse folder ${name}$`),
   });
+  // Wait for the folder node to render before the count() branch — the tree
+  // loads async after navigating to Catalog, and count() (unlike click) does not
+  // auto-wait, so an early read would take the wrong branch.
+  await expand.or(collapse).first().waitFor();
   if (await expand.count()) {
     await expand.click();
   } else {
@@ -111,8 +115,11 @@ test("asset panel shows the Requestable via rule cards + roster disclosure", asy
   const disclose = pane.getByRole("button", { name: "Who can request / approve" }).first();
   await expect(disclose).toBeVisible();
   await disclose.click();
-  await expect(pane.getByText(/Requesters/)).toBeVisible();
-  await expect(pane.getByText(/Approvers/)).toBeVisible();
+  // The roster column headers render "Requesters · N" / "Approvers · N" (middot +
+  // count) — distinct from the rule-summary line "Requesters: <role>" (colon), and
+  // there may be more than one policy card, so match the header form and take first.
+  await expect(pane.getByText(/Requesters ·/).first()).toBeVisible();
+  await expect(pane.getByText(/Approvers ·/).first()).toBeVisible();
 });
 
 test("group panel uses Policy participation, not Requestable via", async ({ page }) => {

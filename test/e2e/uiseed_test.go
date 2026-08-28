@@ -36,6 +36,7 @@ func TestUISeed(t *testing.T) {
 		t.Skip("no live cluster (set JUMPGATE_E2E=1)")
 	}
 	e := shared
+	e.reset(t)
 
 	e.exportMeshCA(t)
 	e.login(t, "admin", adminEmail, adminPass)

@@ -20,6 +20,7 @@ func TestAuthzGrantTransitions(t *testing.T) {
 		t.Skip("no live cluster (set JUMPGATE_E2E=1)")
 	}
 	e := shared
+	e.reset(t)
 
 	folder := e.name("tr")
 	boxName := e.name("tr-box")

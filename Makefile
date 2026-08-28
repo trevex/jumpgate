@@ -10,7 +10,7 @@ KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 ZENSICAL_IMAGE ?= zensical/zensical:latest
 
-.PHONY: help gen sqlc build test bench lint fmt ci e2e-local e2e-cluster e2e-ssh kind-e2e web rust-deny \
+.PHONY: help gen sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build docs docs-serve
 
@@ -75,14 +75,6 @@ web: ## Install + typecheck + build the SPA
 	pnpm --dir web build
 
 ci: gen build test lint web ## Full CI pipeline
-
-e2e-local: ## Opt-in local-tier SSH data-plane e2e (in-process warden + real gateway/worker binaries; NOT in ci)
-	cargo build --workspace
-	cd warden && go build ./... && go build ./cmd/warden-meshcert && go build ./cmd/warden-bootstrap
-	cd cli && go build ./...
-	cd warden && go test -tags e2e -count=1 -timeout 300s ./e2e/...
-
-e2e-ssh: e2e-local ## (deprecated alias)
 
 kind-images: ## Build the container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .

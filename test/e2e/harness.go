@@ -145,6 +145,39 @@ func (e *env) kubectl(t *testing.T, args ...string) string {
 	return run(t, nil, "kubectl", args...)
 }
 
+// resetSQL truncates every mutable domain table and re-seeds the bootstrap admin
+// (preserving its password hash + the ** role and its global standing binding), so a
+// top-level test starts from a clean catalog on the shared cluster. Infra material —
+// the mesh/SSH/session CAs (ca_keys, session_signing_keys) and the worker roster
+// (worker_presence) — is preserved. The email must match adminEmail (scenario_test.go).
+const resetSQL = `DO $$
+DECLARE v_hash text; v_uid uuid; v_rid uuid;
+BEGIN
+  SELECT password_hash INTO v_hash FROM users WHERE email = 'admin@demo.test';
+  IF v_hash IS NULL THEN RAISE EXCEPTION 'admin user not found; cannot reset'; END IF;
+  TRUNCATE users, auth_tokens, roles, role_capabilities, role_bindings, role_grants,
+    groups, group_memberships, folders, assets, catalog_names, ssh_asset_config,
+    ssh_asset_login, asset_secrets, request_policies, request_policy_subjects,
+    access_requests, access_request_approvals, access_grants, live_sessions,
+    session_recordings, audit_log, audit_outbox CASCADE;
+  INSERT INTO users (email, display_name, password_hash)
+    VALUES ('admin@demo.test','admin@demo.test',v_hash) RETURNING id INTO v_uid;
+  INSERT INTO roles (name) VALUES ('admin') RETURNING id INTO v_rid;
+  INSERT INTO role_capabilities (role_id, scope, action, qualifier) VALUES (v_rid,'*','*','*');
+  INSERT INTO role_bindings (role_id, subject_user_id) VALUES (v_rid, v_uid);
+END $$;`
+
+// reset wipes mutable data on the shared cluster and re-seeds the admin, so the
+// calling top-level test gets an isolated, clean catalog even though every test runs
+// against the same persistent cluster. It runs psql inside the in-cluster postgres
+// deployment; each test calls it first, and Go runs tests sequentially, so the last
+// test's fixtures are the ones left standing for the browser e2e (TestUISeed).
+func (e *env) reset(t *testing.T) {
+	t.Helper()
+	e.kubectl(t, "exec", "deploy/jumpgate-postgres", "-c", "postgres", "--",
+		"psql", "-U", "jumpgate", "-d", "jumpgate", "-v", "ON_ERROR_STOP=1", "-c", resetSQL)
+}
+
 // exportMeshCA writes the gateway's mesh CA to e.meshCA (needed by `connect`).
 func (e *env) exportMeshCA(t *testing.T) {
 	t.Helper()
