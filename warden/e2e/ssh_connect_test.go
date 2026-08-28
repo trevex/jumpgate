@@ -69,7 +69,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -97,6 +96,7 @@ import (
 	authv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -119,6 +119,9 @@ const (
 	userEmail = "deployer@e2e.test"
 	login     = "deploy"
 	assetName = "e2e-target"
+	// DNS-style leaf-first path (asset.folder) for ResolveAsset; a bare name is
+	// rejected as ambiguous. seedAccess homes the asset in folder "prod".
+	assetPath = assetName + ".prod"
 
 	execCommand = "jumpgate-ok"
 )
@@ -497,12 +500,7 @@ func seedAccess(t *testing.T, pool *pgxpool.Pool, targetAddr, targetHostPub stri
 		t.Fatalf("UpsertSSHAssetLogin: %v", err)
 	}
 
-	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
-		Name: "ssh-deploy", Capabilities: capsJSON("ssh:login:" + login),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "ssh-deploy", "ssh:login:"+login)
 	rb, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		ScopeAssetID:  pgUUID(asset.ID),
@@ -539,10 +537,7 @@ func seedAdmin(t *testing.T, pool *pgxpool.Pool, email, password string) {
 	// Mirror bootstrap.EnsureAdmin: the admin holds `**` globally via a scopeless
 	// standing binding so the capability-gated management handlers (e.g. RevokeGrant)
 	// admit it. There is no is_admin boolean anymore; authz is capability-only.
-	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: "admin-" + uuid.NewString(), Capabilities: []byte(`["**"]`)})
-	if err != nil {
-		t.Fatalf("create admin role: %v", err)
-	}
+	role := createRoleWithCaps(t, ctx, q, "admin-"+uuid.NewString(), "**")
 	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID:        role.ID,
 		SubjectUserID: pgtype.UUID{Bytes: u.ID, Valid: true},
@@ -952,7 +947,7 @@ func dialWithRetry(ctx context.Context, t *testing.T, wardenAddr, token, caFile 
 		default:
 		}
 		attemptCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		tunnel, signer, err := clicmd.DialTunnel(attemptCtx, wardenAddr, token, caFile, login, assetName)
+		tunnel, signer, err := clicmd.DialTunnel(attemptCtx, wardenAddr, token, caFile, login, assetPath)
 		cancel()
 		if err == nil {
 			return tunnel, signer
@@ -980,6 +975,21 @@ func newPool(t *testing.T, dsn string) *pgxpool.Pool {
 	return pool
 }
 
-func capsJSON(xs ...string) []byte { b, _ := json.Marshal(xs); return b }
+// createRoleWithCaps creates a role and inserts its capabilities via the split
+// CreateRole + InsertRoleCapability queries (mirrors access.Service.CreateRole).
+func createRoleWithCaps(t *testing.T, ctx context.Context, q *sqlc.Queries, name string, caps ...string) sqlc.Role {
+	t.Helper()
+	r, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name})
+	if err != nil {
+		t.Fatalf("CreateRole(%s): %v", name, err)
+	}
+	for _, c := range caps {
+		sc, ac, qu := authz.NormalizeCap(c)
+		if err := q.InsertRoleCapability(ctx, sqlc.InsertRoleCapabilityParams{RoleID: r.ID, Scope: sc, Action: ac, Qualifier: qu}); err != nil {
+			t.Fatalf("InsertRoleCapability(%s): %v", c, err)
+		}
+	}
+	return r
+}
 
 func pgUUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }

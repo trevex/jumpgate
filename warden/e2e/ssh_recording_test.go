@@ -416,24 +416,14 @@ func seedExemptUser(t *testing.T, pool *pgxpool.Pool) string {
 	// Resolve the existing asset seeded by seedAccess (unique by name).
 	assetID := lookupAssetID(t, pool, assetName)
 
-	loginRole, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
-		Name: "ssh-deploy-exempt-login", Capabilities: capsJSON("ssh:login:" + login),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole(exempt login): %v", err)
-	}
+	loginRole := createRoleWithCaps(t, ctx, q, "ssh-deploy-exempt-login", "ssh:login:"+login)
 	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: loginRole.ID, ScopeAssetID: pgUUID(assetID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
 		t.Fatalf("CreateRoleBinding(exempt login): %v", err)
 	}
 
-	exemptRole, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
-		Name: "ssh-record-exempt", Capabilities: capsJSON("ssh:record:exempt"),
-	})
-	if err != nil {
-		t.Fatalf("CreateRole(exempt): %v", err)
-	}
+	exemptRole := createRoleWithCaps(t, ctx, q, "ssh-record-exempt", "ssh:record:exempt")
 	if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
 		RoleID: exemptRole.ID, ScopeAssetID: pgUUID(assetID), SubjectUserID: pgUUID(user.ID),
 	}); err != nil {
@@ -461,7 +451,7 @@ func lookupAssetID(t *testing.T, pool *pgxpool.Pool, name string) uuid.UUID {
 // dialTunnel drives a single real connect attempt (used by the fail-closed phase,
 // which must observe the exec being refused rather than retry to success).
 func dialTunnel(ctx context.Context, wardenAddr, token, caFile string) (net.Conn, gossh.Signer, error) {
-	return clicmd.DialTunnel(ctx, wardenAddr, token, caFile, login, assetName)
+	return clicmd.DialTunnel(ctx, wardenAddr, token, caFile, login, assetPath)
 }
 
 // dialWithRetryToken is dialWithRetry with an explicit token (the base helper
@@ -477,7 +467,7 @@ func dialWithRetryToken(ctx context.Context, t *testing.T, wardenAddr, token, ca
 		default:
 		}
 		attemptCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		tunnel, signer, err := clicmd.DialTunnel(attemptCtx, wardenAddr, token, caFile, login, assetName)
+		tunnel, signer, err := clicmd.DialTunnel(attemptCtx, wardenAddr, token, caFile, login, assetPath)
 		cancel()
 		if err == nil {
 			return tunnel, signer
