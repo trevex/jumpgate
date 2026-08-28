@@ -38,12 +38,11 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
 
+	// CreateAsset registers the catalog_names entry atomically, so a bad folder_id is
+	// InvalidArgument and a sibling collision (incl. vs a folder) is AlreadyExists.
 	a, err := qtx.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folderID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
 	if err != nil {
-		return AssetWithConfig{}, apierr.MapWrite(err) // a bad folder_id is InvalidArgument, not Internal
-	}
-	if err := qtx.InsertAssetName(ctx, sqlc.InsertAssetNameParams{ParentID: pgconv.UUID(a.FolderID), Name: name, AssetID: pgconv.UUID(a.ID)}); err != nil {
-		return AssetWithConfig{}, apierr.MapWrite(err) // sibling collision (incl. vs a folder) -> AlreadyExists
+		return AssetWithConfig{}, apierr.MapWrite(err)
 	}
 
 	rows, err := s.resolveSSHConfigInput(ctx, qtx, a.ID, in, true)

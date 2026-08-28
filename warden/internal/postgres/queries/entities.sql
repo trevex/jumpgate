@@ -63,16 +63,14 @@ DELETE FROM groups WHERE id = $1;
 DELETE FROM users WHERE id = $1;
 
 -- name: CreateFolder :one
+-- The folder's catalog_names entry is registered by an AFTER INSERT trigger
+-- (trg_folders_register_name), so a folder can never exist without a resolvable name.
 INSERT INTO folders (name, parent_id) VALUES ($1, $2) RETURNING *;
 
 -- name: CreateAsset :one
+-- The asset's catalog_names entry is registered by an AFTER INSERT trigger
+-- (trg_assets_register_name), so an asset can never exist without a resolvable name.
 INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING *;
-
--- name: InsertFolderName :exec
-INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, $2, $3);
-
--- name: InsertAssetName :exec
-INSERT INTO catalog_names (parent_id, name, asset_id) VALUES ($1, $2, $3);
 
 -- name: CreateRole :one
 INSERT INTO roles (name, folder_id) VALUES ($1, $2) RETURNING *;

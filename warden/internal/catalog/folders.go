@@ -44,12 +44,11 @@ func (s *Service) CreateFolder(ctx context.Context, parent pgtype.UUID, name str
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
 
+	// CreateFolder registers the catalog_names entry atomically, so a bad parent_id is
+	// InvalidArgument and a sibling collision is AlreadyExists.
 	f, err := qtx.CreateFolder(ctx, sqlc.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
-		return FolderResult{}, mapWrite(err) // a bad parent_id is InvalidArgument, not Internal
-	}
-	if err := qtx.InsertFolderName(ctx, sqlc.InsertFolderNameParams{ParentID: parent, Name: name, FolderID: pgconv.UUID(f.ID)}); err != nil {
-		return FolderResult{}, mapWrite(err) // sibling collision -> AlreadyExists
+		return FolderResult{}, mapWrite(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return FolderResult{}, connect.NewError(connect.CodeInternal, err)

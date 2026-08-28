@@ -67,9 +67,13 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error)
 	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
+	// The asset's catalog_names entry is registered by an AFTER INSERT trigger
+	// (trg_assets_register_name), so an asset can never exist without a resolvable name.
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
 	CreateCAKey(ctx context.Context, arg CreateCAKeyParams) (CaKey, error)
+	// The folder's catalog_names entry is registered by an AFTER INSERT trigger
+	// (trg_folders_register_name), so a folder can never exist without a resolvable name.
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
 	CreateRequestPolicy(ctx context.Context, arg CreateRequestPolicyParams) (RequestPolicy, error)
@@ -204,9 +208,7 @@ type Querier interface {
 	HoldsRole(ctx context.Context, arg HoldsRoleParams) (bool, error)
 	// RoleResolver.HoldsRoleStanding (binding satisfaction only).
 	HoldsRoleStanding(ctx context.Context, arg HoldsRoleStandingParams) (bool, error)
-	InsertAssetName(ctx context.Context, arg InsertAssetNameParams) error
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
-	InsertFolderName(ctx context.Context, arg InsertFolderNameParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error
 	// visible_tree IsMember.
