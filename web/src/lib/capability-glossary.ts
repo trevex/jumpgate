@@ -8,17 +8,13 @@
  * fall back to a readable Title-Cased rendering of the raw string.
  */
 
-// Title-cases a single segment: "asset" → "Asset", "ssh" → "Ssh".
-function titleSegment(seg: string): string {
-  if (seg.length === 0) return seg;
-  return seg.charAt(0).toUpperCase() + seg.slice(1);
-}
+import { capitalize } from "@/lib/format";
 
 // Readable fallback for unknown capabilities: "foo:bar:baz" → "Foo Bar Baz".
 function fallbackGloss(cap: string): string {
   return cap
     .split(":")
-    .map(titleSegment)
+    .map((seg) => capitalize(seg))
     .join(" ");
 }
 

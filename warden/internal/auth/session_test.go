@@ -61,7 +61,7 @@ func TestExtractToken(t *testing.T) {
 			for k, v := range tc.headers {
 				h.Set(k, v)
 			}
-			raw, fromCookie := extractToken(h)
+			raw, fromCookie := ExtractToken(h)
 			if raw != tc.wantRaw {
 				t.Errorf("raw: got %q, want %q", raw, tc.wantRaw)
 			}

@@ -6,7 +6,7 @@
 //! `ClientConfig` whose verifier PINS that exact identity (chain-to-mesh-CA AND
 //! URI SAN == expected), so a mesh member impersonating another worker fails the
 //! TLS handshake. After the handshake we forward an HTTP CONNECT carrying the
-//! session token and, on `200`, hand the raw TLS stream to [`pump`].
+//! session token and, on `200`, hand the raw TLS stream to [`pump_bounded`].
 
 use std::time::Duration;
 
@@ -42,7 +42,7 @@ pub enum ProxyError {
 /// mTLS-dial the chosen worker, pinning its SPIFFE identity
 /// (`spiffe://jumpgate/worker/<worker_id>`), then CONNECT through forwarding the
 /// session `token`. On a `200` response the established TLS stream is returned,
-/// ready to be blind-piped with [`pump`].
+/// ready to be blind-piped with [`pump_bounded`].
 pub async fn connect_worker(
     entry: &WorkerEntry,
     certs: &MeshClientCerts,
@@ -150,21 +150,7 @@ pub enum StopReason {
     Lifetime,
 }
 
-/// Blind-pipe bytes between the external client stream and the worker stream
-/// until either side closes. Returns `(client→worker, worker→client)` byte
-/// counts. The caller holds the `lb::Guard`, which is dropped once this returns.
-///
-/// Unbounded: prefer [`pump_bounded`] on the hot path so a stalled peer cannot
-/// hold a worker slot + target connection open forever.
-pub async fn pump<A, B>(mut client: A, mut worker: B) -> std::io::Result<(u64, u64)>
-where
-    A: AsyncRead + AsyncWrite + Unpin,
-    B: AsyncRead + AsyncWrite + Unpin,
-{
-    tokio::io::copy_bidirectional(&mut client, &mut worker).await
-}
-
-/// Blind-pipe bytes between the two streams like [`pump`], but bounded by
+/// Blind-pipe bytes between the two streams, bounded by
 /// `limits`: an idle timeout (no bytes EITHER direction) and an absolute
 /// lifetime cap. Returns the byte counts and why the pump stopped.
 ///
@@ -484,13 +470,15 @@ mod tests {
         let addr = spawn_stub_worker(&pki).await;
         let certs = gateway_certs(&pki);
 
-        let worker = connect_worker(&entry("w1", addr), &certs, "tok", "asset-1")
+        let mut worker = connect_worker(&entry("w1", addr), &certs, "tok", "asset-1")
             .await
             .expect("connect_worker ok");
 
-        // A client-side in-memory duplex; pump copies both directions.
-        let (mut client_end, gateway_end) = tokio::io::duplex(4096);
-        let pump_task = tokio::spawn(async move { pump(gateway_end, worker).await });
+        // A client-side in-memory duplex; copy_bidirectional copies both directions.
+        let (mut client_end, mut gateway_end) = tokio::io::duplex(4096);
+        let pump_task = tokio::spawn(async move {
+            tokio::io::copy_bidirectional(&mut gateway_end, &mut worker).await
+        });
 
         client_end.write_all(b"ping through pump").await.unwrap();
         client_end.flush().await.unwrap();

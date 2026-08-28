@@ -20,7 +20,6 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/ca"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
-	"github.com/trevex/jumpgate/warden/internal/postgres/pgerr"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
@@ -183,7 +182,7 @@ func (s *Handler) InitSessionKey(ctx context.Context, _ *connect.Request[vaultv1
 	}
 	ks := session.NewKeyStore(s.q, s.sealer)
 	if err := ks.Init(ctx); err != nil {
-		if pgerr.IsUniqueViolation(err) {
+		if apierr.IsUniqueViolation(err) {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("session signing key already initialized"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, err)

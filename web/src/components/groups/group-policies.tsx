@@ -20,81 +20,16 @@
  * request / approve" at a glance.
  */
 
-import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
-import {
-  listPoliciesForGroup,
-  getRoleDisplay,
-} from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
-import {
-  resolveFolder,
-  getAssetDisplay,
-} from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
-import type { RequestPolicy } from "@/gen/jumpgate/access/v1/access_pb";
+import { useInfiniteQuery } from "@connectrpc/connect-query";
+import { listPoliciesForGroup } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/states/states";
-import { connectErrorMessage, shortId } from "@/lib/format";
-import { ShieldCheck, Folder, Boxes, Globe, Send } from "lucide-react";
+import { RoleLabel, ScopeLabel } from "@/components/detail/labels";
+import { connectErrorMessage } from "@/lib/format";
+import { Send } from "lucide-react";
 
 const PAGE_SIZE = 50;
-
-// ─── Role label (enriched via getRoleDisplay) ─────────────────────────────────
-
-function RoleLabel({ roleId }: { roleId: string }) {
-  const { data } = useQuery(
-    getRoleDisplay,
-    { id: roleId },
-    { enabled: Boolean(roleId) },
-  );
-  const name = data?.role?.name || shortId(roleId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate font-medium text-foreground" title={name}>
-        {name}
-      </span>
-    </span>
-  );
-}
-
-// ─── Scope label (folder path / asset path / role-default) ────────────────────
-
-function FolderScope({ folderId }: { folderId: string }) {
-  const { data } = useQuery(resolveFolder, { ref: folderId }, { enabled: true });
-  const path = data?.path || shortId(folderId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-compact text-muted-foreground">
-      <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="truncate" title={path}>
-        {path}
-      </span>
-    </span>
-  );
-}
-
-function AssetScope({ assetId }: { assetId: string }) {
-  const { data } = useQuery(getAssetDisplay, { assetId }, { enabled: true });
-  const path = data?.asset?.path || data?.asset?.name || shortId(assetId);
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-compact text-muted-foreground">
-      <Boxes className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="truncate" title={path}>
-        {path}
-      </span>
-    </span>
-  );
-}
-
-function ScopeLabel({ policy }: { policy: RequestPolicy }) {
-  if (policy.scopeFolderId) return <FolderScope folderId={policy.scopeFolderId} />;
-  if (policy.scopeAssetId) return <AssetScope assetId={policy.scopeAssetId} />;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-compact text-muted-foreground">
-      <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-      global
-    </span>
-  );
-}
 
 // ─── Requestable-via view ─────────────────────────────────────────────────────
 
@@ -150,7 +85,7 @@ export function GroupPolicies({ groupId }: { groupId: string }) {
           >
             <RoleLabel roleId={policy.roleId} />
             <div className="flex shrink-0 items-center gap-3">
-              <ScopeLabel policy={policy} />
+              <ScopeLabel scope={policy} />
               <Badge
                 variant="secondary"
                 className="rounded px-1.5 py-0 text-micro font-semibold tabular-nums"
