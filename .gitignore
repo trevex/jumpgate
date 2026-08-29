@@ -1,6 +1,8 @@
-# Superpowers workflow artifacts (specs/plans) — temporal, not project docs
+# Superpowers workflow artifacts (specs/plans, brainstorm mockups) — temporal, not project docs
 docs/superpowers/
+.superpowers/
 AGENTS.md
+CLAUDE.md
 
 # Zensical docs build output
 /site/
