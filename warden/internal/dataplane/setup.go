@@ -163,8 +163,9 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		if !containsLogin(caps.EntitledLoginsFor(authz.DBLoginPrefix, allowed), login) {
 			return SetupResult{}, ErrNotAuthorized
 		}
-		// Recording is deferred for postgres (no recorder yet); never required.
-		recordingRequired, recordingKey = false, ""
+		// Postgres sessions are always recorded (structured pgwire timeline).
+		recordingRequired = true
+		recordingKey = recordingObjectKey(claims.SessionID, time.Now(), "postgres", "ndjson")
 	default: // "ssh" (empty proto = legacy ssh)
 		protocol = "ssh"
 		if _, err := parseSSHPublicKey(targetPub); err != nil {

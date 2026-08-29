@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,8 +177,12 @@ func TestSetupPostgresMTLS(t *testing.T) {
 	if res.Login != "readonly" {
 		t.Fatalf("Login = %q, want readonly", res.Login)
 	}
-	if res.RecordingRequired {
-		t.Fatal("RecordingRequired = true, want false (postgres recording deferred)")
+	if !res.RecordingRequired {
+		t.Error("postgres setup: RecordingRequired = false, want true")
+	}
+	if !strings.HasPrefix(res.RecordingObjectKey, "recordings/postgres/") ||
+		!strings.HasSuffix(res.RecordingObjectKey, ".ndjson") {
+		t.Errorf("postgres setup: RecordingObjectKey = %q, want recordings/postgres/....ndjson", res.RecordingObjectKey)
 	}
 	if got := f.liveSessionProtocol(t, res.SessionID); got != "postgres" {
 		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
