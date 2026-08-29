@@ -74,3 +74,13 @@ func TestRecorderUploadFailure(t *testing.T) {
 		t.Errorf("status = %q, want failed on upload error", rep.Status)
 	}
 }
+
+func TestNewS3UploaderDisabled(t *testing.T) {
+	up, err := NewS3Uploader(context.Background(), "", "", "us-east-1")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if up != nil {
+		t.Fatal("empty bucket must yield a nil (disabled) uploader")
+	}
+}
