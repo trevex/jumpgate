@@ -16,13 +16,16 @@ import (
 )
 
 // AssetDisplayResult is an asset's decision context: the asset row, its folder and
-// dotted paths, and optional SSH config (no secret material).
+// dotted paths, and optional typed config (no secret material). At most one config
+// pair is set, per the asset's kind.
 type AssetDisplayResult struct {
 	Asset      sqlc.Asset
 	FolderPath string
 	Path       string
-	Config     *sqlc.SshAssetConfig
-	Logins     []sqlc.SshAssetLogin
+	Config     *sqlc.SshAssetConfig      // kind == "ssh"
+	Logins     []sqlc.SshAssetLogin      // kind == "ssh"
+	PGConfig   *sqlc.PostgresAssetConfig // kind == "postgres"
+	PGLogins   []sqlc.PostgresAssetLogin // kind == "postgres"
 }
 
 // FolderContents is the bounded per-kind first slice returned by ListFolderContents.
@@ -106,20 +109,35 @@ func (s *Service) GetAssetDisplay(ctx context.Context, caller uuid.UUID, id uuid
 		res.FolderPath = fp
 		res.Path = joinPath(fp, a.Name)
 	}
-	// SSH connection config is optional; a config-less asset returns no ssh oneof.
-	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return res, nil
+	// Connection config is optional; a config-less asset returns no config oneof.
+	switch a.Kind {
+	case "ssh":
+		cfg, err := s.q.GetSSHAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
 		}
-		return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		logins, err := s.q.ListSSHAssetLogins(ctx, id)
+		if err != nil {
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.Config, res.Logins = &cfg, logins
+	case "postgres":
+		cfg, err := s.q.GetPostgresAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := s.q.ListPostgresAssetLogins(ctx, id)
+		if err != nil {
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.PGConfig, res.PGLogins = &cfg, logins
 	}
-	logins, err := s.q.ListSSHAssetLogins(ctx, id)
-	if err != nil {
-		return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
-	}
-	res.Config = &cfg
-	res.Logins = logins
 	return res, nil
 }
 
