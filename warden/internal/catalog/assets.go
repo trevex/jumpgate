@@ -243,13 +243,13 @@ func (s *Service) ListAssets(ctx context.Context, caller uuid.UUID, parentRef st
 // (existence hiding). The response path is the canonical DNS path.
 func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string) (ResolveResult, error) {
 	var assetID, folderID uuid.UUID
-	var assetName string
+	var assetName, assetKind string
 	if id, perr := uuid.Parse(ref); perr == nil {
 		a, err := s.q.GetAsset(ctx, id)
 		if err != nil {
 			return ResolveResult{}, notFoundOrInternal(err)
 		}
-		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+		assetID, folderID, assetName, assetKind = a.ID, a.FolderID, a.Name, a.Kind
 	} else {
 		segs := strings.Split(ref, ".")
 		if len(segs) < 2 {
@@ -270,7 +270,7 @@ func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string
 		if err != nil {
 			return ResolveResult{}, notFoundOrInternal(err)
 		}
-		assetID, folderID, assetName = a.ID, a.FolderID, a.Name
+		assetID, folderID, assetName, assetKind = a.ID, a.FolderID, a.Name, a.Kind
 	}
 
 	// Access + existence hiding. The management read cap bypasses the data-plane
@@ -301,7 +301,7 @@ func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string
 	if err != nil {
 		return ResolveResult{}, connect.NewError(connect.CodeInternal, err)
 	}
-	return ResolveResult{ID: assetID.String(), Path: joinPath(fp, assetName)}, nil
+	return ResolveResult{ID: assetID.String(), Path: joinPath(fp, assetName), Kind: assetKind}, nil
 }
 
 // DeleteAsset removes an asset and everything about it: its secrets, logins, and live

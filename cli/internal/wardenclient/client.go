@@ -112,6 +112,36 @@ func (c *Client) CreateSession(ctx context.Context, assetID string, kcPub []byte
 	return resp.Msg.GetSessionToken(), resp.Msg.GetGatewayEndpoint(), nil
 }
 
+// ResolveAssetInfo maps a uuid or DNS-style path ref to an asset id AND its kind.
+// Unlike ResolveAsset it always round-trips (even for a uuid) because the caller
+// needs the kind to choose a connect strategy. NotFound (existence-hiding) surfaces
+// as a wrapped error.
+func (c *Client) ResolveAssetInfo(ctx context.Context, ref string) (assetID, kind string, err error) {
+	req := connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: ref})
+	c.authorize(req)
+	resp, err := c.catalog.ResolveAsset(ctx, req)
+	if err != nil {
+		return "", "", err
+	}
+	return resp.Msg.GetAssetId(), resp.Msg.GetKind(), nil
+}
+
+// CreatePostgresSession requests admission to a postgres asset as the given DB
+// role. It returns the bearer session token, the gateway endpoint to dial, and the
+// asset's default database (for the connection hint). NotFound → no access.
+func (c *Client) CreatePostgresSession(ctx context.Context, assetID, role string) (token, gatewayEndpoint, defaultDB string, err error) {
+	req := connect.NewRequest(&sessionv1.CreatePostgresSessionRequest{AssetId: assetID, Login: role})
+	c.authorize(req)
+	resp, err := c.session.CreatePostgresSession(ctx, req)
+	if err != nil {
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return "", "", "", errors.New("no access to asset")
+		}
+		return "", "", "", fmt.Errorf("creating postgres session: %w", err)
+	}
+	return resp.Msg.GetSessionToken(), resp.Msg.GetGatewayEndpoint(), resp.Msg.GetDefaultDatabase(), nil
+}
+
 // authorize sets the bearer token on a request.
 func (c *Client) authorize(req interface{ Header() http.Header }) {
 	req.Header().Set("Authorization", "Bearer "+c.token)

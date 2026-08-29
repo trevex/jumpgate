@@ -19,3 +19,12 @@ export const createSession = SessionService.method.createSession;
  * @generated from rpc jumpgate.session.v1.SessionService.CreateWebSession
  */
 export const createWebSession = SessionService.method.createWebSession;
+
+/**
+ * CreatePostgresSession authorizes the caller to reach a postgres asset via the
+ * given DB role (held-closure db:login check) and mints a bearer admission token
+ * (no client-key binding) plus the asset's default database.
+ *
+ * @generated from rpc jumpgate.session.v1.SessionService.CreatePostgresSession
+ */
+export const createPostgresSession = SessionService.method.createPostgresSession;

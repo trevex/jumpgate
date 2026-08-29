@@ -472,7 +472,7 @@ func (h *Handler) ResolveAsset(ctx context.Context, req *connect.Request[catalog
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&catalogv1.ResolveAssetResponse{AssetId: res.ID, Path: res.Path}), nil
+	return connect.NewResponse(&catalogv1.ResolveAssetResponse{AssetId: res.ID, Path: res.Path, Kind: res.Kind}), nil
 }
 
 // DeleteAsset removes an asset (session teardown + DB FK cascade).

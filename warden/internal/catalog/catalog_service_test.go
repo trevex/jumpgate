@@ -1004,10 +1004,16 @@ func TestResolveAsset(t *testing.T) {
 	if got.Msg.AssetId != a.Msg.Asset.Id || got.Msg.Path != "pg.db.prod" {
 		t.Fatalf("resolve = {%s,%s}, want {%s, pg.db.prod}", got.Msg.AssetId, got.Msg.Path, a.Msg.Asset.Id)
 	}
+	if got.Msg.Kind != "ssh" {
+		t.Fatalf("resolve kind = %q, want ssh", got.Msg.Kind)
+	}
 	// uuid ref round-trips to the canonical path
 	gotID, err := uc.ResolveAsset(ctx, withToken(connect.NewRequest(&catalogv1.ResolveAssetRequest{Ref: a.Msg.Asset.Id}), utok))
 	if err != nil || gotID.Msg.Path != "pg.db.prod" {
 		t.Fatalf("resolve uuid = %v / path=%q", err, gotID.Msg.GetPath())
+	}
+	if gotID.Msg.Kind != "ssh" {
+		t.Fatalf("resolve uuid kind = %q, want ssh", gotID.Msg.Kind)
 	}
 	// a user with NO access → NotFound (indistinguishable from absent)
 	seedUser(t, pool, "no@x", "password123", false)

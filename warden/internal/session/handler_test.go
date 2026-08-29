@@ -46,6 +46,34 @@ func seedSSHAsset(t *testing.T, q *sqlc.Queries, allowedLogins []string) uuid.UU
 	return asset.ID
 }
 
+// seedPostgresAsset creates a folder + postgres asset with a config row (given
+// default database) plus one mtls login per given role, and returns the asset id.
+func seedPostgresAsset(t *testing.T, q *sqlc.Queries, defaultDatabase string, allowedRoles []string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-pg-sess-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "pg-sess", Labels: []byte("{}"), Kind: "postgres"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.UpsertPostgresAssetConfig(ctx, sqlc.UpsertPostgresAssetConfigParams{
+		AssetID: asset.ID, TargetAddress: "pg:5432", TargetServerCa: "", DefaultDatabase: defaultDatabase,
+	}); err != nil {
+		t.Fatalf("UpsertPostgresAssetConfig: %v", err)
+	}
+	for _, role := range allowedRoles {
+		if _, err := q.UpsertPostgresAssetLogin(ctx, sqlc.UpsertPostgresAssetLoginParams{
+			AssetID: asset.ID, Role: role, Kind: "mtls", SecretID: pgtype.UUID{},
+		}); err != nil {
+			t.Fatalf("UpsertPostgresAssetLogin: %v", err)
+		}
+	}
+	return asset.ID
+}
+
 // clientSSHKey generates an ephemeral Ed25519 SSH key and returns its wire-form
 // public key bytes plus the FingerprintSHA256 the server will bind into the token.
 func clientSSHKey(t *testing.T) ([]byte, string) {
@@ -337,4 +365,98 @@ func TestCreateSessionUnauthenticated(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("anon CreateSession = %v, want Unauthenticated", connect.CodeOf(err))
 	}
+}
+
+// TestCreatePostgresSession drives the RPC over the wire: an entitled db:login
+// role gets a bearer token plus the asset's default_database; an unentitled role
+// and a non-postgres (ssh) asset both hide behind NotFound.
+func TestCreatePostgresSession(t *testing.T) {
+	pool, url, _ := newServerWithSession(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	client := sessionv1connect.NewSessionServiceClient(http.DefaultClient, url)
+
+	t.Run("entitled role returns token and default database", func(t *testing.T) {
+		assetID := seedPostgresAsset(t, q, "appdb", []string{"app"})
+		role := createRoleWithCaps(t, ctx, q, "db-app-"+uuid.NewString(), pgtype.UUID{}, `["db:login:app"]`)
+
+		email := "pguser-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		resp, err := client.CreatePostgresSession(ctx, withToken(connect.NewRequest(&sessionv1.CreatePostgresSessionRequest{
+			AssetId: assetID.String(), Login: "app",
+		}), tok))
+		if err != nil {
+			t.Fatalf("CreatePostgresSession: %v", err)
+		}
+		if resp.Msg.SessionToken == "" {
+			t.Fatal("empty session_token")
+		}
+		if resp.Msg.GatewayEndpoint != testGatewayEndpoint {
+			t.Fatalf("gateway_endpoint = %q, want %q", resp.Msg.GatewayEndpoint, testGatewayEndpoint)
+		}
+		if resp.Msg.DefaultDatabase != "appdb" {
+			t.Fatalf("default_database = %q, want appdb", resp.Msg.DefaultDatabase)
+		}
+	})
+
+	t.Run("unentitled role is not found", func(t *testing.T) {
+		assetID := seedPostgresAsset(t, q, "appdb", []string{"app"})
+		role := createRoleWithCaps(t, ctx, q, "db-other-"+uuid.NewString(), pgtype.UUID{}, `["db:login:other"]`)
+
+		email := "pgnologin-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		_, err := client.CreatePostgresSession(ctx, withToken(connect.NewRequest(&sessionv1.CreatePostgresSessionRequest{
+			AssetId: assetID.String(), Login: "app",
+		}), tok))
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Fatalf("unentitled CreatePostgresSession = %v, want NotFound", connect.CodeOf(err))
+		}
+	})
+
+	t.Run("non-postgres asset is not found", func(t *testing.T) {
+		assetID := seedSSHAsset(t, q, []string{"app"})
+		role := createRoleWithCaps(t, ctx, q, "db-ssh-"+uuid.NewString(), pgtype.UUID{}, `["db:login:app"]`)
+
+		email := "pgwrongkind-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		_, err := client.CreatePostgresSession(ctx, withToken(connect.NewRequest(&sessionv1.CreatePostgresSessionRequest{
+			AssetId: assetID.String(), Login: "app",
+		}), tok))
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Fatalf("non-postgres CreatePostgresSession = %v, want NotFound", connect.CodeOf(err))
+		}
+	})
 }

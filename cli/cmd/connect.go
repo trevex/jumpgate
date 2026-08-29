@@ -21,36 +21,54 @@ import (
 )
 
 var connectLogin string
+var connectPort int
 
 var connectCmd = &cobra.Command{
 	Use:   "connect [<login>@]<asset>",
 	Short: "Open a session to an asset through the gateway",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MinimumNArgs(1),
 	RunE:  runConnectCmd,
 }
 
 func init() {
 	connectCmd.Flags().StringVar(&connectLogin, "login", "", "login user on the asset (alternative to <login>@<asset>)")
+	connectCmd.Flags().IntVar(&connectPort, "port", 0, "local port for the postgres proxy (0 = ephemeral)")
 	rootCmd.AddCommand(connectCmd)
 }
 
 func runConnectCmd(cmd *cobra.Command, args []string) error {
-	ctx, err := resolveContext()
+	cctx, err := resolveContext()
 	if err != nil {
 		return err
 	}
-
 	login, asset, err := parseTarget(args[0], connectLogin)
 	if err != nil {
 		return err
 	}
+	if cctx.WardenAddr == "" {
+		return errors.New("warden address is not set; pass --warden-addr, set JUMPGATE_WARDEN_ADDR, or configure it")
+	}
+	if cctx.Token == "" {
+		return errors.New("not authenticated; run `jumpgate login` first")
+	}
 
-	out, err := runConnect(cmd.Context(), ctx, login, asset)
+	wc := wardenclient.New(cctx.WardenAddr, cctx.Token)
+	assetID, kind, err := wc.ResolveAssetInfo(cmd.Context(), asset)
+	if err != nil {
+		return err
+	}
+
+	if kind == "postgres" {
+		return runPostgresConnect(cmd, cctx, wc, assetID, login, args)
+	}
+
+	// ssh (and legacy empty kind): existing interactive path. runConnect re-resolves
+	// the asset (a cheap idempotent lookup) — acceptable for a human-initiated connect.
+	out, err := runConnect(cmd.Context(), cctx, login, asset)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = out.tunnel.Close() }()
-
 	code, err := runSession(cmd.Context(), out.tunnel, login, out.signer)
 	if err != nil {
 		return err

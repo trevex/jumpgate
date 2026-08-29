@@ -2857,6 +2857,7 @@ type ResolveAssetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
 	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2901,6 +2902,13 @@ func (x *ResolveAssetResponse) GetAssetId() string {
 func (x *ResolveAssetResponse) GetPath() string {
 	if x != nil {
 		return x.Path
+	}
+	return ""
+}
+
+func (x *ResolveAssetResponse) GetKind() string {
+	if x != nil {
+		return x.Kind
 	}
 	return ""
 }
@@ -3506,10 +3514,11 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x17GetFolderAccessResponse\x12\"\n" +
 	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities\"0\n" +
 	"\x13ResolveAssetRequest\x12\x19\n" +
-	"\x03ref\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\"E\n" +
+	"\x03ref\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\"Y\n" +
 	"\x14ResolveAssetResponse\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"1\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\"1\n" +
 	"\x14ResolveFolderRequest\x12\x19\n" +
 	"\x03ref\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\"H\n" +
 	"\x15ResolveFolderResponse\x12\x1b\n" +

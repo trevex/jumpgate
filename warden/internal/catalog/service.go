@@ -174,4 +174,5 @@ type SearchHit struct {
 type ResolveResult struct {
 	ID   string
 	Path string
+	Kind string
 }

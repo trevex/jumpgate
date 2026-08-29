@@ -269,6 +269,118 @@ func (x *CreateWebSessionResponse) GetInsecure() bool {
 	return false
 }
 
+type CreatePostgresSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreatePostgresSessionRequest) Reset() {
+	*x = CreatePostgresSessionRequest{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreatePostgresSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreatePostgresSessionRequest) ProtoMessage() {}
+
+func (x *CreatePostgresSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreatePostgresSessionRequest.ProtoReflect.Descriptor instead.
+func (*CreatePostgresSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CreatePostgresSessionRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *CreatePostgresSessionRequest) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+type CreatePostgresSessionResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SessionToken    string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
+	DefaultDatabase string                 `protobuf:"bytes,3,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreatePostgresSessionResponse) Reset() {
+	*x = CreatePostgresSessionResponse{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreatePostgresSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreatePostgresSessionResponse) ProtoMessage() {}
+
+func (x *CreatePostgresSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreatePostgresSessionResponse.ProtoReflect.Descriptor instead.
+func (*CreatePostgresSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CreatePostgresSessionResponse) GetSessionToken() string {
+	if x != nil {
+		return x.SessionToken
+	}
+	return ""
+}
+
+func (x *CreatePostgresSessionResponse) GetGatewayEndpoint() string {
+	if x != nil {
+		return x.GatewayEndpoint
+	}
+	return ""
+}
+
+func (x *CreatePostgresSessionResponse) GetDefaultDatabase() string {
+	if x != nil {
+		return x.DefaultDatabase
+	}
+	return ""
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -291,10 +403,18 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
-	"\binsecure\x18\x04 \x01(\bR\binsecure2\xed\x01\n" +
+	"\binsecure\x18\x04 \x01(\bR\binsecure\"b\n" +
+	"\x1cCreatePostgresSessionRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12\x1d\n" +
+	"\x05login\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\x9a\x01\n" +
+	"\x1dCreatePostgresSessionResponse\x12#\n" +
+	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
+	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x12)\n" +
+	"\x10default_database\x18\x03 \x01(\tR\x0fdefaultDatabase2\xf0\x02\n" +
 	"\x0eSessionService\x12h\n" +
 	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
-	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
+	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00\x12\x80\x01\n" +
+	"\x15CreatePostgresSession\x121.jumpgate.session.v1.CreatePostgresSessionRequest\x1a2.jumpgate.session.v1.CreatePostgresSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
 
 var (
 	file_jumpgate_session_v1_session_proto_rawDescOnce sync.Once
@@ -308,23 +428,27 @@ func file_jumpgate_session_v1_session_proto_rawDescGZIP() []byte {
 	return file_jumpgate_session_v1_session_proto_rawDescData
 }
 
-var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_jumpgate_session_v1_session_proto_goTypes = []any{
-	(*CreateSessionRequest)(nil),     // 0: jumpgate.session.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),    // 1: jumpgate.session.v1.CreateSessionResponse
-	(*CreateWebSessionRequest)(nil),  // 2: jumpgate.session.v1.CreateWebSessionRequest
-	(*CreateWebSessionResponse)(nil), // 3: jumpgate.session.v1.CreateWebSessionResponse
-	(*timestamppb.Timestamp)(nil),    // 4: google.protobuf.Timestamp
+	(*CreateSessionRequest)(nil),          // 0: jumpgate.session.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),         // 1: jumpgate.session.v1.CreateSessionResponse
+	(*CreateWebSessionRequest)(nil),       // 2: jumpgate.session.v1.CreateWebSessionRequest
+	(*CreateWebSessionResponse)(nil),      // 3: jumpgate.session.v1.CreateWebSessionResponse
+	(*CreatePostgresSessionRequest)(nil),  // 4: jumpgate.session.v1.CreatePostgresSessionRequest
+	(*CreatePostgresSessionResponse)(nil), // 5: jumpgate.session.v1.CreatePostgresSessionResponse
+	(*timestamppb.Timestamp)(nil),         // 6: google.protobuf.Timestamp
 }
 var file_jumpgate_session_v1_session_proto_depIdxs = []int32{
-	4, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	6, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	6, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
 	0, // 2: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
 	2, // 3: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
-	1, // 4: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
-	3, // 5: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	4, // 4: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
+	1, // 5: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
+	3, // 6: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
+	5, // 7: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -341,7 +465,7 @@ func file_jumpgate_session_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_session_v1_session_proto_rawDesc), len(file_jumpgate_session_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
