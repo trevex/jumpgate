@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/session/v1/session.proto.
  */
 export const file_jumpgate_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIMu0BCg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAQkVaQ2dpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvc2Vzc2lvbi92MTtzZXNzaW9udjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIIlIKHENyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhYKBWxvZ2luGAIgASgJQge6SARyAhABImoKHUNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlEhUKDXNlc3Npb25fdG9rZW4YASABKAkSGAoQZ2F0ZXdheV9lbmRwb2ludBgCIAEoCRIYChBkZWZhdWx0X2RhdGFiYXNlGAMgASgJMvACCg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAEoABChVDcmVhdGVQb3N0Z3Jlc1Nlc3Npb24SMS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QaMi5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9zZXNzaW9uL3YxO3Nlc3Npb252MWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.session.v1.CreateSessionRequest
@@ -132,6 +132,55 @@ export const CreateWebSessionResponseSchema: GenMessage<CreateWebSessionResponse
   messageDesc(file_jumpgate_session_v1_session, 3);
 
 /**
+ * @generated from message jumpgate.session.v1.CreatePostgresSessionRequest
+ */
+export type CreatePostgresSessionRequest = Message<"jumpgate.session.v1.CreatePostgresSessionRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+
+  /**
+   * @generated from field: string login = 2;
+   */
+  login: string;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreatePostgresSessionRequest.
+ * Use `create(CreatePostgresSessionRequestSchema)` to create a new message.
+ */
+export const CreatePostgresSessionRequestSchema: GenMessage<CreatePostgresSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 4);
+
+/**
+ * @generated from message jumpgate.session.v1.CreatePostgresSessionResponse
+ */
+export type CreatePostgresSessionResponse = Message<"jumpgate.session.v1.CreatePostgresSessionResponse"> & {
+  /**
+   * @generated from field: string session_token = 1;
+   */
+  sessionToken: string;
+
+  /**
+   * @generated from field: string gateway_endpoint = 2;
+   */
+  gatewayEndpoint: string;
+
+  /**
+   * @generated from field: string default_database = 3;
+   */
+  defaultDatabase: string;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreatePostgresSessionResponse.
+ * Use `create(CreatePostgresSessionResponseSchema)` to create a new message.
+ */
+export const CreatePostgresSessionResponseSchema: GenMessage<CreatePostgresSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 5);
+
+/**
  * SessionService is the CLI-facing entrypoint to open a data-plane session. It is
  * authenticated by the standard bearer-token interceptor.
  *
@@ -159,6 +208,18 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof CreateWebSessionRequestSchema;
     output: typeof CreateWebSessionResponseSchema;
+  },
+  /**
+   * CreatePostgresSession authorizes the caller to reach a postgres asset via the
+   * given DB role (held-closure db:login check) and mints a bearer admission token
+   * (no client-key binding) plus the asset's default database.
+   *
+   * @generated from rpc jumpgate.session.v1.SessionService.CreatePostgresSession
+   */
+  createPostgresSession: {
+    methodKind: "unary";
+    input: typeof CreatePostgresSessionRequestSchema;
+    output: typeof CreatePostgresSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_session_v1_session, 0);

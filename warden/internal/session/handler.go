@@ -82,6 +82,36 @@ func (s *Handler) CreateWebSession(ctx context.Context, req *connect.Request[ses
 	}), nil
 }
 
+// CreatePostgresSession authorizes the caller to reach the postgres asset via the
+// given DB role (held-closure db:login check) and mints a bearer admission token
+// (no client-key binding). Existence-hiding: an unentitled caller, an unknown
+// asset, and a non-postgres asset all yield NotFound.
+func (s *Handler) CreatePostgresSession(ctx context.Context, req *connect.Request[sessionv1.CreatePostgresSessionRequest]) (*connect.Response[sessionv1.CreatePostgresSessionResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if req.Msg.Login == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("empty login"))
+	}
+	out, err := s.svc.CreatePostgresSession(ctx, caller.ID, assetID, req.Msg.Login)
+	switch {
+	case errors.Is(err, ErrNoAccess):
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no session access"))
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&sessionv1.CreatePostgresSessionResponse{
+		SessionToken:    out.Token,
+		GatewayEndpoint: out.Endpoint,
+		DefaultDatabase: out.DefaultDatabase,
+	}), nil
+}
+
 // parseSSHPublicKey accepts the client public key in either OpenSSH
 // authorized_keys text form or raw SSH wire form. It tries the authorized_keys
 // parse first (what ssh.MarshalAuthorizedKey produces) and falls back to the

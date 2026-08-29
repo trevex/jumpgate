@@ -17,6 +17,11 @@ service SessionService {
   // CreateWebSession mints a short-lived, cookie-authenticated admission ticket for
   // a browser terminal (no client SSH key). Same grant/entitlement check as CreateSession.
   rpc CreateWebSession(CreateWebSessionRequest) returns (CreateWebSessionResponse) {}
+
+  // CreatePostgresSession authorizes the caller to reach a postgres asset via the
+  // given DB role (held-closure db:login check) and mints a bearer admission token
+  // (no client-key binding) plus the asset's default database.
+  rpc CreatePostgresSession(CreatePostgresSessionRequest) returns (CreatePostgresSessionResponse) {}
 }
 
 message CreateSessionRequest {
@@ -47,4 +52,14 @@ message CreateWebSessionResponse {
   // insecure is true only when the gateway_endpoint is the plaintext one; the
   // frontend uses it to pick ws:// vs wss://.
   bool insecure = 4;
+}
+
+message CreatePostgresSessionRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  string login    = 2 [(buf.validate.field).string = {min_len: 1}];
+}
+message CreatePostgresSessionResponse {
+  string session_token    = 1;
+  string gateway_endpoint = 2;
+  string default_database = 3;
 }

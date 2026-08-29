@@ -60,6 +60,9 @@ type Created struct {
 	// Insecure is true only when a web session was actually granted the plaintext
 	// endpoint (allowed AND requested). The browser uses it to pick ws:// vs wss://.
 	Insecure bool
+	// DefaultDatabase is the postgres asset's default database name. Empty for
+	// non-postgres sessions (ssh CreateSession/CreateWebSession).
+	DefaultDatabase string
 }
 
 // CreateSession authorizes userID to reach assetID (≥1 SSH login via the held
@@ -127,6 +130,10 @@ func (s *Service) CreatePostgresSession(ctx context.Context, userID, assetID uui
 	if !contains(roles, role) {
 		return Created{}, ErrNoAccess
 	}
+	cfg, err := s.q.GetPostgresAssetConfig(ctx, assetID)
+	if err != nil {
+		return Created{}, err // asset is postgres (entitlement passed) so config exists
+	}
 	// ponytail: Mode="web" reused as the "no-cnf bearer" marker; rename to a
 	// neutral "bearer" if a third bearer protocol appears.
 	sid := uuid.New()
@@ -137,7 +144,7 @@ func (s *Service) CreatePostgresSession(ctx context.Context, userID, assetID uui
 	if err != nil {
 		return Created{}, err
 	}
-	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(webTTL)}, nil
+	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(webTTL), DefaultDatabase: cfg.DefaultDatabase}, nil
 }
 
 // entitledLogins returns the caller's entitled SSH logins on the asset, or
