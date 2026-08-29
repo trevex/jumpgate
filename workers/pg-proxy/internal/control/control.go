@@ -24,11 +24,13 @@ type RunConfig struct {
 	Protocols        []string
 }
 
-// SessionEnd is a finished-session report pushed by the data-plane path (later
-// plan) for the control loop to forward to warden as a SessionEnded frame.
+// SessionEnd is a finished-session report pushed by the data-plane path for the
+// control loop to forward to warden as a SessionEnded frame. Recording is non-nil
+// when the session was recorded (or a recording was attempted).
 type SessionEnd struct {
 	SessionID string
 	Reason    string
+	Recording *dataplanev1.RecordingInfo
 }
 
 // Run maintains the WorkerStream lifeline: registers, heartbeats, forwards
@@ -103,6 +105,7 @@ func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServi
 				Msg: &dataplanev1.WorkerMessage_SessionEnded{SessionEnded: &dataplanev1.SessionEnded{
 					SessionId: se.SessionID,
 					Reason:    se.Reason,
+					Recording: se.Recording,
 				}},
 			}); err != nil {
 				return err
