@@ -79,6 +79,7 @@ type SetupResult struct {
 	X509PrivateKey  []byte // postgres mtls: client key PEM
 	TargetServerCA  string // postgres: target server CA PEM (mTLS verify-full)
 	DefaultDatabase string // postgres: default database
+	Login           string // the DB role warden authorized (the worker connects as this)
 }
 
 // capRecordExempt, when held on the asset, permits an unrecorded SSH session.
@@ -270,6 +271,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		TargetServerCA:  targetServerCA,
 		DefaultDatabase: defaultDB,
 		GrantID:         grantIDString(grantID),
+		Login:           login,
 	}
 	switch cred.Kind {
 	case "ssh-cert":

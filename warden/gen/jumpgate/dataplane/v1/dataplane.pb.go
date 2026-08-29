@@ -646,6 +646,7 @@ type SetupSessionResponse struct {
 	TargetServerCa  string `protobuf:"bytes,10,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`  // postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
 	DefaultDatabase string `protobuf:"bytes,11,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"` // postgres: default DB when the client omits one
 	X509PrivateKey  []byte `protobuf:"bytes,13,opt,name=x509_private_key,json=x509PrivateKey,proto3" json:"x509_private_key,omitempty"`  // postgres mtls: client private key PEM (paired with the x509_certificate credential)
+	Login           string `protobuf:"bytes,15,opt,name=login,proto3" json:"login,omitempty"`                                            // the DB role warden authorized (the worker connects as this)
 	// The credential the worker uses to authenticate to the target as the login.
 	//
 	// Types that are valid to be assigned to Credential:
@@ -751,6 +752,13 @@ func (x *SetupSessionResponse) GetX509PrivateKey() []byte {
 		return x.X509PrivateKey
 	}
 	return nil
+}
+
+func (x *SetupSessionResponse) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
 }
 
 func (x *SetupSessionResponse) GetCredential() isSetupSessionResponse_Credential {
@@ -885,7 +893,7 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x12*\n" +
 	"\x11target_public_key\x18\x04 \x01(\fR\x0ftargetPublicKey\x12\x1d\n" +
-	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xc9\x04\n" +
+	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xdf\x04\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
 	"\n" +
@@ -897,7 +905,8 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x10target_server_ca\x18\n" +
 	" \x01(\tR\x0etargetServerCa\x12)\n" +
 	"\x10default_database\x18\v \x01(\tR\x0fdefaultDatabase\x12(\n" +
-	"\x10x509_private_key\x18\r \x01(\fR\x0ex509PrivateKey\x12)\n" +
+	"\x10x509_private_key\x18\r \x01(\fR\x0ex509PrivateKey\x12\x14\n" +
+	"\x05login\x18\x0f \x01(\tR\x05login\x12)\n" +
 	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
 	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
 	"\vprivate_key\x18\a \x01(\fH\x00R\n" +
