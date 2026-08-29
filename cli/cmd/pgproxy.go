@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +11,12 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/trevex/jumpgate/cli/internal/config"
+	"github.com/trevex/jumpgate/cli/internal/tunnel"
+	"github.com/trevex/jumpgate/cli/internal/wardenclient"
 )
 
 // sessionSetupTimeout bounds mint + dial for one connection, so a hung warden RPC
@@ -72,6 +79,41 @@ func runPostgresProxy(ctx context.Context, deps pgProxyDeps, role, defaultDB str
 	cancel()
 	wg.Wait()
 	return runErr
+}
+
+// runPostgresConnect builds the proxy dependencies from the warden client and runs
+// the loopback postgres proxy. A leading pre-flight mint both validates the DB-role
+// entitlement (fail fast before binding) and yields the default database for the hint.
+func runPostgresConnect(cmd *cobra.Command, cctx config.Context, wc *wardenclient.Client, assetID, role string, args []string) error {
+	if role == "" {
+		return errors.New("no role specified; use <role>@<asset> or --login")
+	}
+	ctx := cmd.Context()
+
+	// Pre-flight: validate entitlement + learn the default database. The token is
+	// discarded (never redeemed → no live session created).
+	_, _, defaultDB, err := wc.CreatePostgresSession(ctx, assetID, role)
+	if err != nil {
+		return err
+	}
+
+	deps := pgProxyDeps{
+		mint: func(c context.Context) (string, string, error) {
+			tok, ep, _, err := wc.CreatePostgresSession(c, assetID, role)
+			return tok, ep, err
+		},
+		dial: func(c context.Context, endpoint, token string) (net.Conn, error) {
+			return tunnel.Dial(c, endpoint, cctx.CAFile, assetID, token)
+		},
+	}
+
+	// Everything after `--` on the command line is the tool to launch, if any.
+	var execArgs []string
+	if d := cmd.ArgsLenAtDash(); d >= 0 {
+		execArgs = args[d:]
+	}
+
+	return runPostgresProxy(ctx, deps, role, defaultDB, connectPort, execArgs, os.Stdout)
 }
 
 // proxyOne mints a session, dials the tunnel, and splices the local conn to it. A
