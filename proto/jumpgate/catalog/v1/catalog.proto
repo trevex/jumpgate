@@ -312,7 +312,7 @@ message GetFolderAccessResponse {
 // like "pg-primary.db.prod") to an asset id, but only for an asset the caller can
 // reach. An unknown ref and a ref the caller cannot see return the same NotFound.
 message ResolveAssetRequest  { string ref = 1 [(buf.validate.field).string = {min_len: 1}]; }
-message ResolveAssetResponse { string asset_id = 1; string path = 2; }
+message ResolveAssetResponse { string asset_id = 1; string path = 2; string kind = 3; }
 
 // ResolveFolder maps a caller-supplied reference (a uuid or a DNS-style dotted path
 // like "db.prod", or a single segment for a top-level folder) to a folder id. Admin
