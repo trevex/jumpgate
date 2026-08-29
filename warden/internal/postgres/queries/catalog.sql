@@ -142,6 +142,32 @@ RETURNING *;
 -- name: DeleteSSHAssetLoginsForAsset :exec
 DELETE FROM ssh_asset_login WHERE asset_id = $1;
 
+-- name: UpsertPostgresAssetConfig :one
+INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id) DO UPDATE SET
+  target_address = EXCLUDED.target_address,
+  target_server_ca = EXCLUDED.target_server_ca,
+  default_database = EXCLUDED.default_database
+RETURNING *;
+
+-- name: GetPostgresAssetConfig :one
+SELECT * FROM postgres_asset_config WHERE asset_id = $1;
+
+-- name: ListPostgresAssetLogins :many
+SELECT * FROM postgres_asset_login WHERE asset_id = $1 ORDER BY role;
+
+-- name: UpsertPostgresAssetLogin :one
+INSERT INTO postgres_asset_login (asset_id, role, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, role) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING *;
+
+-- name: DeletePostgresAssetLoginsForAsset :exec
+DELETE FROM postgres_asset_login WHERE asset_id = $1;
+
 -- name: FolderPath :one
 -- Dotted leaf->root path of a single folder (the folder's own name first).
 WITH RECURSIVE chain AS (

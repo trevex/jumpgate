@@ -17,6 +17,14 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
+// AssetConfigInput is a kind-tagged union of a create/update config write. Exactly
+// one of SSH/Postgres is non-nil; Kind names which and becomes the asset's kind.
+type AssetConfigInput struct {
+	Kind     string
+	SSH      *SSHConfigInput
+	Postgres *PostgresConfigInput
+}
+
 // assetPath returns an asset's best-effort DNS path via a FolderPath lookup. On a
 // lookup error the path is left empty rather than failing the caller (the asset is
 // already committed / exists).
@@ -28,9 +36,9 @@ func (s *Service) assetPath(ctx context.Context, folderID uuid.UUID, name string
 }
 
 // CreateAsset creates an asset in a folder. The asset row, its catalog_names entry,
-// and its inline SSH config — including any inline login secrets, sealed in place —
-// are written in one transaction. The asset kind is "ssh".
-func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name string, in SSHConfigInput) (AssetWithConfig, error) {
+// and its inline typed config — including any inline login secrets, sealed in place —
+// are written in one transaction. The asset kind comes from in.Kind.
+func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name string, in AssetConfigInput) (AssetWithConfig, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
@@ -40,34 +48,60 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 
 	// CreateAsset registers the catalog_names entry atomically, so a bad folder_id is
 	// InvalidArgument and a sibling collision (incl. vs a folder) is AlreadyExists.
-	a, err := qtx.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folderID, Name: name, Labels: []byte("{}"), Kind: "ssh"})
+	a, err := qtx.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folderID, Name: name, Labels: []byte("{}"), Kind: in.Kind})
 	if err != nil {
 		return AssetWithConfig{}, apierr.MapWrite(err)
 	}
 
-	rows, err := s.resolveSSHConfigInput(ctx, qtx, a.ID, in, true)
-	if err != nil {
-		return AssetWithConfig{}, err
+	res := AssetWithConfig{Asset: a}
+	switch in.Kind {
+	case "ssh":
+		rows, err := s.resolveSSHConfigInput(ctx, qtx, a.ID, *in.SSH, true)
+		if err != nil {
+			return AssetWithConfig{}, err
+		}
+		if err := writeSSHConfig(ctx, qtx, a.ID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
+			return AssetWithConfig{}, apierr.MapWrite(err)
+		}
+		cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := qtx.ListSSHAssetLogins(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.Config, res.Logins = &cfg, logins
+	case "postgres":
+		rows, err := s.resolvePostgresConfigInput(ctx, qtx, a.ID, *in.Postgres, true)
+		if err != nil {
+			return AssetWithConfig{}, err
+		}
+		if err := writePostgresConfig(ctx, qtx, a.ID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
+			return AssetWithConfig{}, apierr.MapWrite(err)
+		}
+		cfg, err := qtx.GetPostgresAssetConfig(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := qtx.ListPostgresAssetLogins(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.PGConfig, res.PGLogins = &cfg, logins
+	default:
+		return AssetWithConfig{}, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported asset kind"))
 	}
-	if err := writeSSHConfig(ctx, qtx, a.ID, in.HostPublicKey, in.TargetAddress, rows); err != nil {
-		return AssetWithConfig{}, apierr.MapWrite(err) // CHECK / composite-FK → InvalidArgument
-	}
-	cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
-	if err != nil {
-		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
-	}
-	logins, err := qtx.ListSSHAssetLogins(ctx, a.ID)
-	if err != nil {
-		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
-	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 	}
-	return AssetWithConfig{Asset: a, Path: s.assetPath(ctx, a.FolderID, a.Name), Config: &cfg, Logins: logins}, nil
+	res.Path = s.assetPath(ctx, a.FolderID, a.Name)
+	return res, nil
 }
 
 // GetAsset returns an asset with its typed config. NotFound if the asset does not
-// exist; an asset with no ssh config returns a result with a nil Config.
+// exist; an asset with no config row returns a result with nil config.
 func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (AssetWithConfig, error) {
 	a, err := s.q.GetAsset(ctx, id)
 	if err != nil {
@@ -77,43 +111,72 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (AssetWithConfig, 
 		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 	}
 	res := AssetWithConfig{Asset: a, Path: s.assetPath(ctx, a.FolderID, a.Name)}
-	cfg, err := s.q.GetSSHAssetConfig(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return res, nil
+	switch a.Kind {
+	case "ssh":
+		cfg, err := s.q.GetSSHAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 		}
-		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		logins, err := s.q.ListSSHAssetLogins(ctx, id)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.Config, res.Logins = &cfg, logins
+	case "postgres":
+		cfg, err := s.q.GetPostgresAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := s.q.ListPostgresAssetLogins(ctx, id)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.PGConfig, res.PGLogins = &cfg, logins
 	}
-	logins, err := s.q.ListSSHAssetLogins(ctx, id)
-	if err != nil {
-		return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
-	}
-	res.Config = &cfg
-	res.Logins = logins
 	return res, nil
 }
 
-// UpdateAssetConfig upserts an asset's typed config. The stored_key_needs_secret
-// CHECK and the stored_secret_id FK surface as InvalidArgument.
-func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in SSHConfigInput) error {
-	// The asset must exist (existence check, matching GetAsset's NotFound contract).
-	if _, err := s.q.GetAsset(ctx, assetID); err != nil {
+// UpdateAssetConfig upserts an asset's typed config. in.Kind must match the asset's
+// stored kind. CHECK / composite-FK violations surface as InvalidArgument.
+func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in AssetConfigInput) error {
+	a, err := s.q.GetAsset(ctx, assetID)
+	if err != nil {
 		return notFoundOrInternal(err)
 	}
-	// Seal inline secrets, upsert the connection config, replace the login set, and
-	// prune any now-orphaned secrets — all atomically.
+	if a.Kind != in.Kind {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("config kind does not match asset kind"))
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
-	rows, err := s.resolveSSHConfigInput(ctx, qtx, assetID, in, false)
-	if err != nil {
-		return err
-	}
-	if err := writeSSHConfig(ctx, qtx, assetID, in.HostPublicKey, in.TargetAddress, rows); err != nil {
-		return apierr.MapWrite(err) // CHECK / composite-FK → InvalidArgument
+	switch in.Kind {
+	case "ssh":
+		rows, err := s.resolveSSHConfigInput(ctx, qtx, assetID, *in.SSH, false)
+		if err != nil {
+			return err
+		}
+		if err := writeSSHConfig(ctx, qtx, assetID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
+			return apierr.MapWrite(err)
+		}
+	case "postgres":
+		rows, err := s.resolvePostgresConfigInput(ctx, qtx, assetID, *in.Postgres, false)
+		if err != nil {
+			return err
+		}
+		if err := writePostgresConfig(ctx, qtx, assetID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
+			return apierr.MapWrite(err)
+		}
+	default:
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported asset kind"))
 	}
 	if err := qtx.DeleteOrphanSecretsForAsset(ctx, assetID); err != nil {
 		return connect.NewError(connect.CodeInternal, err)
@@ -272,6 +335,9 @@ func (s *Service) DeleteAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 	// RESTRICT-safe order: logins reference secrets, so drop logins first. The
 	// asset-scoped role_bindings/request_policies cascade via ON DELETE CASCADE.
 	if err := q.DeleteSSHAssetLoginsForAsset(ctx, id); err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeletePostgresAssetLoginsForAsset(ctx, id); err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	if err := q.DeleteAssetSecretsForAsset(ctx, id); err != nil {

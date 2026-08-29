@@ -158,6 +158,20 @@ type LiveSession struct {
 	TerminateRequestedAt pgtype.Timestamptz `json:"terminate_requested_at"`
 }
 
+type PostgresAssetConfig struct {
+	AssetID         uuid.UUID `json:"asset_id"`
+	TargetAddress   string    `json:"target_address"`
+	TargetServerCa  string    `json:"target_server_ca"`
+	DefaultDatabase string    `json:"default_database"`
+}
+
+type PostgresAssetLogin struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Role     string      `json:"role"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
+}
+
 type RequestPolicy struct {
 	ID                uuid.UUID       `json:"id"`
 	RoleID            uuid.UUID       `json:"role_id"`

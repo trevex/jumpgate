@@ -58,7 +58,7 @@ message Asset {
   string folder_id = 2;
   string name = 3;
   string kind = 4;
-  oneof config { SSHConfig ssh = 5; }
+  oneof config { SSHConfig ssh = 5; PostgresConfig postgres = 7; }
   string path = 6;
 }
 
@@ -84,6 +84,30 @@ message SSHLogin {
   string kind = 2 [(buf.validate.field).string = {in: ["ca", "password", "key"]}];
   // Reference to a vault stored secret (asset_secrets.id); required for
   // password|key, empty for ca. The secret must belong to the same asset.
+  string secret_id = 3;
+}
+
+// PostgresConfig is a Postgres asset's connection + per-login auth config. Each
+// login is a DB role authenticated by its kind: "mtls" (a short-lived client cert
+// minted at connect time — no stored secret) or "password" (a plain stored secret
+// referenced by secret_id). secret_id references a sealed asset_secrets row.
+message PostgresConfig {
+  repeated PostgresLogin logins = 1;
+  // host:port the pg-proxy worker dials.
+  string target_address = 2;
+  // Optional PEM of the target server's CA/cert; when set the worker verifies the
+  // target's TLS cert against it (verify-full), empty = require-TLS without pin.
+  string target_server_ca = 3;
+  // Optional default database the session connects to when the client omits one.
+  string default_database = 4;
+}
+
+// PostgresLogin is one target DB role and how the worker authenticates as it.
+message PostgresLogin {
+  string role = 1 [(buf.validate.field).string = {min_len: 1}];
+  string kind = 2 [(buf.validate.field).string = {in: ["mtls", "password"]}];
+  // Reference to a vault stored secret (asset_secrets.id); required for password,
+  // empty for mtls. The secret must belong to the same asset.
   string secret_id = 3;
 }
 
@@ -115,6 +139,25 @@ message SecretAuth {
   }
 }
 
+// ── Write-only Postgres config input. Reads still return PostgresConfig. ──
+message PostgresConfigInput {
+  repeated PostgresLoginInput logins = 1;
+  string target_address = 2;
+  string target_server_ca = 3;
+  string default_database = 4;
+}
+
+// PostgresLoginInput: the auth oneof arm IS the kind (mtls|password).
+message PostgresLoginInput {
+  string role = 1 [(buf.validate.field).string = {min_len: 1}];
+  oneof auth {
+    option (buf.validate.oneof).required = true;
+    MtlsAuth   mtls     = 2;   // short-lived client cert — no stored secret
+    SecretAuth password = 3;   // plaintext password (reuses SecretAuth)
+  }
+}
+message MtlsAuth {}
+
 message CreateFolderRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
   string parent_id = 2;
@@ -138,6 +181,7 @@ message CreateAssetRequest {
   oneof config {
     option (buf.validate.oneof).required = true;
     SSHConfigInput ssh = 3;
+    PostgresConfigInput postgres = 4;
   }
 }
 message CreateAssetResponse { Asset asset = 1; }
@@ -155,7 +199,7 @@ message AssetDisplay {
   string folder_id = 2;
   string name = 3;
   string kind = 4;
-  oneof config { SSHConfigDisplay ssh = 5; }
+  oneof config { SSHConfigDisplay ssh = 5; PostgresConfigDisplay postgres = 8; }
   string path = 6;
   string folder_path = 7;
 }
@@ -168,12 +212,23 @@ message SSHLoginDisplay {
   string login = 1;
   string kind = 2; // ca | password | key — secret_id intentionally omitted
 }
+message PostgresConfigDisplay {
+  repeated PostgresLoginDisplay logins = 1;
+  string target_address = 2;
+  string target_server_ca = 3;
+  string default_database = 4;
+}
+message PostgresLoginDisplay {
+  string role = 1;
+  string kind = 2; // mtls | password — secret_id intentionally omitted
+}
 
 message UpdateAssetConfigRequest {
   string asset_id = 1 [(buf.validate.field).string.uuid = true];
   oneof config {
     option (buf.validate.oneof).required = true;
     SSHConfigInput ssh = 2;
+    PostgresConfigInput postgres = 3;
   }
 }
 message UpdateAssetConfigResponse {}

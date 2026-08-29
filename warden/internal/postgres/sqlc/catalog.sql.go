@@ -133,6 +133,15 @@ func (q *Queries) DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.
 	return err
 }
 
+const deletePostgresAssetLoginsForAsset = `-- name: DeletePostgresAssetLoginsForAsset :exec
+DELETE FROM postgres_asset_login WHERE asset_id = $1
+`
+
+func (q *Queries) DeletePostgresAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deletePostgresAssetLoginsForAsset, assetID)
+	return err
+}
+
 const deleteRoleBinding = `-- name: DeleteRoleBinding :exec
 DELETE FROM role_bindings WHERE id = $1
 `
@@ -313,6 +322,22 @@ func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
 		&i.ParentID,
 		&i.CreatedAt,
 		&i.PathIds,
+	)
+	return i, err
+}
+
+const getPostgresAssetConfig = `-- name: GetPostgresAssetConfig :one
+SELECT asset_id, target_address, target_server_ca, default_database FROM postgres_asset_config WHERE asset_id = $1
+`
+
+func (q *Queries) GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID) (PostgresAssetConfig, error) {
+	row := q.db.QueryRow(ctx, getPostgresAssetConfig, assetID)
+	var i PostgresAssetConfig
+	err := row.Scan(
+		&i.AssetID,
+		&i.TargetAddress,
+		&i.TargetServerCa,
+		&i.DefaultDatabase,
 	)
 	return i, err
 }
@@ -575,6 +600,35 @@ func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByID
 			&i.ParentID,
 			&i.CreatedAt,
 			&i.PathIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPostgresAssetLogins = `-- name: ListPostgresAssetLogins :many
+SELECT asset_id, role, kind, secret_id FROM postgres_asset_login WHERE asset_id = $1 ORDER BY role
+`
+
+func (q *Queries) ListPostgresAssetLogins(ctx context.Context, assetID uuid.UUID) ([]PostgresAssetLogin, error) {
+	rows, err := q.db.Query(ctx, listPostgresAssetLogins, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PostgresAssetLogin
+	for rows.Next() {
+		var i PostgresAssetLogin
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.Role,
+			&i.Kind,
+			&i.SecretID,
 		); err != nil {
 			return nil, err
 		}
@@ -1111,6 +1165,73 @@ func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertPostgresAssetConfig = `-- name: UpsertPostgresAssetConfig :one
+INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id) DO UPDATE SET
+  target_address = EXCLUDED.target_address,
+  target_server_ca = EXCLUDED.target_server_ca,
+  default_database = EXCLUDED.default_database
+RETURNING asset_id, target_address, target_server_ca, default_database
+`
+
+type UpsertPostgresAssetConfigParams struct {
+	AssetID         uuid.UUID `json:"asset_id"`
+	TargetAddress   string    `json:"target_address"`
+	TargetServerCa  string    `json:"target_server_ca"`
+	DefaultDatabase string    `json:"default_database"`
+}
+
+func (q *Queries) UpsertPostgresAssetConfig(ctx context.Context, arg UpsertPostgresAssetConfigParams) (PostgresAssetConfig, error) {
+	row := q.db.QueryRow(ctx, upsertPostgresAssetConfig,
+		arg.AssetID,
+		arg.TargetAddress,
+		arg.TargetServerCa,
+		arg.DefaultDatabase,
+	)
+	var i PostgresAssetConfig
+	err := row.Scan(
+		&i.AssetID,
+		&i.TargetAddress,
+		&i.TargetServerCa,
+		&i.DefaultDatabase,
+	)
+	return i, err
+}
+
+const upsertPostgresAssetLogin = `-- name: UpsertPostgresAssetLogin :one
+INSERT INTO postgres_asset_login (asset_id, role, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, role) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING asset_id, role, kind, secret_id
+`
+
+type UpsertPostgresAssetLoginParams struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Role     string      `json:"role"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
+}
+
+func (q *Queries) UpsertPostgresAssetLogin(ctx context.Context, arg UpsertPostgresAssetLoginParams) (PostgresAssetLogin, error) {
+	row := q.db.QueryRow(ctx, upsertPostgresAssetLogin,
+		arg.AssetID,
+		arg.Role,
+		arg.Kind,
+		arg.SecretID,
+	)
+	var i PostgresAssetLogin
+	err := row.Scan(
+		&i.AssetID,
+		&i.Role,
+		&i.Kind,
+		&i.SecretID,
+	)
+	return i, err
 }
 
 const upsertSSHAssetConfig = `-- name: UpsertSSHAssetConfig :one

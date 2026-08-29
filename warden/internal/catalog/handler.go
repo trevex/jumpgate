@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
 	"strings"
 
@@ -61,33 +62,42 @@ func toAssetMsg(a sqlc.Asset) *catalogv1.Asset {
 	return &catalogv1.Asset{Id: a.ID.String(), FolderId: a.FolderID.String(), Name: a.Name, Kind: a.Kind}
 }
 
-// toAssetMsgWithConfig builds an Asset carrying its typed SSH config (host/target
-// from the config row plus the per-login rows).
-func toAssetMsgWithConfig(a sqlc.Asset, cfg sqlc.SshAssetConfig, logins []sqlc.SshAssetLogin) *catalogv1.Asset {
+// toAssetMsgWithSSHConfig builds an Asset carrying its typed SSH config.
+func toAssetMsgWithSSHConfig(a sqlc.Asset, cfg sqlc.SshAssetConfig, logins []sqlc.SshAssetLogin) *catalogv1.Asset {
 	msg := toAssetMsg(a)
 	out := make([]*catalogv1.SSHLogin, 0, len(logins))
 	for _, l := range logins {
-		out = append(out, &catalogv1.SSHLogin{
-			Login:    l.Login,
-			Kind:     l.Kind,
-			SecretId: pgconv.UUIDString(l.SecretID),
-		})
+		out = append(out, &catalogv1.SSHLogin{Login: l.Login, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
 	}
 	msg.Config = &catalogv1.Asset_Ssh{Ssh: &catalogv1.SSHConfig{
-		Logins:        out,
-		HostPublicKey: cfg.HostPublicKey,
-		TargetAddress: cfg.TargetAddress,
+		Logins: out, HostPublicKey: cfg.HostPublicKey, TargetAddress: cfg.TargetAddress,
 	}}
 	return msg
 }
 
-// assetMsg renders an AssetWithConfig: with config when present, else the bare asset.
-// Path is copied from the domain result.
+// toAssetMsgWithPGConfig builds an Asset carrying its typed Postgres config.
+func toAssetMsgWithPGConfig(a sqlc.Asset, cfg sqlc.PostgresAssetConfig, logins []sqlc.PostgresAssetLogin) *catalogv1.Asset {
+	msg := toAssetMsg(a)
+	out := make([]*catalogv1.PostgresLogin, 0, len(logins))
+	for _, l := range logins {
+		out = append(out, &catalogv1.PostgresLogin{Role: l.Role, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
+	}
+	msg.Config = &catalogv1.Asset_Postgres{Postgres: &catalogv1.PostgresConfig{
+		Logins: out, TargetAddress: cfg.TargetAddress, TargetServerCa: cfg.TargetServerCa, DefaultDatabase: cfg.DefaultDatabase,
+	}}
+	return msg
+}
+
+// assetMsg renders an AssetWithConfig: with typed config when present (by kind),
+// else the bare asset. Path is copied from the domain result.
 func assetMsg(res AssetWithConfig) *catalogv1.Asset {
 	var m *catalogv1.Asset
-	if res.Config != nil {
-		m = toAssetMsgWithConfig(res.Asset, *res.Config, res.Logins)
-	} else {
+	switch {
+	case res.Config != nil:
+		m = toAssetMsgWithSSHConfig(res.Asset, *res.Config, res.Logins)
+	case res.PGConfig != nil:
+		m = toAssetMsgWithPGConfig(res.Asset, *res.PGConfig, res.PGLogins)
+	default:
 		m = toAssetMsg(res.Asset)
 	}
 	m.Path = res.Path
@@ -191,6 +201,84 @@ func toSecretSource(sa *catalogv1.SecretAuth, login string) (*SecretSource, erro
 		return &SecretSource{Kind: "existing", ExistingSecretID: src.ExistingSecretId}, nil
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+login+": secret source required"))
+	}
+}
+
+// validatePostgresConfigInput checks the parts protovalidate can't: target_address
+// must be present, an optional target_server_ca must be PEM-decodable, and role
+// names must be unique within the config (a duplicate would collapse under the
+// (asset_id, role) upsert conflict).
+func validatePostgresConfigInput(in *catalogv1.PostgresConfigInput) error {
+	if in.GetTargetAddress() == "" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("target_address required"))
+	}
+	if ca := in.GetTargetServerCa(); ca != "" {
+		if block, _ := pem.Decode([]byte(ca)); block == nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad target_server_ca"))
+		}
+	}
+	seen := make(map[string]struct{}, len(in.GetLogins()))
+	for _, l := range in.GetLogins() {
+		if _, dup := seen[l.GetRole()]; dup {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate role "+l.GetRole()))
+		}
+		seen[l.GetRole()] = struct{}{}
+	}
+	return nil
+}
+
+// toDomainPostgresConfig converts a wire PostgresConfigInput into the proto-free
+// domain form, deriving each login's kind from its auth oneof arm.
+func toDomainPostgresConfig(in *catalogv1.PostgresConfigInput) (PostgresConfigInput, error) {
+	out := PostgresConfigInput{
+		TargetAddress:   in.GetTargetAddress(),
+		TargetServerCA:  in.GetTargetServerCa(),
+		DefaultDatabase: in.GetDefaultDatabase(),
+	}
+	for _, l := range in.GetLogins() {
+		li := PostgresLoginInput{Role: l.GetRole()}
+		switch a := l.GetAuth().(type) {
+		case *catalogv1.PostgresLoginInput_Mtls:
+			li.Kind = "mtls"
+		case *catalogv1.PostgresLoginInput_Password:
+			li.Kind = "password"
+			src, err := toSecretSource(a.Password, l.GetRole())
+			if err != nil {
+				return PostgresConfigInput{}, err
+			}
+			li.Secret = src
+		default:
+			return PostgresConfigInput{}, connect.NewError(connect.CodeInvalidArgument, errors.New("role "+l.GetRole()+": auth kind required"))
+		}
+		out.Logins = append(out.Logins, li)
+	}
+	return out, nil
+}
+
+// toAssetConfigInput converts a create/update config oneof (SSH or Postgres) into
+// the kind-tagged domain union, running each kind's non-proto validation.
+func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresConfigInput) (AssetConfigInput, error) {
+	switch {
+	case ssh != nil:
+		if err := validateSSHConfigInput(ssh); err != nil {
+			return AssetConfigInput{}, err
+		}
+		in, err := toDomainSSHConfig(ssh)
+		if err != nil {
+			return AssetConfigInput{}, err
+		}
+		return AssetConfigInput{Kind: "ssh", SSH: &in}, nil
+	case pg != nil:
+		if err := validatePostgresConfigInput(pg); err != nil {
+			return AssetConfigInput{}, err
+		}
+		in, err := toDomainPostgresConfig(pg)
+		if err != nil {
+			return AssetConfigInput{}, err
+		}
+		return AssetConfigInput{Kind: "postgres", Postgres: &in}, nil
+	default:
+		return AssetConfigInput{}, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
 	}
 }
 
@@ -301,14 +389,7 @@ func (h *Handler) CreateAsset(ctx context.Context, req *connect.Request[catalogv
 	if err := h.guard.RequireCap(ctx, c, "catalog:asset:create", authz.FolderScope(fid)); err != nil {
 		return nil, err
 	}
-	sshIn := req.Msg.GetSsh()
-	if sshIn == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
-	}
-	if err := validateSSHConfigInput(sshIn); err != nil {
-		return nil, err
-	}
-	in, err := toDomainSSHConfig(sshIn)
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres())
 	if err != nil {
 		return nil, err
 	}
@@ -352,14 +433,7 @@ func (h *Handler) UpdateAssetConfig(ctx context.Context, req *connect.Request[ca
 	if err := h.guard.RequireCap(ctx, c, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	sshIn := req.Msg.GetSsh()
-	if sshIn == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
-	}
-	if err := validateSSHConfigInput(sshIn); err != nil {
-		return nil, err
-	}
-	in, err := toDomainSSHConfig(sshIn)
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres())
 	if err != nil {
 		return nil, err
 	}
@@ -468,6 +542,18 @@ func (h *Handler) GetAssetDisplay(ctx context.Context, req *connect.Request[cata
 			ssh.Logins = append(ssh.Logins, &catalogv1.SSHLoginDisplay{Login: l.Login, Kind: l.Kind})
 		}
 		disp.Config = &catalogv1.AssetDisplay_Ssh{Ssh: ssh}
+	}
+	if res.PGConfig != nil {
+		pg := &catalogv1.PostgresConfigDisplay{
+			TargetAddress:   res.PGConfig.TargetAddress,
+			TargetServerCa:  res.PGConfig.TargetServerCa,
+			DefaultDatabase: res.PGConfig.DefaultDatabase,
+		}
+		for _, l := range res.PGLogins {
+			// Copy ONLY role + kind — never a secret id.
+			pg.Logins = append(pg.Logins, &catalogv1.PostgresLoginDisplay{Role: l.Role, Kind: l.Kind})
+		}
+		disp.Config = &catalogv1.AssetDisplay_Postgres{Postgres: pg}
 	}
 	return connect.NewResponse(&catalogv1.GetAssetDisplayResponse{Asset: disp}), nil
 }
