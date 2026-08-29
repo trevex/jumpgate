@@ -235,6 +235,14 @@ func (s *Handler) reconcileOnRegister(ctx context.Context, workerID string, work
 	return nil
 }
 
+// recordingFormat maps a session protocol to its recording container format.
+func recordingFormat(protocol string) string {
+	if protocol == "postgres" {
+		return "pgwire-timeline-v1"
+	}
+	return "asciicast-v2" // ssh / legacy
+}
+
 // persistRecording records a worker's recording report into session_recordings and
 // audits it, in a single transaction. It resolves the session's parties (user/asset)
 // from the live_sessions row, so it MUST run before handleSessionEnded deletes that
@@ -272,8 +280,8 @@ func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *d
 		UserID:    parties.UserID,
 		AssetID:   parties.AssetID,
 		WorkerID:  parties.WorkerID,
-		Protocol:  "ssh",
-		Format:    "asciicast-v2",
+		Protocol:  parties.Protocol,
+		Format:    recordingFormat(parties.Protocol),
 		GrantID:   grantID,
 		ObjectKey: rec.GetObjectKey(),
 		SizeBytes: rec.GetSizeBytes(),

@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/control"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/mesh"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/pgproxy"
+	"github.com/trevex/jumpgate/workers/pg-proxy/internal/record"
 )
 
 // sessionSetupTimeout bounds SetupSession + DialTarget so a hung warden RPC or a
@@ -24,7 +25,7 @@ const sessionSetupTimeout = 10 * time.Second
 // handleConn runs one gateway connection end-to-end: CONNECT → pgwire startup →
 // SetupSession redeem → validate role → complete auth → dial target → splice.
 // raw is the accepted (already TLS-terminated) connection.
-func handleConn(ctx context.Context, raw net.Conn, workerID string, client dataplanev1connect.DataplaneServiceClient, reg *control.Registry, ended chan<- control.SessionEnd) {
+func handleConn(ctx context.Context, raw net.Conn, workerID string, client dataplanev1connect.DataplaneServiceClient, reg *control.Registry, ended chan<- control.SessionEnd, uploader record.Uploader) {
 	defer func() { _ = raw.Close() }()
 
 	token, tunnel, err := mesh.ReadConnect(raw)
@@ -62,6 +63,12 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 		return
 	}
 
+	// Fail closed: warden requires recording but this worker has no upload target.
+	if r.GetRecordingRequired() && uploader == nil {
+		pgproxy.RejectUser(be, "recording unavailable")
+		return
+	}
+
 	db := startup.Database
 	if db == "" {
 		db = r.GetDefaultDatabase()
@@ -78,17 +85,44 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 		return
 	}
 
-	// Teardown from the control loop fires cancel; natural EOF ends Splice via its
-	// own done channel. Only Teardown ever closes cancel (Registry fires each
-	// entry's func at most once, then deletes it), so there is no double-close.
 	sid := r.GetSessionId()
+
+	var rec *record.Recorder
+	start := time.Now()
+	if r.GetRecordingRequired() {
+		rec = record.New(uploader, r.GetRecordingObjectKey(), record.Header{
+			V: 1, Kind: "pg", SessionID: sid, Role: r.GetLogin(),
+			Database: db, StartedAtMS: start.UnixMilli(),
+		})
+	}
+
+	// Teardown from the control loop fires cancel; natural EOF ends Splice via its
+	// own goroutines. Only Teardown ever closes cancel (Registry fires each entry's
+	// func at most once, then deletes it), so there is no double-close.
 	cancel := make(chan struct{})
 	reg.Add(sid, func() { close(cancel) })
 	defer reg.Remove(sid)
 
-	pgproxy.Splice(tunnel, target, cancel)
+	reason := pgproxy.Splice(be, tunnel, target, cancel, rec, start)
+
+	end := control.SessionEnd{SessionID: sid, Reason: reason}
+	if rec != nil {
+		// Upload detached from cancellation: ctx may already be cancelled by teardown.
+		upCtx, upCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		rep := rec.Finish(upCtx, time.Now().UnixMilli())
+		upCancel()
+		end.Recording = &dataplanev1.RecordingInfo{
+			ObjectKey:       rep.ObjectKey,
+			SizeBytes:       rep.SizeBytes,
+			Sha256:          rep.SHA256Hex,
+			StartedAtUnixMs: rep.StartedAtMS,
+			EndedAtUnixMs:   rep.EndedAtMS,
+			Status:          rep.Status,
+			GrantId:         r.GetGrantId(),
+		}
+	}
 	select {
-	case ended <- control.SessionEnd{SessionID: sid, Reason: "closed"}:
+	case ended <- end:
 	default:
 	}
 }

@@ -86,10 +86,11 @@ type SetupResult struct {
 const capRecordExempt = "ssh:record:exempt"
 
 // recordingObjectKey is the date-partitioned object key for a session recording.
-// The protocol segment keeps one bucket usable across protocols.
-func recordingObjectKey(sessionID uuid.UUID, at time.Time) string {
+// The protocol segment keeps one bucket usable across protocols; ext is the
+// object extension ("cast" for asciicast, "ndjson" for the pgwire timeline).
+func recordingObjectKey(sessionID uuid.UUID, at time.Time, protocol, ext string) string {
 	u := at.UTC()
-	return fmt.Sprintf("recordings/ssh/%04d/%02d/%02d/%s.cast", u.Year(), u.Month(), u.Day(), sessionID.String())
+	return fmt.Sprintf("recordings/%s/%04d/%02d/%02d/%s.%s", protocol, u.Year(), u.Month(), u.Day(), sessionID.String(), ext)
 }
 
 // Setup verifies the token, re-checks authorization, records the live session (with
@@ -162,8 +163,9 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		if !containsLogin(caps.EntitledLoginsFor(authz.DBLoginPrefix, allowed), login) {
 			return SetupResult{}, ErrNotAuthorized
 		}
-		// Recording is deferred for postgres (no recorder yet); never required.
-		recordingRequired, recordingKey = false, ""
+		// Postgres sessions are always recorded (structured pgwire timeline).
+		recordingRequired = true
+		recordingKey = recordingObjectKey(claims.SessionID, time.Now(), "postgres", "ndjson")
 	default: // "ssh" (empty proto = legacy ssh)
 		protocol = "ssh"
 		if _, err := parseSSHPublicKey(targetPub); err != nil {
@@ -188,7 +190,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 			return SetupResult{}, ErrNotAuthorized
 		}
 		recordingRequired = !caps.Allows(capRecordExempt)
-		recordingKey = recordingObjectKey(claims.SessionID, time.Now())
+		recordingKey = recordingObjectKey(claims.SessionID, time.Now(), "ssh", "cast")
 	}
 
 	tx, err := s.pool.Begin(ctx)

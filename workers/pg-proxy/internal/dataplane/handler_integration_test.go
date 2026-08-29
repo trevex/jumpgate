@@ -3,9 +3,11 @@ package dataplane
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,7 +54,7 @@ func TestHandleConnProxiesToPostgres(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go handleConn(ctx, srvConn, "pg-0", fakeDataplaneClient{addr: addr, db: db},
-		control.NewRegistry(), make(chan control.SessionEnd, 1))
+		control.NewRegistry(), make(chan control.SessionEnd, 1), nil)
 	defer func() { _ = cliConn.Close() }()
 
 	if err := cliConn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
@@ -131,6 +133,130 @@ func waitFor[T pgproto3.BackendMessage](t *testing.T, fe *pgproto3.Frontend) T {
 		}
 		if got, ok := msg.(T); ok {
 			return got
+		}
+	}
+}
+
+// recordingClient is a fakeDataplaneClient that also requires recording.
+type recordingClient struct{ fakeDataplaneClient }
+
+func (c recordingClient) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
+	resp, _ := c.fakeDataplaneClient.SetupSession(ctx, req)
+	resp.Msg.RecordingRequired = true
+	resp.Msg.RecordingObjectKey = "recordings/postgres/2026/03/07/sess-1.ndjson"
+	return resp, nil
+}
+
+type memUploader struct {
+	mu   sync.Mutex
+	key  string
+	body []byte
+}
+
+func (m *memUploader) Put(_ context.Context, key string, body []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.key, m.body = key, append([]byte(nil), body...)
+	return nil
+}
+
+func TestHandleConnRecordsTimeline(t *testing.T) {
+	addr, db, stop := startPostgres(t)
+	defer stop()
+
+	cliConn, srvConn := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	up := &memUploader{}
+	ended := make(chan control.SessionEnd, 1)
+	go handleConn(ctx, srvConn, "pg-0", recordingClient{fakeDataplaneClient{addr: addr, db: db}},
+		control.NewRegistry(), ended, up)
+	defer func() { _ = cliConn.Close() }()
+
+	if err := cliConn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	br := bufio.NewReader(cliConn)
+
+	if _, err := io.WriteString(cliConn, "CONNECT asset HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\n\r\n"); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	if status, err := br.ReadString('\n'); err != nil || !strings.HasPrefix(status, "HTTP/1.1 200") {
+		t.Fatalf("CONNECT not established: %q err=%v", status, err)
+	}
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read headers: %v", err)
+		}
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+	}
+
+	fe := pgproto3.NewFrontend(br, cliConn)
+	fe.Send(&pgproto3.SSLRequest{})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush ssl: %v", err)
+	}
+	if b, err := br.ReadByte(); err != nil || b != 'N' {
+		t.Fatalf("ssl decline: %q err=%v", b, err)
+	}
+	fe.Send(&pgproto3.StartupMessage{ProtocolVersion: pgproto3.ProtocolVersionNumber, Parameters: map[string]string{"user": "app", "database": "appdb"}})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush startup: %v", err)
+	}
+	waitFor[*pgproto3.ReadyForQuery](t, fe)
+
+	// Simple query.
+	fe.Send(&pgproto3.Query{String: "SELECT 1"})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush query: %v", err)
+	}
+	waitFor[*pgproto3.CommandComplete](t, fe)
+	waitFor[*pgproto3.ReadyForQuery](t, fe)
+
+	// Extended protocol with a bound parameter whose VALUE must be redacted.
+	fe.Send(&pgproto3.Parse{Query: "SELECT $1::int"})
+	fe.Send(&pgproto3.Bind{Parameters: [][]byte{[]byte("4242")}})
+	fe.Send(&pgproto3.Describe{ObjectType: 'P'})
+	fe.Send(&pgproto3.Execute{})
+	fe.Send(&pgproto3.Sync{})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush extended: %v", err)
+	}
+	waitFor[*pgproto3.ReadyForQuery](t, fe)
+
+	// End the session and wait for Finish to upload (Finish runs before the ended send).
+	_ = cliConn.Close()
+	select {
+	case end := <-ended:
+		if end.Recording == nil || end.Recording.GetStatus() != "completed" {
+			t.Fatalf("recording = %+v, want completed", end.Recording)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for SessionEnd")
+	}
+
+	up.mu.Lock()
+	body := string(up.body)
+	up.mu.Unlock()
+
+	for _, want := range []string{`"kind":"pg"`, `"type":"query"`, `"sql":"SELECT 1"`, `"type":"parse"`, `"type":"bind"`, `"type":"command_complete"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("timeline missing %s\n---\n%s", want, body)
+		}
+	}
+	// NEVER the bound parameter value or any result-row data.
+	if strings.Contains(body, "4242") {
+		t.Errorf("timeline leaked bound param value 4242:\n%s", body)
+	}
+	// Every line must be valid JSON.
+	for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
+		var v any
+		if err := json.Unmarshal([]byte(line), &v); err != nil {
+			t.Errorf("invalid NDJSON line %q: %v", line, err)
 		}
 	}
 }
