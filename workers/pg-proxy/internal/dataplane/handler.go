@@ -86,7 +86,7 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 	reg.Add(sid, func() { close(cancel) })
 	defer reg.Remove(sid)
 
-	pgproxy.Splice(tunnel, target, cancel)
+	pgproxy.Splice(be, tunnel, target, cancel, nil, time.Now())
 	select {
 	case ended <- control.SessionEnd{SessionID: sid, Reason: "closed"}:
 	default:
