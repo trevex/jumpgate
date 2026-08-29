@@ -1,7 +1,8 @@
 go 1.26
 
 use (
-	./warden
 	./cli
 	./test/e2e
+	./warden
+	./workers/pg-proxy
 )
