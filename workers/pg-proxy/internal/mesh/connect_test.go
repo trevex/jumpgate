@@ -57,6 +57,24 @@ func TestReadConnectRejectsEmptyBearer(t *testing.T) {
 	}
 }
 
+func TestReadConnectRejectsOversizedPreamble(t *testing.T) {
+	client, server := net.Pipe()
+	defer func() { _ = client.Close() }()
+
+	// A CONNECT line with no terminating newline, far exceeding the 8 KB bound.
+	go func() {
+		blob := make([]byte, 64<<10)
+		for i := range blob {
+			blob[i] = 'A'
+		}
+		_, _ = client.Write(blob)
+	}()
+
+	if _, _, err := ReadConnect(server); err == nil {
+		t.Fatal("expected error for oversized terminator-less preamble")
+	}
+}
+
 func TestWriteEstablished(t *testing.T) {
 	client, server := net.Pipe()
 	defer func() { _ = server.Close() }()

@@ -6,15 +6,21 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
 )
 
 const maxConnectHeader = 8 << 10
+
+const preambleTimeout = 5 * time.Second
 
 // ReadConnect reads a CONNECT preamble from conn, returns the bearer token and a
 // net.Conn that replays any bytes buffered past the header terminator. It does
 // NOT write a response (the caller decides success/failure).
 func ReadConnect(conn net.Conn) (token string, tunnel net.Conn, err error) {
-	br := bufio.NewReaderSize(conn, maxConnectHeader)
+	// Fail fast on a stalled/terminator-less preamble, and cap the parse to
+	// maxConnectHeader bytes so a peer can't grow memory unboundedly.
+	_ = conn.SetReadDeadline(time.Now().Add(preambleTimeout))
+	br := bufio.NewReaderSize(io.LimitReader(conn, maxConnectHeader), maxConnectHeader)
 	reqLine, err := br.ReadString('\n')
 	if err != nil {
 		return "", nil, fmt.Errorf("read CONNECT line: %w", err)
@@ -46,8 +52,10 @@ func ReadConnect(conn net.Conn) (token string, tunnel net.Conn, err error) {
 		if _, err := io.ReadFull(br, buf); err != nil {
 			return "", nil, err
 		}
+		_ = conn.SetReadDeadline(time.Time{}) // clear preamble deadline for the tunnel
 		return token, &bufConn{r: io.MultiReader(strings.NewReader(string(buf)), conn), Conn: conn}, nil
 	}
+	_ = conn.SetReadDeadline(time.Time{}) // clear preamble deadline for the tunnel
 	return token, conn, nil
 }
 

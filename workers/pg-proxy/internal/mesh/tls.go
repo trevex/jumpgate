@@ -27,11 +27,11 @@ func LoadKeyPair(certFile, keyFile, caFile string) (tls.Certificate, *x509.CertP
 
 // verifyChainAndSpiffe verifies the leaf chains to pool and carries exactly one
 // URI SAN equal to expectSpiffe. Fail closed.
-func verifyChainAndSpiffe(certs []*x509.Certificate, pool *x509.CertPool, expectSpiffe string) error {
+func verifyChainAndSpiffe(certs []*x509.Certificate, pool *x509.CertPool, expectSpiffe string, eku x509.ExtKeyUsage) error {
 	if len(certs) == 0 {
 		return errors.New("peer presented no certificate")
 	}
-	opts := x509.VerifyOptions{Roots: pool, Intermediates: x509.NewCertPool(), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+	opts := x509.VerifyOptions{Roots: pool, Intermediates: x509.NewCertPool(), KeyUsages: []x509.ExtKeyUsage{eku}}
 	for _, inter := range certs[1:] {
 		opts.Intermediates.AddCert(inter)
 	}
@@ -55,7 +55,7 @@ func ClientTLSConfig(leaf tls.Certificate, pool *x509.CertPool, expectServerSpif
 		NextProtos:         []string{"h2"},
 		InsecureSkipVerify: true, //nolint:gosec // chain+SPIFFE pinned in VerifyConnection; URI-SAN certs carry no DNS name
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			return verifyChainAndSpiffe(cs.PeerCertificates, pool, expectServerSpiffe)
+			return verifyChainAndSpiffe(cs.PeerCertificates, pool, expectServerSpiffe, x509.ExtKeyUsageServerAuth)
 		},
 	}
 }
@@ -81,7 +81,7 @@ func ServerTLSConfig(leaf tls.Certificate, pool *x509.CertPool, expectClientSpif
 				}
 				certs = append(certs, c)
 			}
-			return verifyChainAndSpiffe(certs, pool, expectClientSpiffe)
+			return verifyChainAndSpiffe(certs, pool, expectClientSpiffe, x509.ExtKeyUsageClientAuth)
 		},
 	}
 }
