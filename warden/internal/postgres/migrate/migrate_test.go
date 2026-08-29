@@ -236,53 +236,53 @@ func TestCatalogNamesEnforcesSiblingUniqueness(t *testing.T) {
 	defer pool.Close()
 
 	// Root sibling uniqueness (uq_sibling_root, WHERE parent_id IS NULL):
-	// register a top-level folder name, then register a SECOND, distinct
-	// folder (different folder_id) with the same name and parent_id NULL. The
-	// distinct folder_id proves the collision is on `name`, not on folder_id.
+	// Inserting a folder auto-registers its name via trg_folders_register_name, so a
+	// duplicate sibling name collides on the catalog_names unique index and aborts the
+	// folder INSERT itself. Drive that real mechanism rather than registering by hand.
 	var fid string
 	if err := pool.QueryRow(ctx,
 		`INSERT INTO folders (name) VALUES ('prod') RETURNING id`).Scan(&fid); err != nil {
 		t.Fatalf("insert folder: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO catalog_names (parent_id, name, folder_id) VALUES (NULL, 'prod', $1)`, fid); err != nil {
-		t.Fatalf("register folder name: %v", err)
-	}
-	var fid2 string
+	// The AFTER INSERT trigger must have auto-registered the name.
+	var registered int
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO folders (name) VALUES ('prod') RETURNING id`).Scan(&fid2); err != nil {
-		t.Fatalf("insert second folder: %v", err)
+		`SELECT count(*) FROM catalog_names WHERE parent_id IS NULL AND name = 'prod' AND folder_id = $1`, fid).Scan(&registered); err != nil {
+		t.Fatalf("check registration: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO catalog_names (parent_id, name, folder_id) VALUES (NULL, 'prod', $1)`, fid2); err == nil {
-		t.Fatal("duplicate top-level name accepted, want unique violation")
+	if registered != 1 {
+		t.Fatalf("folder insert did not auto-register a catalog_names row (got %d, want 1)", registered)
+	}
+	// A second top-level 'prod' collides on uq_sibling_root via the trigger.
+	if _, err := pool.Exec(ctx, `INSERT INTO folders (name) VALUES ('prod')`); err == nil {
+		t.Fatal("duplicate top-level folder name accepted, want unique violation")
 	}
 
-	// Non-root sibling uniqueness (uq_sibling_child, WHERE parent_id IS NOT NULL):
-	// create a parent folder, then register two CHILD folders with the same
-	// name under it (parent_id = the parent's id, distinct folder_id each).
+	// Non-root sibling uniqueness (uq_sibling_child, WHERE parent_id IS NOT NULL): two
+	// child folders with the same name under the same parent collide.
 	var parentID string
 	if err := pool.QueryRow(ctx,
 		`INSERT INTO folders (name) VALUES ('parent') RETURNING id`).Scan(&parentID); err != nil {
 		t.Fatalf("insert parent folder: %v", err)
 	}
-	var child1 string
-	if err := pool.QueryRow(ctx,
-		`INSERT INTO folders (name, parent_id) VALUES ('child', $1) RETURNING id`, parentID).Scan(&child1); err != nil {
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO folders (name, parent_id) VALUES ('child', $1)`, parentID); err != nil {
 		t.Fatalf("insert first child folder: %v", err)
 	}
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, 'child', $2)`, parentID, child1); err != nil {
-		t.Fatalf("register child folder name: %v", err)
+		`INSERT INTO folders (name, parent_id) VALUES ('child', $1)`, parentID); err == nil {
+		t.Fatal("duplicate child name under same parent accepted, want unique violation")
 	}
-	var child2 string
+
+	// The same name under a DIFFERENT parent is allowed — sibling scope only.
+	var otherParent string
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO folders (name, parent_id) VALUES ('child', $1) RETURNING id`, parentID).Scan(&child2); err != nil {
-		t.Fatalf("insert second child folder: %v", err)
+		`INSERT INTO folders (name) VALUES ('other') RETURNING id`).Scan(&otherParent); err != nil {
+		t.Fatalf("insert other parent folder: %v", err)
 	}
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO catalog_names (parent_id, name, folder_id) VALUES ($1, 'child', $2)`, parentID, child2); err == nil {
-		t.Fatal("duplicate child name under same parent accepted, want unique violation")
+		`INSERT INTO folders (name, parent_id) VALUES ('child', $1)`, otherParent); err != nil {
+		t.Fatalf("same child name under a different parent must be allowed: %v", err)
 	}
 
 	if _, err := pool.Exec(ctx, `INSERT INTO folders (name) VALUES ('Prod')`); err == nil {
