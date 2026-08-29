@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"slices"
 	"testing"
@@ -160,6 +162,43 @@ func setSSHConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 	t.Helper()
 	if _, err := q.UpsertSSHAssetConfig(context.Background(), sqlc.UpsertSSHAssetConfigParams{
 		AssetID: asset, HostPublicKey: "", TargetAddress: "target:22",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setPGConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
+	t.Helper()
+	if _, err := q.UpsertPostgresAssetConfig(context.Background(), sqlc.UpsertPostgresAssetConfigParams{
+		AssetID: asset, TargetAddress: "target:5432", TargetServerCa: "", DefaultDatabase: "appdb",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setPGLogin(t *testing.T, q *sqlc.Queries, asset uuid.UUID, role, kind string, secret pgtype.UUID) {
+	t.Helper()
+	if _, err := q.UpsertPostgresAssetLogin(context.Background(), sqlc.UpsertPostgresAssetLoginParams{
+		AssetID: asset, Role: role, Kind: kind, SecretID: secret,
+	}); err != nil {
+		t.Fatalf("upsert postgres asset login %q/%q: %v", role, kind, err)
+	}
+}
+
+// initX509CA generates an X.509 CA, seals its key, and stores it under kind "x509".
+func initX509CA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
+	t.Helper()
+	ctx := context.Background()
+	keyDER, certPEM, err := ca.GenerateX509CA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := sealer.Seal(keyDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlc.New(pool).CreateCAKey(ctx, sqlc.CreateCAKeyParams{
+		Kind: "x509", Sealed: sealed, PublicMaterial: certPEM,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +595,7 @@ func TestIssueVaultDisabled(t *testing.T) {
 	}
 }
 
-// TestIssueUnsupportedKind: a postgres asset → ErrUnsupportedKind.
+// TestIssueUnsupportedKind: a k8s asset (no credential provider) → ErrUnsupportedKind.
 func TestIssueUnsupportedKind(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
@@ -564,7 +603,7 @@ func TestIssueUnsupportedKind(t *testing.T) {
 	sealer := newSealer(t)
 
 	alice := mkUser(t, q)
-	asset := mkAsset(t, q, "postgres")
+	asset := mkAsset(t, q, "k8s")
 
 	b := newBroker(pool, sealer)
 	if _, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "root", ValidUntil: time.Now().Add(time.Hour), KeyID: "g11"}); !errors.Is(err, ErrUnsupportedKind) {
@@ -607,6 +646,105 @@ func TestIssueAudit(t *testing.T) {
 	}
 	if err := audit.New(pool).Verify(ctx); err != nil {
 		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
+// TestIssuePostgresMTLS: an mtls login yields a short-lived X.509 client cert
+// whose CN is the DB role, with the ClientAuth EKU and a bounded expiry.
+func TestIssuePostgresMTLS(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	sealer := newSealer(t)
+	initX509CA(t, pool, sealer)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "postgres")
+	setPGConfig(t, q, asset)
+	setPGLogin(t, q, asset, "readonly", "mtls", pgtype.UUID{})
+	bindRole(t, q, alice, asset, "db-ro", "db:login:readonly")
+
+	b := newBroker(pool, sealer)
+	validUntil := time.Now().Add(time.Hour)
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "readonly", ValidUntil: validUntil, KeyID: "g1"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if cred.Kind != "x509" {
+		t.Fatalf("Kind = %q, want x509", cred.Kind)
+	}
+	block, _ := pem.Decode(cred.X509Cert)
+	if block == nil {
+		t.Fatal("no PEM in X509Cert")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse leaf: %v", err)
+	}
+	if leaf.Subject.CommonName != "readonly" {
+		t.Fatalf("CN = %q, want readonly", leaf.Subject.CommonName)
+	}
+	if !slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Fatal("missing ClientAuth EKU")
+	}
+	if delta := leaf.NotAfter.Unix() - validUntil.Unix(); delta < -2 || delta > 2 {
+		t.Fatalf("NotAfter off by %ds", delta)
+	}
+	kb, _ := pem.Decode(cred.X509Key)
+	if kb == nil {
+		t.Fatal("no PEM in X509Key")
+	}
+	if _, err := x509.ParsePKCS8PrivateKey(kb.Bytes); err != nil {
+		t.Fatalf("parse client key: %v", err)
+	}
+}
+
+// TestIssuePostgresPassword: a password login returns the sealed secret bytes.
+func TestIssuePostgresPassword(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	sealer := newSealer(t)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "postgres")
+	setPGConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "app", []byte("s3cr3t"))
+	setPGLogin(t, q, asset, "app", "password", pgUUID(secID))
+	bindRole(t, q, alice, asset, "db-app", "db:login:app")
+
+	b := newBroker(pool, sealer)
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "app", ValidUntil: time.Now().Add(time.Hour), KeyID: "g2"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if cred.Kind != "pg-password" {
+		t.Fatalf("Kind = %q, want pg-password", cred.Kind)
+	}
+	if string(cred.Secret) != "s3cr3t" {
+		t.Fatalf("Secret = %q, want s3cr3t", cred.Secret)
+	}
+}
+
+// TestIssuePostgresNoEntitlement: a user whose caps cover a different role gets
+// ErrNoLoginEntitlement for the requested role (db:login gating).
+func TestIssuePostgresNoEntitlement(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	sealer := newSealer(t)
+	initX509CA(t, pool, sealer)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "postgres")
+	setPGConfig(t, q, asset)
+	setPGLogin(t, q, asset, "readonly", "mtls", pgtype.UUID{})
+	bindRole(t, q, alice, asset, "db-other", "db:login:writer") // NOT readonly
+
+	b := newBroker(pool, sealer)
+	_, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "readonly", ValidUntil: time.Now().Add(time.Hour), KeyID: "g3"})
+	if !errors.Is(err, ErrNoLoginEntitlement) {
+		t.Fatalf("err = %v, want ErrNoLoginEntitlement", err)
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/ssh"
 
@@ -82,7 +83,7 @@ type IssueRequest struct {
 // Credential is a single issued credential. Exactly one shape is populated per
 // Credential value, discriminated by Kind.
 type Credential struct {
-	Kind string // "ssh-cert" | "ssh-password" | "ssh-key" | "x509"
+	Kind string // "ssh-cert" | "ssh-password" | "ssh-key" | "x509" | "pg-password"
 
 	SSHCertificate []byte // Kind == "ssh-cert": OpenSSH authorized_keys cert line
 
@@ -91,7 +92,8 @@ type Credential struct {
 
 	// Secret carries the plaintext stored secret for the password/key kinds:
 	// Kind == "ssh-password" → the target password bytes; Kind == "ssh-key" →
-	// the OpenSSH private key PEM bytes.
+	// the OpenSSH private key PEM bytes; Kind == "pg-password" → the target DB
+	// password bytes.
 	Secret []byte
 }
 
@@ -135,8 +137,9 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 	switch asset.Kind {
 	case "ssh":
 		return b.issueSSH(ctx, userID, asset, req)
+	case "postgres":
+		return b.issuePostgres(ctx, userID, asset, req)
 	default:
-		// Only ssh has a credential provider today.
 		return Credential{}, ErrUnsupportedKind
 	}
 }
@@ -180,9 +183,49 @@ func (b *Broker) issueSSH(ctx context.Context, userID uuid.UUID, asset sqlc.Asse
 	case "ca":
 		return b.issueSSHCert(ctx, userID, asset, req)
 	case "password":
-		return b.issueStoredSecret(ctx, userID, assetID, row, "ssh-password")
+		return b.issueStoredSecret(ctx, userID, assetID, row.SecretID, row.Login, "ssh-password")
 	case "key":
-		return b.issueStoredSecret(ctx, userID, assetID, row, "ssh-key")
+		return b.issueStoredSecret(ctx, userID, assetID, row.SecretID, row.Login, "ssh-key")
+	default:
+		return Credential{}, ErrUnsupportedKind
+	}
+}
+
+// issuePostgres selects the requested DB role among the asset's postgres login
+// rows, enforces the db:login:<role> entitlement, and mints the credential for
+// that login's kind: a short-lived X.509 client cert (mtls) or the stored
+// password secret.
+func (b *Broker) issuePostgres(ctx context.Context, userID uuid.UUID, asset sqlc.Asset, req IssueRequest) (Credential, error) {
+	assetID := asset.ID
+	rows, err := b.q.ListPostgresAssetLogins(ctx, assetID)
+	if err != nil {
+		return Credential{}, fmt.Errorf("list postgres asset logins: %w", err)
+	}
+	var row sqlc.PostgresAssetLogin
+	found := false
+	allRoles := make([]string, 0, len(rows))
+	for _, r := range rows {
+		allRoles = append(allRoles, r.Role)
+		if r.Role == req.Login {
+			row = r
+			found = true
+		}
+	}
+	if !found {
+		return Credential{}, ErrNoLoginEntitlement
+	}
+	entitled, err := authz.EntitledLoginsFor(ctx, b.authz, userID, assetID, authz.DBLoginPrefix, allRoles)
+	if err != nil {
+		return Credential{}, err
+	}
+	if !contains(entitled, req.Login) {
+		return Credential{}, ErrNoLoginEntitlement
+	}
+	switch row.Kind {
+	case "mtls":
+		return b.issueX509Cert(ctx, userID, asset, req)
+	case "password":
+		return b.issueStoredSecret(ctx, userID, assetID, row.SecretID, row.Role, "pg-password")
 	default:
 		return Credential{}, ErrUnsupportedKind
 	}
@@ -198,17 +241,16 @@ func contains(xs []string, s string) bool {
 	return false
 }
 
-// issueStoredSecret opens the login's asset-scoped stored secret and returns it
-// as the given credential kind ("ssh-password" or "ssh-key"). The GetAssetSecret
-// query is asset-scoped, so a secret belonging to another asset cannot be opened.
-func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUID, row sqlc.SshAssetLogin, kind string) (Credential, error) {
-	if !row.SecretID.Valid {
-		// The ssh_login_secret_present CHECK makes this unreachable, but guard
-		// anyway rather than pass a zero uuid.
+// issueStoredSecret opens the asset-scoped stored secret identified by secretID
+// and returns it as the given credential kind ("ssh-password" | "ssh-key" |
+// "pg-password"). Asset-scoped: a secret belonging to another asset cannot be
+// opened. login is used only for the audit record.
+func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUID, secretID pgtype.UUID, login, kind string) (Credential, error) {
+	if !secretID.Valid {
 		return Credential{}, ErrNoConfig
 	}
 	sec, err := b.q.GetAssetSecret(ctx, sqlc.GetAssetSecretParams{
-		ID:      uuid.UUID(row.SecretID.Bytes),
+		ID:      uuid.UUID(secretID.Bytes),
 		AssetID: assetID,
 	})
 	if err != nil {
@@ -224,7 +266,7 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 	b.appendIssued(ctx, userID, assetID, map[string]any{
 		"provider": "stored-secret",
 		"kind":     kind,
-		"login":    row.Login,
+		"login":    login,
 	})
 	return Credential{Kind: kind, Secret: pt}, nil
 }
@@ -288,6 +330,40 @@ func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset sqlc.
 		"valid_until": req.ValidUntil.UTC().Format(time.RFC3339),
 	})
 	return Credential{Kind: "ssh-cert", SSHCertificate: ca.MarshalCert(cert)}, nil
+}
+
+// issueX509Cert mints a short-lived X.509 client cert (CN = the DB role) from
+// the x509 CA and returns an "x509" credential (leaf cert PEM + client key PEM).
+// The target maps the cert CN to a DB role (cert auth / pg_ident).
+func (b *Broker) issueX509Cert(ctx context.Context, userID uuid.UUID, asset sqlc.Asset, req IssueRequest) (Credential, error) {
+	assetID := asset.ID
+	caRow, err := b.q.GetActiveCA(ctx, "x509")
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Credential{}, ErrNoCA
+		}
+		return Credential{}, fmt.Errorf("get active x509 CA: %w", err)
+	}
+	keyDER, err := b.sealer.Open(caRow.Sealed)
+	if err != nil {
+		return Credential{}, fmt.Errorf("open x509 CA key: %w", err)
+	}
+	x509CA, err := ca.LoadX509CA(keyDER, caRow.PublicMaterial)
+	if err != nil {
+		return Credential{}, fmt.Errorf("load x509 CA: %w", err)
+	}
+	certPEM, keyPEM, err := x509CA.SignClient(req.Login, req.ValidUntil)
+	if err != nil {
+		return Credential{}, fmt.Errorf("sign x509 client cert: %w", err)
+	}
+	b.appendIssued(ctx, userID, assetID, map[string]any{
+		"provider":    "x509-ca",
+		"kind":        "mtls",
+		"login":       req.Login,
+		"cn":          req.Login,
+		"valid_until": req.ValidUntil.UTC().Format(time.RFC3339),
+	})
+	return Credential{Kind: "x509", X509Cert: certPEM, X509Key: keyPEM}, nil
 }
 
 // parseSSHPublicKey accepts the client public key in either OpenSSH

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"slices"
 	"testing"
 	"time"
 
@@ -167,5 +168,39 @@ func TestSSHCARejectsEmptyPrincipals(t *testing.T) {
 	}
 	if _, err := sshCA.SignUserKey(userPub, SSHCertParams{KeyID: "k", Principals: []string{"root"}, ValidBefore: time.Now().Add(-time.Minute)}); err == nil {
 		t.Fatal("past ValidBefore must be refused")
+	}
+}
+
+func TestSignClientRejectsNonFutureExpiry(t *testing.T) {
+	keyDER, certPEM, err := GenerateX509CA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caX, err := LoadX509CA(keyDER, certPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, notAfter := range []time.Time{{}, time.Now().Add(-time.Minute)} {
+		if _, _, err := caX.SignClient("app", notAfter); err == nil {
+			t.Fatalf("SignClient(notAfter=%v) = nil error, want refusal", notAfter)
+		}
+	}
+	certPEMout, keyPEMout, err := caX.SignClient("app", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SignClient(future): %v", err)
+	}
+	block, _ := pem.Decode(certPEMout)
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaf.Subject.CommonName != "app" {
+		t.Fatalf("CN = %q, want app", leaf.Subject.CommonName)
+	}
+	if !slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Fatal("missing ClientAuth EKU")
+	}
+	if kb, _ := pem.Decode(keyPEMout); kb == nil {
+		t.Fatal("no PEM in client key")
 	}
 }
