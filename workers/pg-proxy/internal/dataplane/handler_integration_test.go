@@ -52,7 +52,7 @@ func TestHandleConnProxiesToPostgres(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go handleConn(ctx, srvConn, "pg-0", fakeDataplaneClient{addr: addr, db: db},
-		control.NewRegistry(), make(chan control.SessionEnd, 1))
+		control.NewRegistry(), make(chan control.SessionEnd, 1), nil)
 	defer func() { _ = cliConn.Close() }()
 
 	if err := cliConn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {

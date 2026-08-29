@@ -7,11 +7,12 @@ import (
 
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/control"
+	"github.com/trevex/jumpgate/workers/pg-proxy/internal/record"
 )
 
 // Serve accepts mesh mTLS connections on addr (pinning the gateway SPIFFE via
 // tlsCfg) and dispatches each to handleConn until ctx is cancelled.
-func Serve(ctx context.Context, addr string, tlsCfg *tls.Config, workerID string, client dataplanev1connect.DataplaneServiceClient, reg *control.Registry, ended chan<- control.SessionEnd) error {
+func Serve(ctx context.Context, addr string, tlsCfg *tls.Config, workerID string, client dataplanev1connect.DataplaneServiceClient, reg *control.Registry, ended chan<- control.SessionEnd, uploader record.Uploader) error {
 	ln, err := tls.Listen("tcp", addr, tlsCfg)
 	if err != nil {
 		return err
@@ -26,6 +27,6 @@ func Serve(ctx context.Context, addr string, tlsCfg *tls.Config, workerID string
 			slog.Warn("accept", "err", err)
 			continue
 		}
-		go handleConn(ctx, conn, workerID, client, reg, ended)
+		go handleConn(ctx, conn, workerID, client, reg, ended, uploader)
 	}
 }

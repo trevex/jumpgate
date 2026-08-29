@@ -18,6 +18,10 @@ type Config struct {
 	WardenSpiffe   string // WARDEN_SPIFFE — pinned server identity
 	GatewaySpiffe  string // GATEWAY_SPIFFE — pinned client identity for the data-plane listener
 	Capacity       int32  // WORKER_CAPACITY
+
+	RecordingBucket   string // RECORDING_S3_BUCKET — empty disables recording upload
+	RecordingEndpoint string // RECORDING_S3_ENDPOINT — custom S3 endpoint (self-hosted)
+	RecordingRegion   string // RECORDING_S3_REGION
 }
 
 // FromEnv reads the config from the environment, failing closed on missing
@@ -34,6 +38,10 @@ func FromEnv() (Config, error) {
 		WardenSpiffe:   envOr("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
 		GatewaySpiffe:  envOr("GATEWAY_SPIFFE", "spiffe://jumpgate/gateway/gateway"),
 		Capacity:       32,
+
+		RecordingBucket:   os.Getenv("RECORDING_S3_BUCKET"),
+		RecordingEndpoint: os.Getenv("RECORDING_S3_ENDPOINT"),
+		RecordingRegion:   envOr("RECORDING_S3_REGION", "us-east-1"),
 	}
 	if c.WorkerID == "" || c.MeshCertFile == "" || c.MeshKeyFile == "" || c.MeshCAFile == "" || c.WardenMeshAddr == "" {
 		return Config{}, fmt.Errorf("missing required env (WORKER_ID, WORKER_MESH_CERT/KEY/CA, WARDEN_MESH_ADDR)")

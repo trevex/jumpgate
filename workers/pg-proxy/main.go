@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/dataplane"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/mesh"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/meshclient"
+	"github.com/trevex/jumpgate/workers/pg-proxy/internal/record"
 )
 
 func main() {
@@ -34,6 +35,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	uploader, err := record.NewS3Uploader(ctx, cfg.RecordingBucket, cfg.RecordingEndpoint, cfg.RecordingRegion)
+	if err != nil {
+		slog.Error("recording uploader", "err", err)
+		os.Exit(1)
+	}
+	if uploader == nil {
+		slog.Warn("recording disabled: RECORDING_S3_BUCKET unset; postgres sessions will be refused")
+	}
+
 	go serveHealth(cfg.HealthAddr)
 
 	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
@@ -42,7 +52,7 @@ func main() {
 	slog.Info("pg-proxy starting", "worker_id", cfg.WorkerID, "warden", cfg.WardenMeshAddr, "dataplane", cfg.DataplaneAddr)
 	srvTLS := mesh.ServerTLSConfig(leaf, pool, cfg.GatewaySpiffe)
 	go func() {
-		if err := dataplane.Serve(ctx, cfg.DataplaneAddr, srvTLS, cfg.WorkerID, client, reg, ended); err != nil {
+		if err := dataplane.Serve(ctx, cfg.DataplaneAddr, srvTLS, cfg.WorkerID, client, reg, ended, uploader); err != nil {
 			slog.Error("data-plane listener", "err", err)
 		}
 	}()
