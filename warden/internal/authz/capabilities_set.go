@@ -21,17 +21,29 @@ func (c Capabilities) Allows(capability string) bool {
 	return false
 }
 
-// EntitledLogins returns the order-preserving subset of allowedLogins for which
-// the "ssh:login:<login>" capability is held. Returns nil (not an empty slice)
-// when none match.
-func (c Capabilities) EntitledLogins(allowedLogins []string) []string {
+// Connect-predicate capability prefixes per asset kind: the qualifier that
+// follows names the target account/role.
+const (
+	SSHLoginPrefix = "ssh:login:"
+	DBLoginPrefix  = "db:login:"
+)
+
+// EntitledLoginsFor returns the order-preserving subset of allowedLogins for
+// which the "prefix+<login>" capability is held (e.g. "ssh:login:root" or
+// "db:login:app"). Returns nil (not an empty slice) when none match.
+func (c Capabilities) EntitledLoginsFor(prefix string, allowedLogins []string) []string {
 	var out []string
 	for _, login := range allowedLogins {
-		if c.Allows("ssh:login:" + login) {
+		if c.Allows(prefix + login) {
 			out = append(out, login)
 		}
 	}
 	return out
+}
+
+// EntitledLogins is the SSH-kind convenience wrapper (prefix "ssh:login:").
+func (c Capabilities) EntitledLogins(allowedLogins []string) []string {
+	return c.EntitledLoginsFor(SSHLoginPrefix, allowedLogins)
 }
 
 // FolderReadCap is the subtree-wide catalog READ capability. Held on a folder F it

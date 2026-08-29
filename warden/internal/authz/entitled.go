@@ -17,9 +17,16 @@ import (
 // asset itself all confer connect — with the sole carve-out that the literal `**`
 // super-capability does NOT grant proxy access on its own.
 func EntitledLogins(ctx context.Context, a scopeCapabilitiesReader, userID, assetID uuid.UUID, allowedLogins []string) ([]string, error) {
+	return EntitledLoginsFor(ctx, a, userID, assetID, SSHLoginPrefix, allowedLogins)
+}
+
+// EntitledLoginsFor resolves the caller's connect capabilities on the asset and
+// returns the subset of allowedLogins entitled under the given prefix
+// (SSHLoginPrefix / DBLoginPrefix). Order-preserving; returns nil when empty.
+func EntitledLoginsFor(ctx context.Context, a scopeCapabilitiesReader, userID, assetID uuid.UUID, prefix string, allowedLogins []string) ([]string, error) {
 	caps, err := ConnectCapabilities(ctx, a, userID, assetID)
 	if err != nil {
 		return nil, err
 	}
-	return caps.EntitledLogins(allowedLogins), nil
+	return caps.EntitledLoginsFor(prefix, allowedLogins), nil
 }
