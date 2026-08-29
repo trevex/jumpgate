@@ -9,7 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
+
+// sessionSetupTimeout bounds mint + dial for one connection, so a hung warden RPC
+// or gateway dial cannot wedge shutdown (Ctrl-C): proxyOne must observe ctx even
+// while setting up. Mirrors the pg-proxy worker's per-session setup bound.
+const sessionSetupTimeout = 15 * time.Second
 
 // pgProxyDeps are the injectable side effects of the postgres proxy: minting a
 // per-connection session and dialing the gateway tunnel. Injected so the accept
@@ -68,20 +74,31 @@ func runPostgresProxy(ctx context.Context, deps pgProxyDeps, role, defaultDB str
 	return runErr
 }
 
-// proxyOne mints a session, dials the tunnel, and splices the local conn to it.
+// proxyOne mints a session, dials the tunnel, and splices the local conn to it. A
+// mint/dial failure closes only this connection (the accept loop keeps serving).
 func proxyOne(ctx context.Context, deps pgProxyDeps, local net.Conn) {
 	defer func() { _ = local.Close() }()
-	token, endpoint, err := deps.mint(ctx)
+
+	// Bound setup so a slow/hung mint or dial cannot outlive a Ctrl-C: the derived
+	// ctx is cancelled by both the timeout and the parent cancel.
+	setupCtx, cancelSetup := context.WithTimeout(ctx, sessionSetupTimeout)
+	token, endpoint, err := deps.mint(setupCtx)
 	if err != nil {
+		cancelSetup()
 		slog.Warn("postgres session mint failed", "err", err)
 		return
 	}
-	tun, err := deps.dial(ctx, endpoint, token)
+	tun, err := deps.dial(setupCtx, endpoint, token)
+	cancelSetup()
 	if err != nil {
 		slog.Warn("gateway dial failed", "err", err)
 		return
 	}
 	defer func() { _ = tun.Close() }()
+
+	// Whichever direction ends first tears down both — a client half-close (CloseWrite)
+	// therefore truncates the other direction. Fine for postgres (libpq sends Terminate
+	// then closes fully); do not rely on graceful half-close draining here.
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(tun, local); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(local, tun); done <- struct{}{} }()

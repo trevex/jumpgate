@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -139,5 +140,96 @@ func TestPostgresProxyExecPassthrough(t *testing.T) {
 	// "dbname="/"sslmode="), so they prove the child received the PG* env.
 	if !strings.Contains(s, "db=appdb") || !strings.Contains(s, "ssl=disable") || !strings.Contains(s, "user=app") {
 		t.Errorf("child env not propagated: %q", s)
+	}
+}
+
+// TestPostgresProxyIsolatesConnFailure: a mint failure closes only that
+// connection; the listener keeps serving the next one.
+func TestPostgresProxyIsolatesConnFailure(t *testing.T) {
+	dial, stop := echoServer(t)
+	defer stop()
+
+	var calls int32
+	deps := pgProxyDeps{
+		mint: func(context.Context) (string, string, error) {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				return "", "", errors.New("mint boom")
+			}
+			return "tok", "gw", nil
+		},
+		dial: dial,
+	}
+	var out syncBuffer
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- runPostgresProxy(ctx, deps, "app", "appdb", 0, nil, &out) }()
+	port := waitForPort(t, &out)
+
+	// Connection 1: mint fails → the proxy closes it, so the client sees EOF.
+	c1, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = c1.Write([]byte("ping"))
+	_ = c1.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(c1, make([]byte, 4)); err == nil {
+		t.Fatal("connection 1 should be closed after mint failure, got a read")
+	}
+	_ = c1.Close()
+
+	// Connection 2: mint succeeds → the listener is still up and echoes.
+	c2, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Fatalf("listener died after one connection failure: %v", err)
+	}
+	_, _ = c2.Write([]byte("pong"))
+	buf := make([]byte, 4)
+	_ = c2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(c2, buf); err != nil || string(buf) != "pong" {
+		t.Fatalf("connection 2 echo = %q err=%v", buf, err)
+	}
+	_ = c2.Close()
+
+	cancel()
+	if err := <-errc; err != nil {
+		t.Fatalf("proxy returned: %v", err)
+	}
+}
+
+// TestPostgresProxyShutdownDuringSetup: a connection parked in a ctx-honoring mint
+// must not wedge Ctrl-C — cancelling the context unblocks setup and shutdown
+// completes promptly (the fix for the adversarial-review shutdown finding).
+func TestPostgresProxyShutdownDuringSetup(t *testing.T) {
+	dial, stop := echoServer(t)
+	defer stop()
+
+	deps := pgProxyDeps{
+		mint: func(c context.Context) (string, string, error) {
+			<-c.Done() // honors ctx, like a real RPC dial would
+			return "", "", c.Err()
+		},
+		dial: dial,
+	}
+	var out syncBuffer
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- runPostgresProxy(ctx, deps, "app", "appdb", 0, nil, &out) }()
+	port := waitForPort(t, &out)
+
+	c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	time.Sleep(50 * time.Millisecond) // let the proxyOne goroutine reach mint
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil {
+			t.Fatalf("proxy returned: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("runPostgresProxy did not return within 3s after cancel (setup wedged shutdown)")
 	}
 }
