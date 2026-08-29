@@ -155,7 +155,9 @@ func TestPumpClientForwardsAndRecords(t *testing.T) {
 		t.Fatal("timeout waiting for forwarded query")
 	}
 	_ = targetW.Close()
-	<-done
+	if err := <-done; err != nil {
+		t.Errorf("clean client disconnect must not fail closed, got %v", err)
+	}
 
 	_ = rec.Finish(context.Background(), 0)
 	if !strings.Contains(string(up.body), `"sql":"SELECT 1"`) {

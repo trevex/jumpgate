@@ -77,10 +77,10 @@ func pumpClient(be *pgproto3.Backend, target net.Conn, rec *record.Recorder, sta
 	for {
 		msg, err := be.Receive()
 		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-				return nil // clean end
+			if isCleanEnd(err) {
+				return nil // client closed the connection (session ending)
 			}
-			return err // parse error / malformed frame → fail closed
+			return err // malformed/undecodable mid-stream frame → fail closed
 		}
 		if ev, ok := frontendEvent(msg, start); ok {
 			if err := rec.Tap(ev); err != nil {
@@ -92,6 +92,22 @@ func pumpClient(be *pgproto3.Backend, target net.Conn, rec *record.Recorder, sta
 			return nil // target gone → normal end
 		}
 	}
+}
+
+// isCleanEnd reports whether a client-side Receive error means the connection is
+// ending rather than a malformed frame. pgproto3's Backend.Receive translates a
+// connection close at a message boundary into io.ErrUnexpectedEOF (NOT io.EOF), so a
+// normal client disconnect (psql \q, socket close) must be recognized here or every
+// successful session would be misreported as "recording_failed". A frame cut short
+// by EOF was never fully decoded and so never forwarded to the target — the
+// no-un-recorded-byte invariant holds either way. A genuinely malformed frame
+// (unknown message type, bad length on a fully-read frame) yields a different error
+// and correctly fails closed.
+func isCleanEnd(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.ErrClosedPipe)
 }
 
 // pumpTarget forwards target→client bytes verbatim while a best-effort skim reads a
