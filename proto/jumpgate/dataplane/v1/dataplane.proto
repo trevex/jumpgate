@@ -81,6 +81,7 @@ message SetupSessionResponse {
   string target_server_ca = 10;  // postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
   string default_database = 11;  // postgres: default DB when the client omits one
   bytes  x509_private_key = 13;  // postgres mtls: client private key PEM (paired with the x509_certificate credential)
+  string login = 15; // the DB role warden authorized (the worker connects as this)
   // The credential the worker uses to authenticate to the target as the login.
   oneof credential {
     bytes ssh_certificate = 2; // ca: OpenSSH cert over Kw

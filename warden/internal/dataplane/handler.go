@@ -84,6 +84,7 @@ func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[datapla
 		TargetServerCa:     out.TargetServerCA,
 		DefaultDatabase:    out.DefaultDatabase,
 		GrantId:            out.GrantID,
+		Login:              out.Login,
 	}
 	switch out.CredentialKind {
 	case "ssh-cert":

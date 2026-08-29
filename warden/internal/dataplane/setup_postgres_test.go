@@ -173,6 +173,9 @@ func TestSetupPostgresMTLS(t *testing.T) {
 	if res.DefaultDatabase != "appdb" {
 		t.Fatalf("DefaultDatabase = %q, want appdb", res.DefaultDatabase)
 	}
+	if res.Login != "readonly" {
+		t.Fatalf("Login = %q, want readonly", res.Login)
+	}
 	if res.RecordingRequired {
 		t.Fatal("RecordingRequired = true, want false (postgres recording deferred)")
 	}
@@ -203,6 +206,9 @@ func TestSetupPostgresPassword(t *testing.T) {
 	}
 	if res.Password != "s3cr3t" {
 		t.Fatalf("Password = %q, want s3cr3t", res.Password)
+	}
+	if res.Login != "app" {
+		t.Fatalf("Login = %q, want app", res.Login)
 	}
 	if got := f.liveSessionProtocol(t, res.SessionID); got != "postgres" {
 		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
