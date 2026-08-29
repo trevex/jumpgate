@@ -113,6 +113,33 @@ func (s *Service) CreateWebSession(ctx context.Context, userID, assetID uuid.UUI
 	return Created{Token: tok, Endpoint: endpoint, ExpiresAt: time.Now().Add(webTTL), Insecure: isInsecure}, nil
 }
 
+// CreatePostgresSession authorizes userID to reach a postgres assetID as the
+// given DB role and mints a bearer admission ticket (proto=postgres, no client
+// key — a pgwire client cannot prove key possession, so the token is a bearer
+// with the role bound in-claim, the same posture as web terminals). Mode="web"
+// is reused as the no-cnf marker. Existence-hiding: unknown/non-postgres asset
+// or an unentitled role both yield ErrNoAccess.
+func (s *Service) CreatePostgresSession(ctx context.Context, userID, assetID uuid.UUID, role string) (Created, error) {
+	roles, err := s.entitledPostgresLogins(ctx, userID, assetID)
+	if err != nil {
+		return Created{}, err
+	}
+	if !contains(roles, role) {
+		return Created{}, ErrNoAccess
+	}
+	// ponytail: Mode="web" reused as the "no-cnf bearer" marker; rename to a
+	// neutral "bearer" if a third bearer protocol appears.
+	sid := uuid.New()
+	tok, err := s.minter.Mint(sessiontoken.Claims{
+		SessionID: sid, UserID: userID, AssetID: assetID,
+		Protocol: "postgres", Mode: "web", Login: role, ClientKeyFingerprint: "",
+	}, webTTL)
+	if err != nil {
+		return Created{}, err
+	}
+	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(webTTL)}, nil
+}
+
 // entitledLogins returns the caller's entitled SSH logins on the asset, or
 // ErrNoAccess when the asset yields no reachable login (unknown/non-ssh asset,
 // or the caller holds no ssh:login capability). The two Create paths share it so
@@ -140,6 +167,30 @@ func (s *Service) entitledLogins(ctx context.Context, userID, assetID uuid.UUID)
 		return nil, ErrNoAccess
 	}
 	return logins, nil
+}
+
+// entitledPostgresLogins returns the caller's entitled DB roles on a postgres
+// asset, or ErrNoAccess when none (unknown/non-postgres asset, or no db:login cap).
+func (s *Service) entitledPostgresLogins(ctx context.Context, userID, assetID uuid.UUID) ([]string, error) {
+	rows, err := s.q.ListPostgresAssetLogins(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNoAccess
+	}
+	allowed := make([]string, 0, len(rows))
+	for _, r := range rows {
+		allowed = append(allowed, r.Role)
+	}
+	roles, err := authz.EntitledLoginsFor(ctx, s.authz, userID, assetID, authz.DBLoginPrefix, allowed)
+	if err != nil {
+		return nil, err
+	}
+	if len(roles) == 0 {
+		return nil, ErrNoAccess
+	}
+	return roles, nil
 }
 
 func contains(ss []string, s string) bool {
