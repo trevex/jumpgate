@@ -97,19 +97,25 @@ func (q *Queries) GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession
 }
 
 const getLiveSessionParties = `-- name: GetLiveSessionParties :one
-SELECT user_id, asset_id, worker_id FROM live_sessions WHERE id = $1
+SELECT user_id, asset_id, worker_id, protocol FROM live_sessions WHERE id = $1
 `
 
 type GetLiveSessionPartiesRow struct {
 	UserID   uuid.UUID `json:"user_id"`
 	AssetID  uuid.UUID `json:"asset_id"`
 	WorkerID string    `json:"worker_id"`
+	Protocol string    `json:"protocol"`
 }
 
 func (q *Queries) GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error) {
 	row := q.db.QueryRow(ctx, getLiveSessionParties, id)
 	var i GetLiveSessionPartiesRow
-	err := row.Scan(&i.UserID, &i.AssetID, &i.WorkerID)
+	err := row.Scan(
+		&i.UserID,
+		&i.AssetID,
+		&i.WorkerID,
+		&i.Protocol,
+	)
 	return i, err
 }
 
