@@ -560,7 +560,7 @@ type SetupSessionRequest struct {
 	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	WorkerId           string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"` // Kc — cnf-bound for SSH; empty for mode=web browser terminals (warden enforces cnf only on the SSH path)
-	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target (ca path)
+	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target (SSH ca path); empty for postgres
 	Login              string                 `protobuf:"bytes,6,opt,name=login,proto3" json:"login,omitempty"`                                                         // requested target login; warden picks the credential
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -641,8 +641,11 @@ type SetupSessionResponse struct {
 	// public-key line). When non-empty the worker MUST reject a target whose
 	// presented host key does not match (fail closed / MITM protection). Empty =
 	// no pin: the worker accepts and logs the presented key (TOFU-off).
-	TargetHostKey string `protobuf:"bytes,8,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`
-	GrantId       string `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // authorizing JIT grant for this session; empty = standing/unattributed
+	TargetHostKey   string `protobuf:"bytes,8,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`
+	GrantId         string `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`                          // authorizing JIT grant for this session; empty = standing/unattributed
+	TargetServerCa  string `protobuf:"bytes,10,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`  // postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
+	DefaultDatabase string `protobuf:"bytes,11,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"` // postgres: default DB when the client omits one
+	X509PrivateKey  []byte `protobuf:"bytes,13,opt,name=x509_private_key,json=x509PrivateKey,proto3" json:"x509_private_key,omitempty"`  // postgres mtls: client private key PEM (paired with the x509_certificate credential)
 	// The credential the worker uses to authenticate to the target as the login.
 	//
 	// Types that are valid to be assigned to Credential:
@@ -650,6 +653,8 @@ type SetupSessionResponse struct {
 	//	*SetupSessionResponse_SshCertificate
 	//	*SetupSessionResponse_Password
 	//	*SetupSessionResponse_PrivateKey
+	//	*SetupSessionResponse_X509Certificate
+	//	*SetupSessionResponse_PgPassword
 	Credential    isSetupSessionResponse_Credential `protobuf_oneof:"credential"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -727,6 +732,27 @@ func (x *SetupSessionResponse) GetGrantId() string {
 	return ""
 }
 
+func (x *SetupSessionResponse) GetTargetServerCa() string {
+	if x != nil {
+		return x.TargetServerCa
+	}
+	return ""
+}
+
+func (x *SetupSessionResponse) GetDefaultDatabase() string {
+	if x != nil {
+		return x.DefaultDatabase
+	}
+	return ""
+}
+
+func (x *SetupSessionResponse) GetX509PrivateKey() []byte {
+	if x != nil {
+		return x.X509PrivateKey
+	}
+	return nil
+}
+
 func (x *SetupSessionResponse) GetCredential() isSetupSessionResponse_Credential {
 	if x != nil {
 		return x.Credential
@@ -761,6 +787,24 @@ func (x *SetupSessionResponse) GetPrivateKey() []byte {
 	return nil
 }
 
+func (x *SetupSessionResponse) GetX509Certificate() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*SetupSessionResponse_X509Certificate); ok {
+			return x.X509Certificate
+		}
+	}
+	return nil
+}
+
+func (x *SetupSessionResponse) GetPgPassword() string {
+	if x != nil {
+		if x, ok := x.Credential.(*SetupSessionResponse_PgPassword); ok {
+			return x.PgPassword
+		}
+	}
+	return ""
+}
+
 type isSetupSessionResponse_Credential interface {
 	isSetupSessionResponse_Credential()
 }
@@ -770,11 +814,19 @@ type SetupSessionResponse_SshCertificate struct {
 }
 
 type SetupSessionResponse_Password struct {
-	Password string `protobuf:"bytes,6,opt,name=password,proto3,oneof"` // password auth
+	Password string `protobuf:"bytes,6,opt,name=password,proto3,oneof"` // password auth (ssh)
 }
 
 type SetupSessionResponse_PrivateKey struct {
 	PrivateKey []byte `protobuf:"bytes,7,opt,name=private_key,json=privateKey,proto3,oneof"` // key auth: OpenSSH private key PEM
+}
+
+type SetupSessionResponse_X509Certificate struct {
+	X509Certificate []byte `protobuf:"bytes,12,opt,name=x509_certificate,json=x509Certificate,proto3,oneof"` // postgres mtls: leaf cert PEM (client key in x509_private_key)
+}
+
+type SetupSessionResponse_PgPassword struct {
+	PgPassword string `protobuf:"bytes,14,opt,name=pg_password,json=pgPassword,proto3,oneof"` // postgres password auth
 }
 
 func (*SetupSessionResponse_SshCertificate) isSetupSessionResponse_Credential() {}
@@ -782,6 +834,10 @@ func (*SetupSessionResponse_SshCertificate) isSetupSessionResponse_Credential() 
 func (*SetupSessionResponse_Password) isSetupSessionResponse_Credential() {}
 
 func (*SetupSessionResponse_PrivateKey) isSetupSessionResponse_Credential() {}
+
+func (*SetupSessionResponse_X509Certificate) isSetupSessionResponse_Credential() {}
+
+func (*SetupSessionResponse_PgPassword) isSetupSessionResponse_Credential() {}
 
 var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
@@ -823,13 +879,13 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\bTeardown\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf0\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xe7\x01\n" +
 	"\x13SetupSessionRequest\x12,\n" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
-	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x123\n" +
-	"\x11target_public_key\x18\x04 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\x0ftargetPublicKey\x12\x1d\n" +
-	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xfa\x02\n" +
+	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x12*\n" +
+	"\x11target_public_key\x18\x04 \x01(\fR\x0ftargetPublicKey\x12\x1d\n" +
+	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xc9\x04\n" +
 	"\x14SetupSessionResponse\x12%\n" +
 	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
 	"\n" +
@@ -837,11 +893,18 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
 	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
 	"\x0ftarget_host_key\x18\b \x01(\tR\rtargetHostKey\x12\x19\n" +
-	"\bgrant_id\x18\t \x01(\tR\agrantId\x12)\n" +
+	"\bgrant_id\x18\t \x01(\tR\agrantId\x12(\n" +
+	"\x10target_server_ca\x18\n" +
+	" \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x10default_database\x18\v \x01(\tR\x0fdefaultDatabase\x12(\n" +
+	"\x10x509_private_key\x18\r \x01(\fR\x0ex509PrivateKey\x12)\n" +
 	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
 	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
 	"\vprivate_key\x18\a \x01(\fH\x00R\n" +
-	"privateKeyB\f\n" +
+	"privateKey\x12+\n" +
+	"\x10x509_certificate\x18\f \x01(\fH\x00R\x0fx509Certificate\x12!\n" +
+	"\vpg_password\x18\x0e \x01(\tH\x00R\n" +
+	"pgPasswordB\f\n" +
 	"\n" +
 	"credential2\xdf\x01\n" +
 	"\x10DataplaneService\x12`\n" +
@@ -909,6 +972,8 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*SetupSessionResponse_SshCertificate)(nil),
 		(*SetupSessionResponse_Password)(nil),
 		(*SetupSessionResponse_PrivateKey)(nil),
+		(*SetupSessionResponse_X509Certificate)(nil),
+		(*SetupSessionResponse_PgPassword)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

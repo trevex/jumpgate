@@ -64,7 +64,7 @@ message SetupSessionRequest {
   string session_token = 1 [(buf.validate.field).string.min_len = 1];
   string worker_id = 2 [(buf.validate.field).string.min_len = 1];
   bytes client_ssh_public_key = 3; // Kc — cnf-bound for SSH; empty for mode=web browser terminals (warden enforces cnf only on the SSH path)
-  bytes target_public_key = 4 [(buf.validate.field).bytes.min_len = 1]; // Kw — certified for the target (ca path)
+  bytes target_public_key = 4; // Kw — certified for the target (SSH ca path); empty for postgres
   string login = 6 [(buf.validate.field).string.min_len = 1]; // requested target login; warden picks the credential
 }
 message SetupSessionResponse {
@@ -78,10 +78,15 @@ message SetupSessionResponse {
   // no pin: the worker accepts and logs the presented key (TOFU-off).
   string target_host_key = 8;
   string grant_id = 9; // authorizing JIT grant for this session; empty = standing/unattributed
+  string target_server_ca = 10;  // postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
+  string default_database = 11;  // postgres: default DB when the client omits one
+  bytes  x509_private_key = 13;  // postgres mtls: client private key PEM (paired with the x509_certificate credential)
   // The credential the worker uses to authenticate to the target as the login.
   oneof credential {
     bytes ssh_certificate = 2; // ca: OpenSSH cert over Kw
-    string password = 6; // password auth
+    string password = 6; // password auth (ssh)
     bytes private_key = 7; // key auth: OpenSSH private key PEM
+    bytes x509_certificate = 12;   // postgres mtls: leaf cert PEM (client key in x509_private_key)
+    string pg_password = 14;       // postgres password auth
   }
 }
