@@ -204,6 +204,13 @@ func (c *X509CA) SignClient(cn string, notAfter time.Time) (certPEM, keyPEM []by
 		return nil, nil, err
 	}
 	now := time.Now()
+	// SECURITY: a zero/past NotAfter yields an effectively non-expiring client
+	// cert. The credential must be time-bounded (never outlive its grant), so
+	// refuse a non-future expiry here rather than trust the caller — mirrors
+	// SignUserKey's ValidBefore guard.
+	if notAfter.IsZero() || !notAfter.After(now) {
+		return nil, nil, fmt.Errorf("refusing to sign an X.509 client cert with a non-future notAfter")
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: cn},
