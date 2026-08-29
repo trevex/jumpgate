@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/dataplane/v1/dataplane.proto.
  */
 export const file_jumpgate_dataplane_v1_dataplane: GenFile = /*@__PURE__*/
-  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwAEKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIAEIFCgNtc2cigAEKCFJlZ2lzdGVyEhoKCXdvcmtlcl9pZBgBIAEoCUIHukgEcgIQARIRCglwcm90b2NvbHMYAiADKAkSEAoIY2FwYWNpdHkYAyABKAUSGAoQbGl2ZV9zZXNzaW9uX2lkcxgEIAMoCRIZChFkYXRhcGxhbmVfYWRkcmVzcxgFIAEoCSILCglIZWFydGJlYXQidQoMU2Vzc2lvbkVuZGVkEhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEg4KBnJlYXNvbhgCIAEoCRI3CglyZWNvcmRpbmcYAyABKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVjb3JkaW5nSW5mbyKfAQoNUmVjb3JkaW5nSW5mbxISCgpvYmplY3Rfa2V5GAEgASgJEhIKCnNpemVfYnl0ZXMYAiABKAMSDgoGc2hhMjU2GAMgASgJEhoKEnN0YXJ0ZWRfYXRfdW5peF9tcxgEIAEoAxIYChBlbmRlZF9hdF91bml4X21zGAUgASgDEg4KBnN0YXR1cxgGIAEoCRIQCghncmFudF9pZBgHIAEoCSJ+Cg1TZXJ2ZXJNZXNzYWdlEjEKA2FjaxgBIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZWdpc3RlckFja0gAEjMKCHRlYXJkb3duGAIgASgLMh8uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlRlYXJkb3duSABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIqwBChNTZXR1cFNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIiChF0YXJnZXRfcHVibGljX2tleRgEIAEoDEIHukgEegIQARIWCgVsb2dpbhgGIAEoCUIHukgEcgIQASL7AQoUU2V0dXBTZXNzaW9uUmVzcG9uc2USFgoOdGFyZ2V0X2FkZHJlc3MYASABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAggASgJEhAKCGdyYW50X2lkGAkgASgJEhkKD3NzaF9jZXJ0aWZpY2F0ZRgCIAEoDEgAEhIKCHBhc3N3b3JkGAYgASgJSAASFQoLcHJpdmF0ZV9rZXkYByABKAxIAEIMCgpjcmVkZW50aWFsMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwAEKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIAEIFCgNtc2cigAEKCFJlZ2lzdGVyEhoKCXdvcmtlcl9pZBgBIAEoCUIHukgEcgIQARIRCglwcm90b2NvbHMYAiADKAkSEAoIY2FwYWNpdHkYAyABKAUSGAoQbGl2ZV9zZXNzaW9uX2lkcxgEIAMoCRIZChFkYXRhcGxhbmVfYWRkcmVzcxgFIAEoCSILCglIZWFydGJlYXQidQoMU2Vzc2lvbkVuZGVkEhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEg4KBnJlYXNvbhgCIAEoCRI3CglyZWNvcmRpbmcYAyABKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVjb3JkaW5nSW5mbyKfAQoNUmVjb3JkaW5nSW5mbxISCgpvYmplY3Rfa2V5GAEgASgJEhIKCnNpemVfYnl0ZXMYAiABKAMSDgoGc2hhMjU2GAMgASgJEhoKEnN0YXJ0ZWRfYXRfdW5peF9tcxgEIAEoAxIYChBlbmRlZF9hdF91bml4X21zGAUgASgDEg4KBnN0YXR1cxgGIAEoCRIQCghncmFudF9pZBgHIAEoCSJ+Cg1TZXJ2ZXJNZXNzYWdlEjEKA2FjaxgBIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZWdpc3RlckFja0gAEjMKCHRlYXJkb3duGAIgASgLMh8uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlRlYXJkb3duSABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIqMBChNTZXR1cFNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIZChF0YXJnZXRfcHVibGljX2tleRgEIAEoDBIWCgVsb2dpbhgGIAEoCUIHukgEcgIQASL8AgoUU2V0dXBTZXNzaW9uUmVzcG9uc2USFgoOdGFyZ2V0X2FkZHJlc3MYASABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAggASgJEhAKCGdyYW50X2lkGAkgASgJEhgKEHRhcmdldF9zZXJ2ZXJfY2EYCiABKAkSGAoQZGVmYXVsdF9kYXRhYmFzZRgLIAEoCRIYChB4NTA5X3ByaXZhdGVfa2V5GA0gASgMEhkKD3NzaF9jZXJ0aWZpY2F0ZRgCIAEoDEgAEhIKCHBhc3N3b3JkGAYgASgJSAASFQoLcHJpdmF0ZV9rZXkYByABKAxIABIaChB4NTA5X2NlcnRpZmljYXRlGAwgASgMSAASFQoLcGdfcGFzc3dvcmQYDiABKAlIAEIMCgpjcmVkZW50aWFsMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.dataplane.v1.WorkerMessage
@@ -276,7 +276,7 @@ export type SetupSessionRequest = Message<"jumpgate.dataplane.v1.SetupSessionReq
   clientSshPublicKey: Uint8Array;
 
   /**
-   * Kw — certified for the target (ca path)
+   * Kw — certified for the target (SSH ca path); empty for postgres
    *
    * @generated from field: bytes target_public_key = 4;
    */
@@ -345,6 +345,27 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
   grantId: string;
 
   /**
+   * postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
+   *
+   * @generated from field: string target_server_ca = 10;
+   */
+  targetServerCa: string;
+
+  /**
+   * postgres: default DB when the client omits one
+   *
+   * @generated from field: string default_database = 11;
+   */
+  defaultDatabase: string;
+
+  /**
+   * postgres mtls: client private key PEM (paired with the x509_certificate credential)
+   *
+   * @generated from field: bytes x509_private_key = 13;
+   */
+  x509PrivateKey: Uint8Array;
+
+  /**
    * The credential the worker uses to authenticate to the target as the login.
    *
    * @generated from oneof jumpgate.dataplane.v1.SetupSessionResponse.credential
@@ -359,7 +380,7 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
     case: "sshCertificate";
   } | {
     /**
-     * password auth
+     * password auth (ssh)
      *
      * @generated from field: string password = 6;
      */
@@ -373,6 +394,22 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
      */
     value: Uint8Array;
     case: "privateKey";
+  } | {
+    /**
+     * postgres mtls: leaf cert PEM (client key in x509_private_key)
+     *
+     * @generated from field: bytes x509_certificate = 12;
+     */
+    value: Uint8Array;
+    case: "x509Certificate";
+  } | {
+    /**
+     * postgres password auth
+     *
+     * @generated from field: string pg_password = 14;
+     */
+    value: string;
+    case: "pgPassword";
   } | { case: undefined; value?: undefined };
 };
 
