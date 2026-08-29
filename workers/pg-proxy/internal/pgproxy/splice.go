@@ -1,6 +1,7 @@
 package pgproxy
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -121,20 +122,67 @@ func pumpTarget(target, client net.Conn, rec *record.Recorder, start time.Time) 
 	_ = pw.Close() // EOF the skim
 }
 
+// maxSkimBody caps the body skimBackend will buffer to decode an outcome message.
+// CommandComplete/ErrorResponse are always tiny; a larger declared length is
+// stream-skipped rather than allocated (defense against a hostile target frame).
+const maxSkimBody = 1 << 20
+
+// skimBackend reads the raw backend frame stream and records ONLY the auditable
+// outcome messages (CommandComplete 'C', ErrorResponse 'E'). Every other frame —
+// notably DataRow 'D' — is stream-skipped by length WITHOUT allocating its body, so a
+// large result set never forces a large allocation here (those bytes still reach the
+// client via pumpTarget's io.Copy). Best-effort: any framing/read error stops
+// skimming and drains the pipe so the forward path never stalls.
 func skimBackend(pr *io.PipeReader, rec *record.Recorder, start time.Time) {
-	fe := pgproto3.NewFrontend(pr, io.Discard)
+	drain := func() { _, _ = io.Copy(io.Discard, pr) }
+	header := make([]byte, 5) // 1 type byte + 4 length bytes
 	for {
-		msg, err := fe.Receive()
-		if err != nil {
-			// Keep the pipe drained so the TeeReader write in pumpTarget never
-			// blocks and stalls forwarding. Best-effort: we stop recording backend
-			// events for the rest of the session.
-			_, _ = io.Copy(io.Discard, pr)
+		if _, err := io.ReadFull(pr, header); err != nil {
+			drain()
 			return
 		}
-		if ev, ok := backendEvent(msg, start); ok {
+		typ := header[0]
+		bodyLen := int64(binary.BigEndian.Uint32(header[1:])) - 4 // length includes itself
+		if bodyLen < 0 {
+			drain() // malformed length; stop skimming
+			return
+		}
+		if (typ != 'C' && typ != 'E') || bodyLen > maxSkimBody {
+			if _, err := io.CopyN(io.Discard, pr, bodyLen); err != nil {
+				drain()
+				return
+			}
+			continue
+		}
+		body := make([]byte, bodyLen)
+		if _, err := io.ReadFull(pr, body); err != nil {
+			drain()
+			return
+		}
+		if ev, ok := decodeOutcome(typ, body, start); ok {
 			_ = rec.Tap(ev) // best-effort; backend direction is not fail-closed
 		}
+	}
+}
+
+// decodeOutcome decodes a CommandComplete ('C') or ErrorResponse ('E') body into an
+// audit event, reusing backendEvent for the event shape.
+func decodeOutcome(typ byte, body []byte, start time.Time) (record.Event, bool) {
+	switch typ {
+	case 'C':
+		var m pgproto3.CommandComplete
+		if m.Decode(body) != nil {
+			return nil, false
+		}
+		return backendEvent(&m, start)
+	case 'E':
+		var m pgproto3.ErrorResponse
+		if m.Decode(body) != nil {
+			return nil, false
+		}
+		return backendEvent(&m, start)
+	default:
+		return nil, false
 	}
 }
 
@@ -152,15 +200,21 @@ func frontendEvent(msg pgproto3.FrontendMessage, start time.Time) (record.Event,
 		return record.Event{"t": t, "type": "bind", "stmt": m.PreparedStatement, "portal": m.DestinationPortal, "params": len(m.Parameters)}, true
 	case *pgproto3.Execute:
 		return record.Event{"t": t, "type": "execute", "portal": m.Portal}, true
+	case *pgproto3.FunctionCall:
+		// The legacy fast-path executes a server-side function. Record the function
+		// OID and argument COUNT (values redacted, like Bind) so this server
+		// execution is audited rather than forwarded silently.
+		return record.Event{"t": t, "type": "function_call", "function": m.Function, "args": len(m.Arguments)}, true
 	default:
 		return nil, false
 	}
 }
 
 // backendEvent maps an auditable server message (outcome) to a timeline event.
-// ponytail: error Message text can echo a data value (e.g. "Key (ssn)=(...)"); kept
-// because a bare SQLSTATE is near-useless to an auditor. Tighten to code+severity
-// only if it bites.
+// ponytail: we record ErrorResponse.Message (constraint name + statement context)
+// but NOT Detail/Hint, where Postgres interpolates data values (e.g.
+// "Key (ssn)=(...)") — so the common PII vector stays out of the log. Message can
+// still echo data via an app-authored RAISE; tighten to code+severity if it bites.
 func backendEvent(msg pgproto3.BackendMessage, start time.Time) (record.Event, bool) {
 	t := time.Since(start).Milliseconds()
 	switch m := msg.(type) {

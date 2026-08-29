@@ -182,3 +182,53 @@ func TestPumpClientFailClosedOnParseError(t *testing.T) {
 		t.Fatal("pumpClient on garbage: err = nil, want fail-closed error")
 	}
 }
+
+// FunctionCall (legacy fast-path server execution) must be audited, with the
+// argument values redacted (count only) — the F2 finding from adversarial review.
+func TestFrontendEventFunctionCall(t *testing.T) {
+	ev, ok := frontendEvent(&pgproto3.FunctionCall{Function: 950, Arguments: [][]byte{[]byte("secret-arg")}}, time.Now())
+	if !ok {
+		t.Fatal("function_call not mapped")
+	}
+	if ev["type"] != "function_call" || ev["function"] != uint32(950) || ev["args"] != 1 {
+		t.Errorf("function_call event = %v", ev)
+	}
+	blob, _ := json.Marshal(ev)
+	if strings.Contains(string(blob), "secret-arg") {
+		t.Errorf("function_call leaked arg value: %s", blob)
+	}
+}
+
+// skimBackend must capture outcomes (CommandComplete/ErrorResponse) while
+// frame-skipping DataRow/RowDescription without recording their contents — the F4
+// finding from adversarial review (no result-row decode, no data in the log).
+func TestSkimBackendSkipsRowsCapturesOutcomes(t *testing.T) {
+	pr, pw := io.Pipe()
+	up := &memUp{}
+	rec := record.New(up, "k", record.Header{V: 1, Kind: "pg"})
+
+	go func() {
+		enc := func(m interface {
+			Encode([]byte) ([]byte, error)
+		}) []byte {
+			b, _ := m.Encode(nil)
+			return b
+		}
+		_, _ = pw.Write(enc(&pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{{Name: []byte("c")}}}))
+		_, _ = pw.Write(enc(&pgproto3.DataRow{Values: [][]byte{[]byte("super-secret-value")}}))
+		_, _ = pw.Write(enc(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 1")}))
+		_, _ = pw.Write(enc(&pgproto3.ErrorResponse{Severity: "ERROR", Code: "42P01", Message: "boom"}))
+		_ = pw.Close()
+	}()
+
+	skimBackend(pr, rec, time.Now())
+
+	_ = rec.Finish(context.Background(), 0)
+	body := string(up.body)
+	if !strings.Contains(body, `"tag":"SELECT 1"`) || !strings.Contains(body, `"code":"42P01"`) {
+		t.Errorf("outcomes not captured: %s", body)
+	}
+	if strings.Contains(body, "super-secret-value") {
+		t.Errorf("skim recorded DataRow content: %s", body)
+	}
+}
