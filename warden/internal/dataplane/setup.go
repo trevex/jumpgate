@@ -56,8 +56,8 @@ func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a *authz.Auth
 }
 
 // SetupResult is the successful outcome. The credential is discriminated by
-// CredentialKind ("ssh-cert" | "ssh-password" | "ssh-key"); exactly one of the
-// credential fields is populated.
+// CredentialKind ("ssh-cert" | "ssh-password" | "ssh-key" | "x509" |
+// "pg-password"); exactly one of the credential fields is populated.
 type SetupResult struct {
 	TargetAddress      string
 	CredentialKind     string
@@ -74,6 +74,11 @@ type SetupResult struct {
 	// GrantID is the authorizing JIT grant when exactly one active grant covers
 	// (user, asset); empty for standing (zero grants) or ambiguous (multiple).
 	GrantID string
+
+	X509Certificate []byte // postgres mtls: client leaf cert PEM
+	X509PrivateKey  []byte // postgres mtls: client key PEM
+	TargetServerCA  string // postgres: target server CA PEM (mTLS verify-full)
+	DefaultDatabase string // postgres: default database
 }
 
 // capRecordExempt, when held on the asset, permits an unrecorded SSH session.
@@ -114,26 +119,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 			return SetupResult{}, ErrKeyMismatch
 		}
 	}
-	// Kw — the worker's per-session key — is what we certify for the target hop.
-	if _, err := parseSSHPublicKey(targetPub); err != nil {
-		return SetupResult{}, ErrBadToken
-	}
-
-	cfg, err := sqlc.New(s.pool).GetSSHAssetConfig(ctx, claims.AssetID)
-	if err != nil {
-		return SetupResult{}, fmt.Errorf("get ssh asset config: %w", err)
-	}
-	if cfg.TargetAddress == "" {
-		return SetupResult{}, ErrNoTarget
-	}
-	loginRows, err := sqlc.New(s.pool).ListSSHAssetLogins(ctx, claims.AssetID)
-	if err != nil {
-		return SetupResult{}, fmt.Errorf("list ssh asset logins: %w", err)
-	}
-	allowed := make([]string, 0, len(loginRows))
-	for _, r := range loginRows {
-		allowed = append(allowed, r.Login)
-	}
+	q0 := sqlc.New(s.pool)
 	// Fetch the user's data-plane capability set for the asset ONCE (one closure
 	// query) and derive BOTH the login entitlement and the record-exemption from it.
 	// This re-checks the requested login against the live held-closure (defense in
@@ -145,14 +131,64 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 	if err != nil {
 		return SetupResult{}, err
 	}
-	entitled := caps.EntitledLogins(allowed)
-	if !containsLogin(entitled, login) {
-		return SetupResult{}, ErrNotAuthorized
-	}
 
-	// Recording is mandatory unless the user holds an explicit exemption on the asset.
-	recordingRequired := !caps.Allows(capRecordExempt)
-	recordingKey := recordingObjectKey(claims.SessionID, time.Now())
+	// Per-protocol: resolve the target config, the allowed logins, the connect
+	// predicate, recording policy, and (SSH only) the Kw check.
+	var (
+		targetAddress, targetHostKey, targetServerCA, defaultDB string
+		allowed                                                 []string
+		recordingRequired                                       bool
+		recordingKey                                            string
+		protocol                                                = claims.Protocol
+	)
+	switch claims.Protocol {
+	case "postgres":
+		cfg, err := q0.GetPostgresAssetConfig(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("get postgres asset config: %w", err)
+		}
+		if cfg.TargetAddress == "" {
+			return SetupResult{}, ErrNoTarget
+		}
+		targetAddress, targetServerCA, defaultDB = cfg.TargetAddress, cfg.TargetServerCa, cfg.DefaultDatabase
+		rows, err := q0.ListPostgresAssetLogins(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("list postgres asset logins: %w", err)
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Role)
+		}
+		if !containsLogin(caps.EntitledLoginsFor(authz.DBLoginPrefix, allowed), login) {
+			return SetupResult{}, ErrNotAuthorized
+		}
+		// Recording is deferred for postgres (no recorder yet); never required.
+		recordingRequired, recordingKey = false, ""
+	default: // "ssh" (empty proto = legacy ssh)
+		protocol = "ssh"
+		if _, err := parseSSHPublicKey(targetPub); err != nil {
+			return SetupResult{}, ErrBadToken
+		}
+		cfg, err := q0.GetSSHAssetConfig(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("get ssh asset config: %w", err)
+		}
+		if cfg.TargetAddress == "" {
+			return SetupResult{}, ErrNoTarget
+		}
+		targetAddress, targetHostKey = cfg.TargetAddress, cfg.HostPublicKey
+		rows, err := q0.ListSSHAssetLogins(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("list ssh asset logins: %w", err)
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Login)
+		}
+		if !containsLogin(caps.EntitledLogins(allowed), login) {
+			return SetupResult{}, ErrNotAuthorized
+		}
+		recordingRequired = !caps.Allows(capRecordExempt)
+		recordingKey = recordingObjectKey(claims.SessionID, time.Now())
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -180,7 +216,7 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		AssetID:     claims.AssetID,
 		WorkerID:    workerID,
 		GrantID:     grantID,
-		Protocol:    "ssh",
+		Protocol:    protocol,
 		Principals:  []string{login},
 		ClientKeyFp: claims.ClientKeyFingerprint,
 	}); err != nil {
@@ -223,15 +259,17 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		return SetupResult{}, fmt.Errorf("issue credential: %w", err)
 	}
 	res := SetupResult{
-		TargetAddress:      cfg.TargetAddress,
+		TargetAddress:      targetAddress,
 		CredentialKind:     cred.Kind,
 		SessionID:          claims.SessionID.String(),
 		RecordingRequired:  recordingRequired,
 		RecordingObjectKey: recordingKey,
 		// The host-key pin travels to the worker, which enforces it on the target
 		// hop (fail closed on mismatch). Empty when the asset has no pin configured.
-		TargetHostKey: cfg.HostPublicKey,
-		GrantID:       grantIDString(grantID),
+		TargetHostKey:   targetHostKey,
+		TargetServerCA:  targetServerCA,
+		DefaultDatabase: defaultDB,
+		GrantID:         grantIDString(grantID),
 	}
 	switch cred.Kind {
 	case "ssh-cert":
@@ -240,6 +278,11 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		res.Password = string(cred.Secret)
 	case "ssh-key":
 		res.PrivateKey = cred.Secret
+	case "x509":
+		res.X509Certificate = cred.X509Cert
+		res.X509PrivateKey = cred.X509Key
+	case "pg-password":
+		res.Password = string(cred.Secret)
 	default:
 		return SetupResult{}, fmt.Errorf("unexpected credential kind %q", cred.Kind)
 	}

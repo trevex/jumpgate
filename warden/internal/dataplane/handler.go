@@ -81,6 +81,8 @@ func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[datapla
 		RecordingRequired:  out.RecordingRequired,
 		RecordingObjectKey: out.RecordingObjectKey,
 		TargetHostKey:      out.TargetHostKey,
+		TargetServerCa:     out.TargetServerCA,
+		DefaultDatabase:    out.DefaultDatabase,
 		GrantId:            out.GrantID,
 	}
 	switch out.CredentialKind {
@@ -90,6 +92,11 @@ func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[datapla
 		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
 	case "ssh-key":
 		resp.Credential = &dataplanev1.SetupSessionResponse_PrivateKey{PrivateKey: out.PrivateKey}
+	case "x509":
+		resp.Credential = &dataplanev1.SetupSessionResponse_X509Certificate{X509Certificate: out.X509Certificate}
+		resp.X509PrivateKey = out.X509PrivateKey
+	case "pg-password":
+		resp.Credential = &dataplanev1.SetupSessionResponse_PgPassword{PgPassword: out.Password}
 	default:
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
 	}
