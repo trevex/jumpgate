@@ -15,6 +15,7 @@ import (
 
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/config"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/control"
+	"github.com/trevex/jumpgate/workers/pg-proxy/internal/dataplane"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/mesh"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/meshclient"
 )
@@ -39,9 +40,12 @@ func main() {
 	reg := control.NewRegistry()
 	ended := make(chan control.SessionEnd, 16) // wired to the data-plane path in a later plan
 	slog.Info("pg-proxy starting", "worker_id", cfg.WorkerID, "warden", cfg.WardenMeshAddr, "dataplane", cfg.DataplaneAddr)
-	// TODO(pg-proxy Plan B2): start the gateway-facing data-plane listener here
-	// (mesh.ServerTLSConfig + mesh.ReadConnect + client.SetupSession + pgwire proxy),
-	// registering each session's cancel in reg and pushing control.SessionEnd to `ended`.
+	srvTLS := mesh.ServerTLSConfig(leaf, pool, cfg.GatewaySpiffe)
+	go func() {
+		if err := dataplane.Serve(ctx, cfg.DataplaneAddr, srvTLS, cfg.WorkerID, client, reg, ended); err != nil {
+			slog.Error("data-plane listener", "err", err)
+		}
+	}()
 	if err := control.Run(ctx, client, reg, control.RunConfig{
 		WorkerID:         cfg.WorkerID,
 		DataplaneAddress: cfg.DataplaneAddr,
