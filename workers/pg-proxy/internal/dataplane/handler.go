@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -15,6 +16,10 @@ import (
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/mesh"
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/pgproxy"
 )
+
+// sessionSetupTimeout bounds SetupSession + DialTarget so a hung warden RPC or a
+// stalled target handshake cannot wedge the handler goroutine indefinitely.
+const sessionSetupTimeout = 10 * time.Second
 
 // handleConn runs one gateway connection end-to-end: CONNECT → pgwire startup →
 // SetupSession redeem → validate role → complete auth → dial target → splice.
@@ -37,7 +42,10 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 		return
 	}
 
-	resp, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
+	setupCtx, cancelSetup := context.WithTimeout(ctx, sessionSetupTimeout)
+	defer cancelSetup()
+
+	resp, err := client.SetupSession(setupCtx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
 		SessionToken: token,
 		WorkerId:     workerID,
 		Login:        startup.User, // warden authorizes the token's bound role and echoes it as resp.Login
@@ -58,7 +66,7 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 	if db == "" {
 		db = r.GetDefaultDatabase()
 	}
-	target, err := pgproxy.DialTarget(ctx, r.GetTargetAddress(), db, r.GetLogin(), credOf(r), r.GetTargetServerCa())
+	target, err := pgproxy.DialTarget(setupCtx, r.GetTargetAddress(), db, r.GetLogin(), credOf(r), r.GetTargetServerCa())
 	if err != nil {
 		slog.Warn("dial target", "err", err)
 		pgproxy.RejectUser(be, "target unavailable")

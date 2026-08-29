@@ -23,7 +23,7 @@ type TargetCredential struct {
 // ReadyForQuery). targetServerCA (PEM, may be empty) pins the target's TLS cert
 // for the mtls path.
 func DialTarget(ctx context.Context, targetAddr, database, role string, cred TargetCredential, targetServerCA string) (net.Conn, error) {
-	dsn := fmt.Sprintf("postgres://%s/%s", targetAddr, database)
+	dsn := fmt.Sprintf("postgres://%s/%s?connect_timeout=10", targetAddr, database)
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse target config: %w", err)
