@@ -112,6 +112,35 @@ func (s *Handler) CreatePostgresSession(ctx context.Context, req *connect.Reques
 	}), nil
 }
 
+// CreateKubernetesSession authorizes the caller to reach the k8s asset (held
+// k8s:group check) and mints a bearer admission token carrying the caller's
+// materialized groups + the broker holding the cluster's agent tunnel.
+// Existence-hiding: an unentitled caller, an unknown asset, and a non-k8s asset
+// all yield NotFound. A connected-but-offline cluster (entitled, no broker) is
+// distinguished as Unavailable.
+func (s *Handler) CreateKubernetesSession(ctx context.Context, req *connect.Request[sessionv1.CreateKubernetesSessionRequest]) (*connect.Response[sessionv1.CreateKubernetesSessionResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	out, err := s.svc.CreateKubernetesSession(ctx, caller.ID, assetID)
+	switch {
+	case errors.Is(err, ErrNoAccess):
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no session access"))
+	case errors.Is(err, ErrClusterOffline):
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("cluster has no connected agent"))
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&sessionv1.CreateKubernetesSessionResponse{
+		SessionToken: out.Token, GatewayEndpoint: out.Endpoint,
+	}), nil
+}
+
 // parseSSHPublicKey accepts the client public key in either OpenSSH
 // authorized_keys text form or raw SSH wire form. It tries the authorized_keys
 // parse first (what ssh.MarshalAuthorizedKey produces) and falls back to the

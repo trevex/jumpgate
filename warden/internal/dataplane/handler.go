@@ -138,6 +138,7 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 		Capacity: reg.Capacity,
 	})
 	defer s.registry.ClearWorkerMeta(workerID)
+	defer s.registry.ClearTunnels(workerID)
 
 	if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 		slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
@@ -176,6 +177,9 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 				if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 					slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
 				}
+			}
+			if adv := msg.GetAdvertiseTunnels(); adv != nil {
+				s.registry.SetTunnels(workerID, adv.GetAssetIds())
 			}
 			// Register(after first): no-op.
 		}
