@@ -25,6 +25,7 @@ import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogServic
 import { getUserDisplay } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import type { Recording } from "@/gen/jumpgate/recording/v1/recording_pb";
 import { PgTimelineViewer } from "./pg-timeline-view";
+import { K8sAuditViewer } from "./k8s-audit-view";
 import {
   Table,
   TableHeader,
@@ -230,8 +231,9 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    // Postgres recordings use the statement-log viewer, not the terminal player.
-    if (recData?.format === "pgwire-timeline-v1") return;
+    // Postgres and Kubernetes recordings use their own structured viewers, not
+    // the terminal player.
+    if (recData?.format === "pgwire-timeline-v1" || recData?.format === "k8s-audit-v1") return;
     setPlayerError(null);
 
     // Dispose previous instance before creating a new one.
@@ -340,6 +342,10 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
       ) : recData.format === "pgwire-timeline-v1" ? (
         <div className="flex-1 overflow-hidden">
           <PgTimelineViewer sessionId={sessionId} />
+        </div>
+      ) : recData.format === "k8s-audit-v1" ? (
+        <div className="flex-1 overflow-hidden">
+          <K8sAuditViewer sessionId={sessionId} />
         </div>
       ) : (
         <div className="flex-1 overflow-hidden flex items-center justify-center p-2">
@@ -554,7 +560,7 @@ function RecordingsList({ selectedId, onSelect }: RecordingsListProps) {
             message={
               hasFilter
                 ? "No recordings match the active filter. Clear it to see all recordings."
-                : "Session recordings will appear here once SSH sessions have been recorded."
+                : "Session recordings will appear here once sessions have been recorded."
             }
           />
         ) : (
@@ -641,7 +647,7 @@ export function RecordingsPage() {
       <header className="border-b border-border px-6 py-5 shrink-0">
         <h1 className="text-title font-semibold text-foreground">Recordings</h1>
         <p className="mt-0.5 text-compact text-muted-foreground">
-          SSH session recordings for audit and review.
+          Session recordings for audit and review.
         </p>
       </header>
 
