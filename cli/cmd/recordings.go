@@ -154,7 +154,7 @@ func runRecordingsGet(cmd *cobra.Command, args []string) error {
 
 // recordingSuffix is the default file extension for a recording's container format.
 func recordingSuffix(format string) string {
-	if format == "pgwire-timeline-v1" {
+	if format == "pgwire-timeline-v1" || format == "k8s-audit-v1" {
 		return ".ndjson"
 	}
 	return ".cast" // asciicast-v2 / unknown
@@ -162,10 +162,14 @@ func recordingSuffix(format string) string {
 
 // replayHint is the follow-up line printed after a download, tailored to the format.
 func replayHint(format, file string) string {
-	if format == "pgwire-timeline-v1" {
+	switch format {
+	case "pgwire-timeline-v1":
 		return "Statement log (NDJSON). Inspect with: jq . " + file + " — or view it in the web console."
+	case "k8s-audit-v1":
+		return "Kubernetes audit log (NDJSON). Inspect with: jq . " + file
+	default:
+		return "Replay with: asciinema play " + file
 	}
-	return "Replay with: asciinema play " + file
 }
 
 func runRecordingsDownload(cmd *cobra.Command, args []string) error {
