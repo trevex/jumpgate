@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-broker
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-broker
+spec:
+  # Single replica: BROKER_ID is fixed and matches the one SAN on the mesh leaf
+  # cert, and the broker binds+advertises its own pod IP as the data-plane addr.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: k8s-broker
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: k8s-broker
+    spec:
+      containers:
+        - name: k8s-broker
+          image: "{{ .Values.images.k8sBroker.repository }}:{{ .Values.images.k8sBroker.tag }}"
+          imagePullPolicy: {{ .Values.images.k8sBroker.pullPolicy }}
+          ports:
+            - name: agent
+              containerPort: 9100
+            - name: dataplane
+              containerPort: 9102
+            - name: health
+              containerPort: 9101
+          env:
+            - name: BROKER_ID
+              value: {{ .Values.broker.id | quote }}
+            # BROKER_DATAPLANE_ADDR is used for BOTH the mTLS front-door listener bind
+            # and the dataplane_address the broker advertises to warden (which the
+            # gateway then dials). A pod cannot bind its Service DNS name, so we bind
+            # and advertise the pod's own IP (routable in-cluster) via the downward API.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: BROKER_DATAPLANE_ADDR
+              value: "$(POD_IP):9102"
+            # Agent tunnel listener: agents (in target clusters) dial in over mesh
+            # mTLS via whatever external address fronts the `agent` Service port.
+            - name: BROKER_AGENT_ADDR
+              value: "0.0.0.0:9100"
+            # Plaintext health listener for kubelet probes. The other two ports are
+            # mesh mTLS and cannot be probed by a bare tcpSocket probe (the TLS
+            # handshake fails), so liveness/readiness target this port instead.
+            - name: BROKER_HEALTH_ADDR
+              value: "0.0.0.0:9101"
+            - name: BROKER_MESH_CERT
+              value: /mesh/tls.crt
+            - name: BROKER_MESH_KEY
+              value: /mesh/tls.key
+            - name: BROKER_MESH_CA
+              value: /mesh/ca.crt
+            - name: WARDEN_MESH_ADDR
+              value: "https://{{ include "jumpgate.wardenMeshHost" . }}.{{ .Release.Namespace }}.svc.cluster.local:8443"
+            - name: WARDEN_SPIFFE
+              value: "spiffe://jumpgate/warden/warden"
+            - name: RECORDING_S3_BUCKET
+              value: {{ .Values.recording.bucket | quote }}
+            - name: RECORDING_S3_REGION
+              value: {{ .Values.recording.s3.region | quote }}
+            - name: RECORDING_S3_ENDPOINT
+              {{- if .Values.silo.enabled }}
+              value: "http://{{ include "jumpgate.siloHost" . }}:9000"
+              {{- else }}
+              value: {{ .Values.recording.s3.endpoint | quote }}
+              {{- end }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.recording.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.recording.s3.secretKey | quote }}
+          volumeMounts:
+            - name: worker-mesh
+              mountPath: /mesh
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 9101
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9101
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: worker-mesh
+          secret:
+            secretName: {{ include "jumpgate.fullname" . }}-broker-mesh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-broker
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-broker
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: k8s-broker
+  ports:
+    - name: agent
+      port: 9100
+      targetPort: 9100
+    - name: dataplane
+      port: 9102
+      targetPort: 9102
+    - name: health
+      port: 9101
+      targetPort: 9101
