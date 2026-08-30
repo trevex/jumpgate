@@ -77,6 +77,49 @@ var assetsSSHLoginListCmd = &cobra.Command{
 	RunE:  runAssetsSSHLoginList,
 }
 
+var assetsPGCmd = &cobra.Command{
+	Use:   "pg",
+	Short: "Manage PostgreSQL assets and their per-role auth",
+}
+
+var (
+	pgCreateFolder   string
+	pgCreateTarget   string
+	pgCreateDatabase string
+	pgCreateLogins   []string
+)
+
+var assetsPGCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a PostgreSQL asset with its connection config",
+	Long: "Create a PostgreSQL asset and its connection config in one call. Each " +
+		"--mtls-login adds an mtls login with no secret; use `assets pg login set` to " +
+		"add password logins.",
+	Args: cobra.ExactArgs(1),
+	RunE: runAssetsPGCreate,
+}
+
+var assetsPGLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Manage the logins of a PostgreSQL asset",
+}
+
+var (
+	pgLoginRole  string
+	pgLoginKind  string
+	pgLoginStdin bool
+)
+
+var assetsPGLoginSetCmd = &cobra.Command{
+	Use:   "set <asset>",
+	Short: "Add or replace a login on a PostgreSQL asset",
+	Long: "Add or replace a login on a PostgreSQL asset. For --kind password the " +
+		"secret is read from stdin (--password-stdin). The secret is sealed in the " +
+		"vault and bound to the asset; mtls logins carry no secret.",
+	Args: cobra.ExactArgs(1),
+	RunE: runAssetsPGLoginSet,
+}
+
 var assetsListCascade bool
 
 var assetsListCmd = &cobra.Command{
@@ -134,9 +177,27 @@ func init() {
 	assetsSSHCmd.AddCommand(assetsSSHCreateCmd)
 	assetsSSHCmd.AddCommand(assetsSSHLoginCmd)
 
+	assetsPGCreateCmd.Flags().StringVar(&pgCreateFolder, "folder", "", "folder id or name (required)")
+	assetsPGCreateCmd.Flags().StringVar(&pgCreateTarget, "target", "", "target host:port")
+	assetsPGCreateCmd.Flags().StringVar(&pgCreateDatabase, "database", "", "default database")
+	assetsPGCreateCmd.Flags().StringSliceVar(&pgCreateLogins, "mtls-login", nil, "mtls login role to allow (repeatable or comma-separated)")
+	_ = assetsPGCreateCmd.MarkFlagRequired("folder")
+
+	assetsPGLoginSetCmd.Flags().StringVar(&pgLoginRole, "role", "", "login role (required)")
+	assetsPGLoginSetCmd.Flags().StringVar(&pgLoginKind, "kind", "", "auth kind: password|mtls (required)")
+	assetsPGLoginSetCmd.Flags().BoolVar(&pgLoginStdin, "password-stdin", false, "read the password from stdin (kind=password)")
+	_ = assetsPGLoginSetCmd.MarkFlagRequired("role")
+	_ = assetsPGLoginSetCmd.MarkFlagRequired("kind")
+
+	assetsPGLoginCmd.AddCommand(assetsPGLoginSetCmd)
+
+	assetsPGCmd.AddCommand(assetsPGCreateCmd)
+	assetsPGCmd.AddCommand(assetsPGLoginCmd)
+
 	assetsListCmd.Flags().BoolVar(&assetsListCascade, "cascade", false, "include assets in all descendant folders")
 
 	assetsCmd.AddCommand(assetsSSHCmd)
+	assetsCmd.AddCommand(assetsPGCmd)
 	assetsCmd.AddCommand(assetsListCmd)
 	assetsCmd.AddCommand(assetsGetCmd)
 	assetsCmd.AddCommand(assetsDeleteCmd)
@@ -402,6 +463,182 @@ func sshLoginInputRow(l *catalogv1.SSHLoginInput) []string {
 func trimTrailingNewline(b []byte) []byte {
 	b = bytes.TrimSuffix(b, []byte("\n"))
 	return bytes.TrimSuffix(b, []byte("\r"))
+}
+
+var pgLoginHeaders = []string{"ROLE", "KIND"}
+
+func runAssetsPGCreate(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	folderID, err := resolveFolderID(cmd.Context(), cl, pgCreateFolder)
+	if err != nil {
+		return err
+	}
+
+	// Inline --mtls-login entries carry no secret; password logins are added
+	// afterwards via `assets pg login set`.
+	logins := make([]*catalogv1.PostgresLoginInput, 0, len(pgCreateLogins))
+	for _, role := range pgCreateLogins {
+		logins = append(logins, newPgLoginInput(role, "mtls", nil))
+	}
+
+	createReq := connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folderID,
+		Name:     args[0],
+		Config: &catalogv1.CreateAssetRequest_Postgres{Postgres: &catalogv1.PostgresConfigInput{
+			TargetAddress:   pgCreateTarget,
+			DefaultDatabase: pgCreateDatabase,
+			Logins:          logins,
+		}},
+	})
+	cl.Authorize(createReq)
+	createResp, err := cl.Catalog().CreateAsset(cmd.Context(), createReq)
+	if err != nil {
+		return err
+	}
+	asset := createResp.Msg.GetAsset()
+
+	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
+		Headers: assetHeaders,
+		Rows:    [][]string{assetRow(asset)},
+	})
+}
+
+func runAssetsPGLoginSet(cmd *cobra.Command, args []string) error {
+	kind := pgLoginKind
+	switch kind {
+	case "password", "mtls":
+	default:
+		return fmt.Errorf("invalid --kind %q (want password|mtls)", kind)
+	}
+
+	// Validate the secret source up front so we fail before any RPC.
+	switch kind {
+	case "password":
+		if !pgLoginStdin {
+			return fmt.Errorf("--kind password requires --password-stdin")
+		}
+	case "mtls":
+		if pgLoginStdin {
+			return fmt.Errorf("--password-stdin is only valid with --kind password")
+		}
+	}
+
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	// For password, read the new secret; it is sealed server-side in-tx as part of
+	// UpdateAssetConfig (no separate vault round-trip). mtls has no secret.
+	var newSecret []byte
+	if kind == "password" {
+		value, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return fmt.Errorf("read password from stdin: %w", err)
+		}
+		value = trimTrailingNewline(value)
+		if len(value) == 0 {
+			return fmt.Errorf("empty password on stdin")
+		}
+		newSecret = value
+	}
+
+	// Read-modify-write: fetch the current Postgres config, replace/append this
+	// login, preserving target/database and the other logins (with their existing
+	// secrets).
+	getReq := connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: assetID})
+	cl.Authorize(getReq)
+	getResp, err := cl.Catalog().GetAsset(cmd.Context(), getReq)
+	if err != nil {
+		return err
+	}
+
+	cur := getResp.Msg.GetAsset().GetPostgres()
+
+	input := &catalogv1.PostgresConfigInput{}
+	if cur != nil {
+		input.TargetAddress = cur.GetTargetAddress()
+		input.DefaultDatabase = cur.GetDefaultDatabase()
+		input.TargetServerCa = cur.GetTargetServerCa()
+		for _, l := range cur.GetLogins() {
+			if l.GetRole() == pgLoginRole {
+				continue // the target login is (re)built below
+			}
+			input.Logins = append(input.Logins, existingPgLoginInput(l))
+		}
+	}
+
+	input.Logins = append(input.Logins, newPgLoginInput(pgLoginRole, kind, newSecret))
+
+	updReq := connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
+		AssetId: assetID,
+		Config:  &catalogv1.UpdateAssetConfigRequest_Postgres{Postgres: input},
+	})
+	cl.Authorize(updReq)
+	if _, err := cl.Catalog().UpdateAssetConfig(cmd.Context(), updReq); err != nil {
+		return err
+	}
+
+	rows := make([][]string, 0, len(input.GetLogins()))
+	msgs := make([]proto.Message, 0, len(input.GetLogins()))
+	for _, l := range input.GetLogins() {
+		rows = append(rows, pgLoginInputRow(l))
+		msgs = append(msgs, l)
+	}
+	return output.RenderProtoList(cmd.OutOrStdout(), flagOutput, msgs, &output.Table{
+		Headers: pgLoginHeaders,
+		Rows:    rows,
+	})
+}
+
+// existingPgLoginInput maps a read-side login to its write-side input arm,
+// preserving the already-sealed secret (by id) for password logins.
+func existingPgLoginInput(l *catalogv1.PostgresLogin) *catalogv1.PostgresLoginInput {
+	in := &catalogv1.PostgresLoginInput{Role: l.GetRole()}
+	if l.GetKind() == "password" {
+		in.Auth = &catalogv1.PostgresLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: l.GetSecretId()},
+		}}
+	} else { // mtls (or unknown → mtls, which carries no secret)
+		in.Auth = &catalogv1.PostgresLoginInput_Mtls{Mtls: &catalogv1.MtlsAuth{}}
+	}
+	return in
+}
+
+// newPgLoginInput builds the write-side input for the login being added/replaced.
+// For password, secret is the new plaintext to seal server-side in-tx.
+func newPgLoginInput(role, kind string, secret []byte) *catalogv1.PostgresLoginInput {
+	in := &catalogv1.PostgresLoginInput{Role: role}
+	switch kind {
+	case "password":
+		in.Auth = &catalogv1.PostgresLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_NewValue{NewValue: secret},
+		}}
+	default: // mtls
+		in.Auth = &catalogv1.PostgresLoginInput_Mtls{Mtls: &catalogv1.MtlsAuth{}}
+	}
+	return in
+}
+
+// pgLoginInputKind renders the auth kind of a write-side login input.
+func pgLoginInputKind(l *catalogv1.PostgresLoginInput) string {
+	if _, ok := l.GetAuth().(*catalogv1.PostgresLoginInput_Password); ok {
+		return "password"
+	}
+	return "mtls"
+}
+
+func pgLoginInputRow(l *catalogv1.PostgresLoginInput) []string {
+	return []string{l.GetRole(), pgLoginInputKind(l)}
 }
 
 func runAssetsList(cmd *cobra.Command, args []string) error {
