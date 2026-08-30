@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"net"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 	"golang.org/x/net/http2"
@@ -28,5 +29,12 @@ func New(wardenAddr string, leaf tls.Certificate, pool *x509.CertPool, wardenSpi
 		},
 	}
 	httpClient := &http.Client{Transport: tr}
-	return dataplanev1connect.NewDataplaneServiceClient(httpClient, "https://"+wardenAddr, connect.WithGRPC())
+	// WARDEN_MESH_ADDR already carries the https:// scheme (shared Helm convention);
+	// only add it when absent so we never produce a double scheme (https://https://…),
+	// which connect-go dials as host "https" → "write envelope: EOF".
+	baseURL := wardenAddr
+	if !strings.Contains(baseURL, "://") {
+		baseURL = "https://" + baseURL
+	}
+	return dataplanev1connect.NewDataplaneServiceClient(httpClient, baseURL, connect.WithGRPC())
 }
