@@ -245,6 +245,42 @@ func (e *env) connectWithStdin(t *testing.T, ctx, target, script string) string 
 	}
 }
 
+// connectPgExec runs `jumpgate connect <target> --ca <meshCA> -- <execArgs...>` as
+// actor ctx under a timeout, mirroring connectWithStdin's invocation style but for
+// the postgres proxy's exec-args form: instead of piping a script on stdin, the
+// command to run against the local proxy is passed after `--` (see
+// cli/cmd/pgproxy.go runPostgresConnect / runExec). Returns combined stdout+stderr
+// and fails the test on a non-zero exit.
+func (e *env) connectPgExec(t *testing.T, ctx, target string, execArgs ...string) string {
+	t.Helper()
+	args := append([]string{"--context", ctx, "connect", target, "--ca", e.meshCA, "--"}, execArgs...)
+	cmd := exec.Command(e.jgBin, args...)
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+e.configDir)
+	// After a timeout Kill, bound how long Wait blocks on the output pipes so the
+	// reader goroutine reaps instead of leaking if a child holds them open.
+	cmd.WaitDelay = 5 * time.Second
+	type res struct {
+		out []byte
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		out, err := cmd.CombinedOutput()
+		ch <- res{out, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("connect exec failed: %v\noutput:\n%s", r.err, r.out)
+		}
+		return string(r.out)
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("connect exec timed out after 30s")
+		return ""
+	}
+}
+
 // fixturesDir returns <repo>/test/fixtures, creating it. The suite runs with CWD
 // = test/e2e, so the repo root is two levels up.
 func fixturesDir(t *testing.T) string {
