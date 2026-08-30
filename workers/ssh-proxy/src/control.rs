@@ -220,6 +220,12 @@ async fn connect_and_run(
                                     ended_at_unix_ms: r.ended_at_unix_ms,
                                     status: r.status,
                                     grant_id: r.grant_id,
+                                    // Self-contained attribution fields are for the k8s broker only;
+                                    // ssh resolves parties from its live_sessions row (empty here).
+                                    user_id: String::new(),
+                                    asset_id: String::new(),
+                                    worker_id: String::new(),
+                                    session_id: String::new(),
                                 }),
                             })),
                         };

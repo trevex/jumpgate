@@ -771,6 +771,113 @@ func TestWorkerSessionEndedPersistsRecordingGrantID(t *testing.T) {
 	}
 }
 
+// TestWorkerSessionEndedPersistsSelfContainedK8sRecording drives a WorkerStream
+// reporting SessionEnded for a k8s-broker per-connection recording id that has NO
+// live_sessions row (unlike ssh/postgres, the broker never creates one for each
+// mux'd connection). The RecordingInfo is self-contained (user_id/asset_id/worker_id
+// set directly by the broker), so warden must persist the session_recordings row from
+// those reported parties rather than looking up live_sessions — and the missing row
+// must not produce any error or a spurious session.ended audit event.
+func TestWorkerSessionEndedPersistsSelfContainedK8sRecording(t *testing.T) {
+	pool, url, _ := newDataplaneServer(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+
+	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: uuid.NewString() + "@x", DisplayName: "U"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "k8s-rec-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "cluster", Labels: []byte("{}"), Kind: "k8s"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+
+	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), url)
+	stream := client.WorkerStream(ctx)
+	t.Cleanup(func() { _ = stream.CloseRequest(); _ = stream.CloseResponse() })
+
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_Register{
+		Register: &dataplanev1.Register{WorkerId: "w1", Protocols: []string{"kubernetes"}},
+	}}); err != nil {
+		t.Fatalf("send register: %v", err)
+	}
+	ack, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive ack: %v", err)
+	}
+	if ack.GetAck() == nil {
+		t.Fatalf("expected RegisterAck, got %+v", ack)
+	}
+
+	// A per-connection recording id: no live_sessions row exists for it.
+	connID := uuid.New()
+	objectKey := "recordings/k8s/2026/08/30/" + connID.String() + ".ndjson"
+	if err := stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_SessionEnded{
+		SessionEnded: &dataplanev1.SessionEnded{
+			SessionId: connID.String(),
+			Reason:    "closed",
+			Recording: &dataplanev1.RecordingInfo{
+				Status:    "completed",
+				ObjectKey: objectKey,
+				UserId:    user.ID.String(),
+				AssetId:   asset.ID.String(),
+				WorkerId:  "broker-1",
+				SessionId: connID.String(),
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("send session-ended: %v", err)
+	}
+
+	var rec sqlc.SessionRecording
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec, err = sqlc.New(pool).GetSessionRecording(ctx, connID)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session_recordings row never appeared: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if rec.Format != "k8s-audit-v1" {
+		t.Errorf("format = %q, want k8s-audit-v1", rec.Format)
+	}
+	if rec.Protocol != "kubernetes" {
+		t.Errorf("protocol = %q, want kubernetes", rec.Protocol)
+	}
+	if rec.UserID != user.ID {
+		t.Errorf("user_id = %v, want %v", rec.UserID, user.ID)
+	}
+	if rec.AssetID != asset.ID {
+		t.Errorf("asset_id = %v, want %v", rec.AssetID, asset.ID)
+	}
+	if rec.WorkerID != "broker-1" {
+		t.Errorf("worker_id = %q, want broker-1", rec.WorkerID)
+	}
+	if rec.ObjectKey != objectKey {
+		t.Errorf("object_key = %q, want %q", rec.ObjectKey, objectKey)
+	}
+
+	// The missing live_sessions row must be harmless: no session.ended audit (nothing
+	// to delete/mark-ended), and the recording audit + row commit succeed cleanly.
+	if got := sessionEventCount(t, pool, dataplane.EventSessionEnded); got != 0 {
+		t.Fatalf("session.ended events = %d, want 0 (no live_sessions row ever existed)", got)
+	}
+	if got := sessionEventCount(t, pool, dataplane.EventRecordingCompleted); got != 1 {
+		t.Fatalf("recording.completed events = %d, want 1", got)
+	}
+	if err := audit.New(pool).Verify(ctx); err != nil {
+		t.Fatalf("audit Verify: %v", err)
+	}
+}
+
 // waitConnected polls the registry until worker's connected state matches want, or
 // fails after a short timeout (Add/Remove happen inside the handler goroutine).
 func waitConnected(t *testing.T, reg *dataplane.Registry, workerID string, want bool) {

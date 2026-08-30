@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/frontdoor"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/mesh"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/meshclient"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/record"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/sessiontoken"
 )
 
@@ -65,6 +66,19 @@ func main() {
 	}
 	verifier := sessiontoken.NewVerifier(pubKey)
 
+	// Per-connection audit recording is mandatory for kubernetes sessions.
+	uploader, err := record.NewS3Uploader(ctx, cfg.RecordingBucket, cfg.RecordingEndpoint, cfg.RecordingRegion)
+	if err != nil {
+		slog.Error("recording uploader", "err", err)
+		os.Exit(1)
+	}
+	if uploader == nil {
+		slog.Error("RECORDING_S3_BUCKET is required: kubernetes sessions must be recorded")
+		os.Exit(1)
+	}
+	ended := make(chan frontdoor.SessionEnd, 16)
+	rec := frontdoor.NewRecorder(uploader, cfg.BrokerID, ended)
+
 	fdTLS := mesh.ServerTLSConfigRole(leaf, pool, "gateway")
 	fdTLS.NextProtos = []string{"http/1.1"} // gateway blind-pipes HTTP/1.1, not h2
 	fdRawLn, err := net.Listen("tcp", cfg.DataplaneAddr)
@@ -74,8 +88,10 @@ func main() {
 	}
 	fdLn := tls.NewListener(fdRawLn, fdTLS)
 	fdSrv := &http.Server{
-		Handler:           frontdoor.Handler(b, verifier),
+		Handler:           frontdoor.Handler(b, verifier, rec),
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnContext:       rec.ConnContext,
+		ConnState:         rec.ConnState,
 	}
 	go func() { <-ctx.Done(); _ = fdSrv.Close() }()
 	go func() {
@@ -87,7 +103,7 @@ func main() {
 	slog.Info("front door up", "addr", cfg.DataplaneAddr)
 
 	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
-	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr); err != nil && ctx.Err() == nil {
+	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr, ended); err != nil && ctx.Err() == nil {
 		slog.Error("control loop", "err", err)
 		os.Exit(1)
 	}

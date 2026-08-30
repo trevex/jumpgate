@@ -104,7 +104,15 @@ func TestFrontDoorOverMeshTLS(t *testing.T) {
 	fdTLS := mesh.ServerTLSConfigRole(brokerLeaf, brokerPool, "gateway")
 	fdTLS.NextProtos = []string{"http/1.1"}
 	fdLn := tls.NewListener(mustListen(t), fdTLS)
-	fdSrv := &http.Server{Handler: frontdoor.Handler(b, sessiontoken.NewVerifier(pub)), ReadHeaderTimeout: 5 * time.Second}
+	// Wire the per-connection recorder end-to-end: ConnContext supplies the handle
+	// the fail-closed tap needs, ConnState finishes + reports on close.
+	rec := frontdoor.NewRecorder(nopUploader{}, "broker-0", make(chan frontdoor.SessionEnd, 8))
+	fdSrv := &http.Server{
+		Handler:           frontdoor.Handler(b, sessiontoken.NewVerifier(pub), rec),
+		ReadHeaderTimeout: 5 * time.Second,
+		ConnContext:       rec.ConnContext,
+		ConnState:         rec.ConnState,
+	}
 	defer func() { _ = fdSrv.Close() }()
 	go func() { _ = fdSrv.Serve(fdLn) }()
 

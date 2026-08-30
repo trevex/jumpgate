@@ -50,6 +50,14 @@ message RecordingInfo {
   int64 ended_at_unix_ms = 5;
   string status = 6; // "completed" | "failed" | "aborted"
   string grant_id = 7; // the JIT grant that authorized the session; empty = standing/unattributed
+
+  // Self-contained attribution for workers with no live_sessions row (k8s broker):
+  // when user_id is set, warden persists the recording from these fields directly
+  // instead of resolving parties from live_sessions.
+  string user_id = 8;
+  string asset_id = 9;
+  string worker_id = 10;
+  string session_id = 11; // the token jti (audit session) this recording belongs to
 }
 
 message ServerMessage {

@@ -364,8 +364,15 @@ type RecordingInfo struct {
 	EndedAtUnixMs   int64                  `protobuf:"varint,5,opt,name=ended_at_unix_ms,json=endedAtUnixMs,proto3" json:"ended_at_unix_ms,omitempty"`
 	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`                  // "completed" | "failed" | "aborted"
 	GrantId         string                 `protobuf:"bytes,7,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"` // the JIT grant that authorized the session; empty = standing/unattributed
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Self-contained attribution for workers with no live_sessions row (k8s broker):
+	// when user_id is set, warden persists the recording from these fields directly
+	// instead of resolving parties from live_sessions.
+	UserId        string `protobuf:"bytes,8,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	AssetId       string `protobuf:"bytes,9,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	WorkerId      string `protobuf:"bytes,10,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	SessionId     string `protobuf:"bytes,11,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // the token jti (audit session) this recording belongs to
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RecordingInfo) Reset() {
@@ -443,6 +450,34 @@ func (x *RecordingInfo) GetStatus() string {
 func (x *RecordingInfo) GetGrantId() string {
 	if x != nil {
 		return x.GrantId
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *RecordingInfo) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
 	}
 	return ""
 }
@@ -933,7 +968,7 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12B\n" +
-	"\trecording\x18\x03 \x01(\v2$.jumpgate.dataplane.v1.RecordingInfoR\trecording\"\xee\x01\n" +
+	"\trecording\x18\x03 \x01(\v2$.jumpgate.dataplane.v1.RecordingInfoR\trecording\"\xde\x02\n" +
 	"\rRecordingInfo\x12\x1d\n" +
 	"\n" +
 	"object_key\x18\x01 \x01(\tR\tobjectKey\x12\x1d\n" +
@@ -943,7 +978,13 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x12started_at_unix_ms\x18\x04 \x01(\x03R\x0fstartedAtUnixMs\x12'\n" +
 	"\x10ended_at_unix_ms\x18\x05 \x01(\x03R\rendedAtUnixMs\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x19\n" +
-	"\bgrant_id\x18\a \x01(\tR\agrantId\"\x8d\x01\n" +
+	"\bgrant_id\x18\a \x01(\tR\agrantId\x12\x17\n" +
+	"\auser_id\x18\b \x01(\tR\x06userId\x12\x19\n" +
+	"\basset_id\x18\t \x01(\tR\aassetId\x12\x1b\n" +
+	"\tworker_id\x18\n" +
+	" \x01(\tR\bworkerId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\v \x01(\tR\tsessionId\"\x8d\x01\n" +
 	"\rServerMessage\x126\n" +
 	"\x03ack\x18\x01 \x01(\v2\".jumpgate.dataplane.v1.RegisterAckH\x00R\x03ack\x12=\n" +
 	"\bteardown\x18\x02 \x01(\v2\x1f.jumpgate.dataplane.v1.TeardownH\x00R\bteardownB\x05\n" +

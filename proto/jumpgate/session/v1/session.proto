@@ -70,4 +70,8 @@ message CreatePostgresSessionResponse {
 }
 
 message CreateKubernetesSessionRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
-message CreateKubernetesSessionResponse { string session_token = 1; string gateway_endpoint = 2; }
+message CreateKubernetesSessionResponse {
+  string session_token = 1;
+  string gateway_endpoint = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}

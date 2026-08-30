@@ -18,6 +18,10 @@ type Config struct {
 	WardenSpiffe   string // WARDEN_SPIFFE — pinned server identity
 	BrokerID       string // BROKER_ID — must equal the broker's mesh SAN id
 	DataplaneAddr  string // BROKER_DATAPLANE_ADDR — gateway-facing addr, advertised to warden
+
+	RecordingBucket   string // RECORDING_S3_BUCKET — empty disables recording (k8s sessions then refused)
+	RecordingEndpoint string // RECORDING_S3_ENDPOINT — custom S3 endpoint (self-hosted)
+	RecordingRegion   string // RECORDING_S3_REGION
 }
 
 // FromEnv loads config, failing closed on missing required values.
@@ -33,6 +37,10 @@ func FromEnv() (Config, error) {
 		WardenSpiffe:   envOr("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
 		BrokerID:       os.Getenv("BROKER_ID"),
 		DataplaneAddr:  envOr("BROKER_DATAPLANE_ADDR", "0.0.0.0:9102"),
+
+		RecordingBucket:   os.Getenv("RECORDING_S3_BUCKET"),
+		RecordingEndpoint: os.Getenv("RECORDING_S3_ENDPOINT"),
+		RecordingRegion:   envOr("RECORDING_S3_REGION", "us-east-1"),
 	}
 	if c.MeshCertFile == "" || c.MeshKeyFile == "" || c.MeshCAFile == "" {
 		return Config{}, fmt.Errorf("missing required env (BROKER_MESH_CERT/KEY/CA)")

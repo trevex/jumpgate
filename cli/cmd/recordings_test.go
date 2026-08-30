@@ -151,6 +151,7 @@ func TestRecordingsDownload(t *testing.T) {
 func TestRecordingSuffix(t *testing.T) {
 	cases := map[string]string{
 		"pgwire-timeline-v1": ".ndjson",
+		"k8s-audit-v1":       ".ndjson",
 		"asciicast-v2":       ".cast",
 		"":                   ".cast",
 	}
@@ -167,5 +168,8 @@ func TestReplayHint(t *testing.T) {
 	}
 	if h := replayHint("asciicast-v2", "s.cast"); !strings.Contains(h, "asciinema") {
 		t.Errorf("asciicast hint = %q, want asciinema", h)
+	}
+	if h := replayHint("k8s-audit-v1", "s.ndjson"); !strings.Contains(h, "jq") || strings.Contains(h, "asciinema") {
+		t.Errorf("k8s audit hint = %q, want a jq hint (no asciinema)", h)
 	}
 }
