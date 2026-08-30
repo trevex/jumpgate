@@ -308,6 +308,155 @@ jumpgate --context admin recordings download <SESSION_ID> --file statements.ndjs
 Each line is one event (`{"kind":"query","sql":"select 1", …}`); the web console renders the
 same timeline visually under **Recordings**.
 
+## Chapter: onboarding a Kubernetes cluster and mapping groups to RBAC
+
+Kubernetes is jumpgate's third asset kind. The access model is the same — folders, roles,
+bindings, recording — but two pieces are unique to k8s and worth understanding before you start:
+
+- **The data path is an in-cluster agent.** Target API servers are private, so instead of a
+  credential jumpgate stores, the cluster runs a small **agent** that dials out to a broker and
+  reverse-tunnels. The agent forwards each request to the API server as **its own pod
+  ServiceAccount**, impersonating you — so jumpgate never holds a cluster admin credential.
+- **Groups are the bridge to cluster permissions.** A jumpgate `k8s:group:<name>` capability is
+  materialized at session mint into an `Impersonate-Group: <name>` header. Kubernetes RBAC then
+  decides what that group may do. So *granting cluster access is two-sided*: entitle the user to
+  the group in jumpgate, and bind that same group name to a (Cluster)Role in Kubernetes.
+
+Access is delivered as a native **client-go exec-plugin** (`jumpgate k8s auth`) wired into a
+kubeconfig — you keep using plain `kubectl`. The command shapes below are exercised end-to-end by
+`test/e2e/k8s_test.go` (`TestKubernetes`).
+
+For this chapter the `make kind-demo` cluster is **both** the jumpgate control plane **and** the
+target cluster: the agent runs in the same kind cluster it grants access to. The chart already
+installs the agent's ServiceAccount, its `impersonate` permission, and one example mapping — a
+read-only `developers-view` ClusterRole bound to the Kubernetes group `developers`. We reuse the
+`demo` folder and alice.
+
+### Onboard the cluster (admin)
+
+Creating the asset registers a *pending* cluster and mints a **single-use enrollment token**
+(shown once, ~30 min TTL). The asset stores no endpoint or credential — the agent uses its
+in-cluster config:
+
+```bash
+jumpgate --context admin assets k8s create prod --folder demo -o json   # "path" = prod.demo
+# Enrollment token (valid until …, single-use):
+#   <TOKEN>
+```
+
+Grab the printed `<TOKEN>` and the asset id from the JSON. (Lost it, or the 30 min lapsed?
+`jumpgate --context admin assets k8s enroll prod.demo` re-mints one.)
+
+### Enroll the in-cluster agent
+
+Hand the token to the agent as a Secret, then deploy it. On first start the agent generates a
+keypair, sends a CSR to warden's enrollment endpoint with the token, and receives an
+**asset-scoped** mesh cert (`spiffe://jumpgate/agent/<asset_id>`) — so a leaked agent cert can
+impersonate on exactly one cluster, and the token is consumed on use:
+
+```bash
+kubectl create secret generic jumpgate-agent-enrollment --from-literal=token=<TOKEN>
+kubectl apply -f test/env/testworkload/k8s-agent.yaml
+kubectl rollout status deploy/jumpgate-k8s-agent --timeout=120s
+```
+
+The agent dials the broker; the broker advertises the cluster's tunnel to warden. `prod.demo`
+is now reachable. (`test/env/testworkload/k8s-agent.yaml` is the demo's agent workload — in a
+real target cluster you install the agent's chart with `--set enrollmentToken=<TOKEN>` instead.)
+
+### Map a jumpgate group to a cluster role
+
+This is the two-sided grant. **jumpgate side** — mint a folder-scoped role carrying the concrete
+`k8s:group:developers` capability and bind it to alice standing on the asset. The capability must
+be *concrete*: a wildcard like `k8s:group:**` materializes to **no** group (a safety property —
+holding `**` in jumpgate is deliberately not Kubernetes cluster-admin):
+
+```bash
+jumpgate --context admin roles create k8sdev --folder demo --capability k8s:group:developers
+jumpgate --context admin bindings create --role k8sdev.demo --user alice@demo.test --asset prod.demo
+```
+
+Now alice's k8s sessions will carry `Impersonate-Group: developers`. **Kubernetes side** — that
+group needs RBAC. The demo chart already ships the mapping used below (inspect it with
+`kubectl describe clusterrole jumpgate-developers-view` and its ClusterRoleBinding), but the
+general recipe is any binding whose subject is `kind: Group`. For example, to map the
+`developers` group to Kubernetes' built-in read-only `view` role across all namespaces:
+
+```bash
+kubectl create clusterrolebinding developers-view \
+  --clusterrole=view --group=developers
+```
+
+Scope it to one namespace with a `RoleBinding` instead of a `ClusterRoleBinding`, or point
+`--clusterrole` at any Role you like — the group name (`developers`) is the only contract between
+jumpgate and the cluster. Grant a user more by giving them additional `k8s:group:<name>`
+capabilities whose names you've bound in RBAC.
+
+### Connect (alice)
+
+Generate a kubeconfig and use plain `kubectl`. The kubeconfig points `server:` at the gateway and
+wires `user.exec` to `jumpgate k8s auth`, which mints + disk-caches a 15-minute token on demand
+(so a cache miss, not every `kubectl`, hits warden):
+
+```bash
+jumpgate --context alice k8s kubeconfig prod.demo > kc.yaml
+```
+
+`kubectl` **execs** the plugin binary directly, so the shell `alias` from the prerequisites
+won't do here — put the real binary on your PATH (`sudo install ./jumpgate /usr/local/bin/`) or
+set the kubeconfig's `command:` to an absolute path.
+
+For the local kind demo, `kubectl` verifies the gateway's TLS hostname and the demo gateway cert
+has no `localhost` SAN, so point at `localhost:8443` and skip verification for this run (a
+production gateway presents a cert with a real DNS SAN and needs neither tweak). A ready-to-run
+kubeconfig:
+
+```bash
+cat > kc.yaml <<EOF
+apiVersion: v1
+kind: Config
+clusters: [{name: jg, cluster: {server: https://localhost:8443, insecure-skip-tls-verify: true}}]
+contexts: [{name: jg, context: {cluster: jg, user: jg}}]
+current-context: jg
+users:
+- name: jg
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: jumpgate
+      args: ["--context", "alice", "k8s", "auth", "prod.demo"]
+      interactiveMode: Never
+EOF
+```
+
+alice can now read pods (the `developers` group grants it) but not secrets in `kube-system`
+(it doesn't):
+
+```bash
+kubectl --kubeconfig kc.yaml get pods -A          # allowed
+kubectl --kubeconfig kc.yaml get secrets -n kube-system   # Error … "secrets is forbidden"
+```
+
+The `Forbidden` comes from Kubernetes RBAC evaluating the impersonated `developers` group — not
+from jumpgate. Grant more by binding the group to a broader role (above), or entitle alice to an
+additional group.
+
+### Audit
+
+Every API request is recorded as a `k8s-audit` NDJSON line — one object per gateway→broker
+connection, so each `kubectl` invocation is its own recording. The auditor lists and downloads
+them as for the other kinds:
+
+```bash
+jumpgate --context admin recordings list --asset <PROD_ASSET_ID>
+jumpgate --context admin recordings download <SESSION_ID> --file audit.ndjson
+```
+
+Each line is `{"ts", "verb", "resource", "namespace", "name", "user", "groups", "code", …}` — the
+allowed pods read lands with `"code":200`, and the denied secrets read is recorded too, with
+`"resource":"secrets"` and `"code":403`. jumpgate audits *that* a request happened (verb, object,
+outcome), never response bodies.
+
 ## Chapter: delegated folder administration
 
 The management API is **capability-gated**. Every management action requires a specific
