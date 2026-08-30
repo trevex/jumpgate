@@ -1,9 +1,33 @@
 package authz
 
 import (
+	"context"
 	"reflect"
 	"testing"
+
+	"github.com/google/uuid"
 )
+
+// fakeCaps is a minimal scopeCapabilitiesReader stub returning a fixed
+// Capabilities set regardless of userID/scope, for unit-testing
+// EntitledK8sGroups without a real authorizer/pool.
+type fakeCaps []string
+
+func (f fakeCaps) CapabilitiesOnScope(_ context.Context, _ uuid.UUID, _ Scope) (Capabilities, error) {
+	return Capabilities(f), nil
+}
+
+func TestEntitledK8sGroups(t *testing.T) {
+	fake := fakeCaps{"k8s:group:developers", "k8s:group:system:masters", "k8s:group:*"}
+	got, err := EntitledK8sGroups(context.Background(), fake, uuid.New(), uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"developers", "system:masters"} // wildcard skipped
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
 
 func TestConcreteQualifiers(t *testing.T) {
 	cases := []struct {

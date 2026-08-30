@@ -65,10 +65,13 @@ func testAccessRequestService(pool *pgxpool.Pool) *accessrequest.Service {
 }
 
 // testSessionService initializes an active session signing key (via a KeyStore
-// backed by the test sealer) and builds a session.Service over the pool. It
-// returns the service plus the Ed25519 public key so tests can build a
-// sessiontoken.Verifier and assert round-tripped claims.
-func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) (*session.Service, ed25519.PublicKey) {
+// backed by the test sealer) and builds a session.Service over the pool. brokers
+// is the brokerLocator wired for CreateKubernetesSession (k8s tests pass a real
+// *dataplane.Registry so they can SetTunnels before minting; other tests get an
+// empty one since they never resolve a broker). It returns the service plus the
+// Ed25519 public key so tests can build a sessiontoken.Verifier and assert
+// round-tripped claims.
+func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer, brokers *dataplane.Registry) (*session.Service, ed25519.PublicKey) {
 	t.Helper()
 	ctx := context.Background()
 	ks := session.NewKeyStore(sqlc.New(pool), sealer)
@@ -79,7 +82,7 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL, brokers)
 	return svc, pub
 }
 
@@ -120,7 +123,7 @@ func insecureSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Se
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, insecureEndpoint, allowInsecure, testSessionTTL)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, insecureEndpoint, allowInsecure, testSessionTTL, dataplane.NewRegistry())
 
 	q := sqlc.New(pool)
 	assetID := seedSSHAsset(t, q, []string{"deploy"})
@@ -144,7 +147,11 @@ func insecureSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Se
 // an initialized session signing key — on an httptest server. It returns the pool,
 // the server URL, and the Ed25519 signing public key so tests can verify minted
 // session tokens. The session tests drive the session Connect client over this URL.
-func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKey) {
+//
+// An optional registry may be passed so a caller (e.g. the k8s session tests) can
+// retain a reference to advertise tunnels (SetTunnels) before minting; omitted, a
+// fresh empty registry is used (fine for tests that never resolve a broker).
+func newServerWithSession(t *testing.T, registry ...*dataplane.Registry) (*pgxpool.Pool, string, ed25519.PublicKey) {
 	t.Helper()
 	dsn := testsupport.StartPostgres(t)
 	if err := migrate.Up(dsn); err != nil {
@@ -165,7 +172,11 @@ func newServerWithSession(t *testing.T) (*pgxpool.Pool, string, ed25519.PublicKe
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	arSvc := testAccessRequestService(pool)
 	sealer := testSealer(t)
-	sessionSvc, signPub := testSessionService(t, pool, sealer)
+	reg := dataplane.NewRegistry()
+	if len(registry) > 0 {
+		reg = registry[0]
+	}
+	sessionSvc, signPub := testSessionService(t, pool, sealer, reg)
 
 	services := rpc.UserServices{
 		Lookup:        auth.Lookup{Tokens: tokens, Q: q},

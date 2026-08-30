@@ -17,10 +17,25 @@ import (
 // bind, so the tight window is the ticket's primary protection.
 const webTTL = 60 * time.Second
 
+// k8sTTL bounds a kubernetes admission token (longer than webTTL: kubectl exec
+// plugins cache and reuse the token across a session, not just a single redeem).
+const k8sTTL = 15 * time.Minute
+
 // ErrNoAccess is returned when the caller may not open a session to the asset —
 // whether because the asset does not exist, is not SSH, or the caller holds no
 // SSH login on it. The three are deliberately indistinguishable (existence-hiding).
 var ErrNoAccess = errors.New("no session access to asset")
+
+// ErrClusterOffline means the user is entitled but no broker currently holds the
+// cluster's agent tunnel.
+var ErrClusterOffline = errors.New("cluster has no connected agent")
+
+// brokerLocator resolves which broker currently holds an asset's agent tunnel.
+// Defined here (not imported from dataplane) to avoid a session↔dataplane import
+// cycle; *dataplane.Registry satisfies it structurally.
+type brokerLocator interface {
+	BrokerForAsset(assetID string) (string, bool)
+}
 
 // Service authorizes and mints data-plane admission tokens.
 type Service struct {
@@ -35,12 +50,15 @@ type Service struct {
 	// request is silently downgraded to the secure endpoint (fail-closed).
 	allowInsecure bool
 	ttl           time.Duration
+	brokers       brokerLocator
 }
 
 // NewService builds the CreateSession domain service. insecureEndpoint/allowInsecure
 // are DEV-ONLY: unless allowInsecure is true and insecureEndpoint is non-empty, a
 // browser's insecure request is downgraded to the secure endpoint (fail-closed).
-func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint, insecureEndpoint string, allowInsecure bool, ttl time.Duration) *Service {
+// brokers resolves the broker currently holding a k8s asset's agent tunnel
+// (CreateKubernetesSession); the shared *dataplane.Registry satisfies it.
+func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint, insecureEndpoint string, allowInsecure bool, ttl time.Duration, brokers brokerLocator) *Service {
 	return &Service{
 		q:                q,
 		authz:            a,
@@ -49,6 +67,7 @@ func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minte
 		insecureEndpoint: insecureEndpoint,
 		allowInsecure:    allowInsecure,
 		ttl:              ttl,
+		brokers:          brokers,
 	}
 }
 
@@ -145,6 +164,38 @@ func (s *Service) CreatePostgresSession(ctx context.Context, userID, assetID uui
 		return Created{}, err
 	}
 	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(webTTL), DefaultDatabase: cfg.DefaultDatabase}, nil
+}
+
+// CreateKubernetesSession authorizes userID to reach a k8s assetID and mints a
+// bearer admission token carrying the user's materialized groups + the broker
+// holding the cluster's tunnel. Existence-hiding: unknown/non-k8s asset or no
+// entitled group both yield ErrNoAccess.
+func (s *Service) CreateKubernetesSession(ctx context.Context, userID, assetID uuid.UUID) (Created, error) {
+	a, err := s.q.GetAsset(ctx, assetID)
+	if err != nil || a.Kind != "k8s" {
+		return Created{}, ErrNoAccess
+	}
+	groups, err := authz.EntitledK8sGroups(ctx, s.authz, userID, assetID)
+	if err != nil {
+		return Created{}, err
+	}
+	if len(groups) == 0 {
+		return Created{}, ErrNoAccess
+	}
+	brokerID, ok := s.brokers.BrokerForAsset(assetID.String())
+	if !ok {
+		return Created{}, ErrClusterOffline
+	}
+	sid := uuid.New()
+	tok, err := s.minter.Mint(sessiontoken.Claims{
+		SessionID: sid, UserID: userID, AssetID: assetID,
+		Protocol: "kubernetes", Mode: "web",
+		Groups: groups, BrokerID: brokerID,
+	}, k8sTTL)
+	if err != nil {
+		return Created{}, err
+	}
+	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(k8sTTL)}, nil
 }
 
 // entitledLogins returns the caller's entitled SSH logins on the asset, or

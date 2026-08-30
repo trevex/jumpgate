@@ -21,8 +21,12 @@ message WorkerMessage {
     Register register = 1;
     Heartbeat heartbeat = 2;
     SessionEnded session_ended = 3;
+    AdvertiseTunnels advertise_tunnels = 4;
   }
 }
+// AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
+// re-sent whenever an agent connects or disconnects.
+message AdvertiseTunnels { repeated string asset_ids = 1; }
 message Register {
   string worker_id = 1 [(buf.validate.field).string.min_len = 1];
   repeated string protocols = 2;

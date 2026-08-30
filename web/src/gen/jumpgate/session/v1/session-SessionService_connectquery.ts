@@ -28,3 +28,12 @@ export const createWebSession = SessionService.method.createWebSession;
  * @generated from rpc jumpgate.session.v1.SessionService.CreatePostgresSession
  */
 export const createPostgresSession = SessionService.method.createPostgresSession;
+
+/**
+ * CreateKubernetesSession authorizes the caller to reach a k8s asset (held
+ * k8s:group check) and mints a bearer admission token carrying the caller's
+ * materialized groups + the broker holding the cluster's agent tunnel.
+ *
+ * @generated from rpc jumpgate.session.v1.SessionService.CreateKubernetesSession
+ */
+export const createKubernetesSession = SessionService.method.createKubernetesSession;

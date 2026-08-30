@@ -26,7 +26,7 @@ func BenchmarkCreateSession(b *testing.B) {
 		b.Fatal(err)
 	}
 	svc := session.NewService(sqlc.New(pool), authz.New(pool),
-		sessiontoken.NewMinter(priv), "gw.bench:8443", "", false, time.Minute)
+		sessiontoken.NewMinter(priv), "gw.bench:8443", "", false, time.Minute, dataplane.NewRegistry())
 	ctx := context.Background()
 	runAcross(b, func(b *testing.B, w *World) {
 		for i := 0; i < b.N; i++ {

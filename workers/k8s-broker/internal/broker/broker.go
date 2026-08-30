@@ -31,6 +31,10 @@ func New() *Broker {
 	return &Broker{reg: tunnels.New(), tr: &http2.Transport{AllowHTTP: false}}
 }
 
+// Registry returns the broker's tunnel registry (shared with the warden
+// control loop, which advertises its asset set).
+func (b *Broker) Registry() *tunnels.Registry { return b.reg }
+
 // Serve accepts mesh mTLS agent connections on ln until ctx ends. Each accepted
 // conn: verify agent identity, become the HTTP/2 CLIENT over the conn (role
 // reversal — the agent is the HTTP/2 server), and register it by asset id.

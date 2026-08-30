@@ -29,6 +29,7 @@ type WorkerMessage struct {
 	//	*WorkerMessage_Register
 	//	*WorkerMessage_Heartbeat
 	//	*WorkerMessage_SessionEnded
+	//	*WorkerMessage_AdvertiseTunnels
 	Msg           isWorkerMessage_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -98,6 +99,15 @@ func (x *WorkerMessage) GetSessionEnded() *SessionEnded {
 	return nil
 }
 
+func (x *WorkerMessage) GetAdvertiseTunnels() *AdvertiseTunnels {
+	if x != nil {
+		if x, ok := x.Msg.(*WorkerMessage_AdvertiseTunnels); ok {
+			return x.AdvertiseTunnels
+		}
+	}
+	return nil
+}
+
 type isWorkerMessage_Msg interface {
 	isWorkerMessage_Msg()
 }
@@ -114,11 +124,63 @@ type WorkerMessage_SessionEnded struct {
 	SessionEnded *SessionEnded `protobuf:"bytes,3,opt,name=session_ended,json=sessionEnded,proto3,oneof"`
 }
 
+type WorkerMessage_AdvertiseTunnels struct {
+	AdvertiseTunnels *AdvertiseTunnels `protobuf:"bytes,4,opt,name=advertise_tunnels,json=advertiseTunnels,proto3,oneof"`
+}
+
 func (*WorkerMessage_Register) isWorkerMessage_Msg() {}
 
 func (*WorkerMessage_Heartbeat) isWorkerMessage_Msg() {}
 
 func (*WorkerMessage_SessionEnded) isWorkerMessage_Msg() {}
+
+func (*WorkerMessage_AdvertiseTunnels) isWorkerMessage_Msg() {}
+
+// AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
+// re-sent whenever an agent connects or disconnects.
+type AdvertiseTunnels struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetIds      []string               `protobuf:"bytes,1,rep,name=asset_ids,json=assetIds,proto3" json:"asset_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdvertiseTunnels) Reset() {
+	*x = AdvertiseTunnels{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdvertiseTunnels) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdvertiseTunnels) ProtoMessage() {}
+
+func (x *AdvertiseTunnels) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdvertiseTunnels.ProtoReflect.Descriptor instead.
+func (*AdvertiseTunnels) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AdvertiseTunnels) GetAssetIds() []string {
+	if x != nil {
+		return x.AssetIds
+	}
+	return nil
+}
 
 type Register struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -133,7 +195,7 @@ type Register struct {
 
 func (x *Register) Reset() {
 	*x = Register{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[1]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -145,7 +207,7 @@ func (x *Register) String() string {
 func (*Register) ProtoMessage() {}
 
 func (x *Register) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[1]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -158,7 +220,7 @@ func (x *Register) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Register.ProtoReflect.Descriptor instead.
 func (*Register) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{1}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Register) GetWorkerId() string {
@@ -204,7 +266,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +278,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +291,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{2}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{3}
 }
 
 type SessionEnded struct {
@@ -243,7 +305,7 @@ type SessionEnded struct {
 
 func (x *SessionEnded) Reset() {
 	*x = SessionEnded{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +317,7 @@ func (x *SessionEnded) String() string {
 func (*SessionEnded) ProtoMessage() {}
 
 func (x *SessionEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +330,7 @@ func (x *SessionEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEnded.ProtoReflect.Descriptor instead.
 func (*SessionEnded) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{3}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SessionEnded) GetSessionId() string {
@@ -308,7 +370,7 @@ type RecordingInfo struct {
 
 func (x *RecordingInfo) Reset() {
 	*x = RecordingInfo{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +382,7 @@ func (x *RecordingInfo) String() string {
 func (*RecordingInfo) ProtoMessage() {}
 
 func (x *RecordingInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,7 +395,7 @@ func (x *RecordingInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordingInfo.ProtoReflect.Descriptor instead.
 func (*RecordingInfo) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RecordingInfo) GetObjectKey() string {
@@ -398,7 +460,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -410,7 +472,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -423,7 +485,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ServerMessage) GetMsg() isServerMessage_Msg {
@@ -475,7 +537,7 @@ type RegisterAck struct {
 
 func (x *RegisterAck) Reset() {
 	*x = RegisterAck{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +549,7 @@ func (x *RegisterAck) String() string {
 func (*RegisterAck) ProtoMessage() {}
 
 func (x *RegisterAck) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +562,7 @@ func (x *RegisterAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAck.ProtoReflect.Descriptor instead.
 func (*RegisterAck) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
 }
 
 type Teardown struct {
@@ -513,7 +575,7 @@ type Teardown struct {
 
 func (x *Teardown) Reset() {
 	*x = Teardown{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +587,7 @@ func (x *Teardown) String() string {
 func (*Teardown) ProtoMessage() {}
 
 func (x *Teardown) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +600,7 @@ func (x *Teardown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Teardown.ProtoReflect.Descriptor instead.
 func (*Teardown) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Teardown) GetSessionId() string {
@@ -568,7 +630,7 @@ type SetupSessionRequest struct {
 
 func (x *SetupSessionRequest) Reset() {
 	*x = SetupSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +642,7 @@ func (x *SetupSessionRequest) String() string {
 func (*SetupSessionRequest) ProtoMessage() {}
 
 func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -593,7 +655,7 @@ func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionRequest.ProtoReflect.Descriptor instead.
 func (*SetupSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetupSessionRequest) GetSessionToken() string {
@@ -663,7 +725,7 @@ type SetupSessionResponse struct {
 
 func (x *SetupSessionResponse) Reset() {
 	*x = SetupSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +737,7 @@ func (x *SetupSessionResponse) String() string {
 func (*SetupSessionResponse) ProtoMessage() {}
 
 func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +750,7 @@ func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionResponse.ProtoReflect.Descriptor instead.
 func (*SetupSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{9}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SetupSessionResponse) GetTargetAddress() string {
@@ -851,12 +913,15 @@ var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
-	"%jumpgate/dataplane/v1/dataplane.proto\x12\x15jumpgate.dataplane.v1\x1a\x1bbuf/validate/validate.proto\"\xe3\x01\n" +
+	"%jumpgate/dataplane/v1/dataplane.proto\x12\x15jumpgate.dataplane.v1\x1a\x1bbuf/validate/validate.proto\"\xbb\x02\n" +
 	"\rWorkerMessage\x12=\n" +
 	"\bregister\x18\x01 \x01(\v2\x1f.jumpgate.dataplane.v1.RegisterH\x00R\bregister\x12@\n" +
 	"\theartbeat\x18\x02 \x01(\v2 .jumpgate.dataplane.v1.HeartbeatH\x00R\theartbeat\x12J\n" +
-	"\rsession_ended\x18\x03 \x01(\v2#.jumpgate.dataplane.v1.SessionEndedH\x00R\fsessionEndedB\x05\n" +
-	"\x03msg\"\xc1\x01\n" +
+	"\rsession_ended\x18\x03 \x01(\v2#.jumpgate.dataplane.v1.SessionEndedH\x00R\fsessionEnded\x12V\n" +
+	"\x11advertise_tunnels\x18\x04 \x01(\v2'.jumpgate.dataplane.v1.AdvertiseTunnelsH\x00R\x10advertiseTunnelsB\x05\n" +
+	"\x03msg\"/\n" +
+	"\x10AdvertiseTunnels\x12\x1b\n" +
+	"\tasset_ids\x18\x01 \x03(\tR\bassetIds\"\xc1\x01\n" +
 	"\bRegister\x12$\n" +
 	"\tworker_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12\x1c\n" +
 	"\tprotocols\x18\x02 \x03(\tR\tprotocols\x12\x1a\n" +
@@ -932,35 +997,37 @@ func file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP() []byte {
 	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescData
 }
 
-var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(*WorkerMessage)(nil),        // 0: jumpgate.dataplane.v1.WorkerMessage
-	(*Register)(nil),             // 1: jumpgate.dataplane.v1.Register
-	(*Heartbeat)(nil),            // 2: jumpgate.dataplane.v1.Heartbeat
-	(*SessionEnded)(nil),         // 3: jumpgate.dataplane.v1.SessionEnded
-	(*RecordingInfo)(nil),        // 4: jumpgate.dataplane.v1.RecordingInfo
-	(*ServerMessage)(nil),        // 5: jumpgate.dataplane.v1.ServerMessage
-	(*RegisterAck)(nil),          // 6: jumpgate.dataplane.v1.RegisterAck
-	(*Teardown)(nil),             // 7: jumpgate.dataplane.v1.Teardown
-	(*SetupSessionRequest)(nil),  // 8: jumpgate.dataplane.v1.SetupSessionRequest
-	(*SetupSessionResponse)(nil), // 9: jumpgate.dataplane.v1.SetupSessionResponse
+	(*AdvertiseTunnels)(nil),     // 1: jumpgate.dataplane.v1.AdvertiseTunnels
+	(*Register)(nil),             // 2: jumpgate.dataplane.v1.Register
+	(*Heartbeat)(nil),            // 3: jumpgate.dataplane.v1.Heartbeat
+	(*SessionEnded)(nil),         // 4: jumpgate.dataplane.v1.SessionEnded
+	(*RecordingInfo)(nil),        // 5: jumpgate.dataplane.v1.RecordingInfo
+	(*ServerMessage)(nil),        // 6: jumpgate.dataplane.v1.ServerMessage
+	(*RegisterAck)(nil),          // 7: jumpgate.dataplane.v1.RegisterAck
+	(*Teardown)(nil),             // 8: jumpgate.dataplane.v1.Teardown
+	(*SetupSessionRequest)(nil),  // 9: jumpgate.dataplane.v1.SetupSessionRequest
+	(*SetupSessionResponse)(nil), // 10: jumpgate.dataplane.v1.SetupSessionResponse
 }
 var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
-	1, // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
-	2, // 1: jumpgate.dataplane.v1.WorkerMessage.heartbeat:type_name -> jumpgate.dataplane.v1.Heartbeat
-	3, // 2: jumpgate.dataplane.v1.WorkerMessage.session_ended:type_name -> jumpgate.dataplane.v1.SessionEnded
-	4, // 3: jumpgate.dataplane.v1.SessionEnded.recording:type_name -> jumpgate.dataplane.v1.RecordingInfo
-	6, // 4: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
-	7, // 5: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
-	0, // 6: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
-	8, // 7: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
-	5, // 8: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
-	9, // 9: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	2,  // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
+	3,  // 1: jumpgate.dataplane.v1.WorkerMessage.heartbeat:type_name -> jumpgate.dataplane.v1.Heartbeat
+	4,  // 2: jumpgate.dataplane.v1.WorkerMessage.session_ended:type_name -> jumpgate.dataplane.v1.SessionEnded
+	1,  // 3: jumpgate.dataplane.v1.WorkerMessage.advertise_tunnels:type_name -> jumpgate.dataplane.v1.AdvertiseTunnels
+	5,  // 4: jumpgate.dataplane.v1.SessionEnded.recording:type_name -> jumpgate.dataplane.v1.RecordingInfo
+	7,  // 5: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
+	8,  // 6: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
+	0,  // 7: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
+	9,  // 8: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
+	6,  // 9: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
+	10, // 10: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
+	9,  // [9:11] is the sub-list for method output_type
+	7,  // [7:9] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_dataplane_v1_dataplane_proto_init() }
@@ -972,12 +1039,13 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*WorkerMessage_Register)(nil),
 		(*WorkerMessage_Heartbeat)(nil),
 		(*WorkerMessage_SessionEnded)(nil),
+		(*WorkerMessage_AdvertiseTunnels)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6].OneofWrappers = []any{
 		(*ServerMessage_Ack)(nil),
 		(*ServerMessage_Teardown)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10].OneofWrappers = []any{
 		(*SetupSessionResponse_SshCertificate)(nil),
 		(*SetupSessionResponse_Password)(nil),
 		(*SetupSessionResponse_PrivateKey)(nil),
@@ -990,7 +1058,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc), len(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

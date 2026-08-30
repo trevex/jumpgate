@@ -162,7 +162,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			return err
 		} else {
 			sessionPubKey = pub
-			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.GatewayInsecureEndpoint, cfg.AllowInsecureSessions, cfg.SessionTokenTTL)
+			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.GatewayInsecureEndpoint, cfg.AllowInsecureSessions, cfg.SessionTokenTTL, registry)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)
 			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, cfg.SSHCertMaxTTL)

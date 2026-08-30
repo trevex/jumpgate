@@ -89,7 +89,7 @@ func newPGFixture(t *testing.T) *pgFixture {
 
 	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
 	setupSvc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, audit.New(pool), time.Hour)
-	sessSvc := session.NewService(q, authz.New(pool), minter, "gw:443", "", false, time.Hour)
+	sessSvc := session.NewService(q, authz.New(pool), minter, "gw:443", "", false, time.Hour, dataplane.NewRegistry())
 
 	return &pgFixture{
 		pool: pool, q: q, sealer: sealer, ctx: ctx,

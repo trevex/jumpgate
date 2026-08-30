@@ -13,6 +13,11 @@ type Config struct {
 	MeshCAFile   string // BROKER_MESH_CA
 	AgentListen  string // BROKER_AGENT_ADDR — mesh mTLS listener agents dial
 	HealthAddr   string // BROKER_HEALTH_ADDR
+
+	WardenMeshAddr string // WARDEN_MESH_ADDR — host:port of warden's mesh listener
+	WardenSpiffe   string // WARDEN_SPIFFE — pinned server identity
+	BrokerID       string // BROKER_ID — must equal the broker's mesh SAN id
+	DataplaneAddr  string // BROKER_DATAPLANE_ADDR — gateway-facing addr, advertised to warden
 }
 
 // FromEnv loads config, failing closed on missing required values.
@@ -23,9 +28,17 @@ func FromEnv() (Config, error) {
 		MeshCAFile:   os.Getenv("BROKER_MESH_CA"),
 		AgentListen:  envOr("BROKER_AGENT_ADDR", "0.0.0.0:9100"),
 		HealthAddr:   envOr("BROKER_HEALTH_ADDR", "0.0.0.0:9101"),
+
+		WardenMeshAddr: os.Getenv("WARDEN_MESH_ADDR"),
+		WardenSpiffe:   envOr("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
+		BrokerID:       os.Getenv("BROKER_ID"),
+		DataplaneAddr:  envOr("BROKER_DATAPLANE_ADDR", "0.0.0.0:9102"),
 	}
 	if c.MeshCertFile == "" || c.MeshKeyFile == "" || c.MeshCAFile == "" {
 		return Config{}, fmt.Errorf("missing required env (BROKER_MESH_CERT/KEY/CA)")
+	}
+	if c.WardenMeshAddr == "" || c.BrokerID == "" {
+		return Config{}, fmt.Errorf("missing required env (WARDEN_MESH_ADDR, BROKER_ID)")
 	}
 	return c, nil
 }

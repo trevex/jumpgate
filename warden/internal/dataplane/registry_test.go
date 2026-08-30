@@ -106,6 +106,24 @@ func TestRegistryRosterFeed(t *testing.T) {
 	}
 }
 
+func TestTunnels(t *testing.T) {
+	r := NewRegistry()
+	r.SetTunnels("broker-1", []string{"asset-a", "asset-b"})
+	if id, ok := r.BrokerForAsset("asset-a"); !ok || id != "broker-1" {
+		t.Fatalf("BrokerForAsset(asset-a) = %q,%v", id, ok)
+	}
+	// Re-advertise a shrunk set: asset-b must drop.
+	r.SetTunnels("broker-1", []string{"asset-a"})
+	if _, ok := r.BrokerForAsset("asset-b"); ok {
+		t.Fatal("asset-b should be gone after re-advertise")
+	}
+	// Broker disconnect clears all its tunnels.
+	r.ClearTunnels("broker-1")
+	if _, ok := r.BrokerForAsset("asset-a"); ok {
+		t.Fatal("asset-a should be gone after ClearTunnels")
+	}
+}
+
 func TestSubscribeRosterCancel(t *testing.T) {
 	t.Helper()
 	r := NewRegistry()
