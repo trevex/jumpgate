@@ -241,25 +241,51 @@ func (s *Handler) reconcileOnRegister(ctx context.Context, workerID string, work
 
 // recordingFormat maps a session protocol to its recording container format.
 func recordingFormat(protocol string) string {
-	if protocol == "postgres" {
+	switch protocol {
+	case "postgres":
 		return "pgwire-timeline-v1"
+	case "kubernetes":
+		return "k8s-audit-v1"
+	default:
+		return "asciicast-v2" // ssh / legacy
 	}
-	return "asciicast-v2" // ssh / legacy
 }
 
 // persistRecording records a worker's recording report into session_recordings and
-// audits it, in a single transaction. It resolves the session's parties (user/asset)
-// from the live_sessions row, so it MUST run before handleSessionEnded deletes that
-// row. Failures are returned for the caller to LOG (not fatal to the worker stream): a
+// audits it, in a single transaction. For ssh/postgres it resolves the session's
+// parties (user/asset/worker) from the live_sessions row, so it MUST run before
+// handleSessionEnded deletes that row. The k8s broker instead reports self-contained
+// attribution (rec.user_id set): each SessionEnded there names a per-connection
+// recording id that never has a live_sessions row (the broker multiplexes many
+// connections behind one enrollment/tunnel, not one row per connection), so that case
+// trusts the worker-reported parties directly instead of looking them up. Failures are
+// returned for the caller to LOG (not fatal to the worker stream): a
 // recording-persistence hiccup must never sever the worker's lifeline.
 func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
 	sid, err := uuid.Parse(sessionID)
 	if err != nil {
 		return fmt.Errorf("bad session id %q: %w", sessionID, err)
 	}
-	parties, err := sqlc.New(s.pool).GetLiveSessionParties(ctx, sid)
-	if err != nil {
-		return fmt.Errorf("lookup session parties: %w", err)
+
+	var userID, assetID uuid.UUID
+	var workerID, protocol string
+	if rec.GetUserId() != "" {
+		// Self-contained report (k8s broker): no live_sessions row exists for this
+		// per-connection recording id; trust the worker-reported parties.
+		if userID, err = uuid.Parse(rec.GetUserId()); err != nil {
+			return fmt.Errorf("bad rec user_id: %w", err)
+		}
+		if assetID, err = uuid.Parse(rec.GetAssetId()); err != nil {
+			return fmt.Errorf("bad rec asset_id: %w", err)
+		}
+		workerID = rec.GetWorkerId()
+		protocol = "kubernetes"
+	} else {
+		parties, perr := sqlc.New(s.pool).GetLiveSessionParties(ctx, sid)
+		if perr != nil {
+			return fmt.Errorf("lookup session parties: %w", perr)
+		}
+		userID, assetID, workerID, protocol = parties.UserID, parties.AssetID, parties.WorkerID, parties.Protocol
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -281,11 +307,11 @@ func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *d
 
 	if err := q.UpsertSessionRecording(ctx, sqlc.UpsertSessionRecordingParams{
 		SessionID: sid,
-		UserID:    parties.UserID,
-		AssetID:   parties.AssetID,
-		WorkerID:  parties.WorkerID,
-		Protocol:  parties.Protocol,
-		Format:    recordingFormat(parties.Protocol),
+		UserID:    userID,
+		AssetID:   assetID,
+		WorkerID:  workerID,
+		Protocol:  protocol,
+		Format:    recordingFormat(protocol),
 		GrantID:   grantID,
 		ObjectKey: rec.GetObjectKey(),
 		SizeBytes: rec.GetSizeBytes(),
@@ -309,7 +335,7 @@ func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *d
 	})
 	if err := audit.New(s.pool).Enqueue(ctx, q, audit.Event{
 		Type:    eventType,
-		ActorID: parties.UserID,
+		ActorID: userID,
 		Subject: "live_session:" + sid.String(),
 		Details: detail,
 	}); err != nil {
