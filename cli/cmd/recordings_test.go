@@ -147,3 +147,25 @@ func TestRecordingsDownload(t *testing.T) {
 		t.Fatalf("expected replay hint in out=%s", buf.String())
 	}
 }
+
+func TestRecordingSuffix(t *testing.T) {
+	cases := map[string]string{
+		"pgwire-timeline-v1": ".ndjson",
+		"asciicast-v2":       ".cast",
+		"":                   ".cast",
+	}
+	for format, want := range cases {
+		if got := recordingSuffix(format); got != want {
+			t.Errorf("recordingSuffix(%q) = %q, want %q", format, got, want)
+		}
+	}
+}
+
+func TestReplayHint(t *testing.T) {
+	if h := replayHint("pgwire-timeline-v1", "s.ndjson"); !strings.Contains(h, "jq") || strings.Contains(h, "asciinema") {
+		t.Errorf("postgres hint = %q, want a jq/console hint (no asciinema)", h)
+	}
+	if h := replayHint("asciicast-v2", "s.cast"); !strings.Contains(h, "asciinema") {
+		t.Errorf("asciicast hint = %q, want asciinema", h)
+	}
+}
