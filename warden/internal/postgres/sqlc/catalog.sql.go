@@ -125,9 +125,13 @@ const deleteOrphanSecretsForAsset = `-- name: DeleteOrphanSecretsForAsset :exec
 DELETE FROM asset_secrets s
 WHERE s.asset_id = $1
   AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
+  AND s.id NOT IN (SELECT l.secret_id FROM postgres_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
 `
 
-// Drop asset_secrets no longer referenced by any of the asset's logins.
+// Drop asset_secrets no longer referenced by any of the asset's logins (ssh OR
+// postgres). A postgres password login references a secret via secret_id too, so it
+// must be counted here or the secret is wrongly deemed orphan and its DELETE trips
+// the postgres_login_secret_same_asset FK (ON DELETE RESTRICT).
 func (q *Queries) DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteOrphanSecretsForAsset, assetID)
 	return err
