@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/trevex/jumpgate/workers/k8s-agent/internal/config"
+	"github.com/trevex/jumpgate/workers/k8s-agent/internal/enroll"
 	"github.com/trevex/jumpgate/workers/k8s-agent/internal/mesh"
 	"github.com/trevex/jumpgate/workers/k8s-agent/proxy"
 )
@@ -29,6 +30,32 @@ func main() {
 		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Bootstrap mesh identity if a token is set and no cert exists yet.
+	if cfg.EnrollmentToken != "" {
+		if _, statErr := os.Stat(cfg.MeshCertFile); os.IsNotExist(statErr) {
+			var caPEM []byte
+			if cfg.EnrollmentCA != "" {
+				caPEM, err = os.ReadFile(cfg.EnrollmentCA)
+				if err != nil {
+					slog.Error("read enrollment CA", "err", err)
+					os.Exit(1)
+				}
+			}
+			slog.Info("enrolling agent", "warden", cfg.WardenEnrollURL)
+			if err := enroll.Run(ctx, enroll.Params{
+				WardenURL: cfg.WardenEnrollURL, Token: cfg.EnrollmentToken, CAPEM: caPEM,
+				CertFile: cfg.MeshCertFile, KeyFile: cfg.MeshKeyFile, CAFile: cfg.MeshCAFile,
+			}); err != nil {
+				slog.Error("enrollment failed", "err", err)
+				os.Exit(1)
+			}
+			slog.Info("enrollment complete")
+		}
+	}
+
 	leaf, pool, err := mesh.LoadKeyPair(cfg.MeshCertFile, cfg.MeshKeyFile, cfg.MeshCAFile)
 	if err != nil {
 		slog.Error("mesh certs", "err", err)
@@ -39,8 +66,6 @@ func main() {
 		slog.Error("proxy", "err", err)
 		os.Exit(1)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go serveHealth(cfg.HealthAddr)
 
