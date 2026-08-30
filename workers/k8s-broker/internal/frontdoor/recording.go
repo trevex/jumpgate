@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -79,9 +80,17 @@ func (m *Recorder) ConnState(c net.Conn, st http.ConnState) {
 	upCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 15*time.Second)
 	defer cancel()
 	rep := cr.rec.Finish(upCtx, time.Now().UnixMilli())
+	// The NDJSON is already in S3 (Finish uploaded it); this send only delivers the
+	// ledger-row pointer to warden. Non-blocking so a warden reconnect can't stall
+	// connection teardown.
+	// ponytail: best-effort send (shared ceiling with pg-proxy) — a full buffer
+	// drops the ledger pointer, orphaning an uploaded object. LOG it so the gap is
+	// observable; upgrade to a durable outbox if audit completeness must be guaranteed.
 	select {
 	case m.ended <- SessionEnd{RecordingID: cr.recID, Report: rep, UserID: cr.userID, AssetID: cr.assetID, SessionID: cr.sessionID}:
-	default: // best-effort, like pg-proxy: drop under backpressure rather than block the conn
+	default:
+		slog.Warn("recording report dropped (warden reporting backpressure); S3 object is orphaned in the ledger",
+			"object_key", rep.ObjectKey, "recording_id", cr.recID, "session_id", cr.sessionID)
 	}
 }
 
