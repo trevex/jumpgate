@@ -36,6 +36,16 @@ func requireGateway(ctx context.Context) error {
 	return nil
 }
 
+// requireGatewayOrBroker allows the two mesh roles that verify session tokens
+// offline: the gateway (CLI/kubectl ingress) and the k8s broker (front door).
+func requireGatewayOrBroker(ctx context.Context) error {
+	id, ok := mesh.IdentityFromContext(ctx)
+	if !ok || (id.Role != "gateway" && id.Role != "broker") {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("gateway or broker identity required"))
+	}
+	return nil
+}
+
 // WatchWorkers streams the worker roster to the gateway: an initial snapshot of
 // every currently-known worker followed by live added/removed deltas. The stream
 // stays open until the gateway disconnects or ctx is cancelled.
@@ -72,7 +82,7 @@ func (s *Handler) WatchWorkers(ctx context.Context, _ *connect.Request[gatewayv1
 // GetSessionVerificationKey returns the Ed25519 public key the gateway uses to
 // verify session tokens offline.
 func (s *Handler) GetSessionVerificationKey(ctx context.Context, _ *connect.Request[gatewayv1.GetSessionVerificationKeyRequest]) (*connect.Response[gatewayv1.GetSessionVerificationKeyResponse], error) {
-	if err := requireGateway(ctx); err != nil {
+	if err := requireGatewayOrBroker(ctx); err != nil {
 		return nil, err
 	}
 	if len(s.pubKey) == 0 {

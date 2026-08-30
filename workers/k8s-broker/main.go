@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,8 +19,10 @@ import (
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/broker"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/config"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/control"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/frontdoor"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/mesh"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/meshclient"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/sessiontoken"
 )
 
 func main() {
@@ -52,6 +55,36 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	// Front door: the gateway forwards kubectl's HTTP/1.1 stream here over mesh
+	// mTLS. Fetch warden's token-verification key, then serve.
+	pubKey, err := meshclient.FetchVerificationKey(ctx, cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
+	if err != nil {
+		slog.Error("fetch verification key", "err", err)
+		os.Exit(1)
+	}
+	verifier := sessiontoken.NewVerifier(pubKey)
+
+	fdTLS := mesh.ServerTLSConfigRole(leaf, pool, "gateway")
+	fdTLS.NextProtos = []string{"http/1.1"} // gateway blind-pipes HTTP/1.1, not h2
+	fdRawLn, err := net.Listen("tcp", cfg.DataplaneAddr)
+	if err != nil {
+		slog.Error("front door listen", "err", err)
+		os.Exit(1)
+	}
+	fdLn := tls.NewListener(fdRawLn, fdTLS)
+	fdSrv := &http.Server{
+		Handler:           frontdoor.Handler(b, verifier),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() { <-ctx.Done(); _ = fdSrv.Close() }()
+	go func() {
+		if err := fdSrv.Serve(fdLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("front door serve", "err", err)
+			os.Exit(1) // fail fast like the agent listener — a dead front door is useless
+		}
+	}()
+	slog.Info("front door up", "addr", cfg.DataplaneAddr)
 
 	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
 	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr); err != nil && ctx.Err() == nil {

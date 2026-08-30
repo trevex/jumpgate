@@ -18,7 +18,7 @@
 //! (SAN mismatch: stub presents `worker/w2` but the roster says `w1`).
 
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -40,6 +40,10 @@ struct MeshPki {
     gateway_key_pem: String,
     worker_cert_der: Vec<u8>,
     worker_key_der: Vec<u8>,
+    // Broker server leaf (`spiffe://jumpgate/broker/broker-0`), for the k8s
+    // ingress leg. `connect_broker` pins exactly this URI SAN.
+    broker_cert_der: Vec<u8>,
+    broker_key_der: Vec<u8>,
     ca_der: Vec<u8>,
 }
 
@@ -66,12 +70,23 @@ fn build_mesh_pki(worker_spiffe: &str) -> MeshPki {
     let w_key = rcgen::KeyPair::generate().unwrap();
     let w_cert = w_params.signed_by(&w_key, &ca_cert, &ca_key).unwrap();
 
+    // Broker server leaf, fixed SPIFFE URI SAN `broker/broker-0` (the k8s tests'
+    // broker_id). Same CA, mirrors the worker leaf.
+    let mut b_params = rcgen::CertificateParams::new(vec![]).unwrap();
+    b_params.subject_alt_names = vec![rcgen::SanType::URI(
+        "spiffe://jumpgate/broker/broker-0".try_into().unwrap(),
+    )];
+    let b_key = rcgen::KeyPair::generate().unwrap();
+    let b_cert = b_params.signed_by(&b_key, &ca_cert, &ca_key).unwrap();
+
     MeshPki {
         ca_pem: ca_cert.pem(),
         gateway_cert_pem: gw_cert.pem(),
         gateway_key_pem: gw_key.serialize_pem(),
         worker_cert_der: w_cert.der().to_vec(),
         worker_key_der: w_key.serialize_der(),
+        broker_cert_der: b_cert.der().to_vec(),
+        broker_key_der: b_key.serialize_der(),
         ca_der: ca_cert.der().to_vec(),
     }
 }
@@ -161,6 +176,79 @@ async fn spawn_stub_worker(pki: &MeshPki) -> SocketAddr {
 }
 
 // ---------------------------------------------------------------------------
+// Stub broker (k8s ingress peer): mTLS server presenting `broker/broker-0`,
+// negotiating `http/1.1` ALPN, doing NO CONNECT — it reads the replayed HTTP
+// request head, records the request line, and writes back a canned response.
+// ---------------------------------------------------------------------------
+
+/// Stub broker server config: present the broker leaf, require + verify the
+/// gateway's client cert against the mesh CA, negotiate `http/1.1` (the gateway
+/// dials the broker with `http/1.1`).
+fn stub_broker_server_config(pki: &MeshPki) -> Arc<rustls::ServerConfig> {
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use rustls::server::WebPkiClientVerifier;
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(CertificateDer::from(pki.ca_der.clone())).unwrap();
+    let client_verifier = WebPkiClientVerifier::builder(Arc::new(roots))
+        .build()
+        .unwrap();
+
+    let cert = CertificateDer::from(pki.broker_cert_der.clone());
+    let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pki.broker_key_der.clone()));
+
+    let mut config = rustls::ServerConfig::builder()
+        .with_client_cert_verifier(client_verifier)
+        .with_single_cert(vec![cert], key)
+        .unwrap();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Arc::new(config)
+}
+
+/// Spawn a stub broker: accept one mTLS conn, read the replayed HTTP head up to
+/// the blank line, record its request line into the returned `Mutex`, and write
+/// back `HTTP/1.1 200 OK ... pong`. Returns `(addr, seen_request_line)`.
+async fn spawn_stub_broker(pki: &MeshPki) -> (SocketAddr, Arc<Mutex<String>>) {
+    let server_config = stub_broker_server_config(pki);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen = Arc::new(Mutex::new(String::new()));
+    let seen_task = seen.clone();
+
+    tokio::spawn(async move {
+        let acceptor = TlsAcceptor::from(server_config);
+        let (tcp, _) = listener.accept().await.unwrap();
+        let mut tls = match acceptor.accept(tcp).await {
+            Ok(s) => s,
+            Err(_) => return, // handshake rejected (client-cert / identity pin)
+        };
+
+        // Read the replayed request head, byte-bounded, until the blank line.
+        let mut head = Vec::new();
+        let mut byte = [0u8; 1];
+        loop {
+            match tls.read(&mut byte).await {
+                Ok(0) | Err(_) => return,
+                Ok(_) => head.push(byte[0]),
+            }
+            if head.ends_with(b"\r\n\r\n") || head.len() > 8192 {
+                break;
+            }
+        }
+        let text = String::from_utf8_lossy(&head);
+        let first_line = text.lines().next().unwrap_or("").to_string();
+        *seen_task.lock().unwrap() = first_line;
+
+        let _ = tls
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong")
+            .await;
+        let _ = tls.flush().await;
+    });
+
+    (addr, seen)
+}
+
+// ---------------------------------------------------------------------------
 // External (client↔gateway) TLS leg: a self-signed server cert with a DNS SAN
 // `localhost`; the client trusts that cert. Server-TLS only (no client cert).
 // ---------------------------------------------------------------------------
@@ -247,6 +335,49 @@ fn mint_token(proto: &str) -> (String, Vec<u8>) {
     claims.add_additional("proto", proto).unwrap();
     claims
         .add_additional("cnf", "SHA256:testfingerprint")
+        .unwrap();
+
+    let token = public::sign(&kp.secret, &claims, None, None).unwrap();
+    (token, pk_bytes)
+}
+
+/// Mint a kubernetes web-mode token: `proto="kubernetes"`, `mode="web"`, empty
+/// `cnf`, plus the `broker_id` (k8s routing) and a `groups` string-array claim.
+/// Returns `(token, 32-byte-ed25519-public-key)`.
+fn mint_k8s_token(broker_id: &str, groups: &[&str]) -> (String, Vec<u8>) {
+    use pasetors::claims::Claims as PasetoClaims;
+    use pasetors::keys::{AsymmetricKeyPair, Generate};
+    use pasetors::public;
+    use pasetors::version4::V4;
+    use time::{format_description::well_known::Rfc3339, Duration, OffsetDateTime};
+
+    let kp = AsymmetricKeyPair::<V4>::generate().unwrap();
+    let pk_bytes = kp.public.as_bytes().to_vec();
+
+    let now = OffsetDateTime::now_utc();
+    let exp = now + Duration::days(3650);
+    let past = now - Duration::seconds(120);
+
+    let mut claims = PasetoClaims::new_expires_in(&core::time::Duration::from_secs(60)).unwrap();
+    claims.expiration(&exp.format(&Rfc3339).unwrap()).unwrap();
+    claims.not_before(&past.format(&Rfc3339).unwrap()).unwrap();
+    claims.issued_at(&past.format(&Rfc3339).unwrap()).unwrap();
+
+    claims
+        .token_identifier("11111111-1111-1111-1111-111111111111")
+        .unwrap();
+    claims
+        .subject("22222222-2222-2222-2222-222222222222")
+        .unwrap();
+    claims
+        .add_additional("asset", "33333333-3333-3333-3333-333333333333")
+        .unwrap();
+    claims.add_additional("proto", "kubernetes").unwrap();
+    claims.add_additional("mode", "web").unwrap();
+    claims.add_additional("cnf", "").unwrap();
+    claims.add_additional("broker_id", broker_id).unwrap();
+    claims
+        .add_additional("groups", serde_json::json!(groups))
         .unwrap();
 
     let token = public::sign(&kp.secret, &claims, None, None).unwrap();
@@ -485,4 +616,142 @@ async fn e2e_san_mismatch_502() {
 
     let code = read_status_code(&mut client).await;
     assert_eq!(code, 502, "SPIFFE identity-pin mismatch must yield 502");
+}
+
+/// k8s ingress happy path: a plain kubectl GET (no CONNECT) with a kubernetes
+/// bearer token routes by `broker_id` to the stub broker over mesh mTLS (SPIFFE
+/// `broker/broker-0` pin + `http/1.1`), the buffered head is replayed verbatim,
+/// and the API-server response pipes back to the client.
+#[tokio::test]
+async fn e2e_k8s_ingress_pipes_to_broker() {
+    install_provider();
+
+    let pki = build_mesh_pki("spiffe://jumpgate/worker/w1");
+    let (broker_addr, seen) = spawn_stub_broker(&pki).await;
+    let (token, pubkey) = mint_k8s_token("broker-0", &["developers"]);
+
+    let roster = gateway::roster::Roster::default();
+    roster.apply_added("broker-0", "kubernetes", &broker_addr.to_string(), 0);
+    let state = GatewayState {
+        roster,
+        counters: gateway::lb::LoadCounters::default(),
+        mesh_certs: gateway_mesh_certs(&pki),
+        verification_key: Arc::new(RwLock::new(Some(pubkey))),
+        console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
+    };
+
+    let external = build_external_tls();
+    let server_cert_der = external.server_cert_der.clone();
+    let front = spawn_gateway_front_door(state, external).await;
+
+    let mut client = client_tls_connect(front, &server_cert_der).await;
+    let req = format!(
+        "GET /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: k8s\r\nAuthorization: Bearer {token}\r\n\r\n"
+    );
+    client.write_all(req.as_bytes()).await.unwrap();
+    client.flush().await.unwrap();
+
+    // Read the piped-back response until we see the body (broker then closes).
+    let mut resp = Vec::new();
+    let mut buf = [0u8; 512];
+    loop {
+        match client.read(&mut buf).await.unwrap() {
+            0 => break,
+            n => resp.extend_from_slice(&buf[..n]),
+        }
+        if resp.windows(4).any(|w| w == b"pong") {
+            break;
+        }
+    }
+    let text = String::from_utf8_lossy(&resp);
+    assert!(
+        text.contains("200"),
+        "expected a 200 status line, got: {text:?}"
+    );
+    assert!(
+        text.contains("pong"),
+        "expected the broker body, got: {text:?}"
+    );
+
+    assert_eq!(
+        *seen.lock().unwrap(),
+        "GET /api/v1/namespaces/default/pods HTTP/1.1",
+        "broker must see the replayed request line verbatim"
+    );
+}
+
+/// Wrong proto: an `ssh` token sent via the k8s (non-CONNECT) GET path fails the
+/// `proto == "kubernetes"` guard in `handle_kube` → `401`.
+#[tokio::test]
+async fn e2e_k8s_wrong_proto_401() {
+    install_provider();
+
+    let pki = build_mesh_pki("spiffe://jumpgate/worker/w1");
+    let (broker_addr, _seen) = spawn_stub_broker(&pki).await;
+    let (token, pubkey) = mint_token("ssh");
+
+    let roster = gateway::roster::Roster::default();
+    roster.apply_added("broker-0", "kubernetes", &broker_addr.to_string(), 0);
+    let state = GatewayState {
+        roster,
+        counters: gateway::lb::LoadCounters::default(),
+        mesh_certs: gateway_mesh_certs(&pki),
+        verification_key: Arc::new(RwLock::new(Some(pubkey))),
+        console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
+    };
+
+    let external = build_external_tls();
+    let server_cert_der = external.server_cert_der.clone();
+    let front = spawn_gateway_front_door(state, external).await;
+
+    let mut client = client_tls_connect(front, &server_cert_der).await;
+    let req = format!(
+        "GET /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: k8s\r\nAuthorization: Bearer {token}\r\n\r\n"
+    );
+    client.write_all(req.as_bytes()).await.unwrap();
+    client.flush().await.unwrap();
+
+    let code = read_status_code(&mut client).await;
+    assert_eq!(
+        code, 401,
+        "non-kubernetes proto on the k8s path must yield 401"
+    );
+}
+
+/// Unknown broker: a valid kubernetes token whose `broker_id` is absent from the
+/// roster → the retriable roster-miss path replies `503`.
+#[tokio::test]
+async fn e2e_k8s_unknown_broker_503() {
+    install_provider();
+
+    let pki = build_mesh_pki("spiffe://jumpgate/worker/w1");
+    let (token, pubkey) = mint_k8s_token("ghost", &["developers"]);
+
+    // Roster has a real broker, but NOT "ghost".
+    let roster = gateway::roster::Roster::default();
+    roster.apply_added("broker-0", "kubernetes", "127.0.0.1:9", 0);
+    let state = GatewayState {
+        roster,
+        counters: gateway::lb::LoadCounters::default(),
+        mesh_certs: gateway_mesh_certs(&pki),
+        verification_key: Arc::new(RwLock::new(Some(pubkey))),
+        console_origin: Arc::new(gateway::terminal::OriginPolicy::default()),
+        session_limits: gateway::proxy::SessionLimits::UNBOUNDED,
+    };
+
+    let external = build_external_tls();
+    let server_cert_der = external.server_cert_der.clone();
+    let front = spawn_gateway_front_door(state, external).await;
+
+    let mut client = client_tls_connect(front, &server_cert_der).await;
+    let req = format!(
+        "GET /api/v1/namespaces/default/pods HTTP/1.1\r\nHost: k8s\r\nAuthorization: Bearer {token}\r\n\r\n"
+    );
+    client.write_all(req.as_bytes()).await.unwrap();
+    client.flush().await.unwrap();
+
+    let code = read_status_code(&mut client).await;
+    assert_eq!(code, 503, "unknown broker_id must yield a retriable 503");
 }

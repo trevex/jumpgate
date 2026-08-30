@@ -207,6 +207,19 @@ func TestGetSessionVerificationKey(t *testing.T) {
 	assertPermissionDenied(t, err)
 }
 
+func TestGetSessionVerificationKeyAllowsBrokerRole(t *testing.T) {
+	pub := testPubKey()
+	h := gateway.NewHandler(dataplane.NewRegistry(), pub)
+	ctx := mesh.WithIdentity(context.Background(), mesh.Identity{Role: "broker", ID: "broker-0"})
+	resp, err := h.GetSessionVerificationKey(ctx, connect.NewRequest(&gatewayv1.GetSessionVerificationKeyRequest{}))
+	if err != nil {
+		t.Fatalf("broker role must be allowed: %v", err)
+	}
+	if string(resp.Msg.GetEd25519PublicKey()) != string(pub) {
+		t.Fatal("returned key mismatch")
+	}
+}
+
 func testPubKey() ed25519.PublicKey {
 	pub, _, err := ed25519.GenerateKey(nil)
 	if err != nil {
