@@ -152,6 +152,22 @@ func runRecordingsGet(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// recordingSuffix is the default file extension for a recording's container format.
+func recordingSuffix(format string) string {
+	if format == "pgwire-timeline-v1" {
+		return ".ndjson"
+	}
+	return ".cast" // asciicast-v2 / unknown
+}
+
+// replayHint is the follow-up line printed after a download, tailored to the format.
+func replayHint(format, file string) string {
+	if format == "pgwire-timeline-v1" {
+		return "Statement log (NDJSON). Inspect with: jq . " + file + " — or view it in the web console."
+	}
+	return "Replay with: asciinema play " + file
+}
+
 func runRecordingsDownload(cmd *cobra.Command, args []string) error {
 	cl, err := newClient()
 	if err != nil {
@@ -159,16 +175,26 @@ func runRecordingsDownload(cmd *cobra.Command, args []string) error {
 	}
 
 	sessionID := args[0]
-	req := connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessionID})
-	cl.Authorize(req)
-	resp, err := cl.Recording().GetRecordingDownload(cmd.Context(), req)
+
+	// Read metadata first so the default filename + hint match the recording's format.
+	metaReq := connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessionID})
+	cl.Authorize(metaReq)
+	meta, err := cl.Recording().GetRecording(cmd.Context(), metaReq)
+	if err != nil {
+		return err
+	}
+	format := meta.Msg.GetFormat()
+
+	dlReq := connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: sessionID})
+	cl.Authorize(dlReq)
+	resp, err := cl.Recording().GetRecordingDownload(cmd.Context(), dlReq)
 	if err != nil {
 		return err
 	}
 
 	out := recordingsDownloadFile
 	if out == "" {
-		out = sessionID + ".cast"
+		out = sessionID + recordingSuffix(format)
 	}
 
 	if err := streamToFile(cmd.Context(), resp.Msg.GetUrl(), out); err != nil {
@@ -176,7 +202,7 @@ func runRecordingsDownload(cmd *cobra.Command, args []string) error {
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", out)
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Replay with: asciinema play %s\n", out)
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), replayHint(format, out))
 	return nil
 }
 
