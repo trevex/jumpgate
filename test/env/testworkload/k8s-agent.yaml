@@ -1,0 +1,60 @@
+# k8s-agent workload for the kind demo/e2e. Not a Helm template: on kind the
+# "target cluster" is the same cluster jumpgate runs in, so this just deploys
+# the agent as a plain per-test workload using the RBAC chart template already
+# installed (deploy/helm/jumpgate/templates/k8s-agent-rbac.yaml) — SA
+# jumpgate-k8s-agent, broker Service jumpgate-k8s-broker, warden Service
+# jumpgate-warden, all in namespace default (kind-up installs with no -n).
+#
+# The e2e controls ordering: it creates the jumpgate-agent-enrollment Secret
+# BEFORE applying this manifest, so AGENT_ENROLLMENT_TOKEN resolves. Applying
+# out of order just leaves the pod Pending until the Secret shows up.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jumpgate-k8s-agent
+  labels:
+    app: jumpgate-k8s-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jumpgate-k8s-agent
+  template:
+    metadata:
+      labels:
+        app: jumpgate-k8s-agent
+    spec:
+      serviceAccountName: jumpgate-k8s-agent
+      containers:
+        - name: k8s-agent
+          image: jumpgate/k8s-agent:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENT_MESH_CERT
+              value: /mesh/tls.crt
+            - name: AGENT_MESH_KEY
+              value: /mesh/tls.key
+            - name: AGENT_MESH_CA
+              value: /mesh/ca.crt
+            - name: BROKER_ADDR
+              value: "jumpgate-k8s-broker.default.svc.cluster.local:9100"
+            - name: WARDEN_ENROLL_URL
+              value: "http://jumpgate-warden.default.svc.cluster.local:8080"
+            - name: AGENT_ENROLLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jumpgate-agent-enrollment
+                  key: token
+            - name: AGENT_HEALTH_ADDR
+              value: "0.0.0.0:9001"
+          volumeMounts:
+            - name: mesh
+              mountPath: /mesh
+          readinessProbe:
+            tcpSocket:
+              port: 9001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: mesh
+          emptyDir: {}

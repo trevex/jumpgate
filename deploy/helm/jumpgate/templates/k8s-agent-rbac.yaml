@@ -1,0 +1,69 @@
+{{- if .Values.k8sAgent.rbac.enabled }}
+# RBAC for the k8s-agent running INSIDE this cluster (a target cluster, which on
+# kind is the same cluster jumpgate itself runs in). The agent forwards each
+# tunneled request to the API server as its OWN ServiceAccount, carrying the
+# Impersonate-* headers the broker set from the verified session token — so the
+# agent SA needs the `impersonate` verb, and the impersonated k8s Group needs a
+# ClusterRole granting the actual access (pod read, NOT secrets).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-agent
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-agent-impersonate
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-agent-impersonate
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "jumpgate.fullname" . }}-k8s-agent-impersonate
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "jumpgate.fullname" . }}-k8s-agent
+    namespace: {{ .Release.Namespace }}
+---
+# Impersonated by sessions carrying the k8s Group "developers": read-only pod
+# access, deliberately no secrets so the e2e can assert `kubectl get pods`
+# succeeds and `kubectl get secrets` is Forbidden.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-developers-view
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-developers-view
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "jumpgate.fullname" . }}-developers-view
+subjects:
+  - kind: Group
+    name: developers
+    apiGroup: rbac.authorization.k8s.io
+{{- end }}
