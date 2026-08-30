@@ -22,6 +22,11 @@ service SessionService {
   // given DB role (held-closure db:login check) and mints a bearer admission token
   // (no client-key binding) plus the asset's default database.
   rpc CreatePostgresSession(CreatePostgresSessionRequest) returns (CreatePostgresSessionResponse) {}
+
+  // CreateKubernetesSession authorizes the caller to reach a k8s asset (held
+  // k8s:group check) and mints a bearer admission token carrying the caller's
+  // materialized groups + the broker holding the cluster's agent tunnel.
+  rpc CreateKubernetesSession(CreateKubernetesSessionRequest) returns (CreateKubernetesSessionResponse) {}
 }
 
 message CreateSessionRequest {
@@ -63,3 +68,6 @@ message CreatePostgresSessionResponse {
   string gateway_endpoint = 2;
   string default_database = 3;
 }
+
+message CreateKubernetesSessionRequest { string asset_id = 1 [(buf.validate.field).string.uuid = true]; }
+message CreateKubernetesSessionResponse { string session_token = 1; string gateway_endpoint = 2; }

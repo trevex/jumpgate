@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/dataplane/v1/dataplane.proto.
  */
 export const file_jumpgate_dataplane_v1_dataplane: GenFile = /*@__PURE__*/
-  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwAEKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIAEIFCgNtc2cigAEKCFJlZ2lzdGVyEhoKCXdvcmtlcl9pZBgBIAEoCUIHukgEcgIQARIRCglwcm90b2NvbHMYAiADKAkSEAoIY2FwYWNpdHkYAyABKAUSGAoQbGl2ZV9zZXNzaW9uX2lkcxgEIAMoCRIZChFkYXRhcGxhbmVfYWRkcmVzcxgFIAEoCSILCglIZWFydGJlYXQidQoMU2Vzc2lvbkVuZGVkEhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEg4KBnJlYXNvbhgCIAEoCRI3CglyZWNvcmRpbmcYAyABKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVjb3JkaW5nSW5mbyKfAQoNUmVjb3JkaW5nSW5mbxISCgpvYmplY3Rfa2V5GAEgASgJEhIKCnNpemVfYnl0ZXMYAiABKAMSDgoGc2hhMjU2GAMgASgJEhoKEnN0YXJ0ZWRfYXRfdW5peF9tcxgEIAEoAxIYChBlbmRlZF9hdF91bml4X21zGAUgASgDEg4KBnN0YXR1cxgGIAEoCRIQCghncmFudF9pZBgHIAEoCSJ+Cg1TZXJ2ZXJNZXNzYWdlEjEKA2FjaxgBIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZWdpc3RlckFja0gAEjMKCHRlYXJkb3duGAIgASgLMh8uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlRlYXJkb3duSABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIqMBChNTZXR1cFNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIZChF0YXJnZXRfcHVibGljX2tleRgEIAEoDBIWCgVsb2dpbhgGIAEoCUIHukgEcgIQASKLAwoUU2V0dXBTZXNzaW9uUmVzcG9uc2USFgoOdGFyZ2V0X2FkZHJlc3MYASABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAggASgJEhAKCGdyYW50X2lkGAkgASgJEhgKEHRhcmdldF9zZXJ2ZXJfY2EYCiABKAkSGAoQZGVmYXVsdF9kYXRhYmFzZRgLIAEoCRIYChB4NTA5X3ByaXZhdGVfa2V5GA0gASgMEg0KBWxvZ2luGA8gASgJEhkKD3NzaF9jZXJ0aWZpY2F0ZRgCIAEoDEgAEhIKCHBhc3N3b3JkGAYgASgJSAASFQoLcHJpdmF0ZV9rZXkYByABKAxIABIaChB4NTA5X2NlcnRpZmljYXRlGAwgASgMSAASFQoLcGdfcGFzc3dvcmQYDiABKAlIAEIMCgpjcmVkZW50aWFsMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEihgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8inwEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkifgoNU2VydmVyTWVzc2FnZRIxCgNhY2sYASABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJBY2tIABIzCgh0ZWFyZG93bhgCIAEoCzIfLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5UZWFyZG93bkgAQgUKA21zZyINCgtSZWdpc3RlckFjayIuCghUZWFyZG93bhISCgpzZXNzaW9uX2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSKjAQoTU2V0dXBTZXNzaW9uUmVxdWVzdBIeCg1zZXNzaW9uX3Rva2VuGAEgASgJQge6SARyAhABEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIdChVjbGllbnRfc3NoX3B1YmxpY19rZXkYAyABKAwSGQoRdGFyZ2V0X3B1YmxpY19rZXkYBCABKAwSFgoFbG9naW4YBiABKAlCB7pIBHICEAEiiwMKFFNldHVwU2Vzc2lvblJlc3BvbnNlEhYKDnRhcmdldF9hZGRyZXNzGAEgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAogASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCyABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgNIAEoDBINCgVsb2dpbhgPIAEoCRIZCg9zc2hfY2VydGlmaWNhdGUYAiABKAxIABISCghwYXNzd29yZBgGIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAcgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgMIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGA4gASgJSABCDAoKY3JlZGVudGlhbDLfAQoQRGF0YXBsYW5lU2VydmljZRJgCgxXb3JrZXJTdHJlYW0SJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuV29ya2VyTWVzc2FnZRokLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXJ2ZXJNZXNzYWdlIgAoATABEmkKDFNldHVwU2Vzc2lvbhIqLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXR1cFNlc3Npb25SZXF1ZXN0GisuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlc3BvbnNlIgBCSVpHZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9kYXRhcGxhbmUvdjE7ZGF0YXBsYW5ldjFiBnByb3RvMw", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.dataplane.v1.WorkerMessage
@@ -38,6 +38,12 @@ export type WorkerMessage = Message<"jumpgate.dataplane.v1.WorkerMessage"> & {
      */
     value: SessionEnded;
     case: "sessionEnded";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.AdvertiseTunnels advertise_tunnels = 4;
+     */
+    value: AdvertiseTunnels;
+    case: "advertiseTunnels";
   } | { case: undefined; value?: undefined };
 };
 
@@ -47,6 +53,26 @@ export type WorkerMessage = Message<"jumpgate.dataplane.v1.WorkerMessage"> & {
  */
 export const WorkerMessageSchema: GenMessage<WorkerMessage> = /*@__PURE__*/
   messageDesc(file_jumpgate_dataplane_v1_dataplane, 0);
+
+/**
+ * AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
+ * re-sent whenever an agent connects or disconnects.
+ *
+ * @generated from message jumpgate.dataplane.v1.AdvertiseTunnels
+ */
+export type AdvertiseTunnels = Message<"jumpgate.dataplane.v1.AdvertiseTunnels"> & {
+  /**
+   * @generated from field: repeated string asset_ids = 1;
+   */
+  assetIds: string[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.AdvertiseTunnels.
+ * Use `create(AdvertiseTunnelsSchema)` to create a new message.
+ */
+export const AdvertiseTunnelsSchema: GenMessage<AdvertiseTunnels> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 1);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Register
@@ -87,7 +113,7 @@ export type Register = Message<"jumpgate.dataplane.v1.Register"> & {
  * Use `create(RegisterSchema)` to create a new message.
  */
 export const RegisterSchema: GenMessage<Register> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 1);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 2);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Heartbeat
@@ -100,7 +126,7 @@ export type Heartbeat = Message<"jumpgate.dataplane.v1.Heartbeat"> & {
  * Use `create(HeartbeatSchema)` to create a new message.
  */
 export const HeartbeatSchema: GenMessage<Heartbeat> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 2);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 3);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SessionEnded
@@ -129,7 +155,7 @@ export type SessionEnded = Message<"jumpgate.dataplane.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 3);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 4);
 
 /**
  * RecordingInfo is the worker's report of a session recording's disposition.
@@ -188,7 +214,7 @@ export type RecordingInfo = Message<"jumpgate.dataplane.v1.RecordingInfo"> & {
  * Use `create(RecordingInfoSchema)` to create a new message.
  */
 export const RecordingInfoSchema: GenMessage<RecordingInfo> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 4);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 5);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ServerMessage
@@ -217,7 +243,7 @@ export type ServerMessage = Message<"jumpgate.dataplane.v1.ServerMessage"> & {
  * Use `create(ServerMessageSchema)` to create a new message.
  */
 export const ServerMessageSchema: GenMessage<ServerMessage> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 5);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 6);
 
 /**
  * @generated from message jumpgate.dataplane.v1.RegisterAck
@@ -230,7 +256,7 @@ export type RegisterAck = Message<"jumpgate.dataplane.v1.RegisterAck"> & {
  * Use `create(RegisterAckSchema)` to create a new message.
  */
 export const RegisterAckSchema: GenMessage<RegisterAck> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 6);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 7);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Teardown
@@ -252,7 +278,7 @@ export type Teardown = Message<"jumpgate.dataplane.v1.Teardown"> & {
  * Use `create(TeardownSchema)` to create a new message.
  */
 export const TeardownSchema: GenMessage<Teardown> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 7);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 8);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SetupSessionRequest
@@ -295,7 +321,7 @@ export type SetupSessionRequest = Message<"jumpgate.dataplane.v1.SetupSessionReq
  * Use `create(SetupSessionRequestSchema)` to create a new message.
  */
 export const SetupSessionRequestSchema: GenMessage<SetupSessionRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 8);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SetupSessionResponse
@@ -425,7 +451,7 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
  * Use `create(SetupSessionResponseSchema)` to create a new message.
  */
 export const SetupSessionResponseSchema: GenMessage<SetupSessionResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 10);
 
 /**
  * DataplaneService is the worker↔warden control contract. It is worker-facing and

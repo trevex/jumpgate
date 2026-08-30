@@ -42,6 +42,9 @@ const (
 	// SessionServiceCreatePostgresSessionProcedure is the fully-qualified name of the SessionService's
 	// CreatePostgresSession RPC.
 	SessionServiceCreatePostgresSessionProcedure = "/jumpgate.session.v1.SessionService/CreatePostgresSession"
+	// SessionServiceCreateKubernetesSessionProcedure is the fully-qualified name of the
+	// SessionService's CreateKubernetesSession RPC.
+	SessionServiceCreateKubernetesSessionProcedure = "/jumpgate.session.v1.SessionService/CreateKubernetesSession"
 )
 
 // SessionServiceClient is a client for the jumpgate.session.v1.SessionService service.
@@ -56,6 +59,10 @@ type SessionServiceClient interface {
 	// given DB role (held-closure db:login check) and mints a bearer admission token
 	// (no client-key binding) plus the asset's default database.
 	CreatePostgresSession(context.Context, *connect.Request[v1.CreatePostgresSessionRequest]) (*connect.Response[v1.CreatePostgresSessionResponse], error)
+	// CreateKubernetesSession authorizes the caller to reach a k8s asset (held
+	// k8s:group check) and mints a bearer admission token carrying the caller's
+	// materialized groups + the broker holding the cluster's agent tunnel.
+	CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the jumpgate.session.v1.SessionService service.
@@ -87,14 +94,21 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("CreatePostgresSession")),
 			connect.WithClientOptions(opts...),
 		),
+		createKubernetesSession: connect.NewClient[v1.CreateKubernetesSessionRequest, v1.CreateKubernetesSessionResponse](
+			httpClient,
+			baseURL+SessionServiceCreateKubernetesSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateKubernetesSession")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	createSession         *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
-	createWebSession      *connect.Client[v1.CreateWebSessionRequest, v1.CreateWebSessionResponse]
-	createPostgresSession *connect.Client[v1.CreatePostgresSessionRequest, v1.CreatePostgresSessionResponse]
+	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	createWebSession        *connect.Client[v1.CreateWebSessionRequest, v1.CreateWebSessionResponse]
+	createPostgresSession   *connect.Client[v1.CreatePostgresSessionRequest, v1.CreatePostgresSessionResponse]
+	createKubernetesSession *connect.Client[v1.CreateKubernetesSessionRequest, v1.CreateKubernetesSessionResponse]
 }
 
 // CreateSession calls jumpgate.session.v1.SessionService.CreateSession.
@@ -112,6 +126,11 @@ func (c *sessionServiceClient) CreatePostgresSession(ctx context.Context, req *c
 	return c.createPostgresSession.CallUnary(ctx, req)
 }
 
+// CreateKubernetesSession calls jumpgate.session.v1.SessionService.CreateKubernetesSession.
+func (c *sessionServiceClient) CreateKubernetesSession(ctx context.Context, req *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error) {
+	return c.createKubernetesSession.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the jumpgate.session.v1.SessionService service.
 type SessionServiceHandler interface {
 	// CreateSession authorizes the caller to reach the asset (held-closure SSH-login
@@ -124,6 +143,10 @@ type SessionServiceHandler interface {
 	// given DB role (held-closure db:login check) and mints a bearer admission token
 	// (no client-key binding) plus the asset's default database.
 	CreatePostgresSession(context.Context, *connect.Request[v1.CreatePostgresSessionRequest]) (*connect.Response[v1.CreatePostgresSessionResponse], error)
+	// CreateKubernetesSession authorizes the caller to reach a k8s asset (held
+	// k8s:group check) and mints a bearer admission token carrying the caller's
+	// materialized groups + the broker holding the cluster's agent tunnel.
+	CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -151,6 +174,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("CreatePostgresSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceCreateKubernetesSessionHandler := connect.NewUnaryHandler(
+		SessionServiceCreateKubernetesSessionProcedure,
+		svc.CreateKubernetesSession,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateKubernetesSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.session.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceCreateSessionProcedure:
@@ -159,6 +188,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceCreateWebSessionHandler.ServeHTTP(w, r)
 		case SessionServiceCreatePostgresSessionProcedure:
 			sessionServiceCreatePostgresSessionHandler.ServeHTTP(w, r)
+		case SessionServiceCreateKubernetesSessionProcedure:
+			sessionServiceCreateKubernetesSessionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -178,4 +209,8 @@ func (UnimplementedSessionServiceHandler) CreateWebSession(context.Context, *con
 
 func (UnimplementedSessionServiceHandler) CreatePostgresSession(context.Context, *connect.Request[v1.CreatePostgresSessionRequest]) (*connect.Response[v1.CreatePostgresSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreatePostgresSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreateKubernetesSession is not implemented"))
 }

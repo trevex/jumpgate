@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/session/v1/session.proto.
  */
 export const file_jumpgate_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIIlIKHENyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhYKBWxvZ2luGAIgASgJQge6SARyAhABImoKHUNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlEhUKDXNlc3Npb25fdG9rZW4YASABKAkSGAoQZ2F0ZXdheV9lbmRwb2ludBgCIAEoCRIYChBkZWZhdWx0X2RhdGFiYXNlGAMgASgJMvACCg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAEoABChVDcmVhdGVQb3N0Z3Jlc1Nlc3Npb24SMS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QaMi5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9zZXNzaW9uL3YxO3Nlc3Npb252MWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIIlIKHENyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhYKBWxvZ2luGAIgASgJQge6SARyAhABImoKHUNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlEhUKDXNlc3Npb25fdG9rZW4YASABKAkSGAoQZ2F0ZXdheV9lbmRwb2ludBgCIAEoCRIYChBkZWZhdWx0X2RhdGFiYXNlGAMgASgJIjwKHkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiUgofQ3JlYXRlS3ViZXJuZXRlc1Nlc3Npb25SZXNwb25zZRIVCg1zZXNzaW9uX3Rva2VuGAEgASgJEhgKEGdhdGV3YXlfZW5kcG9pbnQYAiABKAky+QMKDlNlc3Npb25TZXJ2aWNlEmgKDUNyZWF0ZVNlc3Npb24SKS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiouanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2UiABJxChBDcmVhdGVXZWJTZXNzaW9uEiwuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVXZWJTZXNzaW9uUmVxdWVzdBotLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlIgASgAEKFUNyZWF0ZVBvc3RncmVzU2Vzc2lvbhIxLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlUG9zdGdyZXNTZXNzaW9uUmVxdWVzdBoyLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlUG9zdGdyZXNTZXNzaW9uUmVzcG9uc2UiABKGAQoXQ3JlYXRlS3ViZXJuZXRlc1Nlc3Npb24SMy5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVxdWVzdBo0Lmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlS3ViZXJuZXRlc1Nlc3Npb25SZXNwb25zZSIAQkVaQ2dpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvc2Vzc2lvbi92MTtzZXNzaW9udjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.session.v1.CreateSessionRequest
@@ -181,6 +181,45 @@ export const CreatePostgresSessionResponseSchema: GenMessage<CreatePostgresSessi
   messageDesc(file_jumpgate_session_v1_session, 5);
 
 /**
+ * @generated from message jumpgate.session.v1.CreateKubernetesSessionRequest
+ */
+export type CreateKubernetesSessionRequest = Message<"jumpgate.session.v1.CreateKubernetesSessionRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateKubernetesSessionRequest.
+ * Use `create(CreateKubernetesSessionRequestSchema)` to create a new message.
+ */
+export const CreateKubernetesSessionRequestSchema: GenMessage<CreateKubernetesSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 6);
+
+/**
+ * @generated from message jumpgate.session.v1.CreateKubernetesSessionResponse
+ */
+export type CreateKubernetesSessionResponse = Message<"jumpgate.session.v1.CreateKubernetesSessionResponse"> & {
+  /**
+   * @generated from field: string session_token = 1;
+   */
+  sessionToken: string;
+
+  /**
+   * @generated from field: string gateway_endpoint = 2;
+   */
+  gatewayEndpoint: string;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateKubernetesSessionResponse.
+ * Use `create(CreateKubernetesSessionResponseSchema)` to create a new message.
+ */
+export const CreateKubernetesSessionResponseSchema: GenMessage<CreateKubernetesSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 7);
+
+/**
  * SessionService is the CLI-facing entrypoint to open a data-plane session. It is
  * authenticated by the standard bearer-token interceptor.
  *
@@ -220,6 +259,18 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof CreatePostgresSessionRequestSchema;
     output: typeof CreatePostgresSessionResponseSchema;
+  },
+  /**
+   * CreateKubernetesSession authorizes the caller to reach a k8s asset (held
+   * k8s:group check) and mints a bearer admission token carrying the caller's
+   * materialized groups + the broker holding the cluster's agent tunnel.
+   *
+   * @generated from rpc jumpgate.session.v1.SessionService.CreateKubernetesSession
+   */
+  createKubernetesSession: {
+    methodKind: "unary";
+    input: typeof CreateKubernetesSessionRequestSchema;
+    output: typeof CreateKubernetesSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_session_v1_session, 0);

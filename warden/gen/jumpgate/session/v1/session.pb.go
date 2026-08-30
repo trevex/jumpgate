@@ -381,6 +381,102 @@ func (x *CreatePostgresSessionResponse) GetDefaultDatabase() string {
 	return ""
 }
 
+type CreateKubernetesSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateKubernetesSessionRequest) Reset() {
+	*x = CreateKubernetesSessionRequest{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateKubernetesSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateKubernetesSessionRequest) ProtoMessage() {}
+
+func (x *CreateKubernetesSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateKubernetesSessionRequest.ProtoReflect.Descriptor instead.
+func (*CreateKubernetesSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CreateKubernetesSessionRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+type CreateKubernetesSessionResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SessionToken    string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreateKubernetesSessionResponse) Reset() {
+	*x = CreateKubernetesSessionResponse{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateKubernetesSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateKubernetesSessionResponse) ProtoMessage() {}
+
+func (x *CreateKubernetesSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateKubernetesSessionResponse.ProtoReflect.Descriptor instead.
+func (*CreateKubernetesSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CreateKubernetesSessionResponse) GetSessionToken() string {
+	if x != nil {
+		return x.SessionToken
+	}
+	return ""
+}
+
+func (x *CreateKubernetesSessionResponse) GetGatewayEndpoint() string {
+	if x != nil {
+		return x.GatewayEndpoint
+	}
+	return ""
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -410,11 +506,17 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\x1dCreatePostgresSessionResponse\x12#\n" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x12)\n" +
-	"\x10default_database\x18\x03 \x01(\tR\x0fdefaultDatabase2\xf0\x02\n" +
+	"\x10default_database\x18\x03 \x01(\tR\x0fdefaultDatabase\"E\n" +
+	"\x1eCreateKubernetesSessionRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"q\n" +
+	"\x1fCreateKubernetesSessionResponse\x12#\n" +
+	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
+	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint2\xf9\x03\n" +
 	"\x0eSessionService\x12h\n" +
 	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
 	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00\x12\x80\x01\n" +
-	"\x15CreatePostgresSession\x121.jumpgate.session.v1.CreatePostgresSessionRequest\x1a2.jumpgate.session.v1.CreatePostgresSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
+	"\x15CreatePostgresSession\x121.jumpgate.session.v1.CreatePostgresSessionRequest\x1a2.jumpgate.session.v1.CreatePostgresSessionResponse\"\x00\x12\x86\x01\n" +
+	"\x17CreateKubernetesSession\x123.jumpgate.session.v1.CreateKubernetesSessionRequest\x1a4.jumpgate.session.v1.CreateKubernetesSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
 
 var (
 	file_jumpgate_session_v1_session_proto_rawDescOnce sync.Once
@@ -428,27 +530,31 @@ func file_jumpgate_session_v1_session_proto_rawDescGZIP() []byte {
 	return file_jumpgate_session_v1_session_proto_rawDescData
 }
 
-var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_jumpgate_session_v1_session_proto_goTypes = []any{
-	(*CreateSessionRequest)(nil),          // 0: jumpgate.session.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),         // 1: jumpgate.session.v1.CreateSessionResponse
-	(*CreateWebSessionRequest)(nil),       // 2: jumpgate.session.v1.CreateWebSessionRequest
-	(*CreateWebSessionResponse)(nil),      // 3: jumpgate.session.v1.CreateWebSessionResponse
-	(*CreatePostgresSessionRequest)(nil),  // 4: jumpgate.session.v1.CreatePostgresSessionRequest
-	(*CreatePostgresSessionResponse)(nil), // 5: jumpgate.session.v1.CreatePostgresSessionResponse
-	(*timestamppb.Timestamp)(nil),         // 6: google.protobuf.Timestamp
+	(*CreateSessionRequest)(nil),            // 0: jumpgate.session.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),           // 1: jumpgate.session.v1.CreateSessionResponse
+	(*CreateWebSessionRequest)(nil),         // 2: jumpgate.session.v1.CreateWebSessionRequest
+	(*CreateWebSessionResponse)(nil),        // 3: jumpgate.session.v1.CreateWebSessionResponse
+	(*CreatePostgresSessionRequest)(nil),    // 4: jumpgate.session.v1.CreatePostgresSessionRequest
+	(*CreatePostgresSessionResponse)(nil),   // 5: jumpgate.session.v1.CreatePostgresSessionResponse
+	(*CreateKubernetesSessionRequest)(nil),  // 6: jumpgate.session.v1.CreateKubernetesSessionRequest
+	(*CreateKubernetesSessionResponse)(nil), // 7: jumpgate.session.v1.CreateKubernetesSessionResponse
+	(*timestamppb.Timestamp)(nil),           // 8: google.protobuf.Timestamp
 }
 var file_jumpgate_session_v1_session_proto_depIdxs = []int32{
-	6, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	6, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
 	0, // 2: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
 	2, // 3: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
 	4, // 4: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
-	1, // 5: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
-	3, // 6: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
-	5, // 7: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
+	6, // 5: jumpgate.session.v1.SessionService.CreateKubernetesSession:input_type -> jumpgate.session.v1.CreateKubernetesSessionRequest
+	1, // 6: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
+	3, // 7: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
+	5, // 8: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
+	7, // 9: jumpgate.session.v1.SessionService.CreateKubernetesSession:output_type -> jumpgate.session.v1.CreateKubernetesSessionResponse
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -465,7 +571,7 @@ func file_jumpgate_session_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_session_v1_session_proto_rawDesc), len(file_jumpgate_session_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
