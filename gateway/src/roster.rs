@@ -55,6 +55,12 @@ impl Roster {
         self.inner.write().unwrap().remove(worker_id);
     }
 
+    /// Look up a single worker by its id (used for `broker_id` routing). Returns a
+    /// clone so callers hold no lock.
+    pub fn get(&self, worker_id: &str) -> Option<WorkerEntry> {
+        self.inner.read().unwrap().get(worker_id).cloned()
+    }
+
     /// All workers serving `protocol`.
     pub fn snapshot_for(&self, protocol: &str) -> Vec<WorkerEntry> {
         self.inner
@@ -157,5 +163,15 @@ mod tests {
         assert_eq!(ssh.len(), 1);
         assert_eq!(ssh[0].worker_id, "w2");
         assert!(r.snapshot_for("nope").is_empty());
+    }
+
+    #[test]
+    fn get_returns_entry_by_worker_id() {
+        let r = Roster::default();
+        r.apply_added("broker-0", "kubernetes", "10.0.0.5:9102", 0);
+        let e = r.get("broker-0").expect("present");
+        assert_eq!(e.address, "10.0.0.5:9102");
+        assert_eq!(e.protocol, "kubernetes");
+        assert!(r.get("missing").is_none());
     }
 }
