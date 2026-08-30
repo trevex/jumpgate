@@ -17,6 +17,7 @@
 // Emitted into --out:
 //
 //	ssh-ca.pub   the active SSH CA's authorized_keys public line (0644)
+//	x509-ca.crt  the active X.509 client CA certificate PEM (0644)
 //	mesh-ca.crt  the mesh CA certificate PEM (0644)          [unless --skip-mesh-ca]
 //	mesh-ca.key  the mesh CA private key PEM, PKCS#8 (0600)  [unless --skip-mesh-ca]
 //
@@ -120,6 +121,12 @@ func run(ctx context.Context, cfg config) error {
 		return err
 	}
 
+	// 4b. X.509 client CA: generate + store only if none is active, then emit its
+	// certificate PEM so targets can trust the client certs the broker mints.
+	if err := provisionX509CA(ctx, q, sealer, cfg.outDir); err != nil {
+		return err
+	}
+
 	// 5. Session signing key (idempotent).
 	if err := provisionSessionKey(ctx, q, sealer); err != nil {
 		return err
@@ -170,6 +177,39 @@ func provisionSSHCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer
 	}
 	path := filepath.Join(outDir, "ssh-ca.pub")
 	if err := os.WriteFile(path, []byte(row.PublicMaterial+"\n"), 0o644); err != nil { //nolint:gosec // public key material is world-readable by design
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// provisionX509CA ensures an active X.509 client CA exists (generating and sealing
+// one on first run) and writes its certificate PEM to <out>/x509-ca.crt so a target
+// can trust the client certs the broker mints for postgres mtls logins.
+func provisionX509CA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer, outDir string) error {
+	_, err := q.GetActiveCA(ctx, "x509")
+	if errors.Is(err, pgx.ErrNoRows) {
+		keyDER, certPEM, gerr := ca.GenerateX509CA()
+		if gerr != nil {
+			return fmt.Errorf("generate x509 ca: %w", gerr)
+		}
+		sealed, serr := sealer.Seal(keyDER)
+		if serr != nil {
+			return fmt.Errorf("seal x509 ca: %w", serr)
+		}
+		if _, cerr := q.CreateCAKey(ctx, sqlc.CreateCAKeyParams{
+			Kind: "x509", Sealed: sealed, PublicMaterial: certPEM,
+		}); cerr != nil {
+			return fmt.Errorf("store x509 ca: %w", cerr)
+		}
+	} else if err != nil {
+		return fmt.Errorf("load x509 ca: %w", err)
+	}
+	row, err := q.GetActiveCA(ctx, "x509")
+	if err != nil {
+		return fmt.Errorf("reload x509 ca: %w", err)
+	}
+	path := filepath.Join(outDir, "x509-ca.crt")
+	if err := os.WriteFile(path, []byte(row.PublicMaterial), 0o644); err != nil { //nolint:gosec // public cert material
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil

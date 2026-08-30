@@ -99,6 +99,23 @@ func TestBootstrapProvisions(t *testing.T) {
 		t.Fatalf("mesh-ca.key perm = %o, want 600", perm)
 	}
 
+	// X.509 client CA row exists and the emitted cert PEM parses as a certificate.
+	x509Row, err := q.GetActiveCA(ctx, "x509")
+	if err != nil {
+		t.Fatalf("GetActiveCA(x509): %v", err)
+	}
+	x509Bytes, err := os.ReadFile(filepath.Join(out, "x509-ca.crt")) //nolint:gosec // test-controlled temp dir
+	if err != nil {
+		t.Fatalf("read x509-ca.crt: %v", err)
+	}
+	x509Block, _ := pem.Decode(x509Bytes)
+	if x509Block == nil {
+		t.Fatalf("x509-ca.crt has no PEM block")
+	}
+	if _, err := x509.ParseCertificate(x509Block.Bytes); err != nil {
+		t.Fatalf("parse x509-ca.crt: %v", err)
+	}
+
 	// A session signing key exists (GetActiveSessionSigningKey returns no ErrNoRows).
 	if _, err := q.GetActiveSessionSigningKey(ctx); err != nil {
 		t.Fatalf("GetActiveSessionSigningKey: %v", err)
@@ -184,6 +201,15 @@ func TestBootstrapProvisions(t *testing.T) {
 	}
 	if sshRow2.PublicMaterial != sshRow.PublicMaterial {
 		t.Fatalf("ssh CA public material changed across runs")
+	}
+
+	// X.509 CA public material is unchanged (no new CA was minted).
+	x509Row2, err := q.GetActiveCA(ctx, "x509")
+	if err != nil {
+		t.Fatalf("GetActiveCA(x509) second: %v", err)
+	}
+	if x509Row2.PublicMaterial != x509Row.PublicMaterial {
+		t.Fatalf("x509 CA public material changed across runs")
 	}
 
 	// Exactly one active session signing key (Init did not run twice).
