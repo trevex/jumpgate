@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"connectrpc.com/connect"
@@ -81,16 +82,40 @@ func Run(ctx context.Context, p Params) error {
 		return err
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	// Write key + CA first, then the cert LAST and atomically. main.go's
+	// "already enrolled, skip" gate keys on the cert file, so cert-exists must
+	// imply key+CA are fully present — otherwise a crash mid-write would strand a
+	// pod that skips re-enrollment yet can't LoadKeyPair.
 	if err := os.WriteFile(p.KeyFile, keyPEM, 0o600); err != nil {
-		return err
-	}
-	if err := os.WriteFile(p.CertFile, resp.Msg.GetCertPem(), 0o600); err != nil {
 		return err
 	}
 	if err := os.WriteFile(p.CAFile, resp.Msg.GetCaBundlePem(), 0o600); err != nil {
 		return err
 	}
-	return nil
+	return writeFileAtomic(p.CertFile, resp.Msg.GetCertPem())
+}
+
+// writeFileAtomic writes via a temp file + rename so a partial write never leaves a
+// truncated (but existing) cert that the enrollment skip-gate would treat as done.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".enroll-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 func httpClient(caPEM []byte) *http.Client {
