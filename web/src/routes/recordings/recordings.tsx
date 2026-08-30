@@ -24,6 +24,7 @@ import {
 import { getAssetDisplay } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { getUserDisplay } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import type { Recording } from "@/gen/jumpgate/recording/v1/recording_pb";
+import { PgTimelineViewer } from "./pg-timeline-view";
 import {
   Table,
   TableHeader,
@@ -229,6 +230,8 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    // Postgres recordings use the statement-log viewer, not the terminal player.
+    if (recData?.format === "pgwire-timeline-v1") return;
     setPlayerError(null);
 
     // Dispose previous instance before creating a new one.
@@ -307,7 +310,7 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
     };
   // Re-mount only when the sessionId changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, recData?.format]);
 
   return (
     <div className="flex flex-col h-full bg-[#1a1a1a] border-l border-border">
@@ -329,21 +332,31 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
         </Button>
       </div>
 
-      {/* Player area */}
-      <div className="flex-1 overflow-hidden flex items-center justify-center p-2">
-        {playerError ? (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <AlertTriangle className="h-8 w-8 text-warning-fg" aria-hidden="true" />
-            <p className="text-body text-white/60 max-w-xs">{playerError}</p>
-          </div>
-        ) : (
-          <div
-            ref={containerRef}
-            className="w-full h-full"
-            aria-label={`Terminal recording player for session ${sessionId}`}
-          />
-        )}
-      </div>
+      {/* Player / viewer area */}
+      {recData === undefined ? (
+        <div className="flex-1 flex items-center justify-center text-body text-white/40 font-mono">
+          Loading…
+        </div>
+      ) : recData.format === "pgwire-timeline-v1" ? (
+        <div className="flex-1 overflow-hidden">
+          <PgTimelineViewer sessionId={sessionId} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden flex items-center justify-center p-2">
+          {playerError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <AlertTriangle className="h-8 w-8 text-warning-fg" aria-hidden="true" />
+              <p className="text-body text-white/60 max-w-xs">{playerError}</p>
+            </div>
+          ) : (
+            <div
+              ref={containerRef}
+              className="w-full h-full"
+              aria-label={`Terminal recording player for session ${sessionId}`}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
