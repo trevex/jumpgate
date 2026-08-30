@@ -90,3 +90,20 @@ spec:
   commonName: spiffe://jumpgate/worker/{{ .Values.worker.id }}
   uris:
     - spiffe://jumpgate/worker/{{ .Values.worker.id }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-pg-worker-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-pg-worker-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/worker/{{ .Values.worker.pgId }}
+  uris:
+    - spiffe://jumpgate/worker/{{ .Values.worker.pgId }}
