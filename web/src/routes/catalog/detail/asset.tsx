@@ -9,7 +9,7 @@
  */
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { Server, Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send } from "lucide-react";
+import { Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -61,6 +61,14 @@ import {
   emptyDraft,
   type ConfigDraft,
 } from "../asset-config-form";
+import {
+  PostgresConfigForm,
+  buildPostgresConfigInput,
+  pgDraftFromAsset,
+  emptyPgDraft,
+  type PgConfigDraft,
+} from "../postgres-config-form";
+import { assetKindIcon } from "../asset-kind-icon";
 import {
   CapList,
   DetailSection,
@@ -116,6 +124,68 @@ function ConnectBlock({ assetId, logins, assetPath }: ConnectBlockProps) {
   );
 }
 
+// ─── Postgres connect hint ────────────────────────────────────────────────────
+
+interface PostgresConnectBlockProps {
+  roles: string[];
+  assetPath: string;
+}
+
+/**
+ * Read-only `jumpgate connect <role>@<path>` hint for postgres assets — no
+ * browser-terminal link (deferred; postgres has no clientless in-browser
+ * client yet). `roles` is the concrete, non-wildcard set of db:login roles
+ * resolved from the caller's connect capabilities (see `pgRoles` below); when
+ * that resolves to nothing (e.g. the caller only holds a wildcard db:login
+ * cap) we fall back to a single generic line naming the placeholder.
+ */
+function PostgresConnectBlock({ roles, assetPath }: PostgresConnectBlockProps) {
+  if (!assetPath) return null;
+
+  if (roles.length === 0) {
+    const cmd = `jumpgate connect <role>@${assetPath}`;
+    return (
+      <DetailSection title="Connect">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2">
+            <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
+              {cmd}
+            </code>
+            <CopyButton text={cmd} label="Copy command" size="md" />
+          </div>
+          <p className="text-micro text-muted-foreground">
+            Replace &lt;role&gt; with a DB role you&rsquo;re entitled to.
+          </p>
+        </div>
+      </DetailSection>
+    );
+  }
+
+  return (
+    <DetailSection title="Connect">
+      <div className="flex flex-col gap-1.5" role="list" aria-label="Connect commands">
+        {roles.map((role) => {
+          const cmd = `jumpgate connect ${role}@${assetPath}`;
+          return (
+            <div
+              key={role}
+              className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2"
+              role="listitem"
+            >
+              <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <code className="flex-1 overflow-x-auto font-mono text-micro text-foreground whitespace-nowrap">
+                {cmd}
+              </code>
+              <CopyButton text={cmd} label="Copy command" size="md" />
+            </div>
+          );
+        })}
+      </div>
+    </DetailSection>
+  );
+}
+
 // ─── Edit config dialog ───────────────────────────────────────────────────────
 
 interface EditConfigDialogProps {
@@ -126,11 +196,12 @@ interface EditConfigDialogProps {
 }
 
 /**
- * Loads the asset's current SSH config (lazily — only while open) and edits it
- * through the shared AssetConfigForm. An empty secret on a pre-existing
- * password/key login keeps the sealed value; a typed one rotates it. On success
- * we invalidate the asset's own getAsset/getAssetAccess queries plus the folder
- * listing so the pane and tree re-seed.
+ * Loads the asset's current config (lazily — only while open) and edits it
+ * through the shared AssetConfigForm (ssh) or PostgresConfigForm (postgres). An
+ * empty secret on a pre-existing password/key login keeps the sealed value; a
+ * typed one rotates it. On success we invalidate the asset's own
+ * getAsset/getAssetAccess queries plus the folder listing so the pane and tree
+ * re-seed.
  */
 function EditConfigDialog({
   assetId,
@@ -147,15 +218,21 @@ function EditConfigDialog({
   );
 
   const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
+  const [pgDraft, setPgDraft] = useState<PgConfigDraft>(emptyPgDraft);
   const [configError, setConfigError] = useState<string | null>(null);
 
   const ssh =
     data?.asset?.config.case === "ssh" ? data.asset.config.value : undefined;
+  const pg =
+    data?.asset?.config.case === "postgres" ? data.asset.config.value : undefined;
 
   // Seed the draft once the config loads (or when re-opening a fresh asset).
   useEffect(() => {
     if (ssh) setDraft(draftFromAsset(ssh));
   }, [ssh]);
+  useEffect(() => {
+    if (pg) setPgDraft(pgDraftFromAsset(pg));
+  }, [pg]);
 
   const { mutate: doUpdate, isPending } = useMutation(updateAssetConfig, {
     onSuccess: () => {
@@ -178,6 +255,16 @@ function EditConfigDialog({
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (isPending) return;
+    if (pg) {
+      const { config, error: buildError } = buildPostgresConfigInput(pgDraft, "edit");
+      if (buildError) {
+        setConfigError(buildError);
+        return;
+      }
+      setConfigError(null);
+      doUpdate({ assetId, config: { case: "postgres", value: config } });
+      return;
+    }
     const { config, error: buildError } = buildSSHConfigInput(draft, "edit");
     if (buildError) {
       setConfigError(buildError);
@@ -187,7 +274,7 @@ function EditConfigDialog({
     doUpdate({ assetId, config: { case: "ssh", value: config } });
   }
 
-  const hasLogin = draft.logins.length >= 1;
+  const hasLogin = pg ? pgDraft.logins.length >= 1 : draft.logins.length >= 1;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -195,7 +282,7 @@ function EditConfigDialog({
         <DialogHeader>
           <DialogTitle className="text-title">Edit config</DialogTitle>
           <DialogDescription className="text-body">
-            Update the SSH connection and per-login auth for{" "}
+            Update the {pg ? "Postgres" : "SSH"} connection and per-login auth for{" "}
             <span className="font-mono text-compact">{assetName}</span>. Leave a
             secret blank to keep the current one.
           </DialogDescription>
@@ -209,16 +296,27 @@ function EditConfigDialog({
           <p className="py-6 text-center text-body text-destructive">
             {connectErrorMessage(error)}
           </p>
-        ) : ssh ? (
+        ) : ssh || pg ? (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <AssetConfigForm
-              mode="edit"
-              value={draft}
-              onChange={(next) => {
-                setDraft(next);
-                if (configError) setConfigError(null);
-              }}
-            />
+            {pg ? (
+              <PostgresConfigForm
+                mode="edit"
+                value={pgDraft}
+                onChange={(next) => {
+                  setPgDraft(next);
+                  if (configError) setConfigError(null);
+                }}
+              />
+            ) : (
+              <AssetConfigForm
+                mode="edit"
+                value={draft}
+                onChange={(next) => {
+                  setDraft(next);
+                  if (configError) setConfigError(null);
+                }}
+              />
+            )}
 
             {configError && (
               <p className="text-micro text-destructive">{configError}</p>
@@ -247,7 +345,7 @@ function EditConfigDialog({
           </form>
         ) : (
           <p className="py-6 text-center text-body text-muted-foreground">
-            This asset has no editable SSH config.
+            This asset has no editable config.
           </p>
         )}
       </DialogContent>
@@ -296,6 +394,17 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   // caps cover but the asset does not declare never shows a connect affordance, and
   // wildcard caps are already expanded to the asset's matching logins.
   const sshLogins = data.entitledLogins;
+  // No server-resolved "entitled db roles" analog exists for postgres (unlike
+  // entitled_logins for ssh), so pull the concrete (non-wildcard) db:login roles
+  // straight out of the connect capability set. A wildcard cap (db:login:* or
+  // broader) can't be resolved to concrete roles without the asset's configured
+  // logins, so it's excluded here — the connect hint below falls back to a
+  // generic placeholder in that case.
+  const pgRoles = data.capabilities
+    .filter((c) => c.startsWith("db:login:"))
+    .map((c) => c.slice("db:login:".length))
+    .filter((role) => role.length > 0 && !role.includes("*"));
+  const hasDbConnect = data.capabilities.some((c) => c.startsWith("db:login"));
   const hasRequestable = data.requestableRoles.length > 0;
   // Connect-vs-`**` hint: connect affordances derive from the CONNECT capability
   // set (`data.capabilities`), which STRIPS `**`. A bare-`**` admin therefore
@@ -326,13 +435,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   const canViewRecordings =
     capsCover(data.capabilities, "recording:read") ||
     capsCover(data.managementCapabilities, "recording:read");
+  const KindIcon = assetKindIcon(assetKind);
 
   return (
     <article className="flex flex-col gap-5 p-5" aria-label={`Asset: ${name}`}>
       {/* Header */}
       <header className="flex flex-col gap-1">
         <div className="flex items-start gap-2">
-          <Server className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <KindIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <h2 className="min-w-0 flex-1 text-title font-semibold leading-tight text-foreground">
             {name}
           </h2>
@@ -418,6 +528,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       {sshLogins.length > 0 && (
         <>
           <ConnectBlock assetId={id} logins={sshLogins} assetPath={path ?? ""} />
+          <div className="h-px bg-border" role="separator" />
+        </>
+      )}
+
+      {/* Postgres connect hint (only when connect caps present) */}
+      {assetKind === "postgres" && hasDbConnect && (
+        <>
+          <PostgresConnectBlock roles={pgRoles} assetPath={path ?? ""} />
           <div className="h-px bg-border" role="separator" />
         </>
       )}
