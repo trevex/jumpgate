@@ -99,6 +99,22 @@ impl MeshClientCerts {
     pub fn client_config(&self, expected_spiffe: &str) -> anyhow::Result<Arc<ClientConfig>> {
         mesh_client_config_no_hostname(&self.cert_pem, &self.key_pem, &self.ca_pem, expected_spiffe)
     }
+
+    /// Like [`client_config`](Self::client_config), but advertises `http/1.1`
+    /// ALPN instead of `h2`. Used for the k8s broker front door, which the
+    /// gateway blind-pipes kubectl's HTTP/1.1 stream to (the broker runs a
+    /// net/http server, not h2).
+    pub fn client_config_h1(&self, expected_spiffe: &str) -> anyhow::Result<Arc<ClientConfig>> {
+        let mut cfg = (*mesh_client_config_no_hostname(
+            &self.cert_pem,
+            &self.key_pem,
+            &self.ca_pem,
+            expected_spiffe,
+        )?)
+        .clone();
+        cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
+        Ok(Arc::new(cfg))
+    }
 }
 
 /// Build the external server TLS config (no client authentication).
@@ -526,6 +542,26 @@ mod tests {
         )
         .unwrap();
         assert!(certs.client_config("spiffe://jumpgate/worker/w1").is_ok());
+    }
+
+    #[test]
+    fn client_config_h1_advertises_http11() {
+        let ca = rcgen::generate_simple_self_signed(vec!["mesh-ca".to_string()]).unwrap();
+        let leaf = rcgen::generate_simple_self_signed(vec!["broker".to_string()]).unwrap();
+        let certs = MeshClientCerts {
+            cert_pem: leaf.cert.pem().into_bytes(),
+            key_pem: leaf.key_pair.serialize_pem().into_bytes(),
+            ca_pem: ca.cert.pem().into_bytes(),
+        };
+
+        let h1 = certs
+            .client_config_h1("spiffe://jumpgate/broker/b1")
+            .unwrap();
+        assert_eq!(h1.alpn_protocols, vec![b"http/1.1".to_vec()]);
+
+        // The existing h2 builder must be untouched.
+        let h2 = certs.client_config("spiffe://jumpgate/broker/b1").unwrap();
+        assert_eq!(h2.alpn_protocols, vec![b"h2".to_vec()]);
     }
 
     /// Build a leaf whose only SAN is the given SPIFFE URI, signed by `ca`.

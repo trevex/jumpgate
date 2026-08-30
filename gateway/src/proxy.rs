@@ -117,6 +117,36 @@ pub async fn connect_worker_terminal(
     Ok(stream)
 }
 
+/// Dial a k8s broker's gateway-facing front door over mesh mTLS, pinning
+/// `spiffe://jumpgate/broker/<broker_id>` and negotiating `http/1.1`. Unlike
+/// [`connect_worker`], there is NO CONNECT preamble: the caller replays kubectl's
+/// buffered request head into the returned stream and then pumps bytes — the
+/// broker treats the connection as a raw HTTP/1.1 server conn.
+pub async fn connect_broker(
+    entry: &WorkerEntry,
+    certs: &MeshClientCerts,
+    broker_id: &str,
+) -> Result<TlsStream<TcpStream>, ProxyError> {
+    // The verifier will reject any peer whose URI SAN != this exact identity.
+    let expected = format!("spiffe://jumpgate/broker/{broker_id}");
+    let client_config = certs.client_config_h1(&expected)?;
+
+    let tcp = TcpStream::connect(&entry.address)
+        .await
+        .map_err(ProxyError::Connect)?;
+
+    // The verifier ignores this name (it pins on the URI SAN), but rustls still
+    // requires a syntactically valid `ServerName`.
+    let sni = rustls::pki_types::ServerName::try_from(PLACEHOLDER_SNI)
+        .map_err(|_| ProxyError::Address("invalid placeholder SNI".into()))?;
+
+    let connector = TlsConnector::from(client_config);
+    // Identity mismatch surfaces HERE: the verifier runs during the handshake.
+    let stream = connector.connect(sni, tcp).await.map_err(ProxyError::Tls)?;
+
+    Ok(stream)
+}
+
 /// Resource bounds applied to a proxied byte pump (and the WS terminal relay):
 /// an idle timeout (no bytes either direction) and an absolute lifetime cap.
 /// A zero [`Duration`] disables the corresponding bound.
