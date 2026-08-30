@@ -58,8 +58,10 @@ export function EnrollmentTokenReveal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-[520px]"
-        // Don't let an outside click / Escape dismiss the reveal before the
-        // user copies the token — force them through the Done button or X.
+        // While the one-time token is on screen, block every accidental dismissal
+        // — outside click, Escape, and the built-in ✕ — so the user must copy it
+        // and close deliberately via the Done button.
+        hideClose={showingToken}
         onInteractOutside={(e) => {
           if (showingToken) e.preventDefault();
         }}
