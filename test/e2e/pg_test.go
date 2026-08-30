@@ -97,3 +97,84 @@ func TestPostgresPassword(t *testing.T) {
 		t.Fatal("recording does not contain the statement alice ran")
 	}
 }
+
+// TestPostgresMtls mirrors TestPostgresPassword for the mtls login kind: the
+// broker mints a short-lived client cert instead of injecting a stored
+// secret, so the login is set with no --password-stdin. Uses its own folder
+// and asset to stay independent of the password test.
+func TestPostgresMtls(t *testing.T) {
+	if shared == nil {
+		t.Skip("no live cluster (set JUMPGATE_E2E=1)")
+	}
+	if _, err := exec.LookPath("psql"); err != nil {
+		t.Skip("psql not installed")
+	}
+	e := shared
+	e.reset(t)
+
+	folder := e.name("pg-mtls-demo")
+	pgUserEmail := e.name("pg-bob") + "@demo.test"
+
+	e.exportMeshCA(t)
+	e.login(t, "admin", adminEmail, adminPass)
+
+	e.asActor(t, "admin", "folders", "create", folder)
+
+	assetOut := e.asActor(t, "admin", "assets", "pg", "create", e.name("pg-box-mtls"),
+		"--folder", folder,
+		"--target", "pg-target.default.svc.cluster.local:5432",
+		"--database", "appdb", "-o", "json")
+	assetID := jsonID(assetOut)
+	if assetID == "" {
+		t.Fatalf("no asset id:\n%s", assetOut)
+	}
+	assetPath := jsonField(assetOut, "path")
+	if assetPath == "" {
+		t.Fatalf("no asset path in create output:\n%s", assetOut)
+	}
+
+	// mtls needs no stored secret — the broker mints the client cert.
+	e.asActor(t, "admin", "assets", "pg", "login", "set", assetPath,
+		"--role", "mtlsuser", "--kind", "mtls")
+
+	e.asActor(t, "admin", "roles", "create", e.name("pg-mtls"),
+		"--folder", folder, "--capability", "db:login:mtlsuser")
+	e.asActor(t, "admin", "users", "create", pgUserEmail, "--name", "PGBob", "--password", alicePass)
+
+	roleRef := e.name("pg-mtls") + "." + folder
+	e.asActor(t, "admin", "bindings", "create",
+		"--role", roleRef, "--user", pgUserEmail, "--asset", assetPath)
+
+	e.login(t, "pg-bob", pgUserEmail, alicePass)
+
+	out := e.connectPgExec(t, "pg-bob", "mtlsuser@"+assetPath, "psql", "-c", "select 1")
+	if !strings.Contains(out, "1") {
+		t.Fatalf("psql output missing the query result:\n%s", out)
+	}
+
+	// Recordings are admin-only, so the admin acts as auditor, exactly as
+	// act4_auditor_verifies_recording does for the SSH scenario.
+	var sessionID string
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		list := e.asActor(t, "admin", "recordings", "list", "--asset", assetID, "-o", "json")
+		if id := completedSessionID(list); id != "" {
+			sessionID = id
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if sessionID == "" {
+		t.Fatal("no completed recording appeared for the postgres asset within 45s")
+	}
+
+	recPath := filepath.Join(t.TempDir(), "rec.ndjson")
+	e.asActor(t, "admin", "recordings", "download", sessionID, "--file", recPath)
+	data, err := os.ReadFile(recPath) // #nosec G304 -- test-controlled fixture path
+	if err != nil {
+		t.Fatalf("read recording: %v", err)
+	}
+	if !strings.Contains(string(data), "select 1") {
+		t.Fatal("recording does not contain the statement bob ran")
+	}
+}
