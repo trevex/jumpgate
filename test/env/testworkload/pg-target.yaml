@@ -30,6 +30,15 @@ spec:
               command: ["pg_isready", "-U", "postgres"]
             initialDelaySeconds: 5
             periodSeconds: 3
+          volumeMounts:
+            - name: jumpgate-x509-ca
+              mountPath: /etc/pg/jumpgate-x509-ca.crt
+              subPath: x509-ca.crt
+              readOnly: true
+      volumes:
+        - name: jumpgate-x509-ca
+          secret:
+            secretName: jumpgate-x509-ca-pub
 ---
 apiVersion: v1
 kind: Service
