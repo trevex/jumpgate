@@ -25,6 +25,12 @@ pub struct Claims {
     /// `login` — the ticket-bound target login. Set on `mode="web"` tickets (the
     /// browser offers no SSH username); empty otherwise. Absent → `""`.
     pub login: String,
+    /// `groups` — materialized k8s:group qualifiers, one Impersonate-Group each.
+    /// Absent on non-k8s tokens → empty.
+    pub groups: Vec<String>,
+    /// `broker_id` — the broker holding the asset's agent tunnel (k8s routing).
+    /// Absent on non-k8s tokens → "".
+    pub broker_id: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +82,20 @@ pub fn verify(token: &str, ed25519_public_key: &[u8]) -> Result<Claims, TokenErr
             .unwrap_or_default()
     };
 
+    // Read a JSON string-array claim; absent or non-array → empty vec. Non-string
+    // elements are skipped (fail-safe: a malformed group never becomes identity).
+    let get_str_array = |k: &'static str| -> Vec<String> {
+        claims
+            .get_claim(k)
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|e| e.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
     Ok(Claims {
         session_id: get("jti")?,
         user_id: get("sub")?,
@@ -83,6 +103,8 @@ pub fn verify(token: &str, ed25519_public_key: &[u8]) -> Result<Claims, TokenErr
         proto: get("proto")?,
         mode: get_opt("mode"),
         login: get_opt("login"),
+        groups: get_str_array("groups"),
+        broker_id: get_opt("broker_id"),
     })
 }
 
@@ -129,6 +151,13 @@ mod tests {
         claims.add_additional("proto", proto).unwrap();
         claims
             .add_additional("cnf", "SHA256:testfingerprint")
+            .unwrap();
+        claims.add_additional("broker_id", "broker-0").unwrap();
+        claims
+            .add_additional(
+                "groups",
+                serde_json::json!(["developers", "system:masters"]),
+            )
             .unwrap();
 
         let token = public::sign(&kp.secret, &claims, None, None).unwrap();
@@ -226,6 +255,22 @@ mod tests {
         bad.pop();
         bad.push('x');
         assert!(verify(&bad, &pk).is_err());
+    }
+
+    #[test]
+    fn reads_broker_id_and_groups() {
+        let (tok, pk) = mint_test_token("kubernetes", 60);
+        let claims = verify(&tok, &pk).unwrap();
+        assert_eq!(claims.broker_id, "broker-0");
+        assert_eq!(claims.groups, vec!["developers", "system:masters"]);
+    }
+
+    #[test]
+    fn groups_absent_defaults_empty() {
+        let (tok, pk) = mint_web_token("deploy", 60);
+        let claims = verify(&tok, &pk).unwrap();
+        assert!(claims.groups.is_empty());
+        assert_eq!(claims.broker_id, "");
     }
 
     /// Decode a hex string into bytes (two hex chars per byte). Dependency-free
