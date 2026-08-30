@@ -18,7 +18,7 @@ import (
 
 	"github.com/trevex/jumpgate/workers/k8s-agent/internal/config"
 	"github.com/trevex/jumpgate/workers/k8s-agent/internal/mesh"
-	"github.com/trevex/jumpgate/workers/k8s-agent/internal/proxy"
+	"github.com/trevex/jumpgate/workers/k8s-agent/proxy"
 )
 
 const reconnectBackoff = 2 * time.Second
