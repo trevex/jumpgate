@@ -579,6 +579,80 @@ mod tests {
         assert_eq!(c2w, 5);
     }
 
+    /// Start a stub broker: accept one mTLS conn and just hold it open (no
+    /// CONNECT preamble — `connect_broker` sends none). Returns the bound address.
+    async fn spawn_stub_broker(pki: &TestPki) -> std::net::SocketAddr {
+        let server_config = stub_server_config(pki);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let acceptor = tokio_rustls::TlsAcceptor::from(server_config);
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut tls = match acceptor.accept(tcp).await {
+                Ok(s) => s,
+                Err(_) => return, // handshake rejected (identity-pin mismatch)
+            };
+            // Echo whatever the gateway replays (the buffered request head).
+            let mut buf = [0u8; 1024];
+            loop {
+                match tls.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if tls.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                        let _ = tls.flush().await;
+                    }
+                }
+            }
+        });
+
+        addr
+    }
+
+    #[tokio::test]
+    async fn connect_broker_happy() {
+        install_provider();
+        // Stub broker presents broker/broker-0 and we pin broker-0: handshake ok.
+        let pki = build_pki("spiffe://jumpgate/broker/broker-0");
+        let addr = spawn_stub_broker(&pki).await;
+        let certs = gateway_certs(&pki);
+
+        let mut stream = connect_broker(&entry("broker-0", addr), &certs, "broker-0")
+            .await
+            .expect("connect_broker should succeed for matching identity");
+
+        // No CONNECT preamble: bytes we write are the replayed head; echoed back.
+        stream
+            .write_all(b"GET /api/v1/pods HTTP/1.1")
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+        let mut got = vec![0u8; b"GET /api/v1/pods HTTP/1.1".len()];
+        stream.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, b"GET /api/v1/pods HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn connect_broker_san_mismatch() {
+        install_provider();
+        // Stub presents a WORKER identity (or any non-broker-0 SPIFFE) ...
+        let pki = build_pki("spiffe://jumpgate/broker/other");
+        let addr = spawn_stub_broker(&pki).await;
+        let certs = gateway_certs(&pki);
+
+        // ... but we pin broker-0: the TLS handshake must fail on the pin.
+        let err = connect_broker(&entry("broker-0", addr), &certs, "broker-0")
+            .await
+            .expect_err("identity mismatch must fail the handshake");
+
+        match err {
+            ProxyError::Tls(_) => {}
+            other => panic!("expected ProxyError::Tls (handshake), got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn connect_worker_san_mismatch() {
         install_provider();

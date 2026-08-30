@@ -142,6 +142,13 @@ where
     // Otherwise: the CLI tunnel CONNECT. Parse the buffered head directly.
     let req = match connect::parse_connect(&head) {
         Ok(Some((r, _consumed))) => r,
+        Err(connect::ConnectError::NotConnect) => {
+            // A well-formed non-CONNECT request: a plain kubectl HTTPS request
+            // (real method + path + bearer, no upgrade). Route it to the k8s
+            // broker ingress.
+            handle_kube(state, head, client).await;
+            return;
+        }
         Ok(None) | Err(_) => {
             tracing::warn!("bad CONNECT / unrecognized request");
             let _ = client
@@ -215,6 +222,115 @@ where
     // _guard drops here → decrements the worker's in-flight count.
 }
 
+/// The Kubernetes ingress: kubectl → gateway → broker. Verifies the bearer token
+/// for its `broker_id` claim, dials that broker's front door over mesh mTLS,
+/// replays the buffered request head, and blind-pipes bytes both ways.
+/// Identity/impersonation is enforced at the broker (which re-verifies the
+/// token). A stale/absent broker yields a retriable 503 so the client can
+/// re-mint against a fresh `broker_id` (asset re-homing is deliberately not
+/// attempted here — the roster carries no asset→broker map).
+async fn handle_kube<S>(state: GatewayState, head: Vec<u8>, mut client: S)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let token = match bearer_from_head(&head) {
+        Some(t) => t,
+        None => {
+            let _ = client
+                .write_all(&connect::response_status(401, "Unauthorized"))
+                .await;
+            return;
+        }
+    };
+    let key = { state.verification_key.read().unwrap().clone() };
+    let key = match key {
+        Some(k) => k,
+        None => {
+            let _ = client
+                .write_all(&connect::response_status(503, "Service Unavailable"))
+                .await;
+            return;
+        }
+    };
+    let claims = match token::verify(&token, &key) {
+        Ok(c) if c.proto == "kubernetes" => c,
+        _ => {
+            let _ = client
+                .write_all(&connect::response_status(401, "Unauthorized"))
+                .await;
+            return;
+        }
+    };
+    if claims.broker_id.is_empty() {
+        let _ = client
+            .write_all(&connect::response_status(401, "Unauthorized"))
+            .await;
+        return;
+    }
+    let entry = match state.roster.get(&claims.broker_id) {
+        Some(e) if e.protocol == "kubernetes" => e,
+        _ => {
+            tracing::warn!(broker = %claims.broker_id, "k8s broker not in roster");
+            let _ = client
+                .write_all(&connect::response_status(503, "Service Unavailable"))
+                .await;
+            return;
+        }
+    };
+    let _guard = state.counters.acquire(&entry.worker_id);
+    let mut broker = match proxy::connect_broker(&entry, &state.mesh_certs, &claims.broker_id).await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(broker = %entry.worker_id, error = %e, "broker dial failed");
+            let _ = client
+                .write_all(&connect::response_status(503, "Service Unavailable"))
+                .await;
+            return;
+        }
+    };
+    // Replay kubectl's buffered request head into the broker, then blind-pipe:
+    // the API-server response flows back through the pump (no 200 preamble — the
+    // broker is a raw HTTP/1.1 server on this conn).
+    if broker.write_all(&head).await.is_err() {
+        return;
+    }
+    match proxy::pump_bounded(client, broker, state.session_limits).await {
+        Ok((_counts, proxy::StopReason::Closed)) => {}
+        Ok((_counts, reason)) => {
+            tracing::info!(broker = %entry.worker_id, ?reason, "k8s session ended by resource bound");
+        }
+        Err(e) => tracing::debug!(error = %e, "k8s pump ended"),
+    }
+    // _guard drops here → decrements the broker's in-flight count.
+}
+
+/// Extract the token from an `Authorization: Bearer <t>` header in a buffered
+/// HTTP request head. Case-insensitive header name and scheme; `None` if the
+/// header is absent, malformed, or carries an empty token.
+fn bearer_from_head(head: &[u8]) -> Option<String> {
+    let mut headers = [httparse::EMPTY_HEADER; 32];
+    let mut req = httparse::Request::new(&mut headers);
+    // A partial parse still populates the headers seen so far; the head is a
+    // complete request (ends in CRLFCRLF), so a partial status is not an error.
+    let _ = req.parse(head).ok()?;
+    for h in req.headers.iter() {
+        if h.name.eq_ignore_ascii_case("authorization") {
+            let v = std::str::from_utf8(h.value).ok()?.trim();
+            if let Some(rest) = v
+                .strip_prefix("Bearer ")
+                .or_else(|| v.strip_prefix("bearer "))
+            {
+                let t = rest.trim();
+                if !t.is_empty() {
+                    return Some(t.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +338,37 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tokio::io::ReadBuf;
+
+    /// A minimal `GatewayState` for handler unit tests: empty roster, no
+    /// verification key, empty mesh certs. Enough to exercise the reject paths
+    /// that return before any dial.
+    fn test_state() -> GatewayState {
+        GatewayState {
+            roster: roster::Roster::default(),
+            counters: lb::LoadCounters::default(),
+            mesh_certs: tls::MeshClientCerts {
+                cert_pem: vec![],
+                key_pem: vec![],
+                ca_pem: vec![],
+            },
+            verification_key: Arc::new(RwLock::new(None)),
+            console_origin: Arc::new(terminal::OriginPolicy::default()),
+            session_limits: proxy::SessionLimits::UNBOUNDED,
+        }
+    }
+
+    #[tokio::test]
+    async fn kube_without_bearer_gets_401() {
+        let state = test_state();
+        let (mut a, b) = tokio::io::duplex(4096);
+        a.write_all(b"GET /api/v1/pods HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        handle_connection(state, b).await;
+        let mut buf = vec![0u8; 64];
+        let n = a.read(&mut buf).await.unwrap();
+        assert!(std::str::from_utf8(&buf[..n]).unwrap().contains("401"));
+    }
 
     /// An `AsyncRead` that yields a scripted sequence of byte chunks, one per
     /// `poll_read`, so we can force a header terminator to straddle two reads.
