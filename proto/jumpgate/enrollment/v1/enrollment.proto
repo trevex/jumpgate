@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package jumpgate.enrollment.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1;enrollmentv1";
+
+// EnrollmentService bootstraps a remote k8s-agent's mesh identity.
+service EnrollmentService {
+  // CreateEnrollmentToken mints a single-use, asset-scoped enrollment token
+  // (admin-only; caller needs catalog:asset:update on the asset).
+  rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse) {}
+
+  // SignAgentCert consumes an enrollment token and signs the agent's CSR into a
+  // short-lived asset-scoped mesh cert. The token IS the credential (no bearer).
+  rpc SignAgentCert(SignAgentCertRequest) returns (SignAgentCertResponse) {}
+}
+
+message CreateEnrollmentTokenRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+}
+message CreateEnrollmentTokenResponse {
+  string token      = 1;
+  string expires_at = 2; // RFC3339
+}
+
+message SignAgentCertRequest {
+  string enrollment_token = 1 [(buf.validate.field).string.min_len = 1];
+  bytes  csr_pem          = 2 [(buf.validate.field).bytes.min_len = 1];
+}
+message SignAgentCertResponse {
+  bytes cert_pem      = 1;
+  bytes ca_bundle_pem = 2;
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/config"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/enrollment"
 	"github.com/trevex/jumpgate/warden/internal/gateway"
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/identity"
@@ -208,6 +209,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Access:        access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
 		AccessRequest: accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
 		Vault:         vault.NewHandler(apiQ, sealer, authorizer),
+		Enrollment:    enrollment.NewHandler(enrollment.NewService(pool, sealer), apiguard.New(authorizer, apiQ)),
 		Recording:     recording.NewHandler(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
 	}
 	if sessionSvc != nil {

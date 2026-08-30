@@ -131,9 +131,17 @@ var assetsK8sCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a Kubernetes asset (an in-cluster agent is enrolled separately)",
 	Long: "Create a Kubernetes cluster asset. A k8s asset stores no endpoint or " +
-		"credentials; an in-cluster agent is enrolled against it in a later step.",
+		"credentials; an in-cluster agent is enrolled against it with the printed " +
+		"enrollment token.",
 	Args: cobra.ExactArgs(1),
 	RunE: runAssetsK8sCreate,
+}
+
+var assetsK8sEnrollCmd = &cobra.Command{
+	Use:   "enroll <asset>",
+	Short: "Re-mint a single-use enrollment token for an existing Kubernetes asset",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAssetsK8sEnroll,
 }
 
 var assetsListCascade bool
@@ -213,6 +221,7 @@ func init() {
 	assetsK8sCreateCmd.Flags().StringVar(&k8sCreateFolder, "folder", "", "folder id or name (required)")
 	_ = assetsK8sCreateCmd.MarkFlagRequired("folder")
 	assetsK8sCmd.AddCommand(assetsK8sCreateCmd)
+	assetsK8sCmd.AddCommand(assetsK8sEnrollCmd)
 
 	assetsListCmd.Flags().BoolVar(&assetsListCascade, "cascade", false, "include assets in all descendant folders")
 
@@ -687,10 +696,35 @@ func runAssetsK8sCreate(cmd *cobra.Command, args []string) error {
 	}
 	asset := createResp.Msg.GetAsset()
 
+	token, exp, err := cl.CreateEnrollmentToken(cmd.Context(), asset.GetId())
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nEnrollment token (valid until %s, single-use):\n  %s\n\nInstall the agent Helm chart with this token to enroll the cluster.\n", exp, token)
+
 	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
 		Headers: assetHeaders,
 		Rows:    [][]string{assetRow(asset)},
 	})
+}
+
+func runAssetsK8sEnroll(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	token, exp, err := cl.CreateEnrollmentToken(cmd.Context(), assetID)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Enrollment token (valid until %s, single-use):\n  %s\n\nInstall the agent Helm chart with this token to enroll the cluster.\n", exp, token)
+	return nil
 }
 
 func runAssetsList(cmd *cobra.Command, args []string) error {

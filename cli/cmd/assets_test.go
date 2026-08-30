@@ -13,6 +13,8 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	enrollmentv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1/enrollmentv1connect"
 )
 
 // stubAssets serves the catalog service. `assets ssh create` is a single
@@ -21,9 +23,16 @@ import (
 // ride inline as new_value and are sealed server-side in-tx (no vault round-trip).
 type stubAssets struct {
 	catalogv1connect.UnimplementedCatalogServiceHandler
+	enrollmentv1connect.UnimplementedEnrollmentServiceHandler
 
-	gotCreateAsset       *catalogv1.CreateAssetRequest
-	gotUpdateAssetConfig *catalogv1.UpdateAssetConfigRequest
+	gotCreateAsset           *catalogv1.CreateAssetRequest
+	gotUpdateAssetConfig     *catalogv1.UpdateAssetConfigRequest
+	gotCreateEnrollmentToken *enrollmentv1.CreateEnrollmentTokenRequest
+
+	// enrollmentToken/enrollmentExpiresAt, when set, override the default values
+	// CreateEnrollmentToken returns.
+	enrollmentToken     string
+	enrollmentExpiresAt string
 
 	// createAssetOverride, when non-nil, is returned verbatim by CreateAsset
 	// instead of the default constructed asset.  Use this to inject fields (e.g.
@@ -68,6 +77,19 @@ func (s *stubAssets) UpdateAssetConfig(_ context.Context, req *connect.Request[c
 	return connect.NewResponse(&catalogv1.UpdateAssetConfigResponse{}), nil
 }
 
+func (s *stubAssets) CreateEnrollmentToken(_ context.Context, req *connect.Request[enrollmentv1.CreateEnrollmentTokenRequest]) (*connect.Response[enrollmentv1.CreateEnrollmentTokenResponse], error) {
+	s.gotCreateEnrollmentToken = req.Msg
+	token := s.enrollmentToken
+	if token == "" {
+		token = "enroll-xyz"
+	}
+	exp := s.enrollmentExpiresAt
+	if exp == "" {
+		exp = "2026-01-01T00:00:00Z"
+	}
+	return connect.NewResponse(&enrollmentv1.CreateEnrollmentTokenResponse{Token: token, ExpiresAt: exp}), nil
+}
+
 func (s *stubAssets) ListAssets(_ context.Context, _ *connect.Request[catalogv1.ListAssetsRequest]) (*connect.Response[catalogv1.ListAssetsResponse], error) {
 	return connect.NewResponse(&catalogv1.ListAssetsResponse{Assets: s.listed}), nil
 }
@@ -109,13 +131,16 @@ func resetAssetsFlags() {
 	assetsListCascade = false
 }
 
-// newAssetsStub serves the catalog handler off one server and returns its URL.
-// Secrets are sealed server-side in-tx as part of UpdateAssetConfig now, so the
-// CLI no longer makes a separate VaultService round-trip on the create/rotate path.
+// newAssetsStub serves the catalog handler (and, on the same mux, the
+// EnrollmentService — `assets k8s create` mints a token via a separate RPC after
+// CreateAsset) off one server and returns its URL. Secrets are sealed server-side
+// in-tx as part of UpdateAssetConfig now, so the CLI no longer makes a separate
+// VaultService round-trip on the create/rotate path.
 func newAssetsStub(t *testing.T, s *stubAssets) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle(catalogv1connect.NewCatalogServiceHandler(s))
+	mux.Handle(enrollmentv1connect.NewEnrollmentServiceHandler(s))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -209,6 +234,38 @@ func TestAssetsK8sCreate(t *testing.T) {
 	}
 
 	if !strings.Contains(out.String(), "a-123") {
+		t.Fatalf("out=%s", out.String())
+	}
+}
+
+// TestAssetsK8sCreatePrintsEnrollmentToken verifies that `assets k8s create` also
+// mints an enrollment token (a second, different-service RPC after CreateAsset)
+// and prints it.
+func TestAssetsK8sCreatePrintsEnrollmentToken(t *testing.T) {
+	const folderID = "33333333-3333-3333-3333-333333333333"
+	s := &stubAssets{enrollmentToken: "enroll-xyz", enrollmentExpiresAt: "2026-01-01T00:00:00Z"}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{
+		"assets", "k8s", "create", "prod-cluster",
+		"--folder", folderID,
+	})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	if s.gotCreateEnrollmentToken == nil {
+		t.Fatal("CreateEnrollmentToken not called")
+	}
+	if s.gotCreateEnrollmentToken.GetAssetId() != "a-123" {
+		t.Fatalf("enrollment token asset_id=%q", s.gotCreateEnrollmentToken.GetAssetId())
+	}
+	if !strings.Contains(out.String(), "enroll-xyz") {
 		t.Fatalf("out=%s", out.String())
 	}
 }

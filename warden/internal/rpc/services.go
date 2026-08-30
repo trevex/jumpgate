@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1/enrollmentv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/gateway/v1/gatewayv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
@@ -25,6 +26,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
+	"github.com/trevex/jumpgate/warden/internal/enrollment"
 	"github.com/trevex/jumpgate/warden/internal/gateway"
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/recording"
@@ -43,6 +45,7 @@ type UserServices struct {
 	Access        *access.Handler
 	AccessRequest *accessrequest.Handler
 	Vault         *vault.Handler
+	Enrollment    *enrollment.Handler
 	Recording     *recording.Handler
 	Session       *session.Handler // optional when session admission is disabled
 }
@@ -69,6 +72,9 @@ func RegisterUserServices(mux *http.ServeMux, services UserServices) {
 
 	vaultPath, vaultHandler := vaultv1connect.NewVaultServiceHandler(services.Vault, opts)
 	mux.Handle(vaultPath, vaultHandler)
+
+	enrollPath, enrollHandler := enrollmentv1connect.NewEnrollmentServiceHandler(services.Enrollment, opts)
+	mux.Handle(enrollPath, enrollHandler)
 
 	recPath, recHandler := recordingv1connect.NewRecordingServiceHandler(services.Recording, opts)
 	mux.Handle(recPath, recHandler)

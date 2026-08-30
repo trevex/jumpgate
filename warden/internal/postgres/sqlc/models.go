@@ -59,6 +59,14 @@ type ActiveAccessGrant struct {
 	RevokedReason pgtype.Text        `json:"revoked_reason"`
 }
 
+type AgentEnrollmentToken struct {
+	ID        uuid.UUID `json:"id"`
+	AssetID   uuid.UUID `json:"asset_id"`
+	TokenHash []byte    `json:"token_hash"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Asset struct {
 	ID        uuid.UUID `json:"id"`
 	FolderID  uuid.UUID `json:"folder_id"`
