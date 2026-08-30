@@ -17,7 +17,9 @@ import (
 
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/broker"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/config"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/control"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/mesh"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/meshclient"
 )
 
 func main() {
@@ -43,8 +45,17 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("k8s-broker accepting agent tunnels", "addr", cfg.AgentListen)
-	if err := broker.New().Serve(ctx, ln); err != nil {
-		slog.Error("serve", "err", err)
+	b := broker.New()
+	go func() {
+		if err := b.Serve(ctx, ln); err != nil {
+			slog.Error("serve", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
+	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr); err != nil && ctx.Err() == nil {
+		slog.Error("control loop", "err", err)
 		os.Exit(1)
 	}
 }
