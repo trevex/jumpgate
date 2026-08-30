@@ -9,7 +9,7 @@
  */
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send } from "lucide-react";
+import { Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -69,6 +69,7 @@ import {
   type PgConfigDraft,
 } from "../postgres-config-form";
 import { assetKindIcon } from "../asset-kind-icon";
+import { EnrollmentTokenReveal } from "../enrollment-token-dialog";
 import {
   CapList,
   DetailSection,
@@ -373,6 +374,7 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [bindOpen, setBindOpen] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [enrollOpen, setEnrollOpen] = useState(false);
 
   // The caller's own global capability set — used only for the broad-`**` connect
   // hint below. (Binding / make-requestable are gated on the asset's management
@@ -446,7 +448,20 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           <h2 className="min-w-0 flex-1 text-title font-semibold leading-tight text-foreground">
             {name}
           </h2>
-          {canEdit && (
+          {/* k8s agents enroll with a one-time token (catalog:asset:update). */}
+          {assetKind === "k8s" && canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEnrollOpen(true)}
+              className="h-7 shrink-0 gap-1.5 text-compact"
+              aria-label="Generate enrollment token"
+            >
+              <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
+              Enroll agent
+            </Button>
+          )}
+          {assetKind !== "k8s" && canEdit && (
             <Button
               variant="outline"
               size="sm"
@@ -699,7 +714,15 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
           </p>
         )}
 
-      {canEdit && (
+      {assetKind === "k8s" && canEdit && (
+        <EnrollmentTokenReveal
+          assetId={id}
+          assetName={name}
+          open={enrollOpen}
+          onOpenChange={setEnrollOpen}
+        />
+      )}
+      {assetKind !== "k8s" && canEdit && (
         <EditConfigDialog
           assetId={id}
           assetName={name}

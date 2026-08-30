@@ -47,6 +47,7 @@ import {
   emptyPgDraft,
   type PgConfigDraft,
 } from "./postgres-config-form";
+import { EnrollmentTokenReveal } from "./enrollment-token-dialog";
 
 interface NewAssetWizardProps {
   open: boolean;
@@ -73,9 +74,13 @@ export function NewAssetWizard({
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
-  const [kind, setKind] = useState<"ssh" | "postgres">("ssh");
+  const [kind, setKind] = useState<"ssh" | "postgres" | "kubernetes">("ssh");
   const [pgDraft, setPgDraft] = useState<PgConfigDraft>(emptyPgDraft);
   const [configError, setConfigError] = useState<string | null>(null);
+  // Set once a k8s asset is created — swaps the form for the one-time
+  // enrollment-token reveal (the wizard unmounts on close, so we can't render
+  // the reveal as a sibling of a closed form dialog).
+  const [minted, setMinted] = useState<{ id: string; name: string } | null>(null);
 
   function reset() {
     setName("");
@@ -87,11 +92,24 @@ export function NewAssetWizard({
   }
 
   const { mutate: doCreate, isPending } = useMutation(createAsset, {
-    onSuccess: () => {
+    onSuccess: (res) => {
+      void invalidateList(listFolderContents);
+      if (kind === "kubernetes") {
+        // Two-step k8s onboarding: the asset exists, now mint its one-time
+        // enrollment token. Keep the wizard mounted and swap to the reveal.
+        toast.success("Asset created", {
+          description: `${name.trim()} created — grab its enrollment token.`,
+        });
+        const id = res.asset?.id;
+        if (id) {
+          setMinted({ id, name: name.trim() });
+          return;
+        }
+        // No id (shouldn't happen) — nothing to enrol against; fall through.
+      }
       toast.success("Asset onboarded", {
         description: `${name.trim()} is ready.`,
       });
-      void invalidateList(listFolderContents);
       reset();
       onOpenChange(false);
     },
@@ -101,7 +119,13 @@ export function NewAssetWizard({
   });
 
   const nameValid = isValidCatalogName(name);
-  const hasLogin = kind === "ssh" ? draft.logins.length >= 1 : pgDraft.logins.length >= 1;
+  // k8s assets have no logins — the in-cluster agent enrolls itself.
+  const hasLogin =
+    kind === "ssh"
+      ? draft.logins.length >= 1
+      : kind === "postgres"
+        ? pgDraft.logins.length >= 1
+        : true;
   const formValid = nameValid && hasLogin;
 
   function handleOpenChange(next: boolean) {
@@ -121,7 +145,7 @@ export function NewAssetWizard({
       }
       setConfigError(null);
       doCreate({ folderId, name: name.trim(), config: { case: "ssh", value: config } });
-    } else {
+    } else if (kind === "postgres") {
       const { config, error } = buildPostgresConfigInput(pgDraft, "create");
       if (error) {
         setConfigError(error);
@@ -129,7 +153,29 @@ export function NewAssetWizard({
       }
       setConfigError(null);
       doCreate({ folderId, name: name.trim(), config: { case: "postgres", value: config } });
+    } else {
+      setConfigError(null);
+      doCreate({ folderId, name: name.trim(), config: { case: "kubernetes", value: {} } });
     }
+  }
+
+  // k8s: the asset is created; show the one-time enrollment-token reveal in
+  // place of the form. Closing it tears down the whole wizard.
+  if (minted) {
+    return (
+      <EnrollmentTokenReveal
+        assetId={minted.id}
+        assetName={minted.name}
+        open
+        onOpenChange={(next) => {
+          if (!next) {
+            setMinted(null);
+            reset();
+            onOpenChange(false);
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -155,7 +201,7 @@ export function NewAssetWizard({
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Asset type</span>
             <div className="inline-flex w-fit rounded-md border border-border p-0.5">
-              {(["ssh", "postgres"] as const).map((k) => (
+              {(["ssh", "postgres", "kubernetes"] as const).map((k) => (
                 <Button
                   key={k}
                   type="button"
@@ -167,7 +213,7 @@ export function NewAssetWizard({
                   }}
                   className="h-7 text-body"
                 >
-                  {k === "ssh" ? "SSH" : "Postgres"}
+                  {k === "ssh" ? "SSH" : k === "postgres" ? "Postgres" : "Kubernetes"}
                 </Button>
               ))}
             </div>
@@ -213,7 +259,7 @@ export function NewAssetWizard({
                 if (configError) setConfigError(null);
               }}
             />
-          ) : (
+          ) : kind === "postgres" ? (
             <PostgresConfigForm
               mode="create"
               value={pgDraft}
@@ -222,6 +268,12 @@ export function NewAssetWizard({
                 if (configError) setConfigError(null);
               }}
             />
+          ) : (
+            <p className={FIELD_HINT}>
+              The in-cluster agent enrolls itself with a one-time token — no
+              connection details needed. You&rsquo;ll get the token to hand to
+              the agent right after this asset is created.
+            </p>
           )}
 
           {configError && (
