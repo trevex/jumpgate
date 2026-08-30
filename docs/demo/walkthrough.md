@@ -217,6 +217,97 @@ asciinema play recording.cast                             # replay alice's sessi
 The replay shows exactly what alice typed — closing the loop from request, through
 approval and connection, to the audit trail.
 
+## Chapter: onboarding and connecting to a Postgres asset
+
+Postgres is jumpgate's second asset kind. The access model is identical — folders, roles,
+standing/requestable bindings, recording — but the data path is a **pgwire proxy** instead of
+SSH, so `connect` doesn't drop you into a shell; it hands you a loopback proxy you point any
+libpq client (psql, pgcli, DataGrip, an app's connection string) at. The same command shapes
+are exercised by `test/e2e/pg_test.go` (`TestPostgresPassword` / `TestPostgresMtls`).
+
+The `make kind-demo` cluster already runs a `pg-target` postgres workload (database `appdb`,
+TLS required) with two roles: `app` (scram password) and `mtlsuser` (client-cert). We reuse
+the `demo` folder and alice from the SSH acts.
+
+### Onboard the asset (admin)
+
+```bash
+jumpgate --context admin assets pg create pg-box \
+  --folder demo \
+  --target pg-target.default.svc.cluster.local:5432 \
+  --database appdb -o json           # "path" = pg-box.demo
+```
+
+Add DB-role logins. A postgres **login** is a target DB role plus how the worker authenticates
+it: `password` (a stored secret injected worker-side) or `mtls` (the broker mints a short-lived
+client cert per session — nothing stored). Set one of each. A stored password must match the
+target role's real password (`app-e2e-pw` in the test workload):
+
+```bash
+# password login for the `app` role:
+printf 'app-e2e-pw\n' | jumpgate --context admin assets pg login set pg-box.demo \
+  --role app --kind password --password-stdin
+
+# mtls login for the `mtlsuser` role (no secret — the broker mints the cert):
+jumpgate --context admin assets pg login set pg-box.demo \
+  --role mtlsuser --kind mtls
+```
+
+### Entitle a user
+
+The data-plane capability is `db:login:<role>` — the postgres analog of `ssh:login:<login>`.
+Mint a folder-scoped role carrying it and bind it to alice **standing** on the asset (a direct
+binding, no JIT dance; making it requestable instead reuses the Acts 1–3 request/approve flow
+unchanged):
+
+```bash
+jumpgate --context admin roles create pg-app --folder demo --capability db:login:app
+jumpgate --context admin bindings create --role pg-app.demo --user alice@demo.test --asset pg-box.demo
+```
+
+### Connect (alice)
+
+`connect` resolves the asset kind and switches to postgres mode automatically. Two ways to use it:
+
+**One-shot — run a tool through the tunnel.** Everything after `--` is executed with
+`PGHOST`/`PGPORT`/`PGUSER`/`PGDATABASE` pre-pointed at the proxy, so you type no connection flags:
+
+```bash
+jumpgate --context alice connect app@pg-box.demo --ca ./jumpgate-mesh-ca.pem \
+  -- psql -c 'select 1'
+```
+
+**Proxy mode — attach any libpq client.** With no `--`, `connect` binds a loopback-only
+listener, prints how to reach it, and stays up until Ctrl-C:
+
+```bash
+jumpgate --context alice connect app@pg-box.demo --ca ./jumpgate-mesh-ca.pem
+# postgres proxy listening on 127.0.0.1:54xxx
+#   psql "host=127.0.0.1 port=54xxx user=app dbname=appdb sslmode=disable"
+#   (any libpq client works; each connection is its own recorded session)
+```
+
+The listener is **127.0.0.1-only** and each accepted connection mints its own session *as you*
+— so it is safe to leave running locally, and every connection is independently authorized and
+recorded. Pin the port with `--port 6432` for a stable connection string. The `mtlsuser` login
+connects the same way (`connect mtlsuser@pg-box.demo …`); the broker mints a client cert for the
+target hop instead of injecting a password — invisible from your side.
+
+### Audit
+
+Postgres sessions are recorded as a **statement log** — a pgwire timeline of the statements you
+ran and their outcomes, but *never* result rows or bound parameter values (jumpgate audits the
+user, not the database). The auditor downloads it exactly as for SSH; the postgres format lands
+as `.ndjson`, one event per line:
+
+```bash
+jumpgate --context admin recordings list --asset <PG_BOX_ASSET_ID>   # the id from the create output
+jumpgate --context admin recordings download <SESSION_ID> --file statements.ndjson
+```
+
+Each line is one event (`{"kind":"query","sql":"select 1", …}`); the web console renders the
+same timeline visually under **Recordings**.
+
 ## Chapter: delegated folder administration
 
 The management API is **capability-gated**. Every management action requires a specific
