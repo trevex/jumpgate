@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // Config is the pg-proxy worker's runtime configuration, all from env.
@@ -37,7 +38,7 @@ func FromEnv() (Config, error) {
 		WardenMeshAddr: os.Getenv("WARDEN_MESH_ADDR"),
 		WardenSpiffe:   envOr("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
 		GatewaySpiffe:  envOr("GATEWAY_SPIFFE", "spiffe://jumpgate/gateway/gateway"),
-		Capacity:       32,
+		Capacity:       capacityFromEnv(),
 
 		RecordingBucket:   os.Getenv("RECORDING_S3_BUCKET"),
 		RecordingEndpoint: os.Getenv("RECORDING_S3_ENDPOINT"),
@@ -54,4 +55,14 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// capacityFromEnv reads WORKER_CAPACITY, defaulting to 32 on unset/invalid.
+func capacityFromEnv() int32 {
+	if v := os.Getenv("WORKER_CAPACITY"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
+			return int32(n)
+		}
+	}
+	return 32
 }
