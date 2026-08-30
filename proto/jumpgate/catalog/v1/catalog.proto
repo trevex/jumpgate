@@ -158,6 +158,11 @@ message PostgresLoginInput {
 }
 message MtlsAuth {}
 
+// KubernetesConfigInput selects the k8s asset kind at create time. A k8s asset
+// stores no connection config or credentials — the in-cluster agent dials out
+// and impersonates with its own ServiceAccount; groups come from k8s:group caps.
+message KubernetesConfigInput {}
+
 message CreateFolderRequest {
   string name = 1 [(buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^[a-zA-Z0-9_-]+$"}];
   string parent_id = 2;
@@ -182,6 +187,7 @@ message CreateAssetRequest {
     option (buf.validate.oneof).required = true;
     SSHConfigInput ssh = 3;
     PostgresConfigInput postgres = 4;
+    KubernetesConfigInput kubernetes = 5;
   }
 }
 message CreateAssetResponse { Asset asset = 1; }
