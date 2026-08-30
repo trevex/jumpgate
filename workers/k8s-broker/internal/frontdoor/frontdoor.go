@@ -6,6 +6,7 @@ package frontdoor
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httputil"
 	"strings"
@@ -20,13 +21,21 @@ type Tunnel interface {
 
 type ctxKey struct{}
 
+// errNoClaims fails a forward closed if the verified claims are ever missing from
+// the request context (unreachable today — the handler always sets them before
+// invoking the proxy — but a comma-ok guard beats a panic under future refactors).
+var errNoClaims = errors.New("frontdoor: missing verified claims")
+
 // Handler builds the front-door http.Handler. Every request must carry a valid
 // kubernetes session token in Authorization: Bearer; identity comes ONLY from the
 // verified token, never from client headers.
 func Handler(t Tunnel, v *sessiontoken.Verifier) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			claims := pr.In.Context().Value(ctxKey{}).(sessiontoken.Claims)
+			claims, ok := pr.In.Context().Value(ctxKey{}).(sessiontoken.Claims)
+			if !ok {
+				return // no identity set → Transport fails the forward closed
+			}
 			// The agent rewrites scheme/host to the real API server; any https
 			// URL satisfies the h2 tunnel client (see broker RoundTrip).
 			pr.Out.URL.Scheme = "https"
@@ -45,7 +54,10 @@ func Handler(t Tunnel, v *sessiontoken.Verifier) http.Handler {
 			}
 		},
 		Transport: rtFunc(func(req *http.Request) (*http.Response, error) {
-			claims := req.Context().Value(ctxKey{}).(sessiontoken.Claims)
+			claims, ok := req.Context().Value(ctxKey{}).(sessiontoken.Claims)
+			if !ok {
+				return nil, errNoClaims
+			}
 			return t.RoundTrip(claims.AssetID.String(), req)
 		}),
 	}

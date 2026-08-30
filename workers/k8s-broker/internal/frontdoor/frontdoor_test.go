@@ -19,9 +19,13 @@ import (
 )
 
 // captureRT records the request the front door forwarded to the "agent" tunnel.
-type captureRT struct{ got *http.Request }
+type captureRT struct {
+	got     *http.Request
+	assetID string
+}
 
-func (c *captureRT) RoundTrip(_ string, req *http.Request) (*http.Response, error) {
+func (c *captureRT) RoundTrip(assetID string, req *http.Request) (*http.Response, error) {
+	c.assetID = assetID
 	c.got = req.Clone(req.Context())
 	return &http.Response{
 		StatusCode: 200, Body: io.NopCloser(strings.NewReader("pong")),
@@ -81,6 +85,10 @@ func TestFrontDoorImpersonatesAndStrips(t *testing.T) {
 	}
 	if rt.got.URL.Path != "/api/v1/namespaces/default/pods" {
 		t.Fatalf("path = %q", rt.got.URL.Path)
+	}
+	// Routing keys on the verified token's asset, never on client input.
+	if rt.assetID != asset.String() {
+		t.Fatalf("RoundTrip assetID = %q, want %q", rt.assetID, asset)
 	}
 }
 
