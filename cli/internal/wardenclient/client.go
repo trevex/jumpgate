@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -144,6 +145,21 @@ func (c *Client) CreatePostgresSession(ctx context.Context, assetID, role string
 		return "", "", "", fmt.Errorf("creating postgres session: %w", err)
 	}
 	return resp.Msg.GetSessionToken(), resp.Msg.GetGatewayEndpoint(), resp.Msg.GetDefaultDatabase(), nil
+}
+
+// CreateKubernetesSession requests admission to a k8s asset. It returns the bearer
+// session token, the gateway endpoint to dial, and the token's expiry. NotFound → no access.
+func (c *Client) CreateKubernetesSession(ctx context.Context, assetID string) (token, gatewayEndpoint string, expiresAt time.Time, err error) {
+	req := connect.NewRequest(&sessionv1.CreateKubernetesSessionRequest{AssetId: assetID})
+	c.authorize(req)
+	resp, err := c.session.CreateKubernetesSession(ctx, req)
+	if err != nil {
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return "", "", time.Time{}, errors.New("no access to asset")
+		}
+		return "", "", time.Time{}, fmt.Errorf("creating kubernetes session: %w", err)
+	}
+	return resp.Msg.GetSessionToken(), resp.Msg.GetGatewayEndpoint(), resp.Msg.GetExpiresAt().AsTime(), nil
 }
 
 // CreateEnrollmentToken mints a single-use enrollment token bound to assetID
