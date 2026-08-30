@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Folder,
   FolderOpen,
-  Server,
   KeyRound,
   Users,
   Loader2,
@@ -28,6 +27,7 @@ import { listFolderContents, listAssets, listFolders } from "@/gen/jumpgate/cata
 import { listRoles } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
 import { listGroups } from "@/gen/jumpgate/identity/v1/identity-IdentityService_connectquery";
 import { folderContentsToNodes } from "./tree-model";
+import { assetKindIcon } from "./asset-kind-icon";
 import type { FolderNode, AssetNode, RoleNode, GroupNode } from "./tree-model";
 import {
   TreeMenuProvider,
@@ -318,6 +318,7 @@ function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
   const isSelected = selected?.kind === "asset" && selected.id === asset.id;
   const select = () =>
     onSelect({ kind: "asset", id: asset.id, name: asset.name, path: asset.path, assetKind: asset.kind });
+  const Icon = assetKindIcon(asset.kind);
   return (
     <AssetContextMenu asset={{ id: asset.id, name: asset.name }} onOpen={select}>
       <button
@@ -332,7 +333,7 @@ function AssetLeaf({ asset, depth, selected, onSelect }: AssetLeafProps) {
             : "text-foreground hover:bg-accent hover:text-foreground",
         )}
       >
-        <Server
+        <Icon
           className={cn(
             "h-3.5 w-3.5 shrink-0 transition-colors",
             isSelected ? "text-primary" : "text-muted-foreground group-hover:text-foreground",

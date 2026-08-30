@@ -1,16 +1,18 @@
 /**
- * new-asset-wizard.tsx — Catalog ▸ onboard an SSH asset.
+ * new-asset-wizard.tsx — Catalog ▸ onboard an SSH or Postgres asset.
  *
  * A shadcn Dialog that onboards an asset in a single atomic call: a name
  * (validated against the sibling-uniqueness charset), the destination folder,
- * and an SSHConfigInput built by the shared AssetConfigForm. Onboarding is
- * atomic — `createAsset` seals any inline secrets server-side in one tx.
+ * an asset-type toggle, and the matching config built by the shared
+ * AssetConfigForm (SSH) or PostgresConfigForm. Onboarding is atomic —
+ * `createAsset` seals any inline secrets server-side in one tx.
  *
- * Submit gathers the draft via `buildSSHConfigInput(draft, "create")`; a
- * validation error (missing login name, or a password/key login with no
- * secret) is surfaced inline and blocks the call. On success: toast + race-safe
- * invalidate of `listFolderContents`, then reset + close. On error: surface the
- * server message (the server is the real gate — e.g. AlreadyExists).
+ * Submit gathers the active draft via `buildSSHConfigInput` or
+ * `buildPostgresConfigInput` (mode "create"); a validation error (missing
+ * login name, or a password/key login with no secret) is surfaced inline and
+ * blocks the call. On success: toast + race-safe invalidate of
+ * `listFolderContents`, then reset + close. On error: surface the server
+ * message (the server is the real gate — e.g. AlreadyExists).
  */
 
 import { useState } from "react";
@@ -39,6 +41,12 @@ import {
   emptyDraft,
   type ConfigDraft,
 } from "./asset-config-form";
+import {
+  PostgresConfigForm,
+  buildPostgresConfigInput,
+  emptyPgDraft,
+  type PgConfigDraft,
+} from "./postgres-config-form";
 
 interface NewAssetWizardProps {
   open: boolean;
@@ -65,12 +73,16 @@ export function NewAssetWizard({
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
+  const [kind, setKind] = useState<"ssh" | "postgres">("ssh");
+  const [pgDraft, setPgDraft] = useState<PgConfigDraft>(emptyPgDraft);
   const [configError, setConfigError] = useState<string | null>(null);
 
   function reset() {
     setName("");
     setNameTouched(false);
     setDraft(emptyDraft());
+    setKind("ssh");
+    setPgDraft(emptyPgDraft());
     setConfigError(null);
   }
 
@@ -89,7 +101,7 @@ export function NewAssetWizard({
   });
 
   const nameValid = isValidCatalogName(name);
-  const hasLogin = draft.logins.length >= 1;
+  const hasLogin = kind === "ssh" ? draft.logins.length >= 1 : pgDraft.logins.length >= 1;
   const formValid = nameValid && hasLogin;
 
   function handleOpenChange(next: boolean) {
@@ -101,24 +113,30 @@ export function NewAssetWizard({
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!formValid || isPending) return;
-    const { config, error } = buildSSHConfigInput(draft, "create");
-    if (error) {
-      setConfigError(error);
-      return;
+    if (kind === "ssh") {
+      const { config, error } = buildSSHConfigInput(draft, "create");
+      if (error) {
+        setConfigError(error);
+        return;
+      }
+      setConfigError(null);
+      doCreate({ folderId, name: name.trim(), config: { case: "ssh", value: config } });
+    } else {
+      const { config, error } = buildPostgresConfigInput(pgDraft, "create");
+      if (error) {
+        setConfigError(error);
+        return;
+      }
+      setConfigError(null);
+      doCreate({ folderId, name: name.trim(), config: { case: "postgres", value: config } });
     }
-    setConfigError(null);
-    doCreate({
-      folderId,
-      name: name.trim(),
-      config: { case: "ssh", value: config },
-    });
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="text-title">Onboard SSH asset</DialogTitle>
+          <DialogTitle className="text-title">Onboard asset</DialogTitle>
           <DialogDescription className="text-body">
             {folderPath ? (
               <>
@@ -133,6 +151,28 @@ export function NewAssetWizard({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Asset type */}
+          <div className="flex flex-col gap-1.5">
+            <span className={FIELD_LABEL}>Asset type</span>
+            <div className="inline-flex w-fit rounded-md border border-border p-0.5">
+              {(["ssh", "postgres"] as const).map((k) => (
+                <Button
+                  key={k}
+                  type="button"
+                  size="sm"
+                  variant={kind === k ? "default" : "ghost"}
+                  onClick={() => {
+                    setKind(k);
+                    setConfigError(null);
+                  }}
+                  className="h-7 text-body"
+                >
+                  {k === "ssh" ? "SSH" : "Postgres"}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           {/* Name */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="new-asset-name" className={FIELD_LABEL}>
@@ -164,14 +204,25 @@ export function NewAssetWizard({
 
           <div className="h-px bg-border" role="separator" />
 
-          <AssetConfigForm
-            mode="create"
-            value={draft}
-            onChange={(next) => {
-              setDraft(next);
-              if (configError) setConfigError(null);
-            }}
-          />
+          {kind === "ssh" ? (
+            <AssetConfigForm
+              mode="create"
+              value={draft}
+              onChange={(next) => {
+                setDraft(next);
+                if (configError) setConfigError(null);
+              }}
+            />
+          ) : (
+            <PostgresConfigForm
+              mode="create"
+              value={pgDraft}
+              onChange={(next) => {
+                setPgDraft(next);
+                if (configError) setConfigError(null);
+              }}
+            />
+          )}
 
           {configError && (
             <p role="alert" className={FIELD_ERROR}>
