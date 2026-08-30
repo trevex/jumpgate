@@ -25,6 +25,8 @@ type Claims struct {
 	Mode                 string    // mode — "web" for browser terminals, empty/"ssh" for the CLI
 	Login                string    // login — the target login bound at mint time (web tickets)
 	ClientKeyFingerprint string    // cnf — ssh.FingerprintSHA256 of the client's ephemeral key (empty for web)
+	Groups               []string  // groups — materialized k8s:group qualifiers (kubernetes tokens)
+	BrokerID             string    // broker_id — the broker holding the asset's agent tunnel
 }
 
 // Minter signs session tokens with an Ed25519 secret key.
@@ -77,6 +79,12 @@ func (m *Minter) Mint(c Claims, ttl time.Duration) (string, error) {
 	if err := t.Set("cnf", c.ClientKeyFingerprint); err != nil {
 		return "", err
 	}
+	if err := t.Set("groups", c.Groups); err != nil {
+		return "", err
+	}
+	if err := t.Set("broker_id", c.BrokerID); err != nil {
+		return "", err
+	}
 	return t.V4Sign(m.secret, nil), nil
 }
 
@@ -127,9 +135,13 @@ func (v *Verifier) Verify(token string) (Claims, error) {
 	if mode != "web" && cnf == "" {
 		return Claims{}, errors.New("empty cnf")
 	}
+	var groups []string
+	_ = t.Get("groups", &groups) // absent on old tokens → nil
+	brokerID := optString(t, "broker_id")
 	return Claims{
 		SessionID: sid, UserID: uid, AssetID: aid, Protocol: proto,
 		Mode: mode, Login: login, ClientKeyFingerprint: cnf,
+		Groups: groups, BrokerID: brokerID,
 	}, nil
 }
 

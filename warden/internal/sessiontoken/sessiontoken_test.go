@@ -2,6 +2,7 @@ package sessiontoken
 
 import (
 	"crypto/ed25519"
+	"reflect"
 	"testing"
 	"time"
 
@@ -138,6 +139,45 @@ func TestVerifyRejectsExpired(t *testing.T) {
 	tok, _ := NewMinter(priv).Mint(Claims{SessionID: uuid.New(), UserID: uuid.New(), AssetID: uuid.New(), Protocol: "ssh", ClientKeyFingerprint: "x"}, -time.Second)
 	if _, err := NewVerifier(pub).Verify(tok); err == nil {
 		t.Fatal("expired token must fail")
+	}
+}
+
+func TestMintVerifyGroupsAndBroker(t *testing.T) {
+	pub, priv := testKeypair(t)
+	m, v := NewMinter(priv), NewVerifier(pub)
+	in := Claims{
+		SessionID: uuid.New(), UserID: uuid.New(), AssetID: uuid.New(),
+		Protocol: "kubernetes", Mode: "web",
+		Groups: []string{"developers", "system:masters"}, BrokerID: "broker-1",
+	}
+	tok, err := m.Mint(in, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := v.Verify(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(out.Groups, in.Groups) {
+		t.Fatalf("groups = %v", out.Groups)
+	}
+	if out.BrokerID != "broker-1" {
+		t.Fatalf("broker = %q", out.BrokerID)
+	}
+}
+
+// TestVerifyOldTokenNoGroups: a token minted without the new claims verifies
+// with nil/empty groups/broker_id (backward compatibility).
+func TestVerifyOldTokenNoGroups(t *testing.T) {
+	pub, priv := testKeypair(t)
+	m, v := NewMinter(priv), NewVerifier(pub)
+	tok, _ := m.Mint(Claims{SessionID: uuid.New(), UserID: uuid.New(), AssetID: uuid.New(), Protocol: "ssh", ClientKeyFingerprint: "fp"}, time.Minute)
+	out, err := v.Verify(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Groups != nil || out.BrokerID != "" {
+		t.Fatal("expected empty groups/broker")
 	}
 }
 
