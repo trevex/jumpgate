@@ -46,6 +46,7 @@ type Registry struct {
 	sinks      map[string]map[chan Signal]struct{} // worker_id → set of sinks
 	meta       map[string]WorkerMeta               // worker_id → routing metadata
 	rosterSubs map[chan RosterEvent]struct{}       // active roster subscribers
+	tunnels    map[string]string                   // asset_id → broker worker_id
 }
 
 // NewRegistry constructs an empty worker registry.
@@ -54,7 +55,43 @@ func NewRegistry() *Registry {
 		sinks:      map[string]map[chan Signal]struct{}{},
 		meta:       map[string]WorkerMeta{},
 		rosterSubs: map[chan RosterEvent]struct{}{},
+		tunnels:    map[string]string{},
 	}
+}
+
+// SetTunnels replaces brokerID's advertised asset set. Assets no longer listed by
+// this broker are dropped; an asset now claimed by brokerID is (re)assigned to it.
+func (r *Registry) SetTunnels(brokerID string, assetIDs []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Drop this broker's stale entries.
+	for a, b := range r.tunnels {
+		if b == brokerID {
+			delete(r.tunnels, a)
+		}
+	}
+	for _, a := range assetIDs {
+		r.tunnels[a] = brokerID
+	}
+}
+
+// ClearTunnels drops every asset advertised by brokerID (on disconnect).
+func (r *Registry) ClearTunnels(brokerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for a, b := range r.tunnels {
+		if b == brokerID {
+			delete(r.tunnels, a)
+		}
+	}
+}
+
+// BrokerForAsset returns the broker id currently holding assetID's agent tunnel.
+func (r *Registry) BrokerForAsset(assetID string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.tunnels[assetID]
+	return id, ok
 }
 
 // Add registers a teardown sink for a worker. A worker may hold multiple sinks
