@@ -4,5 +4,7 @@ use (
 	./cli
 	./test/e2e
 	./warden
+	./workers/k8s-agent
+	./workers/k8s-broker
 	./workers/pg-proxy
 )
