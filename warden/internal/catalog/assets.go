@@ -18,11 +18,12 @@ import (
 )
 
 // AssetConfigInput is a kind-tagged union of a create/update config write. Exactly
-// one of SSH/Postgres is non-nil; Kind names which and becomes the asset's kind.
+// one of SSH/Postgres/Kubernetes is set; Kind names which and becomes the asset's kind.
 type AssetConfigInput struct {
-	Kind     string
-	SSH      *SSHConfigInput
-	Postgres *PostgresConfigInput
+	Kind       string
+	SSH        *SSHConfigInput
+	Postgres   *PostgresConfigInput
+	Kubernetes bool // kind == "k8s": no config to persist
 }
 
 // assetPath returns an asset's best-effort DNS path via a FolderPath lookup. On a
@@ -89,6 +90,9 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 		}
 		res.PGConfig, res.PGLogins = &cfg, logins
+	case "k8s":
+		// A k8s asset carries no connection config or logins; the asset row
+		// (kind="k8s") is the whole record. Groups come from k8s:group caps.
 	default:
 		return AssetWithConfig{}, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported asset kind"))
 	}

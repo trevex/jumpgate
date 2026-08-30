@@ -1,5 +1,7 @@
 package authz
 
+import "strings"
+
 // Capabilities is the flattened set of capability patterns a user holds on one
 // asset (via the held standing closure). It lets a caller test several concrete
 // capabilities against a single closure fetch instead of re-running the recursive
@@ -26,6 +28,7 @@ func (c Capabilities) Allows(capability string) bool {
 const (
 	SSHLoginPrefix = "ssh:login:"
 	DBLoginPrefix  = "db:login:"
+	K8sGroupPrefix = "k8s:group:"
 )
 
 // EntitledLoginsFor returns the order-preserving subset of allowedLogins for
@@ -44,6 +47,30 @@ func (c Capabilities) EntitledLoginsFor(prefix string, allowedLogins []string) [
 // EntitledLogins is the SSH-kind convenience wrapper (prefix "ssh:login:").
 func (c Capabilities) EntitledLogins(allowedLogins []string) []string {
 	return c.EntitledLoginsFor(SSHLoginPrefix, allowedLogins)
+}
+
+// ConcreteQualifiers returns the deduped, order-preserving set of concrete
+// qualifiers held under prefix — i.e. every held pattern "prefix+<qual>" whose
+// <qual> contains no wildcard. Unlike EntitledLoginsFor (which tests a known
+// allow-list), this ENUMERATES what the closure carries: k8s groups are an
+// attribute projected verbatim downstream, not a predicate. Wildcard-bearing
+// patterns name no concrete attribute and are skipped, so holding `**` or
+// `k8s:group:*` yields no group (an intended safety property).
+func (c Capabilities) ConcreteQualifiers(prefix string) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	for _, p := range c {
+		rest, ok := strings.CutPrefix(p, prefix)
+		if !ok || rest == "" || strings.Contains(rest, "*") {
+			continue
+		}
+		if _, dup := seen[rest]; dup {
+			continue
+		}
+		seen[rest] = struct{}{}
+		out = append(out, rest)
+	}
+	return out
 }
 
 // FolderReadCap is the subtree-wide catalog READ capability. Held on a folder F it

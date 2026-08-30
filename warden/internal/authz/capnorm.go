@@ -8,7 +8,7 @@ import "strings"
 // trailing columns `”`. Only the first three segments are represented (the whole
 // real vocabulary is ≤3 segments).
 func NormalizeCap(pattern string) (scope, action, qualifier string) {
-	segs := strings.Split(pattern, ":")
+	segs := strings.SplitN(pattern, ":", 3)
 	col := [3]string{"", "", ""}
 	star := false
 	for i := 0; i < 3; i++ {

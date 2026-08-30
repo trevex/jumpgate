@@ -12,6 +12,8 @@ func TestNormalizeCap(t *testing.T) {
 		{"recording:read", "recording", "read", ""},
 		{"catalog:asset:read", "catalog", "asset", "read"},
 		{"ssh:connect", "ssh", "connect", ""},
+		{"k8s:group:system:masters", "k8s", "group", "system:masters"},
+		{"k8s:group:developers", "k8s", "group", "developers"},
 	}
 	for _, c := range cases {
 		s, a, q := NormalizeCap(c.in)
@@ -53,5 +55,13 @@ func TestReconstructMatchPreserving(t *testing.T) {
 					p, reconstructed, r, want, got)
 			}
 		}
+	}
+}
+
+func TestNormalizeReconstructRoundTripColonQualifier(t *testing.T) {
+	const in = "k8s:group:system:masters"
+	s, a, q := NormalizeCap(in)
+	if got := ReconstructCap(s, a, q); got != in {
+		t.Fatalf("round-trip = %q, want %q", got, in)
 	}
 }
