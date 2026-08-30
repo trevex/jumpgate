@@ -255,9 +255,10 @@ func toDomainPostgresConfig(in *catalogv1.PostgresConfigInput) (PostgresConfigIn
 	return out, nil
 }
 
-// toAssetConfigInput converts a create/update config oneof (SSH or Postgres) into
-// the kind-tagged domain union, running each kind's non-proto validation.
-func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresConfigInput) (AssetConfigInput, error) {
+// toAssetConfigInput converts a create/update config oneof (SSH, Postgres, or
+// Kubernetes) into the kind-tagged domain union, running each kind's non-proto
+// validation.
+func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresConfigInput, k8s *catalogv1.KubernetesConfigInput) (AssetConfigInput, error) {
 	switch {
 	case ssh != nil:
 		if err := validateSSHConfigInput(ssh); err != nil {
@@ -277,6 +278,8 @@ func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresCon
 			return AssetConfigInput{}, err
 		}
 		return AssetConfigInput{Kind: "postgres", Postgres: &in}, nil
+	case k8s != nil:
+		return AssetConfigInput{Kind: "k8s", Kubernetes: true}, nil
 	default:
 		return AssetConfigInput{}, connect.NewError(connect.CodeInvalidArgument, errors.New("config required"))
 	}
@@ -389,7 +392,7 @@ func (h *Handler) CreateAsset(ctx context.Context, req *connect.Request[catalogv
 	if err := h.guard.RequireCap(ctx, c, "catalog:asset:create", authz.FolderScope(fid)); err != nil {
 		return nil, err
 	}
-	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres())
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), req.Msg.GetKubernetes())
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +436,7 @@ func (h *Handler) UpdateAssetConfig(ctx context.Context, req *connect.Request[ca
 	if err := h.guard.RequireCap(ctx, c, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres())
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), nil)
 	if err != nil {
 		return nil, err
 	}
