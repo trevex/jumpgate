@@ -75,14 +75,11 @@ func (s *Service) Mint(ctx context.Context, assetID uuid.UUID) (string, time.Tim
 // then signs the CSR into a mesh leaf cert whose SPIFFE URI is derived from the
 // bound asset (never from the CSR). Returns the leaf PEM and the mesh CA bundle.
 func (s *Service) SignAgentCert(ctx context.Context, rawToken string, csrPEM []byte) (certPEM, caBundlePEM []byte, err error) {
-	assetID, err := s.q.ConsumeAgentEnrollmentToken(ctx, hashToken(rawToken))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, ErrInvalidToken
-		}
-		return nil, nil, fmt.Errorf("consume enrollment token: %w", err)
-	}
-
+	// Validate the CSR and load the CA BEFORE consuming the single-use token, so a
+	// transient CA failure (e.g. mesh CA not yet provisioned at cluster bring-up)
+	// doesn't burn the token and strand the agent with a dead credential. The
+	// ConsumeAgentEnrollmentToken DELETE…RETURNING remains the atomic single-use
+	// gate regardless of ordering.
 	block, _ := pem.Decode(csrPEM)
 	if block == nil {
 		return nil, nil, errors.New("invalid CSR PEM")
@@ -102,6 +99,14 @@ func (s *Service) SignAgentCert(ctx context.Context, rawToken string, csrPEM []b
 	mca, err := ca.LoadMeshCA(keyDER, []byte(caRow.PublicMaterial))
 	if err != nil {
 		return nil, nil, fmt.Errorf("load mesh CA: %w", err)
+	}
+
+	assetID, err := s.q.ConsumeAgentEnrollmentToken(ctx, hashToken(rawToken))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, ErrInvalidToken
+		}
+		return nil, nil, fmt.Errorf("consume enrollment token: %w", err)
 	}
 
 	spiffeID := mesh.Identity{Role: "agent", ID: assetID.String()}.SpiffeID()

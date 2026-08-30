@@ -107,3 +107,20 @@ spec:
   commonName: spiffe://jumpgate/worker/{{ .Values.worker.pgId }}
   uris:
     - spiffe://jumpgate/worker/{{ .Values.worker.pgId }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-broker-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-broker-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/broker/{{ .Values.broker.id }}
+  uris:
+    - spiffe://jumpgate/broker/{{ .Values.broker.id }}

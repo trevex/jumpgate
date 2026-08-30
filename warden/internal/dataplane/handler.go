@@ -22,14 +22,15 @@ import (
 )
 
 // workerIdentity returns the authoritative worker id from the request's mesh
-// identity, enforcing that the caller presented a `worker`-role mesh cert whose
-// SAN id equals claimedID. Enforcement is UNCONDITIONAL: no mesh identity in ctx
-// (illegitimate on the mesh listener, where mTLS guarantees identity) or a claim
-// that differs from the cert → PermissionDenied.
+// identity, enforcing that the caller presented a `worker`- or `broker`-role mesh
+// cert whose SAN id equals claimedID. Enforcement is UNCONDITIONAL: no mesh
+// identity in ctx (illegitimate on the mesh listener, where mTLS guarantees
+// identity) or a claim that differs from the cert → PermissionDenied. The k8s
+// broker registers on this same worker lifeline as role `broker`.
 func workerIdentity(ctx context.Context, claimedID string) (string, error) {
 	id, ok := mesh.IdentityFromContext(ctx)
-	if !ok || id.Role != "worker" {
-		return "", connect.NewError(connect.CodePermissionDenied, errors.New("worker mesh identity required"))
+	if !ok || (id.Role != "worker" && id.Role != "broker") {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("worker or broker mesh identity required"))
 	}
 	if claimedID != id.ID {
 		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("worker_id %q does not match cert identity %q", claimedID, id.ID))

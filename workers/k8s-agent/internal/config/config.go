@@ -13,6 +13,12 @@ type Config struct {
 	MeshCAFile   string // AGENT_MESH_CA
 	BrokerAddr   string // BROKER_ADDR — host:port of the broker's agent listener
 
+	// Enrollment (optional): when EnrollmentToken is set and the mesh cert file is
+	// absent, the agent bootstraps its mesh identity via warden before loading it.
+	EnrollmentToken string // AGENT_ENROLLMENT_TOKEN
+	WardenEnrollURL string // WARDEN_ENROLL_URL — warden user API base URL (EnrollmentService)
+	EnrollmentCA    string // WARDEN_ENROLL_CA — optional PEM CA path to trust warden TLS (empty = http)
+
 	// Local API server the agent proxies to (defaults derive from the in-cluster env).
 	APIServerURL string // KUBE_APISERVER_URL — e.g. https://kubernetes.default.svc; falls back to KUBERNETES_SERVICE_HOST/PORT
 	APIServerCA  string // KUBE_APISERVER_CA — path to the API server CA bundle
@@ -28,6 +34,11 @@ func FromEnv() (Config, error) {
 		MeshKeyFile:  os.Getenv("AGENT_MESH_KEY"),
 		MeshCAFile:   os.Getenv("AGENT_MESH_CA"),
 		BrokerAddr:   os.Getenv("BROKER_ADDR"),
+
+		EnrollmentToken: os.Getenv("AGENT_ENROLLMENT_TOKEN"),
+		WardenEnrollURL: os.Getenv("WARDEN_ENROLL_URL"),
+		EnrollmentCA:    os.Getenv("WARDEN_ENROLL_CA"),
+
 		APIServerURL: apiServerURL(),
 		APIServerCA:  envOr("KUBE_APISERVER_CA", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"),
 		SATokenFile:  envOr("KUBE_SA_TOKEN_FILE", "/var/run/secrets/kubernetes.io/serviceaccount/token"),
