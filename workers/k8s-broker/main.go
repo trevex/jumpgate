@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/frontdoor"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/mesh"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/meshclient"
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/record"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/sessiontoken"
 )
 
@@ -65,6 +66,19 @@ func main() {
 	}
 	verifier := sessiontoken.NewVerifier(pubKey)
 
+	// Per-connection audit recording. An empty bucket yields a nil uploader, which
+	// the recorder treats as fail-closed: every k8s request is refused (502).
+	uploader, err := record.NewS3Uploader(ctx, cfg.RecordingBucket, cfg.RecordingEndpoint, cfg.RecordingRegion)
+	if err != nil {
+		slog.Error("recording uploader", "err", err)
+		os.Exit(1)
+	}
+	if uploader == nil {
+		slog.Warn("recording disabled: RECORDING_S3_BUCKET unset; kubernetes sessions will be refused")
+	}
+	ended := make(chan frontdoor.SessionEnd, 16) // drained + reported to warden in a later slice
+	rec := frontdoor.NewRecorder(uploader, cfg.BrokerID, ended)
+
 	fdTLS := mesh.ServerTLSConfigRole(leaf, pool, "gateway")
 	fdTLS.NextProtos = []string{"http/1.1"} // gateway blind-pipes HTTP/1.1, not h2
 	fdRawLn, err := net.Listen("tcp", cfg.DataplaneAddr)
@@ -74,8 +88,10 @@ func main() {
 	}
 	fdLn := tls.NewListener(fdRawLn, fdTLS)
 	fdSrv := &http.Server{
-		Handler:           frontdoor.Handler(b, verifier),
+		Handler:           frontdoor.Handler(b, verifier, rec),
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnContext:       rec.ConnContext,
+		ConnState:         rec.ConnState,
 	}
 	go func() { <-ctx.Done(); _ = fdSrv.Close() }()
 	go func() {

@@ -29,7 +29,7 @@ var errNoClaims = errors.New("frontdoor: missing verified claims")
 // Handler builds the front-door http.Handler. Every request must carry a valid
 // kubernetes session token in Authorization: Bearer; identity comes ONLY from the
 // verified token, never from client headers.
-func Handler(t Tunnel, v *sessiontoken.Verifier) http.Handler {
+func Handler(t Tunnel, v *sessiontoken.Verifier, rec *Recorder) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			claims, ok := pr.In.Context().Value(ctxKey{}).(sessiontoken.Claims)
@@ -58,7 +58,19 @@ func Handler(t Tunnel, v *sessiontoken.Verifier) http.Handler {
 			if !ok {
 				return nil, errNoClaims
 			}
-			return t.RoundTrip(claims.AssetID.String(), req)
+			resp, err := t.RoundTrip(claims.AssetID.String(), req)
+			code := 0
+			if resp != nil {
+				code = resp.StatusCode
+			}
+			// Audit fail-closed: a request we cannot record must not succeed.
+			if terr := rec.tap(req.Context(), claims, req, code); terr != nil {
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+				return nil, terr
+			}
+			return resp, err
 		}),
 	}
 
