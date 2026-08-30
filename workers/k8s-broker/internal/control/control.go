@@ -13,6 +13,7 @@ import (
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
 
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/frontdoor"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/tunnels"
 )
 
@@ -22,11 +23,12 @@ const (
 )
 
 // Run maintains the WorkerStream lifeline: registers (worker_id=brokerID,
-// protocol=kubernetes, dataplane_address), heartbeats, and re-advertises the
-// held tunnel set on every change. Reconnects with backoff until ctx ends.
-func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string) error {
+// protocol=kubernetes, dataplane_address), heartbeats, re-advertises the held
+// tunnel set on every change, and forwards SessionEnd reports from `ended` as
+// SessionEnded frames. Reconnects with backoff until ctx ends.
+func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd) error {
 	for {
-		if err := connectAndRun(ctx, client, reg, brokerID, dataplaneAddr); err != nil && ctx.Err() == nil {
+		if err := connectAndRun(ctx, client, reg, brokerID, dataplaneAddr, ended); err != nil && ctx.Err() == nil {
 			slog.Warn("worker stream dropped; reconnecting", "err", err)
 		}
 		select {
@@ -37,7 +39,7 @@ func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, 
 	}
 }
 
-func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string) error {
+func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd) error {
 	stream := client.WorkerStream(ctx)
 	defer func() { _ = stream.CloseRequest() }()
 	defer func() { _ = stream.CloseResponse() }()
@@ -78,6 +80,26 @@ func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServi
 			}
 		case <-reg.Changed():
 			if err := advertise(stream, reg); err != nil {
+				return err
+			}
+		case se := <-ended:
+			if err := stream.Send(&dataplanev1.WorkerMessage{
+				Msg: &dataplanev1.WorkerMessage_SessionEnded{SessionEnded: &dataplanev1.SessionEnded{
+					SessionId: se.RecordingID, // per-connection ledger row PK
+					Recording: &dataplanev1.RecordingInfo{
+						ObjectKey:       se.Report.ObjectKey,
+						SizeBytes:       se.Report.SizeBytes,
+						Sha256:          se.Report.SHA256Hex,
+						StartedAtUnixMs: se.Report.StartedAtMS,
+						EndedAtUnixMs:   se.Report.EndedAtMS,
+						Status:          se.Report.Status,
+						UserId:          se.UserID,
+						AssetId:         se.AssetID,
+						WorkerId:        brokerID,
+						SessionId:       se.SessionID, // token jti cross-ref
+					},
+				}},
+			}); err != nil {
 				return err
 			}
 		}

@@ -66,17 +66,17 @@ func main() {
 	}
 	verifier := sessiontoken.NewVerifier(pubKey)
 
-	// Per-connection audit recording. An empty bucket yields a nil uploader, which
-	// the recorder treats as fail-closed: every k8s request is refused (502).
+	// Per-connection audit recording is mandatory for kubernetes sessions.
 	uploader, err := record.NewS3Uploader(ctx, cfg.RecordingBucket, cfg.RecordingEndpoint, cfg.RecordingRegion)
 	if err != nil {
 		slog.Error("recording uploader", "err", err)
 		os.Exit(1)
 	}
 	if uploader == nil {
-		slog.Warn("recording disabled: RECORDING_S3_BUCKET unset; kubernetes sessions will be refused")
+		slog.Error("RECORDING_S3_BUCKET is required: kubernetes sessions must be recorded")
+		os.Exit(1)
 	}
-	ended := make(chan frontdoor.SessionEnd, 16) // drained + reported to warden in a later slice
+	ended := make(chan frontdoor.SessionEnd, 16)
 	rec := frontdoor.NewRecorder(uploader, cfg.BrokerID, ended)
 
 	fdTLS := mesh.ServerTLSConfigRole(leaf, pool, "gateway")
@@ -103,7 +103,7 @@ func main() {
 	slog.Info("front door up", "addr", cfg.DataplaneAddr)
 
 	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
-	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr); err != nil && ctx.Err() == nil {
+	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr, ended); err != nil && ctx.Err() == nil {
 		slog.Error("control loop", "err", err)
 		os.Exit(1)
 	}
