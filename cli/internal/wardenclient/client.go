@@ -16,6 +16,8 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
+	enrollmentv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1/enrollmentv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
@@ -34,6 +36,7 @@ type Client struct {
 	accessRequest accessrequestv1connect.AccessRequestServiceClient
 	recording     recordingv1connect.RecordingServiceClient
 	vault         vaultv1connect.VaultServiceClient
+	enrollment    enrollmentv1connect.EnrollmentServiceClient
 }
 
 // New builds a Client for the warden at addr, authenticating with token. The
@@ -50,6 +53,7 @@ func New(addr, token string) *Client {
 		accessRequest: accessrequestv1connect.NewAccessRequestServiceClient(httpc, addr),
 		recording:     recordingv1connect.NewRecordingServiceClient(httpc, addr),
 		vault:         vaultv1connect.NewVaultServiceClient(httpc, addr),
+		enrollment:    enrollmentv1connect.NewEnrollmentServiceClient(httpc, addr),
 	}
 }
 
@@ -140,6 +144,18 @@ func (c *Client) CreatePostgresSession(ctx context.Context, assetID, role string
 		return "", "", "", fmt.Errorf("creating postgres session: %w", err)
 	}
 	return resp.Msg.GetSessionToken(), resp.Msg.GetGatewayEndpoint(), resp.Msg.GetDefaultDatabase(), nil
+}
+
+// CreateEnrollmentToken mints a single-use enrollment token bound to assetID
+// (admin-only; requires catalog:asset:update on the asset).
+func (c *Client) CreateEnrollmentToken(ctx context.Context, assetID string) (token, expiresAt string, err error) {
+	req := connect.NewRequest(&enrollmentv1.CreateEnrollmentTokenRequest{AssetId: assetID})
+	c.authorize(req)
+	resp, err := c.enrollment.CreateEnrollmentToken(ctx, req)
+	if err != nil {
+		return "", "", fmt.Errorf("creating enrollment token: %w", err)
+	}
+	return resp.Msg.GetToken(), resp.Msg.GetExpiresAt(), nil
 }
 
 // authorize sets the bearer token on a request.
