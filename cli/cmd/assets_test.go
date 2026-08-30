@@ -177,6 +177,42 @@ func TestAssetsSSHCreate(t *testing.T) {
 	}
 }
 
+func TestAssetsK8sCreate(t *testing.T) {
+	const folderID = "22222222-2222-2222-2222-222222222222"
+	s := &stubAssets{}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetArgs([]string{
+		"assets", "k8s", "create", "prod-cluster",
+		"--folder", folderID,
+	})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	if s.gotCreateAsset == nil {
+		t.Fatal("CreateAsset not called")
+	}
+	if s.gotCreateAsset.GetFolderId() != folderID {
+		t.Fatalf("folder id=%q", s.gotCreateAsset.GetFolderId())
+	}
+	if s.gotCreateAsset.GetName() != "prod-cluster" {
+		t.Fatalf("name=%q", s.gotCreateAsset.GetName())
+	}
+	if s.gotCreateAsset.GetKubernetes() == nil {
+		t.Fatalf("expected kubernetes config arm, got %T", s.gotCreateAsset.GetConfig())
+	}
+
+	if !strings.Contains(out.String(), "a-123") {
+		t.Fatalf("out=%s", out.String())
+	}
+}
+
 func TestAssetsSSHCreateCommaSeparatedLogins(t *testing.T) {
 	const folderID = "22222222-2222-2222-2222-222222222222"
 	s := &stubAssets{}

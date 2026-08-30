@@ -120,6 +120,22 @@ var assetsPGLoginSetCmd = &cobra.Command{
 	RunE: runAssetsPGLoginSet,
 }
 
+var assetsK8sCmd = &cobra.Command{
+	Use:   "k8s",
+	Short: "Manage Kubernetes assets",
+}
+
+var k8sCreateFolder string
+
+var assetsK8sCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a Kubernetes asset (an in-cluster agent is enrolled separately)",
+	Long: "Create a Kubernetes cluster asset. A k8s asset stores no endpoint or " +
+		"credentials; an in-cluster agent is enrolled against it in a later step.",
+	Args: cobra.ExactArgs(1),
+	RunE: runAssetsK8sCreate,
+}
+
 var assetsListCascade bool
 
 var assetsListCmd = &cobra.Command{
@@ -194,10 +210,15 @@ func init() {
 	assetsPGCmd.AddCommand(assetsPGCreateCmd)
 	assetsPGCmd.AddCommand(assetsPGLoginCmd)
 
+	assetsK8sCreateCmd.Flags().StringVar(&k8sCreateFolder, "folder", "", "folder id or name (required)")
+	_ = assetsK8sCreateCmd.MarkFlagRequired("folder")
+	assetsK8sCmd.AddCommand(assetsK8sCreateCmd)
+
 	assetsListCmd.Flags().BoolVar(&assetsListCascade, "cascade", false, "include assets in all descendant folders")
 
 	assetsCmd.AddCommand(assetsSSHCmd)
 	assetsCmd.AddCommand(assetsPGCmd)
+	assetsCmd.AddCommand(assetsK8sCmd)
 	assetsCmd.AddCommand(assetsListCmd)
 	assetsCmd.AddCommand(assetsGetCmd)
 	assetsCmd.AddCommand(assetsDeleteCmd)
@@ -639,6 +660,37 @@ func pgLoginInputKind(l *catalogv1.PostgresLoginInput) string {
 
 func pgLoginInputRow(l *catalogv1.PostgresLoginInput) []string {
 	return []string{l.GetRole(), pgLoginInputKind(l)}
+}
+
+func runAssetsK8sCreate(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	folderID, err := resolveFolderID(cmd.Context(), cl, k8sCreateFolder)
+	if err != nil {
+		return err
+	}
+
+	// A k8s asset stores no config: the in-cluster agent dials out with its own
+	// ServiceAccount and groups come from k8s:group caps, not stored logins.
+	createReq := connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folderID,
+		Name:     args[0],
+		Config:   &catalogv1.CreateAssetRequest_Kubernetes{Kubernetes: &catalogv1.KubernetesConfigInput{}},
+	})
+	cl.Authorize(createReq)
+	createResp, err := cl.Catalog().CreateAsset(cmd.Context(), createReq)
+	if err != nil {
+		return err
+	}
+	asset := createResp.Msg.GetAsset()
+
+	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
+		Headers: assetHeaders,
+		Rows:    [][]string{assetRow(asset)},
+	})
 }
 
 func runAssetsList(cmd *cobra.Command, args []string) error {
