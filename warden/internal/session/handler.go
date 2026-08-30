@@ -137,7 +137,9 @@ func (s *Handler) CreateKubernetesSession(ctx context.Context, req *connect.Requ
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&sessionv1.CreateKubernetesSessionResponse{
-		SessionToken: out.Token, GatewayEndpoint: out.Endpoint,
+		SessionToken:    out.Token,
+		GatewayEndpoint: out.Endpoint,
+		ExpiresAt:       timestamppb.New(out.ExpiresAt),
 	}), nil
 }
 

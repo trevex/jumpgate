@@ -429,6 +429,7 @@ type CreateKubernetesSessionResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	SessionToken    string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -477,6 +478,13 @@ func (x *CreateKubernetesSessionResponse) GetGatewayEndpoint() string {
 	return ""
 }
 
+func (x *CreateKubernetesSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -508,10 +516,12 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x12)\n" +
 	"\x10default_database\x18\x03 \x01(\tR\x0fdefaultDatabase\"E\n" +
 	"\x1eCreateKubernetesSessionRequest\x12#\n" +
-	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"q\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\"\xac\x01\n" +
 	"\x1fCreateKubernetesSessionResponse\x12#\n" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
-	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint2\xf9\x03\n" +
+	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\xf9\x03\n" +
 	"\x0eSessionService\x12h\n" +
 	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
 	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00\x12\x80\x01\n" +
@@ -545,19 +555,20 @@ var file_jumpgate_session_v1_session_proto_goTypes = []any{
 var file_jumpgate_session_v1_session_proto_depIdxs = []int32{
 	8, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
 	8, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 2: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
-	2, // 3: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
-	4, // 4: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
-	6, // 5: jumpgate.session.v1.SessionService.CreateKubernetesSession:input_type -> jumpgate.session.v1.CreateKubernetesSessionRequest
-	1, // 6: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
-	3, // 7: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
-	5, // 8: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
-	7, // 9: jumpgate.session.v1.SessionService.CreateKubernetesSession:output_type -> jumpgate.session.v1.CreateKubernetesSessionResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	8, // 2: jumpgate.session.v1.CreateKubernetesSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	0, // 3: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
+	2, // 4: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
+	4, // 5: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
+	6, // 6: jumpgate.session.v1.SessionService.CreateKubernetesSession:input_type -> jumpgate.session.v1.CreateKubernetesSessionRequest
+	1, // 7: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
+	3, // 8: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
+	5, // 9: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
+	7, // 10: jumpgate.session.v1.SessionService.CreateKubernetesSession:output_type -> jumpgate.session.v1.CreateKubernetesSessionResponse
+	7, // [7:11] is the sub-list for method output_type
+	3, // [3:7] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_session_v1_session_proto_init() }
