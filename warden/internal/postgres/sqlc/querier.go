@@ -54,6 +54,7 @@ type Querier interface {
 	// childFolderIDs: the ids of folders directly under `parent`, ordered by (name, id).
 	// A NULL parent selects the tree root (parent_id IS NULL).
 	ChildFolderIDs(ctx context.Context, parent pgtype.UUID) ([]uuid.UUID, error)
+	ConsumeAgentEnrollmentToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
 	CountBindingsScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
@@ -67,6 +68,7 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAccessGrant(ctx context.Context, arg CreateAccessGrantParams) (AccessGrant, error)
 	CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error)
+	CreateAgentEnrollmentToken(ctx context.Context, arg CreateAgentEnrollmentTokenParams) (AgentEnrollmentToken, error)
 	// The asset's catalog_names entry is registered by an AFTER INSERT trigger
 	// (trg_assets_register_name), so an asset can never exist without a resolvable name.
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset, error)
@@ -88,6 +90,7 @@ type Querier interface {
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
+	DeleteExpiredAgentEnrollmentTokens(ctx context.Context) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
