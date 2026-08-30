@@ -2,9 +2,10 @@
 // (PASETO v4.public, Ed25519) offline — the broker front door consumes the same
 // token the gateway routes on. Verify-only.
 //
-// ported from warden/internal/sessiontoken (that package is internal/ and
-// unimportable across modules) — same precedent as internal/mesh. Keep the
-// claim names in sync with warden if the token format changes.
+// ponytail: copy of the verify half of warden/internal/sessiontoken (that
+// package is internal/ and unimportable across modules) — same precedent as
+// internal/mesh; unify into a shared module if a third consumer appears. Keep
+// the claim names in sync with warden if the token format changes.
 package sessiontoken
 
 import (
