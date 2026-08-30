@@ -92,7 +92,10 @@ type Querier interface {
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
-	// Drop asset_secrets no longer referenced by any of the asset's logins.
+	// Drop asset_secrets no longer referenced by any of the asset's logins (ssh OR
+	// postgres). A postgres password login references a secret via secret_id too, so it
+	// must be counted here or the secret is wrongly deemed orphan and its DELETE trips
+	// the postgres_login_secret_same_asset FK (ON DELETE RESTRICT).
 	DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	// Deletes the policies for which the role is the requestable role (meaningless once

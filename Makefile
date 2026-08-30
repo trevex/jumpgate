@@ -81,9 +81,11 @@ kind-images: ## Build the container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/gateway.Dockerfile -t jumpgate/gateway:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/ssh-proxy.Dockerfile -t jumpgate/ssh-proxy:dev .
+	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/pg-proxy.Dockerfile -t jumpgate/pg-proxy:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd.Dockerfile -t jumpgate/testworkload-sshd:dev .
 	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd-password.Dockerfile -t jumpgate/testworkload-sshd-password:dev test/env/testworkload
 	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/sshd-key.Dockerfile -t jumpgate/testworkload-sshd-key:dev test/env/testworkload
+	docker build $(DOCKER_BUILD_FLAGS) -f test/env/testworkload/pg-target.Dockerfile -t jumpgate/testworkload-pg-target:dev test/env/testworkload
 
 kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the ssh test workload
 	kind create cluster --name $(KIND_CLUSTER) --config test/env/cluster.yaml
@@ -92,7 +94,7 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 	$(MAKE) kind-images
 	docker pull $(KUBECTL_IMAGE)
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev jumpgate/testworkload-pg-target:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
 	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f test/env/testworkload/sshd.yaml
@@ -100,17 +102,20 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl apply -f test/env/testworkload/sshd-password.yaml -f test/env/testworkload/sshd-key.yaml
 	kubectl rollout status deploy/ssh-target-password --timeout=120s
 	kubectl rollout status deploy/ssh-target-key --timeout=120s
+	kubectl apply -f test/env/testworkload/pg-target.yaml
+	kubectl rollout status deploy/pg-target --timeout=120s
 
 kind-redeploy: ## Rebuild app images, reload into the running cluster, helm upgrade + restart app pods (NOTE: cannot apply cluster.yaml changes like extraPortMappings — those need kind-down/kind-up)
 	$(MAKE) kind-images
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev --name $(KIND_CLUSTER)
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev --name $(KIND_CLUSTER)
 	helm upgrade jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# Images keep the :dev tag, so a manifest-only upgrade won't repull; restart to
 	# pick up the freshly reloaded images.
-	kubectl rollout restart deploy/jumpgate-warden deploy/jumpgate-gateway deploy/jumpgate-ssh-proxy
+	kubectl rollout restart deploy/jumpgate-warden deploy/jumpgate-gateway deploy/jumpgate-ssh-proxy deploy/jumpgate-pg-proxy
 	kubectl rollout status deploy/jumpgate-warden --timeout=180s
 	kubectl rollout status deploy/jumpgate-gateway --timeout=180s
 	kubectl rollout status deploy/jumpgate-ssh-proxy --timeout=180s
+	kubectl rollout status deploy/jumpgate-pg-proxy --timeout=180s
 
 kind-down: ## Delete the kind cluster
 	kind delete cluster --name $(KIND_CLUSTER)

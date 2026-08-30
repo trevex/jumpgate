@@ -115,6 +115,13 @@ pub async fn setup_session(
         }
         Some(setup_session_response::Credential::Password(pw)) => TargetCredential::Password(pw),
         Some(setup_session_response::Credential::PrivateKey(key)) => TargetCredential::Key(key),
+        // Postgres credential arms of the shared dataplane oneof: the gateway routes
+        // by protocol so an ssh worker never receives these, but the match must be
+        // exhaustive over the shared enum.
+        Some(setup_session_response::Credential::X509Certificate(_))
+        | Some(setup_session_response::Credential::PgPassword(_)) => {
+            return Err(anyhow!("unexpected postgres credential on an ssh worker"));
+        }
         None => return Err(anyhow!("SetupSession returned no credential")),
     };
 
