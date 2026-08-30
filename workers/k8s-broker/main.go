@@ -81,6 +81,7 @@ func main() {
 	go func() {
 		if err := fdSrv.Serve(fdLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("front door serve", "err", err)
+			os.Exit(1) // fail fast like the agent listener — a dead front door is useless
 		}
 	}()
 	slog.Info("front door up", "addr", cfg.DataplaneAddr)
