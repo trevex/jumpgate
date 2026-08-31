@@ -506,19 +506,47 @@ function TableHeader() {
  * lifts the pending count so the tab trigger can badge it.
  */
 function PendingTab({ onCount }: { onCount?: (n: number) => void }) {
-  const { data, isLoading, isError, error, refetch } = useQuery(
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery(
     listPendingApprovals,
-    { pageSize: 100 },
+    { pageSize: 100, pageToken: "" },
+    {
+      pageParamKey: "pageToken",
+      getNextPageParam: (last) => last.nextPageToken || undefined,
+    },
   );
 
-  const requests = data?.requests ?? [];
+  // The server applies approver-eligibility filtering AFTER the SQL LIMIT and
+  // emits a next-page token whenever the raw SQL page was full — so any page
+  // (including the first) can come back empty while approvable requests still
+  // exist further back. Auto-drain every page so the inbox and its count are
+  // complete, mirroring the CLI's collectPages.
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const ready = !isLoading && !isError;
+  const requests = data?.pages.flatMap((p) => p.requests) ?? [];
+  const draining = hasNextPage || isFetchingNextPage;
+
+  // Report the count only once fully drained, so the tab badge doesn't flicker
+  // upward as pages arrive.
+  const ready = !isLoading && !isError && !draining;
   useEffect(() => {
     if (ready) onCount?.(requests.length);
   }, [ready, requests.length, onCount]);
 
-  if (isLoading) return <TableSkeletons />;
+  // Hold the skeleton until the first page loads, and — while the inbox is still
+  // empty — until draining finishes, so "All clear" can't flash before a later
+  // page reveals an approvable request.
+  if (isLoading || (draining && requests.length === 0)) return <TableSkeletons />;
 
   if (isError) {
     return (
