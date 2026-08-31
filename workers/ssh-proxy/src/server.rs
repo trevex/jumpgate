@@ -445,6 +445,21 @@ impl SshHandler {
         self.state.as_ref()
     }
 
+    /// Close the client's session channel after a pre-bridge failure (target
+    /// unreachable, recording unavailable). Without this the channel is left
+    /// half-open — the client already got `channel_success` for its shell — and
+    /// the interactive client blocks forever on the session; a raw-mode CLI
+    /// can't even Ctrl+C out. Surface the reason, a nonzero exit status, then
+    /// EOF+close so the client unblocks and exits.
+    async fn fail_client_channel(channel: Channel<Msg>, msg: &str) {
+        let _ = channel
+            .data_bytes(format!("jumpgate: {msg}\r\n").into_bytes())
+            .await;
+        let _ = channel.exit_status(1).await;
+        let _ = channel.eof().await;
+        let _ = channel.close().await;
+    }
+
     /// Start the second hop: dial the target as the requested login with the
     /// session certificate, open a matching channel (pty + shell, or exec), and
     /// bridge it to the client channel until either side closes or a teardown
@@ -488,6 +503,7 @@ impl SshHandler {
                             grant_id: state.grant_id.clone(),
                         }),
                     });
+                    Self::fail_client_channel(client_channel, "recording unavailable").await;
                     return;
                 }
             }
@@ -538,6 +554,7 @@ impl SshHandler {
                         recording,
                     });
                 }
+                Self::fail_client_channel(client_channel, "target unavailable").await;
                 return;
             }
         };
