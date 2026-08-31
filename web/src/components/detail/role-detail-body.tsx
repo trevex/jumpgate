@@ -1,7 +1,7 @@
 import { useQuery, useInfiniteQuery } from "@connectrpc/connect-query";
 import { Inbox } from "lucide-react";
 import {
-  getRoleAccess,
+  getRoleDisplay,
   listRoleBindings,
   listPoliciesUsingRole,
 } from "@/gen/jumpgate/access/v1/access-AccessService_connectquery";
@@ -18,12 +18,15 @@ export interface RoleDetailBodyProps {
 /** Canonical role detail body: capabilities, held-by (standing bindings), and
  *  policy usage. Rendered in both the catalog pane and the access-control Sheet. */
 export function RoleDetailBody({ roleId }: RoleDetailBodyProps) {
-  const access = useQuery(getRoleAccess, { roleId });
+  // The role's OWN granted capabilities (from role_capabilities). getRoleAccess
+  // returns the *caller's* management caps on the role's folder — for an admin
+  // that's `**` for every role, which is what this section used to (wrongly) show.
+  const display = useQuery(getRoleDisplay, { id: roleId });
 
   return (
     <div className="flex flex-col gap-5">
       <DetailSection title="Grants these capabilities">
-        {access.isLoading ? <LoadingRows count={1} /> : <CapList caps={access.data?.capabilities ?? []} />}
+        {display.isLoading ? <LoadingRows count={1} /> : <CapList caps={display.data?.role?.capabilities ?? []} />}
       </DetailSection>
 
       <DetailSection title="Held by (standing bindings)">
