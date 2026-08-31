@@ -81,9 +81,10 @@ func (r *Resolver) IsApprover(ctx context.Context, approverUserID, requestRoleID
 	// Explicit approver subjects: direct user or (nested) group match, restricted
 	// to kind='approver' so requester subjects never count as approvers. A
 	// deactivated user counts for nothing (authz_user_is_active inside the query).
-	explicit, err := r.q.ApproverSubjectExists(ctx, sqlc.ApproverSubjectExistsParams{
+	explicit, err := r.q.SubjectExistsForKind(ctx, sqlc.SubjectExistsForKindParams{
 		PolicyID: rule.ID,
 		User:     pgtype.UUID{Bytes: approverUserID, Valid: true},
+		Kind:     "approver",
 	})
 	if err != nil {
 		return false, fmt.Errorf("is approver (explicit): %w", err)
@@ -129,9 +130,10 @@ func (r *Resolver) IsEligibleRequester(ctx context.Context, requesterUserID, req
 	// Explicit requester subjects: direct user or (nested) group match, restricted
 	// to kind='requester'. A deactivated user counts for nothing
 	// (authz_user_is_active inside the query).
-	explicit, err := r.q.RequesterSubjectExists(ctx, sqlc.RequesterSubjectExistsParams{
+	explicit, err := r.q.SubjectExistsForKind(ctx, sqlc.SubjectExistsForKindParams{
 		PolicyID: rule.ID,
 		User:     pgtype.UUID{Bytes: requesterUserID, Valid: true},
+		Kind:     "requester",
 	})
 	if err != nil {
 		return false, fmt.Errorf("is eligible requester (explicit): %w", err)

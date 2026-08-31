@@ -265,32 +265,6 @@ func (q *Queries) ApprovablePending(ctx context.Context, arg ApprovablePendingPa
 	return items, nil
 }
 
-const approverSubjectExists = `-- name: ApproverSubjectExists :one
-SELECT EXISTS (
-    SELECT 1 FROM request_policy_subjects rps
-    WHERE rps.policy_id = $1
-      AND rps.kind = 'approver'
-      AND (rps.subject_user_id = $2
-           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($2)))
-      AND authz_user_is_active($2)
-)
-`
-
-type ApproverSubjectExistsParams struct {
-	PolicyID uuid.UUID   `json:"policy_id"`
-	User     pgtype.UUID `json:"user"`
-}
-
-// [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
-// approver subject of the policy when a request_policy_subjects(kind='approver') row
-// names them directly or via a (nested) group — subject to the deactivation guard.
-func (q *Queries) ApproverSubjectExists(ctx context.Context, arg ApproverSubjectExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, approverSubjectExists, arg.PolicyID, arg.User)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const assetLoginsForAssets = `-- name: AssetLoginsForAssets :many
 SELECT asset_id, login FROM ssh_asset_login WHERE asset_id = ANY($1::uuid[]) ORDER BY login
 `
@@ -999,31 +973,6 @@ func (q *Queries) RequestableRolesOnAsset(ctx context.Context, arg RequestableRo
 	return items, nil
 }
 
-const requesterSubjectExists = `-- name: RequesterSubjectExists :one
-SELECT EXISTS (
-    SELECT 1 FROM request_policy_subjects rps
-    WHERE rps.policy_id = $1
-      AND rps.kind = 'requester'
-      AND (rps.subject_user_id = $2
-           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($2)))
-      AND authz_user_is_active($2)
-)
-`
-
-type RequesterSubjectExistsParams struct {
-	PolicyID uuid.UUID   `json:"policy_id"`
-	User     pgtype.UUID `json:"user"`
-}
-
-// [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
-// ApproverSubjectExists, differing only by the kind='requester' literal.
-func (q *Queries) RequesterSubjectExists(ctx context.Context, arg RequesterSubjectExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, requesterSubjectExists, arg.PolicyID, arg.User)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const reviewableGrants = `-- name: ReviewableGrants :many
 WITH grants AS (
     SELECT id, role_id, scope_asset_id, subject_user_id, granted_at, expires_at, revoked_at, revoked_reason
@@ -1284,6 +1233,34 @@ func (q *Queries) ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabili
 		return nil, err
 	}
 	return items, nil
+}
+
+const subjectExistsForKind = `-- name: SubjectExistsForKind :one
+SELECT EXISTS (
+    SELECT 1 FROM request_policy_subjects rps
+    WHERE rps.policy_id = $1
+      AND rps.kind = $2
+      AND (rps.subject_user_id = $3
+           OR rps.subject_group_id IN (SELECT group_id FROM authz_user_groups($3)))
+      AND authz_user_is_active($3)
+)
+`
+
+type SubjectExistsForKindParams struct {
+	PolicyID uuid.UUID   `json:"policy_id"`
+	Kind     string      `json:"kind"`
+	User     pgtype.UUID `json:"user"`
+}
+
+// Explicit-subject arm shared by approvals.IsApprover (kind='approver') and
+// approvals.IsEligibleRequester (kind='requester'): the caller is an explicit
+// subject of the policy — named directly or via a (nested) group — under the
+// deactivation guard. Parameterized by kind to single-source the identical body.
+func (q *Queries) SubjectExistsForKind(ctx context.Context, arg SubjectExistsForKindParams) (bool, error) {
+	row := q.db.QueryRow(ctx, subjectExistsForKind, arg.PolicyID, arg.Kind, arg.User)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const visibleAssetsUnder = `-- name: VisibleAssetsUnder :many

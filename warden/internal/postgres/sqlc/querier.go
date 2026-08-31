@@ -40,10 +40,6 @@ type Querier interface {
 	// those request ids (a keyset page); a NULL array considers all pending requests.
 	// Ordered created_at DESC, id to match the paged SQL page order.
 	ApprovablePending(ctx context.Context, arg ApprovablePendingParams) ([]ApprovablePendingRow, error)
-	// [25] approvals.IsApprover explicit-subject arm. The caller is an explicit
-	// approver subject of the policy when a request_policy_subjects(kind='approver') row
-	// names them directly or via a (nested) group — subject to the deactivation guard.
-	ApproverSubjectExists(ctx context.Context, arg ApproverSubjectExistsParams) (bool, error)
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
 	// assetLoginsFor: the SSH login names declared on each asset in `asset_ids`.
@@ -317,9 +313,6 @@ type Querier interface {
 	// (requester_role held STANDING on the asset OR an explicit kind='requester'
 	// subject) AND the user does not already hold it Active on the asset (grants count).
 	RequestableRolesOnAsset(ctx context.Context, arg RequestableRolesOnAssetParams) ([]uuid.UUID, error)
-	// [26] approvals.IsEligibleRequester explicit-subject arm. Mirrors
-	// ApproverSubjectExists, differing only by the kind='requester' literal.
-	RequesterSubjectExists(ctx context.Context, arg RequesterSubjectExistsParams) (bool, error)
 	// [23] accessrequest.reviewableGrants: the grants the caller may review, resolved
 	// set-based (reproducing CanReviewGrant over the whole candidate set). A grant is
 	// reviewable when the caller is its subject OR (the caller is active AND, for the
@@ -359,6 +352,11 @@ type Querier interface {
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	// Explicit-subject arm shared by approvals.IsApprover (kind='approver') and
+	// approvals.IsEligibleRequester (kind='requester'): the caller is an explicit
+	// subject of the policy — named directly or via a (nested) group — under the
+	// deactivation guard. Parameterized by kind to single-source the identical body.
+	SubjectExistsForKind(ctx context.Context, arg SubjectExistsForKindParams) (bool, error)
 	UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error
 	UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error
 	UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error
