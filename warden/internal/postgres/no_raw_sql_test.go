@@ -1,4 +1,4 @@
-package authz_test
+package postgres_test
 
 import (
 	"os"
@@ -36,7 +36,8 @@ var rawSQLExemptDirs = []string{
 // TestNoRawSQLInGo fails if closure SQL is hand-written in Go anywhere in the module
 // (outside generated sqlc), or if any domain package outside internal/postgres
 // hand-writes a raw SQL literal. The postgres package (sqlc + the LISTEN helper) is
-// the single database boundary.
+// the single database boundary. It lives here, in internal/postgres, because it
+// guards that package's own boundary invariant.
 func TestNoRawSQLInGo(t *testing.T) {
 	root := findModuleRoot(t) // walks up to the dir containing go.mod
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
