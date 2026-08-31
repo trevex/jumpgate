@@ -106,6 +106,38 @@ func TestRegistryRosterFeed(t *testing.T) {
 	}
 }
 
+// A rescheduled worker reconnects under the same (stable mTLS) id while the old
+// stream is still tearing down. The old stream's ReleaseWorker must NOT wipe the
+// live registration the reconnect just installed.
+func TestReleaseWorkerReconnectDoesNotClobber(t *testing.T) {
+	r := NewRegistry()
+
+	// Old stream registers.
+	oldGen := r.ClaimWorker("worker-0")
+	r.SetWorkerMeta("worker-0", WorkerMeta{Protocol: "ssh", Address: "10.0.0.1:9000", Capacity: 10})
+
+	// New stream (new pod, same id) reconnects and advertises its new address.
+	newGen := r.ClaimWorker("worker-0")
+	r.SetWorkerMeta("worker-0", WorkerMeta{Protocol: "ssh", Address: "10.0.0.2:9000", Capacity: 10})
+
+	// Old stream finally tears down — must be a no-op (superseded).
+	r.ReleaseWorker("worker-0", oldGen)
+
+	sub, cancel := r.SubscribeRoster()
+	defer cancel()
+	ev := recvRoster(t, sub)
+	if ev.Kind != RosterAdded || ev.Worker.WorkerID != "worker-0" || ev.Worker.Address != "10.0.0.2:9000" {
+		t.Fatalf("after stale release, roster should still hold the reconnect: %+v", ev)
+	}
+
+	// The current stream's own release DOES clear it.
+	r.ReleaseWorker("worker-0", newGen)
+	ev = recvRoster(t, sub)
+	if ev.Kind != RosterRemoved || ev.Worker.WorkerID != "worker-0" {
+		t.Fatalf("current release should remove: %+v", ev)
+	}
+}
+
 func TestTunnels(t *testing.T) {
 	r := NewRegistry()
 	r.SetTunnels("broker-1", []string{"asset-a", "asset-b"})

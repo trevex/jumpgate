@@ -133,13 +133,16 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 	s.registry.Add(workerID, sink)
 	defer s.registry.Remove(workerID, sink)
 
+	// Claim a registration generation BEFORE advertising meta so a reconnecting
+	// pod (same stable worker id) supersedes the old stream: the departing old
+	// stream's ReleaseWorker sees a newer gen and leaves the live entry intact.
+	gen := s.registry.ClaimWorker(workerID)
 	s.registry.SetWorkerMeta(workerID, WorkerMeta{
 		Protocol: firstProtocolOr(reg.Protocols, "ssh"),
 		Address:  reg.DataplaneAddress,
 		Capacity: reg.Capacity,
 	})
-	defer s.registry.ClearWorkerMeta(workerID)
-	defer s.registry.ClearTunnels(workerID)
+	defer s.registry.ReleaseWorker(workerID, gen)
 
 	if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 		slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)

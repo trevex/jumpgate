@@ -1,6 +1,9 @@
 package dataplane
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Signal is a teardown instruction pushed toward a worker's stream.
 type Signal struct {
@@ -45,8 +48,10 @@ type Registry struct {
 	mu         sync.RWMutex
 	sinks      map[string]map[chan Signal]struct{} // worker_id → set of sinks
 	meta       map[string]WorkerMeta               // worker_id → routing metadata
+	owners     map[string]uint64                   // worker_id → current registration gen
 	rosterSubs map[chan RosterEvent]struct{}       // active roster subscribers
 	tunnels    map[string]string                   // asset_id → broker worker_id
+	gen        atomic.Uint64                       // monotonic registration-generation source
 }
 
 // NewRegistry constructs an empty worker registry.
@@ -54,8 +59,47 @@ func NewRegistry() *Registry {
 	return &Registry{
 		sinks:      map[string]map[chan Signal]struct{}{},
 		meta:       map[string]WorkerMeta{},
+		owners:     map[string]uint64{},
 		rosterSubs: map[chan RosterEvent]struct{}{},
 		tunnels:    map[string]string{},
+	}
+}
+
+// ClaimWorker records a new registration generation for workerID and returns it.
+// A worker's id is its (stable) mTLS identity, so a rescheduled pod reconnects
+// under the SAME id while the old stream may still be tearing down. Pairing
+// ClaimWorker at register with ReleaseWorker(gen) on stream exit lets a departing
+// stream detect it was already superseded and leave the live registration intact.
+func (r *Registry) ClaimWorker(workerID string) uint64 {
+	g := r.gen.Add(1)
+	r.mu.Lock()
+	r.owners[workerID] = g
+	r.mu.Unlock()
+	return g
+}
+
+// ReleaseWorker clears a worker's roster metadata and advertised tunnels — but
+// ONLY when gen is still the current registration for workerID. If a reconnect
+// has already claimed a newer generation, this is a no-op, so a stale stream's
+// deferred cleanup can't wipe the live worker out of the roster.
+func (r *Registry) ReleaseWorker(workerID string, gen uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.owners[workerID] != gen {
+		return // superseded by a reconnect; leave the newer registration alone
+	}
+	delete(r.owners, workerID)
+	for a, b := range r.tunnels {
+		if b == workerID {
+			delete(r.tunnels, a)
+		}
+	}
+	if _, ok := r.meta[workerID]; ok {
+		delete(r.meta, workerID)
+		r.broadcastLocked(RosterEvent{
+			Kind:   RosterRemoved,
+			Worker: RosterWorker{WorkerID: workerID},
+		})
 	}
 }
 
