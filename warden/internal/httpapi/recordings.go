@@ -83,7 +83,7 @@ func (d RouterDeps) authorizeCast(w http.ResponseWriter, r *http.Request) (sqlc.
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return sqlc.SessionRecording{}, false
 	}
-	if !caps.Allows("recording:read") {
+	if !caps.Allows(authz.RecordingReadCap) {
 		// Additive grant-scoped review: a grant-attributed recording is viewable
 		// by the grant's subject or a potential approver, even without
 		// recording:read. Strictly additive — an unattributed (NULL grant_id)

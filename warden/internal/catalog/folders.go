@@ -89,7 +89,7 @@ func (s *Service) resolveParentFolder(ctx context.Context, userID uuid.UUID, ref
 	if err != nil {
 		return uuid.Nil, connect.NewError(connect.CodeInternal, err)
 	}
-	if caps.Allows("catalog:folder:read") {
+	if caps.Allows(authz.FolderReadCap) {
 		return id, nil
 	}
 	assets, err := s.authz.VisibleAssetsUnder(ctx, userID, id, true)
