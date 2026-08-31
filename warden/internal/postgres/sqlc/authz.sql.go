@@ -1287,30 +1287,6 @@ func (q *Queries) ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabili
 }
 
 const visibleAssetsUnder = `-- name: VisibleAssetsUnder :many
-WITH mgmt_anchor_folders AS (
-    SELECT DISTINCT h.object_id AS folder_id
-    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'folder'
-      AND (
-            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-      )
-),
-global_mgmt AS (
-    SELECT EXISTS (
-        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (
-                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-          )
-    ) AS ok
-),
-mgmt_visible_folders AS (
-    SELECT DISTINCT nf.id AS folder_id
-    FROM mgmt_anchor_folders m
-    JOIN folders mf ON mf.id = m.folder_id
-    JOIN folders nf ON nf.path_ids <@ mf.path_ids
-)
 SELECT a.id
 FROM assets a
 WHERE (
@@ -1322,8 +1298,8 @@ WHERE (
       )
   AND (
         a.id = ANY($3::uuid[])
-     OR (SELECT ok FROM global_mgmt)
-     OR a.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+     OR (SELECT authz_mgmt_global_read($4, $5, $6, $7))
+     OR a.folder_id IN (SELECT folder_id FROM authz_mgmt_visible_folders($4, $5, $6, $7))
      OR EXISTS (
         SELECT 1 FROM ssh_asset_login sal
         WHERE sal.asset_id = a.id
@@ -1456,30 +1432,6 @@ func (q *Queries) VisibleFoldersUnder(ctx context.Context, arg VisibleFoldersUnd
 }
 
 const visibleGroupsHomed = `-- name: VisibleGroupsHomed :many
-WITH mgmt_anchor_folders AS (
-    SELECT DISTINCT h.object_id AS folder_id
-    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'folder'
-      AND (
-            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-      )
-),
-global_mgmt AS (
-    SELECT EXISTS (
-        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (
-                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-          )
-    ) AS ok
-),
-mgmt_visible_folders AS (
-    SELECT DISTINCT nf.id AS folder_id
-    FROM mgmt_anchor_folders m
-    JOIN folders mf ON mf.id = m.folder_id
-    JOIN folders nf ON nf.path_ids <@ mf.path_ids
-)
 SELECT n.id, n.folder_id
 FROM groups n
 WHERE (
@@ -1494,8 +1446,8 @@ WHERE (
       )
   AND (
         n.id = ANY($3::uuid[])
-     OR (SELECT ok FROM global_mgmt)
-     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+     OR (SELECT authz_mgmt_global_read($4, $5, $6, $7))
+     OR n.folder_id IN (SELECT folder_id FROM authz_mgmt_visible_folders($4, $5, $6, $7))
       )
 ORDER BY n.id
 `
@@ -1629,30 +1581,6 @@ func (q *Queries) VisibleRequestable(ctx context.Context, user pgtype.UUID) ([]V
 }
 
 const visibleRolesHomed = `-- name: VisibleRolesHomed :many
-WITH mgmt_anchor_folders AS (
-    SELECT DISTINCT h.object_id AS folder_id
-    FROM authz_held($4) h JOIN role_capabilities rc ON rc.role_id = h.role_id
-    WHERE h.object_kind = 'folder'
-      AND (
-            ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-         OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-      )
-),
-global_mgmt AS (
-    SELECT EXISTS (
-        SELECT 1 FROM authz_global_held($4) gh JOIN role_capabilities rc ON rc.role_id = gh.role_id
-        WHERE (
-                ((rc.scope = $5 OR rc.scope = '*') AND (rc.action = $6 OR rc.action = '*') AND (rc.qualifier = $7 OR rc.qualifier = '*'))
-             OR ((rc.scope = 'catalog' OR rc.scope = '*') AND (rc.action = 'folder' OR rc.action = '*') AND (rc.qualifier = 'read' OR rc.qualifier = '*'))
-          )
-    ) AS ok
-),
-mgmt_visible_folders AS (
-    SELECT DISTINCT nf.id AS folder_id
-    FROM mgmt_anchor_folders m
-    JOIN folders mf ON mf.id = m.folder_id
-    JOIN folders nf ON nf.path_ids <@ mf.path_ids
-)
 SELECT n.id, n.folder_id
 FROM roles n
 WHERE (
@@ -1667,8 +1595,8 @@ WHERE (
       )
   AND (
         n.id = ANY($3::uuid[])
-     OR (SELECT ok FROM global_mgmt)
-     OR n.folder_id IN (SELECT folder_id FROM mgmt_visible_folders)
+     OR (SELECT authz_mgmt_global_read($4, $5, $6, $7))
+     OR n.folder_id IN (SELECT folder_id FROM authz_mgmt_visible_folders($4, $5, $6, $7))
       )
 ORDER BY n.id
 `

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -67,6 +68,50 @@ WHERE
   )
   AND NOT EXISTS (SELECT 1 FROM held_on_asset ha WHERE ha.asset_id = e.asset_id AND ha.role_id = e.role_id)
 `
+
+// visibleAssetsUnderSQL is copied VERBATIM from the generated authz.sql.go
+// `visibleAssetsUnder` const. It exercises the shared management-visibility cascade
+// functions (authz_mgmt_global_read / authz_mgmt_visible_folders, which further
+// splices authz_mgmt_read_anchor_folders → authz_held). If any of those STABLE SQL
+// functions fails to inline it shows up as a `Function Scan on authz_mgmt_*` node —
+// for authz_mgmt_visible_folders that is an opaque per-asset re-evaluation gating the
+// scan over all assets, exactly the blowup the gate exists to catch.
+const visibleAssetsUnderSQL = `SELECT a.id
+FROM assets a
+WHERE (
+        (NOT $1::boolean AND $2::uuid IS NOT NULL AND a.folder_id = $2::uuid)
+     OR ($1::boolean AND (
+            $2::uuid IS NULL
+            OR a.folder_id IN (SELECT f.id FROM folders f WHERE f.path_ids <@ (SELECT path_ids FROM folders WHERE id = $2::uuid))
+        ))
+      )
+  AND (
+        a.id = ANY($3::uuid[])
+     OR (SELECT authz_mgmt_global_read($4, $5, $6, $7))
+     OR a.folder_id IN (SELECT folder_id FROM authz_mgmt_visible_folders($4, $5, $6, $7))
+     OR EXISTS (
+        SELECT 1 FROM ssh_asset_login sal
+        WHERE sal.asset_id = a.id
+          AND EXISTS (
+              SELECT 1 FROM role_capabilities rc
+              WHERE rc.role_id IN (
+                    SELECT role_id FROM authz_global_held($4)
+                  UNION
+                    SELECT h.role_id FROM authz_held($4) h
+                    WHERE (h.object_kind = 'asset' AND h.object_id = a.id)
+                       OR (h.object_kind = 'folder'
+                           AND h.object_id IN (
+                               SELECT f.id FROM folders f
+                               WHERE f.path_ids @> (SELECT af.path_ids FROM folders af WHERE af.id = a.folder_id)
+                           ))
+              )
+              AND (rc.scope = 'ssh' OR rc.scope = '*')
+              AND (rc.action = 'login' OR rc.action = '*')
+              AND (rc.qualifier = sal.login OR rc.qualifier = '*')
+          )
+      )
+      )
+ORDER BY a.id`
 
 // heldAssetSQL is a representative direct use of authz_held: the asset-scoped
 // projection used by the held-object queries.
@@ -150,6 +195,22 @@ func TestAuthzSRFsInline(t *testing.T) {
 		mustContain(t, plan, "request_policies", "request_policies not referenced — authz_effective_request_policy did not inline")
 		mustContain(t, plan, "role_bindings", "role_bindings not referenced — authz_held/_standing did not inline")
 		mustContain(t, plan, "role_grants", "role_grants not referenced — authz_held/_standing did not inline")
+	})
+
+	t.Run("visible_assets_under", func(t *testing.T) {
+		// cascade=true, parent=NULL (whole tree — the heaviest case: the mgmt cascade
+		// gates the scan over ALL assets), no ACCESS ids, catalog:asset:read.
+		plan := explainVerbose(t, pool, visibleAssetsUnderSQL,
+			true, nil, []uuid.UUID{}, user, "catalog", "asset", "read")
+		// The shared cascade SQL functions must be spliced in, not planned opaquely.
+		mustNotContain(t, plan, "Function Scan on authz_mgmt_visible_folders",
+			"authz_mgmt_visible_folders is an opaque Function Scan — it re-evaluates per asset (O(assets) blowup). STOP and report.")
+		mustNotContain(t, plan, "Function Scan on authz_mgmt_read_anchor_folders", "authz_mgmt_read_anchor_folders did not inline")
+		mustNotContain(t, plan, "Function Scan on authz_mgmt_global_read", "authz_mgmt_global_read did not inline")
+		mustNotContain(t, plan, "Function Scan on authz_held", "authz_held did not inline in VisibleAssetsUnder")
+		// The inlined bodies scan the real tables directly.
+		mustContain(t, plan, "role_capabilities", "role_capabilities not referenced — the mgmt cascade functions did not inline")
+		mustContain(t, plan, "folders", "folders not referenced — authz_mgmt_visible_folders did not inline")
 	})
 }
 
