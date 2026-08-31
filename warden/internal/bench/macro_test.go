@@ -11,12 +11,13 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/approvals"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
-	"github.com/trevex/jumpgate/warden/internal/rpc"
 )
 
 func benchCtx(w *World) context.Context {
@@ -31,11 +32,12 @@ func benchAccessService(b *testing.B) *accessrequest.Service {
 	)
 }
 
-func benchCatalog(b *testing.B) *rpc.CatalogServer {
+func benchCatalog(b *testing.B) *catalog.Handler {
 	pool, _ := sharedDB(b)
 	q := sqlc.New(pool)
 	a := authz.New(pool)
-	return rpc.NewCatalogServer(q, pool, a, benchAccessService(b), nil, nil)
+	svc := catalog.NewService(pool, nil, nil, a, benchAccessService(b))
+	return catalog.NewHandler(svc, apiguard.New(a, q))
 }
 
 // BenchmarkBrowseFolder benches the catalog browse-landing path (root contents,
