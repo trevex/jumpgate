@@ -168,7 +168,7 @@ func (az *Authorizer) visibleRolesHomed(ctx context.Context, userID, parent uuid
 		return nil, err
 	}
 	accessIDs := unionKeys(held, requestable)
-	return az.visibleHomedSetBased(ctx, userID, rolesTable, "access:role:read", parent, cascade, accessIDs)
+	return az.visibleHomedSetBased(ctx, userID, rolesTable, RoleReadCap, parent, cascade, accessIDs)
 }
 
 // VisibleRolesUnder returns the role ids under `parent` the user may see
@@ -191,7 +191,7 @@ func (az *Authorizer) visibleGroupsHomed(ctx context.Context, userID, parent uui
 	if err != nil {
 		return nil, err
 	}
-	return az.visibleHomedSetBased(ctx, userID, groupsTable, "identity:group:read", parent, cascade, mapKeys(member))
+	return az.visibleHomedSetBased(ctx, userID, groupsTable, GroupReadCap, parent, cascade, mapKeys(member))
 }
 
 // VisibleGroupsUnder returns the group ids under `parent` the user may see

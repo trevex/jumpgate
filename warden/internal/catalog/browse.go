@@ -84,7 +84,7 @@ func (s *Service) roleRefs(ctx context.Context, ids []uuid.UUID) ([]RoleRef, err
 func (s *Service) GetAssetDisplay(ctx context.Context, caller uuid.UUID, id uuid.UUID) (AssetDisplayResult, error) {
 	// Authorize: catalog:asset:read (or subtree-wide catalog:folder:read), else party
 	// to a pending request for this asset.
-	if capErr := s.guard.RequireReadCap(ctx, caller, "catalog:asset:read", authz.AssetScope(id)); capErr != nil {
+	if capErr := s.guard.RequireReadCap(ctx, caller, authz.AssetReadCap, authz.AssetScope(id)); capErr != nil {
 		if s.reqReads == nil {
 			return AssetDisplayResult{}, connect.NewError(connect.CodeNotFound, errors.New("asset not found"))
 		}
@@ -152,7 +152,7 @@ func (s *Service) GetAssetAccess(ctx context.Context, caller uuid.UUID, id uuid.
 	// asset are still visible via the CONNECT arm — a folder/global ssh:login cascade
 	// entitling ≥1 of the asset's own logins (authz.AssetVisible). Only a caller
 	// matching none of these gets the existence-hiding NotFound.
-	mgmtOK := s.guard.RequireReadCap(ctx, caller, "catalog:asset:read", authz.AssetScope(id)) == nil
+	mgmtOK := s.guard.RequireReadCap(ctx, caller, authz.AssetReadCap, authz.AssetScope(id)) == nil
 	if !mgmtOK && len(roles.Active) == 0 && len(roles.Requestable) == 0 {
 		visible, err := authz.AssetVisible(ctx, s.authz, caller, id)
 		if err != nil {

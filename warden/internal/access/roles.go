@@ -74,7 +74,7 @@ func (s *Service) ResolveRole(ctx context.Context, caller uuid.UUID, ref string)
 		}
 		role = r
 	}
-	if err := s.guard.RequireReadCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(role.FolderID)); err != nil {
+	if err := s.guard.RequireReadCap(ctx, caller, authz.RoleReadCap, apiguard.ScopeOfFolderID(role.FolderID)); err != nil {
 		return RoleResult{}, err
 	}
 	return s.roleResult(ctx, role)
@@ -152,7 +152,7 @@ func (s *Service) GetRole(ctx context.Context, caller, id uuid.UUID) (RoleResult
 	if err != nil {
 		return RoleResult{}, connect.NewError(connect.CodeNotFound, errors.New("role not found"))
 	}
-	if err := s.guard.RequireReadCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); err != nil {
+	if err := s.guard.RequireReadCap(ctx, caller, authz.RoleReadCap, apiguard.ScopeOfFolderID(r.FolderID)); err != nil {
 		return RoleResult{}, err
 	}
 	return s.roleResult(ctx, r)
@@ -187,7 +187,7 @@ func (s *Service) GetRoleDisplay(ctx context.Context, caller, id uuid.UUID) (Rol
 	// Authorize: access:role:read at the role's folder scope OR party to a pending
 	// access request referencing this role. On cap-deny, preserve the original
 	// PermissionDenied unless the request-party path grants the read.
-	if capErr := s.guard.RequireReadCap(ctx, caller, "access:role:read", apiguard.ScopeOfFolderID(r.FolderID)); capErr != nil {
+	if capErr := s.guard.RequireReadCap(ctx, caller, authz.RoleReadCap, apiguard.ScopeOfFolderID(r.FolderID)); capErr != nil {
 		if s.reqReads == nil {
 			return RoleResult{}, capErr
 		}

@@ -26,7 +26,7 @@ func AssetVisible(ctx context.Context, a *Authorizer, userID, assetID uuid.UUID)
 	// Management arm: catalog:asset:read OR the subtree-wide catalog:folder:read held
 	// on an ancestor folder (ReadAllowed). Retains `**` (unlike the connect DECISION,
 	// which strips it).
-	if caps.ReadAllowed("catalog:asset:read") {
+	if caps.ReadAllowed(AssetReadCap) {
 		return true, nil
 	}
 	// Connect arm: any entitled login among the asset's declared logins.
@@ -113,7 +113,7 @@ func (az *Authorizer) VisibleAssetsUnder(ctx context.Context, userID, parent uui
 
 	// Browse level is selected by the nullable parent (uuid.Nil == root/NULL) and
 	// cascade args inside the query.
-	reqScope, reqAction, reqQual := NormalizeCap("catalog:asset:read")
+	reqScope, reqAction, reqQual := NormalizeCap(AssetReadCap)
 	ids, err := az.queries().VisibleAssetsUnder(ctx, sqlc.VisibleAssetsUnderParams{
 		User:      userID,
 		Parent:    nullableUUIDArg(parent),

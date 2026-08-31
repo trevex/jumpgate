@@ -62,7 +62,7 @@ func (az *Authorizer) VisibleFoldersUnder(ctx context.Context, userID, parent uu
 	if err != nil {
 		return nil, err
 	}
-	if global.Allows("catalog:folder:read") {
+	if global.Allows(FolderReadCap) {
 		return az.allFoldersAtLevel(ctx, parent, cascade, true) // governed=true
 	}
 
@@ -104,7 +104,7 @@ func (az *Authorizer) FolderPathVisible(ctx context.Context, userID, folderID uu
 	if err != nil {
 		return false, err
 	}
-	if global.Allows("catalog:folder:read") {
+	if global.Allows(FolderReadCap) {
 		exists, err := az.queries().FolderExists(ctx, folderID)
 		if err != nil {
 			return false, fmt.Errorf("folder exists: %w", err)

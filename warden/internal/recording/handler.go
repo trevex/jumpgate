@@ -144,7 +144,7 @@ func (s *Handler) ListRecordings(ctx context.Context, req *connect.Request[recor
 	// This is strictly additive: the query already filters to grant_id, so no
 	// out-of-grant rows can leak. When no grant filter is present, only the
 	// capability gate applies (unchanged).
-	if capErr := s.requireCap(ctx, "recording:read", scope); capErr != nil {
+	if capErr := s.requireCap(ctx, authz.RecordingReadCap, scope); capErr != nil {
 		if grantFilter == uuid.Nil || s.reviewer == nil {
 			return nil, capErr
 		}
@@ -219,7 +219,7 @@ func (s *Handler) GetRecording(ctx context.Context, req *connect.Request[recordi
 // Returns the existing capability deny error on denial (preserving its code and
 // existence-hiding semantics).
 func (s *Handler) authorizeRecordingRead(ctx context.Context, row sqlc.SessionRecording) error {
-	capErr := s.requireCap(ctx, "recording:read", authz.AssetScope(row.AssetID))
+	capErr := s.requireCap(ctx, authz.RecordingReadCap, authz.AssetScope(row.AssetID))
 	if capErr == nil {
 		return nil
 	}

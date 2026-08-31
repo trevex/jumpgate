@@ -284,7 +284,7 @@ func (s *Service) ResolveAsset(ctx context.Context, caller uuid.UUID, ref string
 	// OR the CONNECT arm: a folder/global ssh:login cascade entitling ≥1 of the
 	// asset's own logins (authz.AssetVisible), so a folder-scoped ssh:login binding
 	// surfaces its asset without any asset-scoped role or catalog:asset:read.
-	mgmtOK := s.guard.RequireReadCap(ctx, caller, "catalog:asset:read", authz.AssetScope(assetID)) == nil
+	mgmtOK := s.guard.RequireReadCap(ctx, caller, authz.AssetReadCap, authz.AssetScope(assetID)) == nil
 	if !mgmtOK {
 		roles, err := s.authz.RolesOnAsset(ctx, caller, assetID)
 		if err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
@@ -59,7 +60,7 @@ func (s *Service) ResolveGroup(ctx context.Context, caller uuid.UUID, ref string
 	}
 	// Existence-hide a read-cap denial as NotFound (must not reveal a group outside
 	// the caller's read scope).
-	if err := s.guard.RequireReadCap(ctx, caller, "identity:group:read", apiguard.ScopeOfFolderID(grp.FolderID)); err != nil {
+	if err := s.guard.RequireReadCap(ctx, caller, authz.GroupReadCap, apiguard.ScopeOfFolderID(grp.FolderID)); err != nil {
 		return GroupResult{}, connect.NewError(connect.CodeNotFound, errors.New("group not found"))
 	}
 	return s.groupResult(ctx, grp)

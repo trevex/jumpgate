@@ -190,7 +190,7 @@ func (s *Service) ResolveFolder(ctx context.Context, caller uuid.UUID, ref strin
 
 	// A caller without the read cap must not be able to distinguish an existing-but-
 	// invisible folder from a nonexistent one, so a denial is reported as NotFound.
-	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(folderID)) != nil {
+	if s.guard.RequireCap(ctx, caller, authz.FolderReadCap, authz.FolderScope(folderID)) != nil {
 		return ResolveResult{}, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
 
@@ -207,7 +207,7 @@ func (s *Service) ResolveFolder(ctx context.Context, caller uuid.UUID, ref strin
 // read it.
 func (s *Service) DeleteFolder(ctx context.Context, caller uuid.UUID, id uuid.UUID) error {
 	// Existence-hide: a caller who can't read it sees NotFound; then require delete.
-	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
+	if s.guard.RequireCap(ctx, caller, authz.FolderReadCap, authz.FolderScope(id)) != nil {
 		return connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
 	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:delete", authz.FolderScope(id)); err != nil {
@@ -277,7 +277,7 @@ type UpdateFolderInput struct {
 // A ParentId of "" moves the folder to the root. Existence-hidden.
 func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UUID, in UpdateFolderInput) (FolderResult, error) {
 	// Existence-hide: a caller who can't read it sees NotFound; then require update.
-	if s.guard.RequireCap(ctx, caller, "catalog:folder:read", authz.FolderScope(id)) != nil {
+	if s.guard.RequireCap(ctx, caller, authz.FolderReadCap, authz.FolderScope(id)) != nil {
 		return FolderResult{}, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
 	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:update", authz.FolderScope(id)); err != nil {
@@ -306,7 +306,7 @@ func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 			}
 			if !cur.ParentID.Valid || uuid.UUID(cur.ParentID.Bytes) != pid {
 				// Placing the folder under its new parent requires create there.
-				if err := s.guard.RequireCap(ctx, caller, "catalog:folder:create", authz.FolderScope(pid)); err != nil {
+				if err := s.guard.RequireCap(ctx, caller, authz.FolderCreateCap, authz.FolderScope(pid)); err != nil {
 					return FolderResult{}, err
 				}
 				newParent, moving = pgconv.UUID(pid), true

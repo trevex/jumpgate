@@ -301,7 +301,7 @@ func (h *Handler) CreateFolder(ctx context.Context, req *connect.Request[catalog
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "catalog:folder:create", apiguard.ScopeOfFolderID(parent)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.FolderCreateCap, apiguard.ScopeOfFolderID(parent)); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.CreateFolder(ctx, parent, strings.ToLower(req.Msg.Name))
@@ -413,7 +413,7 @@ func (h *Handler) GetAsset(ctx context.Context, req *connect.Request[catalogv1.G
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireReadCap(ctx, c, "catalog:asset:read", authz.AssetScope(id)); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, authz.AssetReadCap, authz.AssetScope(id)); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.GetAsset(ctx, id)

@@ -272,7 +272,7 @@ func (h *Handler) ExplainRole(ctx context.Context, req *connect.Request[accessv1
 	// Callers may always explain their own access; explaining another user's access
 	// requires the management read cap (admins hold ** globally).
 	if userID != c {
-		if err := h.guard.RequireCap(ctx, c, "access:role:read", authz.GlobalScope()); err != nil {
+		if err := h.guard.RequireCap(ctx, c, authz.RoleReadCap, authz.GlobalScope()); err != nil {
 			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("may only explain your own access"))
 		}
 	}
@@ -394,7 +394,7 @@ func (h *Handler) ListRoleBindings(ctx context.Context, req *connect.Request[acc
 		return nil, err
 	}
 	// Scope the cap check to the pinned object (asset > folder > global).
-	if err := h.guard.RequireCap(ctx, c, "access:binding:read", apiguard.ScopeOfObject(scopeFolder, scopeAsset)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.BindingReadCap, apiguard.ScopeOfObject(scopeFolder, scopeAsset)); err != nil {
 		return nil, err
 	}
 	subjUser, _, err := pgconv.OptUUID(req.Msg.SubjectUserId)
@@ -788,7 +788,7 @@ func (h *Handler) ListRoleGrants(ctx context.Context, req *connect.Request[acces
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireReadCap(ctx, c, "access:role:read", scope); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, authz.RoleReadCap, scope); err != nil {
 		return nil, err
 	}
 	rows, next, err := h.svc.ListRoleGrants(ctx, roleID, req.Msg.PageSize, req.Msg.PageToken)
@@ -836,7 +836,7 @@ func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[acce
 	if err := h.guard.RequireReadCap(ctx, c, "access:policy:read", scope); err != nil {
 		return nil, err
 	}
-	includeViaRole, err := h.guard.HasReadCap(ctx, c, "access:binding:read", scope)
+	includeViaRole, err := h.guard.HasReadCap(ctx, c, authz.BindingReadCap, scope)
 	if err != nil {
 		return nil, err
 	}
