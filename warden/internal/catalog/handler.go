@@ -389,7 +389,7 @@ func (h *Handler) CreateAsset(ctx context.Context, req *connect.Request[catalogv
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "catalog:asset:create", authz.FolderScope(fid)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.AssetCreateCap, authz.FolderScope(fid)); err != nil {
 		return nil, err
 	}
 	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), req.Msg.GetKubernetes())
@@ -433,7 +433,7 @@ func (h *Handler) UpdateAssetConfig(ctx context.Context, req *connect.Request[ca
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.AssetUpdateCap, authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
 	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), nil)

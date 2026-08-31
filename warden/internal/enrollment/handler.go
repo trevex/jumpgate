@@ -45,7 +45,7 @@ func (h *Handler) CreateEnrollmentToken(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "catalog:asset:update", authz.AssetScope(assetID)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.AssetUpdateCap, authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
 	raw, exp, err := h.svc.Mint(ctx, assetID)

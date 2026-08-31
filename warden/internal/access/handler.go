@@ -130,7 +130,7 @@ func (h *Handler) CreateRole(ctx context.Context, req *connect.Request[accessv1.
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:role:create", apiguard.ScopeOfFolderID(folderID)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.RoleCreateCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.CreateRole(ctx, req.Msg.Name, folderID, req.Msg.Capabilities)
@@ -208,7 +208,7 @@ func (h *Handler) DeleteRole(ctx context.Context, req *connect.Request[accessv1.
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:role:delete", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.RoleDeleteCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.DeleteRole(ctx, c, id); err != nil {
@@ -340,7 +340,7 @@ func (h *Handler) CreateRoleBinding(ctx context.Context, req *connect.Request[ac
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:binding:create", bindScope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.BindingCreateCap, bindScope); err != nil {
 		return nil, err
 	}
 	rb, err := h.svc.CreateRoleBinding(ctx, c, roleID, scopeFolder, scopeAsset, subjUser, subjGroup, bindScope)
@@ -365,7 +365,7 @@ func (h *Handler) DeleteRoleBinding(ctx context.Context, req *connect.Request[ac
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:binding:delete", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.BindingDeleteCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.DeleteRoleBinding(ctx, id); err != nil {
@@ -450,7 +450,7 @@ func (h *Handler) CreateRequestPolicy(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:create", policyScope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyCreateCap, policyScope); err != nil {
 		return nil, err
 	}
 	policy, err := h.svc.CreateRequestPolicy(ctx, c, CreateRequestPolicyInput{
@@ -483,7 +483,7 @@ func (h *Handler) UpdateRequestPolicy(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:update", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyUpdateCap, scope); err != nil {
 		return nil, err
 	}
 	requesterRole, _, err := pgconv.OptUUID(req.Msg.RequesterRoleId)
@@ -515,7 +515,7 @@ func (h *Handler) DeleteRequestPolicy(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:delete", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyDeleteCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.DeleteRequestPolicy(ctx, id); err != nil {
@@ -530,7 +530,7 @@ func (h *Handler) ListRequestPolicies(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)
@@ -554,7 +554,7 @@ func (h *Handler) ListPoliciesForAsset(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	assetID, err := uuid.Parse(req.Msg.AssetId)
@@ -578,7 +578,7 @@ func (h *Handler) ListPoliciesForGroup(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	groupID, err := uuid.Parse(req.Msg.GroupId)
@@ -607,7 +607,7 @@ func (h *Handler) ResolvePolicy(ctx context.Context, req *connect.Request[access
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.AssetScope(assetID)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
 	p, err := h.svc.ResolvePolicy(ctx, strings.ToLower(req.Msg.Name), assetID)
@@ -631,7 +631,7 @@ func (h *Handler) AddPolicySubject(ctx context.Context, req *connect.Request[acc
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:manage-subjects", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyManageSubjectsCap, scope); err != nil {
 		return nil, err
 	}
 	subjUser, hasUser, err := pgconv.OptUUID(req.Msg.SubjectUserId)
@@ -671,7 +671,7 @@ func (h *Handler) RemovePolicySubject(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:manage-subjects", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyManageSubjectsCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.RemovePolicySubject(ctx, id); err != nil {
@@ -694,7 +694,7 @@ func (h *Handler) ListPolicySubjects(ctx context.Context, req *connect.Request[a
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, scope); err != nil {
 		return nil, err
 	}
 	rows, next, err := h.svc.ListPolicySubjects(ctx, policyID, req.Msg.PageSize, req.Msg.PageToken)
@@ -730,7 +730,7 @@ func (h *Handler) AddRoleGrant(ctx context.Context, req *connect.Request[accessv
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:role:update", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.RoleUpdateCap, scope); err != nil {
 		return nil, err
 	}
 	g, err := h.svc.AddRoleGrant(ctx, c, roleID, sourceRoleID, req.Msg.Via, scope)
@@ -756,7 +756,7 @@ func (h *Handler) RemoveRoleGrant(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		// Deleting a non-existent grant is a no-op. With no row to derive a scope from
 		// we fail closed, requiring the capability globally before the no-op.
-		if err := h.guard.RequireCap(ctx, c, "access:role:update", authz.GlobalScope()); err != nil {
+		if err := h.guard.RequireCap(ctx, c, authz.RoleUpdateCap, authz.GlobalScope()); err != nil {
 			return nil, err
 		}
 		return connect.NewResponse(&accessv1.RemoveRoleGrantResponse{}), nil
@@ -765,7 +765,7 @@ func (h *Handler) RemoveRoleGrant(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:role:update", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.RoleUpdateCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.RemoveRoleGrant(ctx, id); err != nil {
@@ -833,7 +833,7 @@ func (h *Handler) GetPolicyRoster(ctx context.Context, req *connect.Request[acce
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireReadCap(ctx, c, "access:policy:read", scope); err != nil {
+	if err := h.guard.RequireReadCap(ctx, c, authz.PolicyReadCap, scope); err != nil {
 		return nil, err
 	}
 	includeViaRole, err := h.guard.HasReadCap(ctx, c, authz.BindingReadCap, scope)
@@ -865,7 +865,7 @@ func (h *Handler) ListPoliciesUsingRole(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "access:policy:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.PolicyReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	roleID, err := uuid.Parse(req.Msg.RoleId)

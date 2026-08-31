@@ -210,7 +210,7 @@ func (s *Service) DeleteFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 	if s.guard.RequireCap(ctx, caller, authz.FolderReadCap, authz.FolderScope(id)) != nil {
 		return connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
-	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:delete", authz.FolderScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, authz.FolderDeleteCap, authz.FolderScope(id)); err != nil {
 		return err
 	}
 
@@ -280,7 +280,7 @@ func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 	if s.guard.RequireCap(ctx, caller, authz.FolderReadCap, authz.FolderScope(id)) != nil {
 		return FolderResult{}, connect.NewError(connect.CodeNotFound, errors.New("no such folder"))
 	}
-	if err := s.guard.RequireCap(ctx, caller, "catalog:folder:update", authz.FolderScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, authz.FolderUpdateCap, authz.FolderScope(id)); err != nil {
 		return FolderResult{}, err
 	}
 	cur, err := s.q.GetFolder(ctx, id)

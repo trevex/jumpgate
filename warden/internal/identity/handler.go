@@ -64,7 +64,7 @@ func (h *Handler) CreateUser(ctx context.Context, req *connect.Request[identityv
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:create", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserCreateCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	u, err := h.svc.CreateUser(ctx, req.Msg.Email, req.Msg.DisplayName, req.Msg.Password)
@@ -80,7 +80,7 @@ func (h *Handler) GetUser(ctx context.Context, req *connect.Request[identityv1.G
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	u, err := h.svc.GetUser(ctx, req.Msg.Id)
@@ -114,7 +114,7 @@ func (h *Handler) ResolveUser(ctx context.Context, req *connect.Request[identity
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:read", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserReadCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	u, err := h.svc.ResolveUser(ctx, req.Msg.Email)
@@ -152,7 +152,7 @@ func (h *Handler) DeactivateUser(ctx context.Context, req *connect.Request[ident
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:deactivate", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserDeactivateCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -171,7 +171,7 @@ func (h *Handler) ReactivateUser(ctx context.Context, req *connect.Request[ident
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:deactivate", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserDeactivateCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -191,7 +191,7 @@ func (h *Handler) DeleteUser(ctx context.Context, req *connect.Request[identityv
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:user:delete", authz.GlobalScope()); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.UserDeleteCap, authz.GlobalScope()); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -217,7 +217,7 @@ func (h *Handler) CreateGroup(ctx context.Context, req *connect.Request[identity
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:create", apiguard.ScopeOfFolderID(folderID)); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupCreateCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
 	res, err := h.svc.CreateGroup(ctx, folderID, req.Msg.Name)
@@ -294,7 +294,7 @@ func (h *Handler) AddUserToGroup(ctx context.Context, req *connect.Request[ident
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:add-member", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupAddMemberCap, scope); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -322,7 +322,7 @@ func (h *Handler) AddGroupToGroup(ctx context.Context, req *connect.Request[iden
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:add-member", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupAddMemberCap, scope); err != nil {
 		return nil, err
 	}
 	mid, err := uuid.Parse(req.Msg.MemberGroupId)
@@ -350,7 +350,7 @@ func (h *Handler) RemoveUserFromGroup(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:remove-member", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupRemoveMemberCap, scope); err != nil {
 		return nil, err
 	}
 	uid, err := uuid.Parse(req.Msg.UserId)
@@ -378,7 +378,7 @@ func (h *Handler) RemoveGroupFromGroup(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:remove-member", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupRemoveMemberCap, scope); err != nil {
 		return nil, err
 	}
 	mid, err := uuid.Parse(req.Msg.MemberGroupId)
@@ -439,7 +439,7 @@ func (h *Handler) DeleteGroup(ctx context.Context, req *connect.Request[identity
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, "identity:group:delete", scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupDeleteCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.DeleteGroup(ctx, gid); err != nil {

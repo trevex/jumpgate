@@ -321,7 +321,7 @@ func (s *Service) DeleteAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 	if !visible {
 		return connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
 	}
-	if err := s.guard.RequireCap(ctx, caller, "catalog:asset:delete", authz.AssetScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, authz.AssetDeleteCap, authz.AssetScope(id)); err != nil {
 		return err
 	}
 	// Signal teardown while live_sessions rows still exist.
@@ -376,7 +376,7 @@ func (s *Service) UpdateAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 	if !visible {
 		return AssetWithConfig{}, connect.NewError(connect.CodeNotFound, errors.New("no such asset"))
 	}
-	if err := s.guard.RequireCap(ctx, caller, "catalog:asset:update", authz.AssetScope(id)); err != nil {
+	if err := s.guard.RequireCap(ctx, caller, authz.AssetUpdateCap, authz.AssetScope(id)); err != nil {
 		return AssetWithConfig{}, err
 	}
 	cur, err := s.q.GetAsset(ctx, id)
@@ -396,7 +396,7 @@ func (s *Service) UpdateAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 		}
 		if f != newFolder {
 			// Creating the asset in its new home requires create there.
-			if err := s.guard.RequireCap(ctx, caller, "catalog:asset:create", authz.FolderScope(f)); err != nil {
+			if err := s.guard.RequireCap(ctx, caller, authz.AssetCreateCap, authz.FolderScope(f)); err != nil {
 				return AssetWithConfig{}, err
 			}
 			newFolder, moving = f, true

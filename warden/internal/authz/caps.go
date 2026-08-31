@@ -13,11 +13,44 @@ const (
 	RoleReadCap  = "access:role:read"
 	GroupReadCap = "identity:group:read"
 
-	// Folder authoring/read.
-	FolderCreateCap = "catalog:folder:create"
+	// catalog:asset authoring.
+	AssetCreateCap = "catalog:asset:create"
+	AssetUpdateCap = "catalog:asset:update"
+	AssetDeleteCap = "catalog:asset:delete"
 
-	// Access-model reads.
-	BindingReadCap = "access:binding:read"
+	// catalog:folder authoring/read.
+	FolderCreateCap = "catalog:folder:create"
+	FolderUpdateCap = "catalog:folder:update"
+	FolderDeleteCap = "catalog:folder:delete"
+
+	// access:role authoring.
+	RoleCreateCap = "access:role:create"
+	RoleUpdateCap = "access:role:update"
+	RoleDeleteCap = "access:role:delete"
+
+	// access:policy authoring/read.
+	PolicyReadCap           = "access:policy:read"
+	PolicyCreateCap         = "access:policy:create"
+	PolicyUpdateCap         = "access:policy:update"
+	PolicyDeleteCap         = "access:policy:delete"
+	PolicyManageSubjectsCap = "access:policy:manage-subjects"
+
+	// Access-model reads/authoring.
+	BindingReadCap   = "access:binding:read"
+	BindingCreateCap = "access:binding:create"
+	BindingDeleteCap = "access:binding:delete"
+
+	// identity:user authoring/read.
+	UserReadCap       = "identity:user:read"
+	UserCreateCap     = "identity:user:create"
+	UserDeleteCap     = "identity:user:delete"
+	UserDeactivateCap = "identity:user:deactivate"
+
+	// identity:group authoring.
+	GroupCreateCap       = "identity:group:create"
+	GroupDeleteCap       = "identity:group:delete"
+	GroupAddMemberCap    = "identity:group:add-member"
+	GroupRemoveMemberCap = "identity:group:remove-member"
 
 	// Session-review / recordings.
 	RecordingReadCap = "recording:read"
