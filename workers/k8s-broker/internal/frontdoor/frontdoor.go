@@ -47,8 +47,14 @@ func Handler(t Tunnel, v *sessiontoken.Verifier, rec *Recorder) http.Handler {
 					pr.Out.Header.Del(k)
 				}
 			}
-			// Set identity from the verified token.
-			pr.Out.Header.Set("Impersonate-User", claims.UserID.String())
+			// Set identity from the verified token. Impersonate as the user's
+			// email (bound as the login); fall back to the UUID for a token minted
+			// before the email claim existed.
+			user := claims.Login
+			if user == "" {
+				user = claims.UserID.String()
+			}
+			pr.Out.Header.Set("Impersonate-User", user)
 			for _, g := range claims.Groups {
 				pr.Out.Header.Add("Impersonate-Group", g)
 			}

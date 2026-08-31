@@ -186,10 +186,18 @@ func (s *Service) CreateKubernetesSession(ctx context.Context, userID, assetID u
 	if !ok {
 		return Created{}, ErrClusterOffline
 	}
+	// The impersonated Kubernetes username is the user's email — the conventional
+	// OIDC identity RBAC binds against — not the internal UUID. Bind it into the
+	// token as the login (same slot as the ssh login / pg role) so the broker sets
+	// Impersonate-User from a verified claim.
+	u, err := s.q.GetUserByID(ctx, userID)
+	if err != nil {
+		return Created{}, err
+	}
 	sid := uuid.New()
 	tok, err := s.minter.Mint(sessiontoken.Claims{
 		SessionID: sid, UserID: userID, AssetID: assetID,
-		Protocol: "kubernetes", Mode: "web",
+		Protocol: "kubernetes", Mode: "web", Login: u.Email,
 		Groups: groups, BrokerID: brokerID,
 	}, k8sTTL)
 	if err != nil {

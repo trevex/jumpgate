@@ -52,7 +52,7 @@ func (c *captureRT) RoundTrip(assetID string, req *http.Request) (*http.Response
 	}, nil
 }
 
-func mint(t *testing.T, priv ed25519.PrivateKey, proto string, sub, asset uuid.UUID, groups []string) string {
+func mint(t *testing.T, priv ed25519.PrivateKey, proto string, sub, asset uuid.UUID, login string, groups []string) string {
 	t.Helper()
 	sk, _ := paseto.NewV4AsymmetricSecretKeyFromEd25519(priv)
 	tok := paseto.NewToken()
@@ -66,6 +66,7 @@ func mint(t *testing.T, priv ed25519.PrivateKey, proto string, sub, asset uuid.U
 	_ = tok.Set("proto", proto)
 	_ = tok.Set("mode", "web")
 	_ = tok.Set("cnf", "")
+	_ = tok.Set("login", login)
 	_ = tok.Set("groups", groups)
 	_ = tok.Set("broker_id", "broker-0")
 	return tok.V4Sign(sk, nil)
@@ -78,7 +79,7 @@ func TestFrontDoorImpersonatesAndStrips(t *testing.T) {
 	fdRec, connCtx := newTestRecorder()
 	h := frontdoor.Handler(rt, sessiontoken.NewVerifier(pub), fdRec)
 
-	tok := mint(t, priv, "kubernetes", sub, asset, []string{"developers", "system:masters"})
+	tok := mint(t, priv, "kubernetes", sub, asset, "alice@example.com", []string{"developers", "system:masters"})
 	req := httptest.NewRequest(http.MethodGet, "http://gw/api/v1/namespaces/default/pods", nil).WithContext(connCtx)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Impersonate-User", "root")
@@ -92,8 +93,10 @@ func TestFrontDoorImpersonatesAndStrips(t *testing.T) {
 	if rt.got == nil {
 		t.Fatal("request never forwarded")
 	}
-	if got := rt.got.Header.Get("Impersonate-User"); got != sub.String() {
-		t.Fatalf("Impersonate-User = %q, want %q", got, sub)
+	// Impersonate as the email bound in the token (the login claim), never the
+	// client-supplied "root" and never the internal UUID.
+	if got := rt.got.Header.Get("Impersonate-User"); got != "alice@example.com" {
+		t.Fatalf("Impersonate-User = %q, want %q", got, "alice@example.com")
 	}
 	gs := rt.got.Header.Values("Impersonate-Group")
 	sort.Strings(gs)
@@ -134,7 +137,7 @@ func TestFrontDoorRejectsNonKubeToken(t *testing.T) {
 	rt := &captureRT{}
 	fdRec, _ := newTestRecorder()
 	h := frontdoor.Handler(rt, sessiontoken.NewVerifier(pub), fdRec)
-	tok := mint(t, priv, "ssh", uuid.New(), uuid.New(), nil)
+	tok := mint(t, priv, "ssh", uuid.New(), uuid.New(), "", nil)
 	req := httptest.NewRequest(http.MethodGet, "http://gw/api", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

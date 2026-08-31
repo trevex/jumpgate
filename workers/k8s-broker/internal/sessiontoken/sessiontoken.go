@@ -20,10 +20,11 @@ import (
 // Claims is the decoded payload the broker needs for routing + impersonation.
 type Claims struct {
 	SessionID uuid.UUID // jti
-	UserID    uuid.UUID // sub — Impersonate-User
+	UserID    uuid.UUID // sub — the internal user id (audit); NOT the impersonated name
 	AssetID   uuid.UUID // asset — RoundTrip target
 	Protocol  string    // proto — must be "kubernetes"
 	Mode      string    // mode — "web" for the no-cnf bearer marker
+	Login     string    // login — Impersonate-User (the user's email)
 	Groups    []string  // groups — one Impersonate-Group each
 	BrokerID  string    // broker_id — the broker minted into this token
 }
@@ -84,7 +85,8 @@ func (v *Verifier) Verify(token string) (Claims, error) {
 	_ = t.Get("groups", &groups) // absent → nil
 	return Claims{
 		SessionID: sid, UserID: uid, AssetID: aid,
-		Protocol: proto, Mode: mode, Groups: groups,
+		Protocol: proto, Mode: mode, Login: optString(t, "login"),
+		Groups:   groups,
 		BrokerID: optString(t, "broker_id"),
 	}, nil
 }

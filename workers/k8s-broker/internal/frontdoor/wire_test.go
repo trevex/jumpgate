@@ -129,7 +129,7 @@ func TestFrontDoorOverMeshTLS(t *testing.T) {
 		},
 	}}
 
-	tok := mint(t, priv, "kubernetes", sub, assetID, []string{"developers"})
+	tok := mint(t, priv, "kubernetes", sub, assetID, "alice@example.com", []string{"developers"})
 
 	// Retry: the agent's reverse tunnel registers asynchronously after dial.
 	var resp *http.Response
@@ -160,8 +160,8 @@ func TestFrontDoorOverMeshTLS(t *testing.T) {
 	if string(body) != "pong" {
 		t.Fatalf("body = %q, want %q", body, "pong")
 	}
-	if gotUser != sub.String() {
-		t.Fatalf("Impersonate-User = %q, want %q (forged root must be stripped)", gotUser, sub)
+	if gotUser != "alice@example.com" {
+		t.Fatalf("Impersonate-User = %q, want %q (forged root must be stripped, email from token)", gotUser, "alice@example.com")
 	}
 	if gotGroup != "developers" {
 		t.Fatalf("Impersonate-Group = %q, want %q", gotGroup, "developers")
