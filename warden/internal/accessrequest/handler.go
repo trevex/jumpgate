@@ -68,6 +68,8 @@ func mapAccessRequestErr(err error) error {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("request is not pending"))
 	case errors.Is(err, ErrNotApprover):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("not an approver for this request"))
+	case errors.Is(err, ErrRequesterIneligible):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("requester is no longer eligible for this access"))
 	case errors.Is(err, ErrSelfApprove):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("cannot approve your own request"))
 	case errors.Is(err, ErrAlreadyVoted):

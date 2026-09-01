@@ -554,6 +554,53 @@ func TestTwoApprovalFlow(t *testing.T) {
 	}
 }
 
+// TestApproveDeactivatedRequester pins the approve-time requester re-check: a
+// request created while the requester was eligible must NOT mint a grant if the
+// requester loses eligibility (here: deactivated) before the approval threshold
+// is reached. The request stays pending, and once the requester is eligible
+// again the same pending request approves normally.
+func TestApproveDeactivatedRequester(t *testing.T) {
+	h := setup(t, 1, pgtype.Interval{})
+	requester := h.mkUser(t, "req@x")
+	approver := h.mkUser(t, "app@x")
+	h.bindStanding(t, requester, h.requesterRole)
+	h.bindStanding(t, approver, h.approverRole)
+
+	req, err := h.svc.RequestAccess(h.ctx, requester, h.role, h.asset, time.Hour, "need it")
+	if err != nil {
+		t.Fatalf("RequestAccess: %v", err)
+	}
+
+	// Requester deactivated after requesting, before approval.
+	if err := h.q.DeactivateUser(h.ctx, requester); err != nil {
+		t.Fatalf("DeactivateUser: %v", err)
+	}
+
+	// Approval must fail closed — no grant for a now-ineligible requester.
+	if _, err := h.svc.Approve(h.ctx, approver, req.ID); !errors.Is(err, accessrequest.ErrRequesterIneligible) {
+		t.Fatalf("Approve deactivated: err = %v, want ErrRequesterIneligible", err)
+	}
+	got, err := h.q.GetAccessRequestForUpdate(h.ctx, req.ID)
+	if err != nil {
+		t.Fatalf("GetAccessRequestForUpdate: %v", err)
+	}
+	if got.Status != "pending" {
+		t.Fatalf("status = %q, want pending (no grant minted)", got.Status)
+	}
+
+	// Reactivated → the still-pending request approves normally.
+	if err := h.q.ReactivateUser(h.ctx, requester); err != nil {
+		t.Fatalf("ReactivateUser: %v", err)
+	}
+	after, err := h.svc.Approve(h.ctx, approver, req.ID)
+	if err != nil {
+		t.Fatalf("Approve reactivated: %v", err)
+	}
+	if after.Status != "granted" || after.GrantID == uuid.Nil {
+		t.Fatalf("after reactivated approval: status=%q grant=%v, want granted+grant", after.Status, after.GrantID)
+	}
+}
+
 func TestSelfService(t *testing.T) {
 	h := setup(t, 0, pgtype.Interval{})
 	requester := h.mkUser(t, "req@x")
