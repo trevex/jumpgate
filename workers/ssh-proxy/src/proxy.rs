@@ -96,6 +96,11 @@ pub async fn bridge(
     // Why the loop exited: a control-plane teardown vs a natural channel close.
     let outcome;
 
+    // ponytail: single-task bridge — a `data_bytes().await` blocked on a full
+    // channel window head-of-line-blocks the other direction. russh windows
+    // auto-adjust so interactive shells never stall; upgrade to two independent
+    // pump tasks (sharing the recorder tap + a fail-closed AtomicBool) only if
+    // exec-heavy bidirectional piping proves it matters.
     loop {
         tokio::select! {
             // Teardown requested by the control plane.

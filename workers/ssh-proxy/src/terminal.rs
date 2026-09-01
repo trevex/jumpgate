@@ -544,6 +544,9 @@ where
     }
 
     let outcome;
+    // ponytail: single-task pump — a blocked write head-of-line-blocks the other
+    // direction (same trade-off as the SSH bridge; see proxy.rs). Fine for an
+    // interactive terminal; split into two pump tasks only if it ever matters.
     loop {
         tokio::select! {
             _ = cancel.notified() => {

@@ -8,9 +8,13 @@
 //! TLS handshake. After the handshake we forward an HTTP CONNECT carrying the
 //! session token and, on `200`, hand the raw TLS stream to [`pump_bounded`].
 
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
@@ -220,117 +224,115 @@ where
     }
 }
 
-/// Idle-aware bidirectional copy: pump bytes both ways, resetting a shared idle
-/// clock on any non-zero read. If `idle_timeout` is non-zero and no bytes flow
-/// in either direction within it, stop with [`StopReason::Idle`].
+/// Idle-aware bidirectional copy built on [`tokio::io::copy_bidirectional`].
 ///
-/// Implemented as a `select!` loop over both read directions, each `read`
-/// wrapped in `tokio::time::timeout(idle_timeout, …)`; a per-direction timeout
-/// only counts as idle when the OTHER direction has also been idle since the
-/// last activity, so a one-way-busy stream (e.g. a long download) is preserved.
+/// `copy_bidirectional` polls both directions AND both writes concurrently, so it
+/// cannot deadlock under full-duplex backpressure the way a hand-rolled `select!`
+/// that awaits a `write_all` inside one arm can (there, a blocked write starves
+/// the other direction until only the lifetime cap frees it). To keep the idle
+/// bound, each stream is wrapped in a [`CountedReader`] that bumps a shared
+/// counter on every read; a watchdog samples the counters once per `idle_timeout`
+/// and stops with [`StopReason::Idle`] when no bytes moved in EITHER direction
+/// across a full interval (so detection latency is within
+/// `[idle_timeout, 2*idle_timeout)`).
+///
+/// `idle_timeout == 0` disables the watchdog (a plain `copy_bidirectional`); the
+/// absolute lifetime cap, if any, is applied by the caller in [`pump_bounded`].
 async fn copy_bidirectional_idle<A, B>(
-    mut client: A,
-    mut worker: B,
+    client: A,
+    worker: B,
     idle_timeout: Duration,
 ) -> std::io::Result<((u64, u64), StopReason)>
 where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut c2w: u64 = 0; // client → worker bytes
-    let mut w2c: u64 = 0; // worker → client bytes
-    let mut cbuf = vec![0u8; 16 * 1024];
-    let mut wbuf = vec![0u8; 16 * 1024];
-    let mut client_eof = false;
-    let mut worker_eof = false;
+    let c2w = Arc::new(AtomicU64::new(0)); // bytes read from client (→ worker)
+    let w2c = Arc::new(AtomicU64::new(0)); // bytes read from worker (→ client)
+    let mut a = CountedReader {
+        inner: client,
+        read_bytes: c2w.clone(),
+    };
+    let mut b = CountedReader {
+        inner: worker,
+        read_bytes: w2c.clone(),
+    };
 
-    // A read future is "idle-limited" only when the timeout is enabled. We track
-    // the last-activity instant and, on a per-read timeout, only declare the
-    // whole session idle if BOTH directions have been quiet since then.
-    let mut last_activity = tokio::time::Instant::now();
+    let copy = tokio::io::copy_bidirectional(&mut a, &mut b);
+
+    // Idle disabled: a straight bidirectional copy (the caller may still wrap a
+    // lifetime cap around us).
+    if idle_timeout.is_zero() {
+        let (a2b, b2a) = copy.await?;
+        return Ok(((a2b, b2a), StopReason::Closed));
+    }
+
+    tokio::pin!(copy);
+    let mut ticker = tokio::time::interval(idle_timeout);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // consume the immediate first tick → establish the baseline
+    let mut last = 0u64;
 
     loop {
-        if client_eof && worker_eof {
-            return Ok(((c2w, w2c), StopReason::Closed));
-        }
-
-        // Deadline for the earliest allowable idle trip.
-        let deadline = last_activity + idle_timeout;
-
         tokio::select! {
-            // client → worker
-            r = read_with_deadline(&mut client, &mut cbuf, idle_timeout, deadline), if !client_eof => {
-                match r {
-                    ReadOutcome::Data(n) => {
-                        last_activity = tokio::time::Instant::now();
-                        worker.write_all(&cbuf[..n]).await?;
-                        worker.flush().await?;
-                        c2w += n as u64;
-                    }
-                    ReadOutcome::Eof => {
-                        client_eof = true;
-                        // Half-close the worker's write side so the peer sees EOF.
-                        let _ = worker.shutdown().await;
-                    }
-                    ReadOutcome::Idle => return Ok(((c2w, w2c), StopReason::Idle)),
-                    ReadOutcome::Err(e) => return Err(e),
-                }
+            r = &mut copy => {
+                let (a2b, b2a) = r?;
+                return Ok(((a2b, b2a), StopReason::Closed));
             }
-
-            // worker → client
-            r = read_with_deadline(&mut worker, &mut wbuf, idle_timeout, deadline), if !worker_eof => {
-                match r {
-                    ReadOutcome::Data(n) => {
-                        last_activity = tokio::time::Instant::now();
-                        client.write_all(&wbuf[..n]).await?;
-                        client.flush().await?;
-                        w2c += n as u64;
-                    }
-                    ReadOutcome::Eof => {
-                        worker_eof = true;
-                        let _ = client.shutdown().await;
-                    }
-                    ReadOutcome::Idle => return Ok(((c2w, w2c), StopReason::Idle)),
-                    ReadOutcome::Err(e) => return Err(e),
+            _ = ticker.tick() => {
+                let moved = c2w.load(Ordering::Relaxed) + w2c.load(Ordering::Relaxed);
+                if moved == last {
+                    return Ok((
+                        (c2w.load(Ordering::Relaxed), w2c.load(Ordering::Relaxed)),
+                        StopReason::Idle,
+                    ));
                 }
+                last = moved;
             }
         }
     }
 }
 
-/// Outcome of a single deadline-bounded read.
-enum ReadOutcome {
-    Data(usize),
-    Eof,
-    Idle,
-    Err(std::io::Error),
+/// A stream wrapper that counts bytes READ through it (writes pass straight
+/// through), letting an external watchdog observe progress without interrupting
+/// [`tokio::io::copy_bidirectional`]. `S: Unpin` (all our streams are) lets the
+/// poll impls project to `inner` without `unsafe`.
+struct CountedReader<S> {
+    inner: S,
+    read_bytes: Arc<AtomicU64>,
 }
 
-/// Read into `buf`, bounded by the shared idle `deadline`. `idle_timeout` being
-/// zero disables the bound (waits indefinitely). A read that completes with a
-/// non-zero count is `Data`; a clean `0` is `Eof`; the deadline elapsing with no
-/// data is `Idle`.
-async fn read_with_deadline<R>(
-    r: &mut R,
-    buf: &mut [u8],
-    idle_timeout: Duration,
-    deadline: tokio::time::Instant,
-) -> ReadOutcome
-where
-    R: AsyncRead + Unpin,
-{
-    if idle_timeout.is_zero() {
-        return match r.read(buf).await {
-            Ok(0) => ReadOutcome::Eof,
-            Ok(n) => ReadOutcome::Data(n),
-            Err(e) => ReadOutcome::Err(e),
-        };
+impl<S: AsyncRead + Unpin> AsyncRead for CountedReader<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        let r = Pin::new(&mut self.inner).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &r {
+            let n = buf.filled().len() - before;
+            if n > 0 {
+                self.read_bytes.fetch_add(n as u64, Ordering::Relaxed);
+            }
+        }
+        r
     }
-    match tokio::time::timeout_at(deadline, r.read(buf)).await {
-        Ok(Ok(0)) => ReadOutcome::Eof,
-        Ok(Ok(n)) => ReadOutcome::Data(n),
-        Ok(Err(e)) => ReadOutcome::Err(e),
-        Err(_elapsed) => ReadOutcome::Idle,
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for CountedReader<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 

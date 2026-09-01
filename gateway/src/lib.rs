@@ -74,26 +74,34 @@ async fn read_request_head<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Res
     }
 }
 
-/// `true` when the request head is a `GET` with an `Upgrade: websocket` header —
-/// the browser-terminal path. A plain `GET` (no upgrade) is not.
-fn is_websocket_upgrade(head: &[u8]) -> bool {
-    let mut headers = [httparse::EMPTY_HEADER; 32];
+/// `true` when the request head is a WebSocket upgrade for the browser-terminal
+/// endpoint: a `GET` to path `/terminal` (query ignored) carrying an
+/// `Upgrade: websocket` header.
+///
+/// The path check is load-bearing: Kubernetes ≥1.31 runs `kubectl exec`/`attach`/
+/// `port-forward` over a WebSocket upgrade too (`GET /api/…/exec?… Upgrade:
+/// websocket`). Matching on the upgrade alone would misroute those to the
+/// terminal handler (which then rejects the non-`/terminal` path); requiring the
+/// path lets them fall through to [`handle_kube`].
+fn is_terminal_websocket(head: &[u8]) -> bool {
+    let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut req = httparse::Request::new(&mut headers);
     if req.parse(head).is_err() {
         return false;
     }
+    if !req.method.is_some_and(|m| m.eq_ignore_ascii_case("GET")) {
+        return false;
+    }
+    // Only the terminal path itself — not every websocket upgrade.
     if !req
-        .method
-        .map(|m| m.eq_ignore_ascii_case("GET"))
-        .unwrap_or(false)
+        .path
+        .is_some_and(|p| p.split('?').next() == Some("/terminal"))
     {
         return false;
     }
     req.headers.iter().any(|h| {
         h.name.eq_ignore_ascii_case("upgrade")
-            && std::str::from_utf8(h.value)
-                .map(|v| v.eq_ignore_ascii_case("websocket"))
-                .unwrap_or(false)
+            && std::str::from_utf8(h.value).is_ok_and(|v| v.eq_ignore_ascii_case("websocket"))
     })
 }
 
@@ -126,7 +134,7 @@ where
 
     // Browser terminal: a WebSocket upgrade GET. The head is replayed into the
     // WS handshake, which reads the request itself.
-    if is_websocket_upgrade(&head) {
+    if is_terminal_websocket(&head) {
         let limits = state.session_limits;
         terminal::handle_terminal(
             state.clone(),
@@ -309,7 +317,7 @@ where
 /// HTTP request head. Case-insensitive header name and scheme; `None` if the
 /// header is absent, malformed, or carries an empty token.
 fn bearer_from_head(head: &[u8]) -> Option<String> {
-    let mut headers = [httparse::EMPTY_HEADER; 32];
+    let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut req = httparse::Request::new(&mut headers);
     // A partial parse still populates the headers seen so far; the head is a
     // complete request (ends in CRLFCRLF), so a partial status is not an error.
@@ -428,6 +436,35 @@ mod tests {
         let mut r = ChunkReader::new(chunks);
         let out = read_request_head(&mut r).await.unwrap();
         assert_eq!(out, bytes);
+    }
+
+    #[test]
+    fn terminal_websocket_matches_only_terminal_path() {
+        let ws = b"Upgrade: websocket\r\nConnection: Upgrade\r\n";
+        // The browser terminal: GET /terminal (with/without query) + upgrade.
+        assert!(is_terminal_websocket(
+            format!("GET /terminal HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
+        ));
+        assert!(is_terminal_websocket(
+            format!("GET /terminal?ticket=abc HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
+        ));
+        // A kubectl exec/attach websocket upgrade (k8s >=1.31) must NOT match —
+        // it has to fall through to the k8s broker ingress.
+        assert!(!is_terminal_websocket(
+            format!(
+                "GET /api/v1/namespaces/x/pods/y/exec?command=sh HTTP/1.1\r\n{}\r\n",
+                str_ws(ws)
+            )
+            .as_bytes()
+        ));
+        // A plain GET /terminal without an upgrade is not a websocket.
+        assert!(!is_terminal_websocket(b"GET /terminal HTTP/1.1\r\n\r\n"));
+        // A CONNECT tunnel is not a websocket.
+        assert!(!is_terminal_websocket(b"CONNECT asset-1 HTTP/1.1\r\n\r\n"));
+    }
+
+    fn str_ws(b: &[u8]) -> String {
+        String::from_utf8(b.to_vec()).unwrap()
     }
 
     #[tokio::test]
