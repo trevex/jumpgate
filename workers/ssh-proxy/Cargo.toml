@@ -30,6 +30,10 @@ rand = { version = "0.10", features = ["thread_rng"] }
 russh = { version = "0.62.7", default-features = false, features = ["flate2", "ring", "rsa"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Scrub warden-injected target secrets (password / private-key PEM) from memory
+# on drop. Our copies only — russh keeps its own — but it closes the window on
+# our side and gives the secret variants a redacting home.
+zeroize = "1"
 # Object-storage upload: rusty-s3 is a sans-IO S3 request signer; reqwest does
 # the HTTP. reqwest uses `rustls-no-provider` so it pulls NO crypto provider —
 # we hand it a rustls::ClientConfig backed by the ring provider (see record.rs),

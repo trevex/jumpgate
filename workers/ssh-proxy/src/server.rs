@@ -39,6 +39,7 @@ use russh::server::{Auth, Handler, Msg, Session};
 use russh::{Channel, ChannelId, Pty};
 use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
+use zeroize::Zeroizing;
 
 use crate::config::Config;
 use crate::control::SessionRegistry;
@@ -135,16 +136,28 @@ pub(crate) async fn build_recorder(
 /// - `Password`: a plain stored password injected as the target's password auth.
 /// - `Key`: a plain stored OpenSSH private-key PEM injected as publickey auth.
 ///
-/// `Password`/`Key` carry warden-injected secrets that never touch the client.
-#[derive(Debug)]
+/// `Password`/`Key` carry warden-injected secrets that never touch the client;
+/// they are held in [`Zeroizing`] (scrubbed on drop) and [`Debug`] is
+/// hand-written to redact every secret (the `Cert` arm's `kw` private key
+/// included) so a stray `?target_auth` in a log can never print one.
 pub enum TargetAuth {
     // Boxed: the cert + key make this variant far larger than the secret ones.
     Cert {
         certificate: Box<Certificate>,
         kw: Box<PrivateKey>,
     },
-    Password(String),
-    Key(Vec<u8>),
+    Password(Zeroizing<String>),
+    Key(Zeroizing<Vec<u8>>),
+}
+
+impl std::fmt::Debug for TargetAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cert { .. } => write!(f, "Cert {{ certificate: <cert>, kw: <redacted> }}"),
+            Self::Password(_) => write!(f, "Password(<redacted>)"),
+            Self::Key(_) => write!(f, "Key(<redacted>)"),
+        }
+    }
 }
 
 /// A validated, cached session: the outcome of a successful publickey auth.
@@ -1112,7 +1125,7 @@ mod tests {
                     target_address: "10.0.0.6:22".into(),
                     target_host_key: String::new(),
                     grant_id: String::new(),
-                    credential: TargetCredential::Password(password),
+                    credential: TargetCredential::Password(Zeroizing::new(password)),
                     recording_required: false,
                     recording_object_key: String::new(),
                 })
@@ -1131,7 +1144,7 @@ mod tests {
                     target_address: "10.0.0.7:22".into(),
                     target_host_key: String::new(),
                     grant_id: String::new(),
-                    credential: TargetCredential::Key(pem),
+                    credential: TargetCredential::Key(Zeroizing::new(pem)),
                     recording_required: false,
                     recording_object_key: String::new(),
                 })
@@ -1181,7 +1194,7 @@ mod tests {
         assert_eq!(state.session_id, "sess-pw");
         assert_eq!(state.target_address, "10.0.0.6:22");
         match &state.target_auth {
-            TargetAuth::Password(pw) => assert_eq!(pw, "hunter2"),
+            TargetAuth::Password(pw) => assert_eq!(pw.as_str(), "hunter2"),
             other => panic!("expected Password branch, got {other:?}"),
         }
     }
@@ -1203,7 +1216,7 @@ mod tests {
         assert_eq!(state.session_id, "sess-key");
         assert_eq!(state.target_address, "10.0.0.7:22");
         match &state.target_auth {
-            TargetAuth::Key(bytes) => assert_eq!(bytes, pem.as_bytes()),
+            TargetAuth::Key(bytes) => assert_eq!(bytes.as_slice(), pem.as_bytes()),
             other => panic!("expected Key branch, got {other:?}"),
         }
     }

@@ -39,6 +39,10 @@ pub struct Config {
     pub recording_part_size: usize,
     /// RECORDING_FLUSH_INTERVAL_SECS — max interval between recording flushes.
     pub recording_flush_interval_secs: u64,
+    /// WORKER_REQUIRE_HOST_KEY_PIN — when true, a target with no configured
+    /// host-key pin is rejected (fail closed) instead of accept-and-logged.
+    /// Default false preserves accept-and-log for unpinned assets.
+    pub require_host_key_pin: bool,
 }
 
 impl Config {
@@ -83,6 +87,10 @@ impl Config {
             recording_s3_region: opt("RECORDING_S3_REGION", "us-east-1"),
             recording_part_size,
             recording_flush_interval_secs,
+            require_host_key_pin: matches!(
+                opt("WORKER_REQUIRE_HOST_KEY_PIN", "false").trim(),
+                "true" | "1"
+            ),
         })
     }
 }

@@ -15,6 +15,7 @@
 use anyhow::Context;
 
 use anyhow::anyhow;
+use zeroize::Zeroizing;
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, setup_session_response, SetupSessionRequest,
@@ -33,15 +34,28 @@ use jumpgate_mesh::tls::MeshClientCerts;
 ///   target's publickey auth.
 ///
 /// The secret variants (`Password`/`Key`) never touch the client — they are used
-/// solely worker-side to authenticate the second hop.
-#[derive(Debug, Clone)]
+/// solely worker-side to authenticate the second hop. They are held in
+/// [`Zeroizing`] so the bytes are scrubbed on drop, and [`Debug`] is hand-written
+/// to redact them (a stray `?credential` in a log must never print a secret).
+#[derive(Clone)]
 pub enum TargetCredential {
     /// OpenSSH certificate line (authorized_keys cert form), minted over `Kw`.
+    /// Not secret (a public certificate), so it is not zeroized.
     Cert(Vec<u8>),
     /// Plain stored password.
-    Password(String),
+    Password(Zeroizing<String>),
     /// Plain stored OpenSSH private-key PEM.
-    Key(Vec<u8>),
+    Key(Zeroizing<Vec<u8>>),
+}
+
+impl std::fmt::Debug for TargetCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cert(_) => write!(f, "Cert(<cert>)"),
+            Self::Password(_) => write!(f, "Password(<redacted>)"),
+            Self::Key(_) => write!(f, "Key(<redacted>)"),
+        }
+    }
 }
 
 /// The successful outcome of [`setup_session`]: what warden returned for a
@@ -113,8 +127,12 @@ pub async fn setup_session(
         Some(setup_session_response::Credential::SshCertificate(cert)) => {
             TargetCredential::Cert(cert)
         }
-        Some(setup_session_response::Credential::Password(pw)) => TargetCredential::Password(pw),
-        Some(setup_session_response::Credential::PrivateKey(key)) => TargetCredential::Key(key),
+        Some(setup_session_response::Credential::Password(pw)) => {
+            TargetCredential::Password(Zeroizing::new(pw))
+        }
+        Some(setup_session_response::Credential::PrivateKey(key)) => {
+            TargetCredential::Key(Zeroizing::new(key))
+        }
         // Postgres credential arms of the shared dataplane oneof: the gateway routes
         // by protocol so an ssh worker never receives these, but the match must be
         // exhaustive over the shared enum.

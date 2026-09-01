@@ -6,28 +6,48 @@
 //! minted over `Kw`. The returned client handle is used to open a channel that
 //! mirrors the client's (pty+shell or exec), which [`crate::proxy`] then bridges.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use russh::keys::ssh_key::{self, Certificate, PrivateKey, PublicKey};
 use russh::keys::PrivateKeyWithHashAlg;
 
+/// Deploy-time policy: when set, a target with NO configured host-key pin is
+/// REJECTED instead of accept-and-logged. Set once at startup from
+/// `WORKER_REQUIRE_HOST_KEY_PIN` (see [`set_require_host_key_pin`]); a
+/// process-global immutable constant, so a [`TargetHandler`] snapshots it at
+/// construction and tests build the struct directly rather than touch this.
+static REQUIRE_HOST_KEY_PIN: AtomicBool = AtomicBool::new(false);
+
+/// Set the process-wide "require a configured host-key pin" policy. Called once
+/// from `main` with the value of `WORKER_REQUIRE_HOST_KEY_PIN`. Default (unset)
+/// is `false` — unpinned targets are accept-and-logged, preserving existing
+/// behavior; operators opt in to fail-closed by setting the env var.
+pub fn set_require_host_key_pin(require: bool) {
+    REQUIRE_HOST_KEY_PIN.store(require, Ordering::Relaxed);
+}
+
 /// russh client handler for the target connection.
 ///
 /// Its one security decision is the host-key check ([`check_server_key`]). When
 /// the asset carries a configured host-key pin the handler enforces it: a target
 /// whose presented host key does not match the pin is REJECTED (fail closed —
-/// MITM protection). When no pin is configured the presented key is accepted and
-/// its fingerprint logged (TOFU-off / accept-and-log).
+/// MITM protection). When no pin is configured, behavior depends on the
+/// `require_pin` policy snapshot: reject (fail closed) if required, else accept
+/// the presented key and log its fingerprint (TOFU-off / accept-and-log).
 ///
 /// [`check_server_key`]: russh::client::Handler::check_server_key
 #[derive(Debug)]
 pub struct TargetHandler {
     /// The asset's configured host-key pin, already parsed to the canonical
-    /// public-key type. `None` = no pin configured (accept-and-log). This is
-    /// pre-parsed by [`TargetHandler::new`] so a malformed pin fails closed at
-    /// construction rather than accepting any key later.
+    /// public-key type. `None` = no pin configured. This is pre-parsed by
+    /// [`TargetHandler::new`] so a malformed pin fails closed at construction
+    /// rather than accepting any key later.
     pinned_host_key: Option<PublicKey>,
+    /// Snapshot of [`REQUIRE_HOST_KEY_PIN`] taken at construction: when `true`, a
+    /// `None` pin is a hard reject instead of accept-and-log.
+    require_pin: bool,
 }
 
 impl TargetHandler {
@@ -50,7 +70,10 @@ impl TargetHandler {
                     .context("parse configured target host-key pin (authorized_keys line)")?,
             )
         };
-        Ok(Self { pinned_host_key })
+        Ok(Self {
+            pinned_host_key,
+            require_pin: REQUIRE_HOST_KEY_PIN.load(Ordering::Relaxed),
+        })
     }
 }
 
@@ -63,7 +86,16 @@ impl russh::client::Handler for TargetHandler {
     ) -> Result<bool, Self::Error> {
         let presented_fp = server_public_key.fingerprint(Default::default());
         match &self.pinned_host_key {
-            // No pin configured: accept the presented key and log it (TOFU-off).
+            // No pin configured. Fail closed when the require-pin policy is set,
+            // else accept the presented key and log it (TOFU-off).
+            None if self.require_pin => {
+                tracing::error!(
+                    fingerprint = %presented_fp,
+                    algorithm = %server_public_key.algorithm(),
+                    "target has no configured host-key pin and WORKER_REQUIRE_HOST_KEY_PIN is set; rejecting connection (fail closed)",
+                );
+                Ok(false)
+            }
             None => {
                 tracing::info!(
                     fingerprint = %presented_fp,
@@ -227,6 +259,26 @@ mod tests {
             .await
             .expect("host-key check must not error");
         assert!(accepted, "with no pin, any host key must be accepted");
+    }
+
+    /// (a2) No pin configured but the require-pin policy is on → reject (fail
+    /// closed). Built directly (not via `new`) so the test never mutates the
+    /// process-global policy and can't race sibling tests.
+    #[tokio::test]
+    async fn no_pin_with_require_policy_rejects() {
+        let presented = random_ed25519();
+        let mut handler = TargetHandler {
+            pinned_host_key: None,
+            require_pin: true,
+        };
+        let accepted = handler
+            .check_server_key(&presented.public_key().clone())
+            .await
+            .expect("host-key check must not error");
+        assert!(
+            !accepted,
+            "with no pin and require-pin policy on, the host key must be rejected"
+        );
     }
 
     /// (b) A pin that matches the presented host key → accept. The pin is supplied
