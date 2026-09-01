@@ -31,10 +31,11 @@ use tokio::sync::mpsc;
 
 use crate::asciicast::EventKind;
 use crate::control::SessionRegistry;
+use crate::proxy::tap_event;
 use crate::record::RecorderHandle;
 use crate::server::{
-    build_recorder, dial_target_by_auth, unix_millis_now, RecordingOutcome, RecordingSettings,
-    SessionEndReport, SessionState, SetupFn,
+    build_recorder, dial_target_by_auth, failed_recording_outcome, finalize_recording,
+    RecordingSettings, SessionEndReport, SessionState, SetupFn,
 };
 use crate::setup::setup_session;
 use jumpgate_mesh::tls::MeshClientCerts;
@@ -301,15 +302,10 @@ where
                 let _ = deps.session_ended_tx.send(SessionEndReport {
                     session_id: state.session_id.clone(),
                     reason: "recording_unavailable".into(),
-                    recording: Some(RecordingOutcome {
-                        object_key: state.recording_object_key.clone(),
-                        size_bytes: 0,
-                        sha256: String::new(),
-                        started_at_unix_ms: 0,
-                        ended_at_unix_ms: 0,
-                        status: "failed".into(),
-                        grant_id: state.grant_id.clone(),
-                    }),
+                    recording: Some(failed_recording_outcome(
+                        &state.recording_object_key,
+                        &state.grant_id,
+                    )),
                 });
                 send_error(&mut writer, "recording unavailable").await;
                 return;
@@ -328,30 +324,22 @@ where
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(session_id = %state.session_id, error = %e, "terminal target hop failed");
-            if let Some((handle, join, started_ms)) = recorder {
-                handle.fail().await;
-                let report = join.await.unwrap_or_else(|e| {
-                        tracing::warn!(session_id = %state.session_id, error = %e, "recorder task join failed");
-                        crate::record::RecordingReport {
-                            size_bytes: 0,
-                            sha256_hex: String::new(),
-                            status: crate::record::RecordStatus::Failed,
-                        }
-                    });
-                let _ = deps.session_ended_tx.send(SessionEndReport {
-                    session_id: state.session_id.clone(),
-                    reason: "target_unavailable".into(),
-                    recording: Some(RecordingOutcome {
-                        object_key: state.recording_object_key.clone(),
-                        size_bytes: report.size_bytes,
-                        sha256: report.sha256_hex,
-                        started_at_unix_ms: started_ms,
-                        ended_at_unix_ms: unix_millis_now(),
-                        status: "failed".into(),
-                        grant_id: state.grant_id.clone(),
-                    }),
-                });
-            }
+            // Finalize any recorder and ALWAYS report the end (mirrors the SSH
+            // path): the session is already in warden's ledger, so an unrecorded
+            // target-fail that skipped the report would orphan the live session.
+            let recording = finalize_recording(
+                recorder,
+                false,
+                &state.session_id,
+                &state.recording_object_key,
+                &state.grant_id,
+            )
+            .await;
+            let _ = deps.session_ended_tx.send(SessionEndReport {
+                session_id: state.session_id.clone(),
+                reason: "target_unavailable".into(),
+                recording,
+            });
             send_error(&mut writer, "target unavailable").await;
             return;
         }
@@ -365,55 +353,31 @@ where
     let registry = deps.registry.clone();
     let ended_tx = deps.session_ended_tx.clone();
 
-    let (rec_handle, rec_join, started_ms) = match recorder {
-        Some((h, j, s)) => (Some(h), Some(j), s),
-        None => (None, None, 0),
-    };
+    // Clone the recorder's tap handle for the pump; finalize the recorder itself
+    // after the pump returns.
+    let recorder_tap = recorder.as_ref().map(|(h, _, _)| h.clone());
 
     let outcome = pump(
         &mut reader,
         &mut writer,
         target_channel,
         handle.cancel,
-        rec_handle.clone(),
-        started_ms,
+        recorder_tap,
         pending_first,
     )
     .await;
     let reason = outcome.reason();
 
-    // 6. Finalize the recording EXACTLY as the SSH path: a clean end completes the
-    //    upload, a recording failure aborts it; await the recorder for the report.
-    let recording = if let (Some(h), Some(join)) = (rec_handle, rec_join) {
-        if outcome == PumpOutcome::RecordingFailed {
-            h.fail().await;
-        } else {
-            h.finish().await;
-        }
-        let report = join.await.unwrap_or_else(|e| {
-            tracing::warn!(session_id = %session_id, error = %e, "recorder task join failed");
-            crate::record::RecordingReport {
-                size_bytes: 0,
-                sha256_hex: String::new(),
-                status: crate::record::RecordStatus::Failed,
-            }
-        });
-        let status = match report.status {
-            crate::record::RecordStatus::Completed => "completed",
-            crate::record::RecordStatus::Failed => "failed",
-        };
-        Some(RecordingOutcome {
-            object_key,
-            size_bytes: report.size_bytes,
-            sha256: report.sha256_hex,
-            started_at_unix_ms: started_ms,
-            ended_at_unix_ms: unix_millis_now(),
-            status: status.into(),
-            grant_id,
-        })
-    } else {
-        None
-    };
+    // 6. Finalize the recording via the shared path (mirrors the SSH ingress): a
+    //    clean end completes the upload, a recording failure aborts it.
+    let recording = finalize_recording(
+        recorder,
+        outcome != PumpOutcome::RecordingFailed,
+        &session_id,
+        &object_key,
+        &grant_id,
+    )
+    .await;
 
     // 7. Exactly-once cleanup: drop from the registry, report the end once.
     registry.remove(&session_id);
@@ -476,24 +440,6 @@ async fn open_target_shell(
     Ok((handle, target_channel))
 }
 
-/// Record one frame into the recording, if active. Returns `true` when healthy
-/// (no recorder or the event was accepted), `false` when a present recorder's
-/// channel overflowed/closed — the fail-closed signal. Mirrors
-/// [`crate::proxy`]'s tap so browser recordings are byte-identical to SSH ones.
-fn tap(
-    recorder: Option<&RecorderHandle>,
-    start: std::time::Instant,
-    kind: EventKind,
-    data: Vec<u8>,
-) -> bool {
-    match recorder {
-        Some(h) => h
-            .try_event(start.elapsed().as_secs_f64(), kind, data)
-            .is_ok(),
-        None => true,
-    }
-}
-
 /// Pump frames between the browser (framed opcode stream) and the target russh
 /// channel until one side closes or `cancel` fires.
 ///
@@ -511,7 +457,6 @@ async fn pump<R, W>(
     target_channel: russh::Channel<russh::client::Msg>,
     cancel: Arc<tokio::sync::Notify>,
     recorder: Option<RecorderHandle>,
-    _started_ms: i64,
     pending_first: Option<(u8, Vec<u8>)>,
 ) -> PumpOutcome
 where
@@ -522,9 +467,11 @@ where
     let start = std::time::Instant::now();
 
     let mut recording_failed = false;
+    // Gate on `recorder.is_some()` so `$data` is only materialized when a recorder
+    // is attached (no per-frame allocation on the common unrecorded path).
     macro_rules! feed {
         ($kind:expr, $data:expr) => {
-            if !tap(recorder.as_ref(), start, $kind, $data) {
+            if recorder.is_some() && !tap_event(recorder.as_ref(), start, $kind, $data) {
                 recording_failed = true;
             }
         };
@@ -626,19 +573,22 @@ async fn handle_inbound(
 ) -> anyhow::Result<bool> {
     match opcode {
         OP_IN_DATA => {
-            if !tap(recorder, start, EventKind::Input, payload.clone()) {
+            if recorder.is_some() && !tap_event(recorder, start, EventKind::Input, payload.clone())
+            {
                 return Ok(false);
             }
             target_write.data_bytes(payload).await?;
         }
         OP_IN_RESIZE => {
             if let Some(size) = parse_resize(&payload) {
-                if !tap(
-                    recorder,
-                    start,
-                    EventKind::Resize,
-                    format!("{}x{}", size.cols, size.rows).into_bytes(),
-                ) {
+                if recorder.is_some()
+                    && !tap_event(
+                        recorder,
+                        start,
+                        EventKind::Resize,
+                        format!("{}x{}", size.cols, size.rows).into_bytes(),
+                    )
+                {
                     return Ok(false);
                 }
                 target_write

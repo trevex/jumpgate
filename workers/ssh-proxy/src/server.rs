@@ -223,6 +223,74 @@ pub struct RecordingOutcome {
     pub grant_id: String,
 }
 
+/// A built recorder: the tap handle fed into the bridge/pump, the recorder task's
+/// join handle, and the recording start timestamp (unix ms). Returned by
+/// [`build_recorder`] and finalized by [`finalize_recording`].
+pub(crate) type Recorder = (
+    crate::record::RecorderHandle,
+    tokio::task::JoinHandle<crate::record::RecordingReport>,
+    i64,
+);
+
+/// Finalize a session's recorder into the [`RecordingOutcome`] reported to warden,
+/// shared by the SSH and browser-terminal ingresses so the fail-closed finalize
+/// path exists in ONE place (drift here silently weakens the recording guarantee).
+///
+/// `success` is `true` for a clean session end (complete the upload) and `false`
+/// for a recording failure or a target-hop failure (abort the upload). The
+/// recorder task is awaited for the authoritative report; a join failure maps to a
+/// `failed` outcome. A `None` recorder (unrecorded session) yields `None`.
+pub(crate) async fn finalize_recording(
+    recorder: Option<Recorder>,
+    success: bool,
+    session_id: &str,
+    object_key: &str,
+    grant_id: &str,
+) -> Option<RecordingOutcome> {
+    let (handle, join, started_ms) = recorder?;
+    if success {
+        handle.finish().await;
+    } else {
+        handle.fail().await;
+    }
+    let report = join.await.unwrap_or_else(|e| {
+        tracing::warn!(%session_id, error = %e, "recorder task join failed");
+        crate::record::RecordingReport {
+            size_bytes: 0,
+            sha256_hex: String::new(),
+            status: crate::record::RecordStatus::Failed,
+        }
+    });
+    let status = match report.status {
+        crate::record::RecordStatus::Completed => "completed",
+        crate::record::RecordStatus::Failed => "failed",
+    };
+    Some(RecordingOutcome {
+        object_key: object_key.to_string(),
+        size_bytes: report.size_bytes,
+        sha256: report.sha256_hex,
+        started_at_unix_ms: started_ms,
+        ended_at_unix_ms: unix_millis_now(),
+        status: status.into(),
+        grant_id: grant_id.to_string(),
+    })
+}
+
+/// A synthetic `failed` recording outcome for a `recording_required` session whose
+/// recorder could never be built (nothing was ever uploaded). Reported when the
+/// session is refused up front.
+pub(crate) fn failed_recording_outcome(object_key: &str, grant_id: &str) -> RecordingOutcome {
+    RecordingOutcome {
+        object_key: object_key.to_string(),
+        size_bytes: 0,
+        sha256: String::new(),
+        started_at_unix_ms: 0,
+        ended_at_unix_ms: 0,
+        status: "failed".into(),
+        grant_id: grant_id.to_string(),
+    }
+}
+
 /// Pseudo-terminal parameters remembered from the client's `pty_request`, so the
 /// worker requests a matching pty on the target before starting the shell/exec.
 #[derive(Clone)]
@@ -506,15 +574,10 @@ impl SshHandler {
                     let _ = self.session_ended_tx.send(SessionEndReport {
                         session_id: state.session_id.clone(),
                         reason: "recording_unavailable".into(),
-                        recording: Some(RecordingOutcome {
-                            object_key: state.recording_object_key.clone(),
-                            size_bytes: 0,
-                            sha256: String::new(),
-                            started_at_unix_ms: 0,
-                            ended_at_unix_ms: 0,
-                            status: "failed".into(),
-                            grant_id: state.grant_id.clone(),
-                        }),
+                        recording: Some(failed_recording_outcome(
+                            &state.recording_object_key,
+                            &state.grant_id,
+                        )),
                     });
                     Self::fail_client_channel(client_channel, "recording unavailable").await;
                     return;
@@ -524,53 +587,33 @@ impl SshHandler {
             None
         };
 
-        let (target_handle, target_channel) = match self
-            .open_target_channel(state, &login, command)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
-                // A recorder may already have been spun up; finalize it and
-                // report the failed recording. The invariant is that once a
-                // recorder exists for a required session, EVERY exit path both
-                // finalizes the upload and sends exactly one SessionEndReport.
-                let recording = if let Some((handle, join, started_ms)) = recorder {
-                    // Abort the multipart upload so nothing dangles, then await
-                    // the recorder task for an accurate (failed) report.
-                    handle.fail().await;
-                    let report = join.await.unwrap_or_else(|e| {
-                            tracing::warn!(session_id = %state.session_id, error = %e, "recorder task join failed");
-                            crate::record::RecordingReport {
-                                size_bytes: 0,
-                                sha256_hex: String::new(),
-                                status: crate::record::RecordStatus::Failed,
-                            }
-                        });
-                    Some(RecordingOutcome {
-                        object_key: state.recording_object_key.clone(),
-                        size_bytes: report.size_bytes,
-                        sha256: report.sha256_hex,
-                        started_at_unix_ms: started_ms,
-                        ended_at_unix_ms: unix_millis_now(),
-                        status: "failed".into(),
-                        grant_id: state.grant_id.clone(),
-                    })
-                } else {
-                    // Unrecorded session: keep the prior behavior — no report.
-                    None
-                };
-                if recording.is_some() {
+        let (target_handle, target_channel) =
+            match self.open_target_channel(state, &login, command).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
+                    // Finalize any recorder (abort the upload) and ALWAYS report the
+                    // session ended — SetupSession already registered it in warden's
+                    // ledger, so an unrecorded target-fail that skipped the report left
+                    // an orphaned live-session entry. `finalize_recording` yields None
+                    // for an unrecorded session; the report still fires.
+                    let recording = finalize_recording(
+                        recorder,
+                        false,
+                        &state.session_id,
+                        &state.recording_object_key,
+                        &state.grant_id,
+                    )
+                    .await;
                     let _ = self.session_ended_tx.send(SessionEndReport {
                         session_id: state.session_id.clone(),
                         reason: "target_unavailable".into(),
                         recording,
                     });
+                    Self::fail_client_channel(client_channel, "target unavailable").await;
+                    return;
                 }
-                Self::fail_client_channel(client_channel, "target unavailable").await;
-                return;
-            }
-        };
+            };
 
         // Register the live session so a Teardown can force-close it, then bridge.
         let session_id = state.session_id.clone();
@@ -580,14 +623,11 @@ impl SshHandler {
         let registry = self.registry.clone();
         let ended_tx = self.session_ended_tx.clone();
 
-        tokio::spawn(async move {
-            // Split the recorder into the tap handle (fed into the bridge) and the
-            // join handle + start timestamp used to finalize the recording report.
-            let (rec_handle, rec_join, started_ms) = match recorder {
-                Some((h, j, s)) => (Some(h), Some(j), s),
-                None => (None, None, 0),
-            };
+        // Clone the recorder's tap handle for the bridge; the recorder tuple itself
+        // is finalized (finish/fail + report) after the bridge returns.
+        let recorder_tap = recorder.as_ref().map(|(h, _, _)| h.clone());
 
+        tokio::spawn(async move {
             // The bridge reports whether it ended on a control-plane teardown
             // (`terminated`), a natural channel close (`closed`), or a recording
             // failure (`recording_failed`). An I/O error while pumping bytes counts
@@ -596,7 +636,7 @@ impl SshHandler {
                 client_channel,
                 target_channel,
                 handle.cancel,
-                rec_handle.clone(),
+                recorder_tap,
             )
             .await
             {
@@ -608,39 +648,16 @@ impl SshHandler {
             };
             let reason = outcome.reason();
 
-            // Finalize the recording: a clean end completes the upload; a recording
-            // failure aborts it. Await the recorder task for the final report.
-            let recording = if let (Some(h), Some(join)) = (rec_handle, rec_join) {
-                if outcome == proxy::BridgeOutcome::RecordingFailed {
-                    h.fail().await;
-                } else {
-                    h.finish().await;
-                }
-                let report = join.await.unwrap_or_else(|e| {
-                    tracing::warn!(session_id = %session_id, error = %e, "recorder task join failed");
-                    crate::record::RecordingReport {
-                        size_bytes: 0,
-                        sha256_hex: String::new(),
-                        status: crate::record::RecordStatus::Failed,
-                    }
-                });
-                let ended_ms = unix_millis_now();
-                let status = match report.status {
-                    crate::record::RecordStatus::Completed => "completed",
-                    crate::record::RecordStatus::Failed => "failed",
-                };
-                Some(RecordingOutcome {
-                    object_key,
-                    size_bytes: report.size_bytes,
-                    sha256: report.sha256_hex,
-                    started_at_unix_ms: started_ms,
-                    ended_at_unix_ms: ended_ms,
-                    status: status.into(),
-                    grant_id,
-                })
-            } else {
-                None
-            };
+            // Finalize the recording via the shared path: a clean end completes the
+            // upload, a recording failure aborts it.
+            let recording = finalize_recording(
+                recorder,
+                outcome != proxy::BridgeOutcome::RecordingFailed,
+                &session_id,
+                &object_key,
+                &grant_id,
+            )
+            .await;
 
             // Exactly-once cleanup on every exit path: drop from the registry and
             // report the end to warden once.
@@ -1155,6 +1172,54 @@ mod tests {
     /// A stub SetupFn that always errors (unreachable warden / bad token / …).
     fn stub_err() -> SetupFn {
         Arc::new(|_login, _kc, _kw| Box::pin(async { Err(anyhow::anyhow!("warden unreachable")) }))
+    }
+
+    /// The shared recording finalizer both ingresses route through: a clean end
+    /// maps to "completed", a recording failure to "failed", and no recorder
+    /// yields no outcome (the unrecorded path — the caller still reports the end).
+    #[tokio::test]
+    async fn finalize_recording_maps_status_and_none() {
+        use crate::record::{spawn_recorder, PartUploader, RecorderConfig};
+
+        struct OkUploader;
+        #[async_trait::async_trait]
+        impl PartUploader for OkUploader {
+            async fn upload_part(&self, _n: i32, _b: Vec<u8>) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn complete(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn abort(&self) {}
+        }
+        fn cfg() -> RecorderConfig {
+            RecorderConfig {
+                part_size: crate::record::MIN_PART_SIZE,
+                channel_bound: 16,
+            }
+        }
+
+        // Clean end → completed, carrying the caller's object key / grant / start.
+        let (h, join) = spawn_recorder(OkUploader, crate::asciicast::Header::new(80, 24, 0), cfg());
+        let out = finalize_recording(Some((h, join, 1234)), true, "sess", "obj/key", "grant-1")
+            .await
+            .expect("a recorder yields an outcome");
+        assert_eq!(out.status, "completed");
+        assert_eq!(out.object_key, "obj/key");
+        assert_eq!(out.grant_id, "grant-1");
+        assert_eq!(out.started_at_unix_ms, 1234);
+
+        // Recording failure → failed (the multipart upload is aborted).
+        let (h, join) = spawn_recorder(OkUploader, crate::asciicast::Header::new(80, 24, 0), cfg());
+        let out = finalize_recording(Some((h, join, 0)), false, "sess", "obj/key", "grant-1")
+            .await
+            .expect("a recorder yields an outcome");
+        assert_eq!(out.status, "failed");
+
+        // No recorder → no outcome.
+        assert!(finalize_recording(None, true, "sess", "obj/key", "grant-1")
+            .await
+            .is_none());
     }
 
     #[tokio::test]

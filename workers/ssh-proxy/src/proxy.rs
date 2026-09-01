@@ -45,7 +45,10 @@ impl BridgeOutcome {
 /// accepted) and `false` when a present recorder's channel overflowed/closed —
 /// the fail-closed signal the bridge turns into [`BridgeOutcome::RecordingFailed`].
 /// `start` anchors the event's session-relative timestamp.
-fn tap_event(
+///
+/// Shared by the SSH bridge and the browser-terminal pump so the fail-closed tap
+/// exists in ONE place.
+pub(crate) fn tap_event(
     recorder: Option<&RecorderHandle>,
     start: std::time::Instant,
     kind: EventKind,
@@ -85,9 +88,12 @@ pub async fn bridge(
     // A required recording that can't keep up (channel overflow/closed) fails the
     // whole session. `feed` records the event and, on overflow, flags fail-closed.
     let mut recording_failed = false;
+    // Gate on `recorder.is_some()` so `$data` (an owned copy of the frame) is only
+    // materialized when a recorder is actually attached — the common unrecorded
+    // session pays no per-frame allocation on the hot path.
     macro_rules! feed {
         ($kind:expr, $data:expr) => {
-            if !tap_event(recorder.as_ref(), start, $kind, $data) {
+            if recorder.is_some() && !tap_event(recorder.as_ref(), start, $kind, $data) {
                 recording_failed = true;
             }
         };
