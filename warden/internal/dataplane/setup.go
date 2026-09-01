@@ -57,7 +57,8 @@ func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a *authz.Auth
 
 // SetupResult is the successful outcome. The credential is discriminated by
 // CredentialKind ("ssh-cert" | "ssh-password" | "ssh-key" | "x509" |
-// "pg-password"); exactly one of the credential fields is populated.
+// "pg-password" | "rdp-password"); exactly one of the credential fields is
+// populated.
 type SetupResult struct {
 	TargetAddress      string
 	CredentialKind     string
@@ -166,6 +167,28 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		// Postgres sessions are always recorded (structured pgwire timeline).
 		recordingRequired = true
 		recordingKey = recordingObjectKey(claims.SessionID, time.Now(), "postgres", "ndjson")
+	case "rdp":
+		cfg, err := q0.GetRDPAssetConfig(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("get rdp asset config: %w", err)
+		}
+		if cfg.TargetAddress == "" {
+			return SetupResult{}, ErrNoTarget
+		}
+		targetAddress, targetServerCA = cfg.TargetAddress, cfg.TargetServerCa
+		rows, err := q0.ListRDPAssetLogins(ctx, claims.AssetID)
+		if err != nil {
+			return SetupResult{}, fmt.Errorf("list rdp asset logins: %w", err)
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Login)
+		}
+		if !containsLogin(caps.EntitledLoginsFor(authz.RDPLoginPrefix, allowed), login) {
+			return SetupResult{}, ErrNotAuthorized
+		}
+		// Phase 2: RDP session recording is not yet wired (Phase 3).
+		recordingRequired = false
+		recordingKey = ""
 	default: // "ssh" (empty proto = legacy ssh)
 		protocol = "ssh"
 		if _, err := parseSSHPublicKey(targetPub); err != nil {
@@ -286,6 +309,10 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		res.X509Certificate = cred.X509Cert
 		res.X509PrivateKey = cred.X509Key
 	case "pg-password":
+		res.Password = string(cred.Secret)
+	case "rdp-password":
+		// No dedicated proto oneof for rdp: the password rides the generic
+		// Password arm, same as ssh-password/pg-password.
 		res.Password = string(cred.Secret)
 	default:
 		return SetupResult{}, fmt.Errorf("unexpected credential kind %q", cred.Kind)

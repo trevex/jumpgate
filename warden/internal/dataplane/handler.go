@@ -99,6 +99,10 @@ func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[datapla
 		resp.X509PrivateKey = out.X509PrivateKey
 	case "pg-password":
 		resp.Credential = &dataplanev1.SetupSessionResponse_PgPassword{PgPassword: out.Password}
+	case "rdp-password":
+		// No dedicated proto oneof for rdp: the password rides the generic
+		// Password arm, same as ssh-password.
+		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
 	default:
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
 	}

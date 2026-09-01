@@ -185,6 +185,26 @@ func setPGLogin(t *testing.T, q *sqlc.Queries, asset uuid.UUID, role, kind strin
 	}
 }
 
+// setRDPConfig upserts the rdp_asset_config (target address) for an asset.
+func setRDPConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
+	t.Helper()
+	if _, err := q.UpsertRDPAssetConfig(context.Background(), sqlc.UpsertRDPAssetConfigParams{
+		AssetID: asset, TargetAddress: "target:3389", TargetServerCa: "",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setRDPLogin upserts one rdp_asset_login row. RDP logins are password-only.
+func setRDPLogin(t *testing.T, q *sqlc.Queries, asset uuid.UUID, login, kind string, secret pgtype.UUID) {
+	t.Helper()
+	if _, err := q.UpsertRDPAssetLogin(context.Background(), sqlc.UpsertRDPAssetLoginParams{
+		AssetID: asset, Login: login, Kind: kind, SecretID: secret,
+	}); err != nil {
+		t.Fatalf("upsert rdp asset login %q/%q: %v", login, kind, err)
+	}
+}
+
 // initX509CA generates an X.509 CA, seals its key, and stores it under kind "x509".
 func initX509CA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	t.Helper()
@@ -743,6 +763,56 @@ func TestIssuePostgresNoEntitlement(t *testing.T) {
 
 	b := newBroker(pool, sealer)
 	_, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "readonly", ValidUntil: time.Now().Add(time.Hour), KeyID: "g3"})
+	if !errors.Is(err, ErrNoLoginEntitlement) {
+		t.Fatalf("err = %v, want ErrNoLoginEntitlement", err)
+	}
+}
+
+// TestIssueRDPPassword: a password login on an rdp asset returns the sealed
+// secret bytes as an "rdp-password" credential (RDP logins are password-only).
+func TestIssueRDPPassword(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	sealer := newSealer(t)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "rdp")
+	setRDPConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "admin", []byte("s3cr3t"))
+	setRDPLogin(t, q, asset, "admin", "password", pgUUID(secID))
+	bindRole(t, q, alice, asset, "rdp-admin", "rdp:login:admin")
+
+	b := newBroker(pool, sealer)
+	cred, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "admin", ValidUntil: time.Now().Add(time.Hour), KeyID: "g4"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if cred.Kind != "rdp-password" {
+		t.Fatalf("Kind = %q, want rdp-password", cred.Kind)
+	}
+	if string(cred.Secret) != "s3cr3t" {
+		t.Fatalf("Secret = %q, want s3cr3t", cred.Secret)
+	}
+}
+
+// TestIssueRDPNoEntitlement: a user whose caps cover a different login gets
+// ErrNoLoginEntitlement for the requested login (rdp:login gating).
+func TestIssueRDPNoEntitlement(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	sealer := newSealer(t)
+
+	alice := mkUser(t, q)
+	asset := mkAsset(t, q, "rdp")
+	setRDPConfig(t, q, asset)
+	secID := sealSecret(t, q, sealer, asset, "admin", []byte("s3cr3t"))
+	setRDPLogin(t, q, asset, "admin", "password", pgUUID(secID))
+	bindRole(t, q, alice, asset, "rdp-other", "rdp:login:guest") // NOT admin
+
+	b := newBroker(pool, sealer)
+	_, err := b.Issue(ctx, alice, asset, IssueRequest{Login: "admin", ValidUntil: time.Now().Add(time.Hour), KeyID: "g5"})
 	if !errors.Is(err, ErrNoLoginEntitlement) {
 		t.Fatalf("err = %v, want ErrNoLoginEntitlement", err)
 	}

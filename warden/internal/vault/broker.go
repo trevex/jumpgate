@@ -83,7 +83,7 @@ type IssueRequest struct {
 // Credential is a single issued credential. Exactly one shape is populated per
 // Credential value, discriminated by Kind.
 type Credential struct {
-	Kind string // "ssh-cert" | "ssh-password" | "ssh-key" | "x509" | "pg-password"
+	Kind string // "ssh-cert" | "ssh-password" | "ssh-key" | "x509" | "pg-password" | "rdp-password"
 
 	SSHCertificate []byte // Kind == "ssh-cert": OpenSSH authorized_keys cert line
 
@@ -92,8 +92,8 @@ type Credential struct {
 
 	// Secret carries the plaintext stored secret for the password/key kinds:
 	// Kind == "ssh-password" → the target password bytes; Kind == "ssh-key" →
-	// the OpenSSH private key PEM bytes; Kind == "pg-password" → the target DB
-	// password bytes.
+	// the OpenSSH private key PEM bytes; Kind == "pg-password" / "rdp-password" →
+	// the target password bytes.
 	Secret []byte
 }
 
@@ -139,6 +139,8 @@ func (b *Broker) Issue(ctx context.Context, userID, assetID uuid.UUID, req Issue
 		return b.issueSSH(ctx, userID, asset, req)
 	case "postgres":
 		return b.issuePostgres(ctx, userID, asset, req)
+	case "rdp":
+		return b.issueRDP(ctx, userID, asset, req)
 	default:
 		return Credential{}, ErrUnsupportedKind
 	}
@@ -229,6 +231,41 @@ func (b *Broker) issuePostgres(ctx context.Context, userID uuid.UUID, asset sqlc
 	default:
 		return Credential{}, ErrUnsupportedKind
 	}
+}
+
+// issueRDP selects the requested login among the asset's rdp login rows,
+// enforces the rdp:login:<login> entitlement, and mints the credential. RDP
+// logins are password-only (there is no ca/mtls arm for RDP): the sealed
+// stored secret is returned as an "rdp-password" credential, which the caller
+// routes through the same generic Password response arm ssh-password/pg-password
+// use — there is no dedicated proto oneof for rdp.
+func (b *Broker) issueRDP(ctx context.Context, userID uuid.UUID, asset sqlc.Asset, req IssueRequest) (Credential, error) {
+	assetID := asset.ID
+	rows, err := b.q.ListRDPAssetLogins(ctx, assetID)
+	if err != nil {
+		return Credential{}, fmt.Errorf("list rdp asset logins: %w", err)
+	}
+	var row sqlc.RdpAssetLogin
+	found := false
+	allLogins := make([]string, 0, len(rows))
+	for _, r := range rows {
+		allLogins = append(allLogins, r.Login)
+		if r.Login == req.Login {
+			row = r
+			found = true
+		}
+	}
+	if !found {
+		return Credential{}, ErrNoLoginEntitlement
+	}
+	entitled, err := authz.EntitledLoginsFor(ctx, b.authz, userID, assetID, authz.RDPLoginPrefix, allLogins)
+	if err != nil {
+		return Credential{}, err
+	}
+	if !contains(entitled, req.Login) {
+		return Credential{}, ErrNoLoginEntitlement
+	}
+	return b.issueStoredSecret(ctx, userID, assetID, row.SecretID, row.Login, "rdp-password")
 }
 
 // contains reports whether xs contains s.
