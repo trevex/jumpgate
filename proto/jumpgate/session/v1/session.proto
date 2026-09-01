@@ -27,6 +27,12 @@ service SessionService {
   // k8s:group check) and mints a bearer admission token carrying the caller's
   // materialized groups + the broker holding the cluster's agent tunnel.
   rpc CreateKubernetesSession(CreateKubernetesSessionRequest) returns (CreateKubernetesSessionResponse) {}
+
+  // CreateRDPSession authorizes the caller to reach an RDP asset via the given
+  // login (held-closure rdp:login check) and mints a short-lived,
+  // cookie-authenticated admission ticket for a clientless browser session
+  // (no client-key binding), mirroring CreateWebSession.
+  rpc CreateRDPSession(CreateRDPSessionRequest) returns (CreateRDPSessionResponse) {}
 }
 
 message CreateSessionRequest {
@@ -74,4 +80,16 @@ message CreateKubernetesSessionResponse {
   string session_token = 1;
   string gateway_endpoint = 2;
   google.protobuf.Timestamp expires_at = 3;
+}
+
+message CreateRDPSessionRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  string login    = 2 [(buf.validate.field).string = {min_len: 1}];
+  bool   insecure = 3;   // DEV ONLY: request ws:// endpoint
+}
+message CreateRDPSessionResponse {
+  string ticket = 1;
+  string gateway_endpoint = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  bool insecure = 4;
 }

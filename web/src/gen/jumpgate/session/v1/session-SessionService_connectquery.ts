@@ -37,3 +37,13 @@ export const createPostgresSession = SessionService.method.createPostgresSession
  * @generated from rpc jumpgate.session.v1.SessionService.CreateKubernetesSession
  */
 export const createKubernetesSession = SessionService.method.createKubernetesSession;
+
+/**
+ * CreateRDPSession authorizes the caller to reach an RDP asset via the given
+ * login (held-closure rdp:login check) and mints a short-lived,
+ * cookie-authenticated admission ticket for a clientless browser session
+ * (no client-key binding), mirroring CreateWebSession.
+ *
+ * @generated from rpc jumpgate.session.v1.SessionService.CreateRDPSession
+ */
+export const createRDPSession = SessionService.method.createRDPSession;

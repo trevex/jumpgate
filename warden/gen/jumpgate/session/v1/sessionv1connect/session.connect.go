@@ -45,6 +45,9 @@ const (
 	// SessionServiceCreateKubernetesSessionProcedure is the fully-qualified name of the
 	// SessionService's CreateKubernetesSession RPC.
 	SessionServiceCreateKubernetesSessionProcedure = "/jumpgate.session.v1.SessionService/CreateKubernetesSession"
+	// SessionServiceCreateRDPSessionProcedure is the fully-qualified name of the SessionService's
+	// CreateRDPSession RPC.
+	SessionServiceCreateRDPSessionProcedure = "/jumpgate.session.v1.SessionService/CreateRDPSession"
 )
 
 // SessionServiceClient is a client for the jumpgate.session.v1.SessionService service.
@@ -63,6 +66,11 @@ type SessionServiceClient interface {
 	// k8s:group check) and mints a bearer admission token carrying the caller's
 	// materialized groups + the broker holding the cluster's agent tunnel.
 	CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error)
+	// CreateRDPSession authorizes the caller to reach an RDP asset via the given
+	// login (held-closure rdp:login check) and mints a short-lived,
+	// cookie-authenticated admission ticket for a clientless browser session
+	// (no client-key binding), mirroring CreateWebSession.
+	CreateRDPSession(context.Context, *connect.Request[v1.CreateRDPSessionRequest]) (*connect.Response[v1.CreateRDPSessionResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the jumpgate.session.v1.SessionService service.
@@ -100,6 +108,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("CreateKubernetesSession")),
 			connect.WithClientOptions(opts...),
 		),
+		createRDPSession: connect.NewClient[v1.CreateRDPSessionRequest, v1.CreateRDPSessionResponse](
+			httpClient,
+			baseURL+SessionServiceCreateRDPSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateRDPSession")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -109,6 +123,7 @@ type sessionServiceClient struct {
 	createWebSession        *connect.Client[v1.CreateWebSessionRequest, v1.CreateWebSessionResponse]
 	createPostgresSession   *connect.Client[v1.CreatePostgresSessionRequest, v1.CreatePostgresSessionResponse]
 	createKubernetesSession *connect.Client[v1.CreateKubernetesSessionRequest, v1.CreateKubernetesSessionResponse]
+	createRDPSession        *connect.Client[v1.CreateRDPSessionRequest, v1.CreateRDPSessionResponse]
 }
 
 // CreateSession calls jumpgate.session.v1.SessionService.CreateSession.
@@ -131,6 +146,11 @@ func (c *sessionServiceClient) CreateKubernetesSession(ctx context.Context, req 
 	return c.createKubernetesSession.CallUnary(ctx, req)
 }
 
+// CreateRDPSession calls jumpgate.session.v1.SessionService.CreateRDPSession.
+func (c *sessionServiceClient) CreateRDPSession(ctx context.Context, req *connect.Request[v1.CreateRDPSessionRequest]) (*connect.Response[v1.CreateRDPSessionResponse], error) {
+	return c.createRDPSession.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the jumpgate.session.v1.SessionService service.
 type SessionServiceHandler interface {
 	// CreateSession authorizes the caller to reach the asset (held-closure SSH-login
@@ -147,6 +167,11 @@ type SessionServiceHandler interface {
 	// k8s:group check) and mints a bearer admission token carrying the caller's
 	// materialized groups + the broker holding the cluster's agent tunnel.
 	CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error)
+	// CreateRDPSession authorizes the caller to reach an RDP asset via the given
+	// login (held-closure rdp:login check) and mints a short-lived,
+	// cookie-authenticated admission ticket for a clientless browser session
+	// (no client-key binding), mirroring CreateWebSession.
+	CreateRDPSession(context.Context, *connect.Request[v1.CreateRDPSessionRequest]) (*connect.Response[v1.CreateRDPSessionResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -180,6 +205,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("CreateKubernetesSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceCreateRDPSessionHandler := connect.NewUnaryHandler(
+		SessionServiceCreateRDPSessionProcedure,
+		svc.CreateRDPSession,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateRDPSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.session.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceCreateSessionProcedure:
@@ -190,6 +221,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceCreatePostgresSessionHandler.ServeHTTP(w, r)
 		case SessionServiceCreateKubernetesSessionProcedure:
 			sessionServiceCreateKubernetesSessionHandler.ServeHTTP(w, r)
+		case SessionServiceCreateRDPSessionProcedure:
+			sessionServiceCreateRDPSessionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -213,4 +246,8 @@ func (UnimplementedSessionServiceHandler) CreatePostgresSession(context.Context,
 
 func (UnimplementedSessionServiceHandler) CreateKubernetesSession(context.Context, *connect.Request[v1.CreateKubernetesSessionRequest]) (*connect.Response[v1.CreateKubernetesSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreateKubernetesSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CreateRDPSession(context.Context, *connect.Request[v1.CreateRDPSessionRequest]) (*connect.Response[v1.CreateRDPSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.session.v1.SessionService.CreateRDPSession is not implemented"))
 }

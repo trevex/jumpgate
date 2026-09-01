@@ -485,6 +485,134 @@ func (x *CreateKubernetesSessionResponse) GetExpiresAt() *timestamppb.Timestamp 
 	return nil
 }
 
+type CreateRDPSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	Insecure      bool                   `protobuf:"varint,3,opt,name=insecure,proto3" json:"insecure,omitempty"` // DEV ONLY: request ws:// endpoint
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRDPSessionRequest) Reset() {
+	*x = CreateRDPSessionRequest{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRDPSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRDPSessionRequest) ProtoMessage() {}
+
+func (x *CreateRDPSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRDPSessionRequest.ProtoReflect.Descriptor instead.
+func (*CreateRDPSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CreateRDPSessionRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *CreateRDPSessionRequest) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+func (x *CreateRDPSessionRequest) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
+type CreateRDPSessionResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ticket          string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	GatewayEndpoint string                 `protobuf:"bytes,2,opt,name=gateway_endpoint,json=gatewayEndpoint,proto3" json:"gateway_endpoint,omitempty"`
+	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Insecure        bool                   `protobuf:"varint,4,opt,name=insecure,proto3" json:"insecure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreateRDPSessionResponse) Reset() {
+	*x = CreateRDPSessionResponse{}
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRDPSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRDPSessionResponse) ProtoMessage() {}
+
+func (x *CreateRDPSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_session_v1_session_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRDPSessionResponse.ProtoReflect.Descriptor instead.
+func (*CreateRDPSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_session_v1_session_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CreateRDPSessionResponse) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *CreateRDPSessionResponse) GetGatewayEndpoint() string {
+	if x != nil {
+		return x.GatewayEndpoint
+	}
+	return ""
+}
+
+func (x *CreateRDPSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *CreateRDPSessionResponse) GetInsecure() bool {
+	if x != nil {
+		return x.Insecure
+	}
+	return false
+}
+
 var File_jumpgate_session_v1_session_proto protoreflect.FileDescriptor
 
 const file_jumpgate_session_v1_session_proto_rawDesc = "" +
@@ -521,12 +649,23 @@ const file_jumpgate_session_v1_session_proto_rawDesc = "" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12)\n" +
 	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\xf9\x03\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"y\n" +
+	"\x17CreateRDPSessionRequest\x12#\n" +
+	"\basset_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aassetId\x12\x1d\n" +
+	"\x05login\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12\x1a\n" +
+	"\binsecure\x18\x03 \x01(\bR\binsecure\"\xb4\x01\n" +
+	"\x18CreateRDPSessionResponse\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12)\n" +
+	"\x10gateway_endpoint\x18\x02 \x01(\tR\x0fgatewayEndpoint\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
+	"\binsecure\x18\x04 \x01(\bR\binsecure2\xec\x04\n" +
 	"\x0eSessionService\x12h\n" +
 	"\rCreateSession\x12).jumpgate.session.v1.CreateSessionRequest\x1a*.jumpgate.session.v1.CreateSessionResponse\"\x00\x12q\n" +
 	"\x10CreateWebSession\x12,.jumpgate.session.v1.CreateWebSessionRequest\x1a-.jumpgate.session.v1.CreateWebSessionResponse\"\x00\x12\x80\x01\n" +
 	"\x15CreatePostgresSession\x121.jumpgate.session.v1.CreatePostgresSessionRequest\x1a2.jumpgate.session.v1.CreatePostgresSessionResponse\"\x00\x12\x86\x01\n" +
-	"\x17CreateKubernetesSession\x123.jumpgate.session.v1.CreateKubernetesSessionRequest\x1a4.jumpgate.session.v1.CreateKubernetesSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
+	"\x17CreateKubernetesSession\x123.jumpgate.session.v1.CreateKubernetesSessionRequest\x1a4.jumpgate.session.v1.CreateKubernetesSessionResponse\"\x00\x12q\n" +
+	"\x10CreateRDPSession\x12,.jumpgate.session.v1.CreateRDPSessionRequest\x1a-.jumpgate.session.v1.CreateRDPSessionResponse\"\x00BEZCgithub.com/trevex/jumpgate/warden/gen/jumpgate/session/v1;sessionv1b\x06proto3"
 
 var (
 	file_jumpgate_session_v1_session_proto_rawDescOnce sync.Once
@@ -540,7 +679,7 @@ func file_jumpgate_session_v1_session_proto_rawDescGZIP() []byte {
 	return file_jumpgate_session_v1_session_proto_rawDescData
 }
 
-var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_jumpgate_session_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_jumpgate_session_v1_session_proto_goTypes = []any{
 	(*CreateSessionRequest)(nil),            // 0: jumpgate.session.v1.CreateSessionRequest
 	(*CreateSessionResponse)(nil),           // 1: jumpgate.session.v1.CreateSessionResponse
@@ -550,25 +689,30 @@ var file_jumpgate_session_v1_session_proto_goTypes = []any{
 	(*CreatePostgresSessionResponse)(nil),   // 5: jumpgate.session.v1.CreatePostgresSessionResponse
 	(*CreateKubernetesSessionRequest)(nil),  // 6: jumpgate.session.v1.CreateKubernetesSessionRequest
 	(*CreateKubernetesSessionResponse)(nil), // 7: jumpgate.session.v1.CreateKubernetesSessionResponse
-	(*timestamppb.Timestamp)(nil),           // 8: google.protobuf.Timestamp
+	(*CreateRDPSessionRequest)(nil),         // 8: jumpgate.session.v1.CreateRDPSessionRequest
+	(*CreateRDPSessionResponse)(nil),        // 9: jumpgate.session.v1.CreateRDPSessionResponse
+	(*timestamppb.Timestamp)(nil),           // 10: google.protobuf.Timestamp
 }
 var file_jumpgate_session_v1_session_proto_depIdxs = []int32{
-	8, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	8, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	8, // 2: jumpgate.session.v1.CreateKubernetesSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
-	0, // 3: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
-	2, // 4: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
-	4, // 5: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
-	6, // 6: jumpgate.session.v1.SessionService.CreateKubernetesSession:input_type -> jumpgate.session.v1.CreateKubernetesSessionRequest
-	1, // 7: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
-	3, // 8: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
-	5, // 9: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
-	7, // 10: jumpgate.session.v1.SessionService.CreateKubernetesSession:output_type -> jumpgate.session.v1.CreateKubernetesSessionResponse
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	10, // 0: jumpgate.session.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 1: jumpgate.session.v1.CreateWebSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 2: jumpgate.session.v1.CreateKubernetesSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 3: jumpgate.session.v1.CreateRDPSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 4: jumpgate.session.v1.SessionService.CreateSession:input_type -> jumpgate.session.v1.CreateSessionRequest
+	2,  // 5: jumpgate.session.v1.SessionService.CreateWebSession:input_type -> jumpgate.session.v1.CreateWebSessionRequest
+	4,  // 6: jumpgate.session.v1.SessionService.CreatePostgresSession:input_type -> jumpgate.session.v1.CreatePostgresSessionRequest
+	6,  // 7: jumpgate.session.v1.SessionService.CreateKubernetesSession:input_type -> jumpgate.session.v1.CreateKubernetesSessionRequest
+	8,  // 8: jumpgate.session.v1.SessionService.CreateRDPSession:input_type -> jumpgate.session.v1.CreateRDPSessionRequest
+	1,  // 9: jumpgate.session.v1.SessionService.CreateSession:output_type -> jumpgate.session.v1.CreateSessionResponse
+	3,  // 10: jumpgate.session.v1.SessionService.CreateWebSession:output_type -> jumpgate.session.v1.CreateWebSessionResponse
+	5,  // 11: jumpgate.session.v1.SessionService.CreatePostgresSession:output_type -> jumpgate.session.v1.CreatePostgresSessionResponse
+	7,  // 12: jumpgate.session.v1.SessionService.CreateKubernetesSession:output_type -> jumpgate.session.v1.CreateKubernetesSessionResponse
+	9,  // 13: jumpgate.session.v1.SessionService.CreateRDPSession:output_type -> jumpgate.session.v1.CreateRDPSessionResponse
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_session_v1_session_proto_init() }
@@ -582,7 +726,7 @@ func file_jumpgate_session_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_session_v1_session_proto_rawDesc), len(file_jumpgate_session_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

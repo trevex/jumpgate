@@ -143,6 +143,13 @@ func (s *Handler) CreateKubernetesSession(ctx context.Context, req *connect.Requ
 	}), nil
 }
 
+// CreateRDPSession is not yet implemented; the admission-ticket logic lands in
+// a follow-up task. Stubbed here only to satisfy SessionServiceHandler so the
+// proto regen builds.
+func (s *Handler) CreateRDPSession(_ context.Context, _ *connect.Request[sessionv1.CreateRDPSessionRequest]) (*connect.Response[sessionv1.CreateRDPSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("CreateRDPSession is not implemented"))
+}
+
 // parseSSHPublicKey accepts the client public key in either OpenSSH
 // authorized_keys text form or raw SSH wire form. It tries the authorized_keys
 // parse first (what ssh.MarshalAuthorizedKey produces) and falls back to the

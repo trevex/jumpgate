@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/session/v1/session.proto.
  */
 export const file_jumpgate_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIIlIKHENyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhYKBWxvZ2luGAIgASgJQge6SARyAhABImoKHUNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlEhUKDXNlc3Npb25fdG9rZW4YASABKAkSGAoQZ2F0ZXdheV9lbmRwb2ludBgCIAEoCRIYChBkZWZhdWx0X2RhdGFiYXNlGAMgASgJIjwKHkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiggEKH0NyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wMvkDCg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAEoABChVDcmVhdGVQb3N0Z3Jlc1Nlc3Npb24SMS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QaMi5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlIgAShgEKF0NyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uEjMuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVLdWJlcm5ldGVzU2Vzc2lvblJlcXVlc3QaNC5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVzcG9uc2UiAEJFWkNnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL3Nlc3Npb24vdjE7c2Vzc2lvbnYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiFqdW1wZ2F0ZS9zZXNzaW9uL3YxL3Nlc3Npb24ucHJvdG8SE2p1bXBnYXRlLnNlc3Npb24udjEiWgoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEiYKFWNsaWVudF9zc2hfcHVibGljX2tleRgCIAEoDEIHukgEegIQASJ4ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVdlYlNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlV2ViU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIIlIKHENyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QSGgoIYXNzZXRfaWQYASABKAlCCLpIBXIDsAEBEhYKBWxvZ2luGAIgASgJQge6SARyAhABImoKHUNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlEhUKDXNlc3Npb25fdG9rZW4YASABKAkSGAoQZ2F0ZXdheV9lbmRwb2ludBgCIAEoCRIYChBkZWZhdWx0X2RhdGFiYXNlGAMgASgJIjwKHkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVxdWVzdBIaCghhc3NldF9pZBgBIAEoCUIIukgFcgOwAQEiggEKH0NyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVzcG9uc2USFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl8KF0NyZWF0ZVJEUFNlc3Npb25SZXF1ZXN0EhoKCGFzc2V0X2lkGAEgASgJQgi6SAVyA7ABARIWCgVsb2dpbhgCIAEoCUIHukgEcgIQARIQCghpbnNlY3VyZRgDIAEoCCKGAQoYQ3JlYXRlUkRQU2Vzc2lvblJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIYChBnYXRld2F5X2VuZHBvaW50GAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGluc2VjdXJlGAQgASgIMuwECg5TZXNzaW9uU2VydmljZRJoCg1DcmVhdGVTZXNzaW9uEikuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBoqLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlIgAScQoQQ3JlYXRlV2ViU2Vzc2lvbhIsLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlV2ViU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVdlYlNlc3Npb25SZXNwb25zZSIAEoABChVDcmVhdGVQb3N0Z3Jlc1Nlc3Npb24SMS5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlcXVlc3QaMi5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZVBvc3RncmVzU2Vzc2lvblJlc3BvbnNlIgAShgEKF0NyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uEjMuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVLdWJlcm5ldGVzU2Vzc2lvblJlcXVlc3QaNC5qdW1wZ2F0ZS5zZXNzaW9uLnYxLkNyZWF0ZUt1YmVybmV0ZXNTZXNzaW9uUmVzcG9uc2UiABJxChBDcmVhdGVSRFBTZXNzaW9uEiwuanVtcGdhdGUuc2Vzc2lvbi52MS5DcmVhdGVSRFBTZXNzaW9uUmVxdWVzdBotLmp1bXBnYXRlLnNlc3Npb24udjEuQ3JlYXRlUkRQU2Vzc2lvblJlc3BvbnNlIgBCRVpDZ2l0aHViLmNvbS90cmV2ZXgvanVtcGdhdGUvd2FyZGVuL2dlbi9qdW1wZ2F0ZS9zZXNzaW9uL3YxO3Nlc3Npb252MWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.session.v1.CreateSessionRequest
@@ -225,6 +225,67 @@ export const CreateKubernetesSessionResponseSchema: GenMessage<CreateKubernetesS
   messageDesc(file_jumpgate_session_v1_session, 7);
 
 /**
+ * @generated from message jumpgate.session.v1.CreateRDPSessionRequest
+ */
+export type CreateRDPSessionRequest = Message<"jumpgate.session.v1.CreateRDPSessionRequest"> & {
+  /**
+   * @generated from field: string asset_id = 1;
+   */
+  assetId: string;
+
+  /**
+   * @generated from field: string login = 2;
+   */
+  login: string;
+
+  /**
+   * DEV ONLY: request ws:// endpoint
+   *
+   * @generated from field: bool insecure = 3;
+   */
+  insecure: boolean;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateRDPSessionRequest.
+ * Use `create(CreateRDPSessionRequestSchema)` to create a new message.
+ */
+export const CreateRDPSessionRequestSchema: GenMessage<CreateRDPSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 8);
+
+/**
+ * @generated from message jumpgate.session.v1.CreateRDPSessionResponse
+ */
+export type CreateRDPSessionResponse = Message<"jumpgate.session.v1.CreateRDPSessionResponse"> & {
+  /**
+   * @generated from field: string ticket = 1;
+   */
+  ticket: string;
+
+  /**
+   * @generated from field: string gateway_endpoint = 2;
+   */
+  gatewayEndpoint: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 3;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bool insecure = 4;
+   */
+  insecure: boolean;
+};
+
+/**
+ * Describes the message jumpgate.session.v1.CreateRDPSessionResponse.
+ * Use `create(CreateRDPSessionResponseSchema)` to create a new message.
+ */
+export const CreateRDPSessionResponseSchema: GenMessage<CreateRDPSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_session_v1_session, 9);
+
+/**
  * SessionService is the CLI-facing entrypoint to open a data-plane session. It is
  * authenticated by the standard bearer-token interceptor.
  *
@@ -276,6 +337,19 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof CreateKubernetesSessionRequestSchema;
     output: typeof CreateKubernetesSessionResponseSchema;
+  },
+  /**
+   * CreateRDPSession authorizes the caller to reach an RDP asset via the given
+   * login (held-closure rdp:login check) and mints a short-lived,
+   * cookie-authenticated admission ticket for a clientless browser session
+   * (no client-key binding), mirroring CreateWebSession.
+   *
+   * @generated from rpc jumpgate.session.v1.SessionService.CreateRDPSession
+   */
+  createRDPSession: {
+    methodKind: "unary";
+    input: typeof CreateRDPSessionRequestSchema;
+    output: typeof CreateRDPSessionResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_session_v1_session, 0);
