@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,11 +59,25 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
+	// Derive a cancellable lifecycle ctx and track every background worker in bg, so
+	// shutdown cancels them and waits for them to drain before the deferred
+	// pool.Close() fires. Without this, pool.Close races in-flight worker queries.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var bg sync.WaitGroup
+	spawn := func(fn func(context.Context)) {
+		bg.Add(1)
+		go func() {
+			defer bg.Done()
+			fn(ctx)
+		}()
+	}
+
 	q := sqlc.New(pool)
 	if err := bootstrap.EnsureAdmin(ctx, q, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
 		return err
 	}
-	go func() {
+	spawn(func(ctx context.Context) {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -75,7 +90,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 				}
 			}
 		}
-	}()
+	})
 
 	// Build the audit Logger ONCE and share it: the outbox drainer (below) and every
 	// enqueuer/appender must operate over the same pool so the advisory lock and the
@@ -84,7 +99,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Transactional audit outbox drainer: moves events enqueued durably inside domain
 	// transactions (audit_outbox) into the hash-chained audit_log, closing the
 	// post-commit crash window. Exits on ctx.Done() (graceful shutdown).
-	go auditLog.RunDrainer(ctx, cfg.AuditDrainInterval)
+	spawn(func(ctx context.Context) { auditLog.RunDrainer(ctx, cfg.AuditDrainInterval) })
 
 	// Build the access-request Service ONCE and share it: the RPC handlers and the
 	// expiry reaper must use the same terminator + audit instance. The terminator is
@@ -105,7 +120,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	)
 	// Expiry reaper: sweeps expired grants, audits access_grant.expired, and tears
 	// down live sessions. Exits on ctx.Done() (graceful shutdown).
-	go arSvc.RunReaper(ctx, cfg.ReaperInterval)
+	spawn(func(ctx context.Context) { arSvc.RunReaper(ctx, cfg.ReaperInterval) })
 
 	// Build the vault sealer ONCE. An unset master key disables the vault (nil
 	// sealer): VaultService still mounts but its sealing write paths fail closed.
@@ -138,18 +153,22 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Registry so grant-keyed teardown NOTIFYs reach locally-owned worker streams. It
 	// is cheap (one LISTEN conn) and a harmless no-op when no DataplaneService is
 	// mounted (no sinks registered).
-	go func() {
+	spawn(func(ctx context.Context) {
 		if err := dataplane.NewListener(pool, registry).Run(ctx); err != nil && ctx.Err() == nil {
 			slog.Error("teardown listener stopped", "err", err)
 		}
-	}()
+	})
 	// Continuously reconcile live sessions with current authorization: the sweeper
 	// re-evaluates owned sessions on authorization-change notifications (and on a
 	// periodic backstop), tearing down those that lost their standing access, and
 	// garbage-collects sessions of unreachable workers and stuck teardowns.
 	sweeper := dataplane.NewSweeper(pool, registry, terminator)
-	go sweeper.RunAuthzSweeper(ctx, cfg.AuthzSweepInterval, cfg.AuthzSweepDebounce)
-	go sweeper.RunGC(ctx, cfg.OrphanGCInterval, cfg.OrphanGrace, cfg.TeardownGrace)
+	spawn(func(ctx context.Context) {
+		sweeper.RunAuthzSweeper(ctx, cfg.AuthzSweepInterval, cfg.AuthzSweepDebounce)
+	})
+	spawn(func(ctx context.Context) {
+		sweeper.RunGC(ctx, cfg.OrphanGCInterval, cfg.OrphanGrace, cfg.TeardownGrace)
+	})
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
 	var sessionPubKey ed25519.PublicKey
@@ -188,7 +207,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		// of the in-DB chain is detectable. *S3Presigner.Put satisfies audit.AnchorStore.
 		// Best-effort: errors are logged inside RunAnchorer and never block. Exits on
 		// ctx.Done() (graceful shutdown).
-		go auditLog.RunAnchorer(ctx, presign, cfg.AuditAnchorInterval)
+		spawn(func(ctx context.Context) { auditLog.RunAnchorer(ctx, presign, cfg.AuditAnchorInterval) })
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}
@@ -242,7 +261,9 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// logs a warning and serves only the user API (workers/gateway cannot connect).
 	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator)
 
-	serveErr := make(chan error, 1)
+	// Buffered for both producers (user + mesh listener) so a failing server never
+	// blocks its goroutine on send after we've stopped selecting.
+	serveErr := make(chan error, 2)
 	go func() {
 		slog.Info("warden listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -258,24 +279,37 @@ func Run(ctx context.Context, cfg config.Config) error {
 		}()
 	}
 
+	var runErr error
 	select {
-	case err := <-serveErr:
-		return err
+	case runErr = <-serveErr:
+		slog.Error("server failed", "err", runErr)
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	defer cancel()
+	// Stop background workers (a serveErr exit leaves the parent ctx live) and, in
+	// parallel, drain the HTTP servers. bg.Wait() below orders worker teardown before
+	// the deferred pool.Close().
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer shutdownCancel()
 	if meshSrv != nil {
 		if err := meshSrv.Shutdown(shutdownCtx); err != nil {
 			slog.Error("mesh server shutdown", "err", err)
+			if runErr == nil {
+				runErr = err
+			}
 		}
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return err
+		slog.Error("server shutdown", "err", err)
+		if runErr == nil {
+			runErr = err
+		}
 	}
-	return nil
+	bg.Wait()
+	return runErr
 }
 
 // buildMeshServer constructs warden's mTLS mesh HTTP server (Dataplane + Gateway
