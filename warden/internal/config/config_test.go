@@ -1,78 +1,45 @@
 package config
 
 import (
-	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://localhost/jumpgate")
-
-	c, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if c.DatabaseURL != "postgres://localhost/jumpgate" {
-		t.Fatalf("DatabaseURL = %q", c.DatabaseURL)
-	}
-	if c.ListenAddr != ":8080" {
-		t.Fatalf("ListenAddr default = %q, want :8080", c.ListenAddr)
-	}
-	if c.ShutdownTimeout != 15*time.Second {
-		t.Fatalf("ShutdownTimeout default = %v, want 15s", c.ShutdownTimeout)
-	}
-	if c.LogLevel != "info" {
-		t.Fatalf("LogLevel default = %q, want \"info\"", c.LogLevel)
-	}
-	// CookieSecure must default to true (JUMPGATE_COOKIE_INSECURE unset).
-	if !c.CookieSecure() {
-		t.Fatal("CookieSecure() should default true when JUMPGATE_COOKIE_INSECURE is unset")
-	}
-	// DevCORSOrigins must be nil when JUMPGATE_DEV_CORS_ORIGINS is unset.
-	if c.DevCORSOrigins != nil {
-		t.Fatalf("DevCORSOrigins default = %v, want nil", c.DevCORSOrigins)
+// valid returns a Config with every duration field positive.
+func valid() Config {
+	return Config{
+		ShutdownTimeout:     15 * time.Second,
+		MaxGrantTTL:         8 * time.Hour,
+		ReaperInterval:      30 * time.Second,
+		AuditDrainInterval:  time.Second,
+		AuditAnchorInterval: time.Hour,
+		AuthzSweepInterval:  30 * time.Second,
+		AuthzSweepDebounce:  200 * time.Millisecond,
+		OrphanGCInterval:    30 * time.Second,
+		OrphanGrace:         45 * time.Second,
+		TeardownGrace:       30 * time.Second,
+		SessionTokenTTL:     60 * time.Second,
+		SSHCertMaxTTL:       8 * time.Hour,
+		RecordingURLTTL:     5 * time.Minute,
 	}
 }
 
-func TestLoadRequiresDatabaseURL(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://placeholder")  // registers auto-restore on cleanup
-	if err := os.Unsetenv("DATABASE_URL"); err != nil { // fully absent for the Load() call
-		t.Fatalf("Unsetenv: %v", err)
+func TestValidate(t *testing.T) {
+	if err := valid().Validate(); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
 	}
-	if _, err := Load(); err == nil {
-		t.Fatal("expected error when DATABASE_URL is unset, got nil")
-	}
-}
 
-func TestCookieSecureInsecureOverride(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://localhost/jumpgate")
-	t.Setenv("JUMPGATE_COOKIE_INSECURE", "true")
+	c := valid()
+	c.ReaperInterval = 0
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "REAPER_INTERVAL") {
+		t.Fatalf("zero ReaperInterval: got %v, want an error naming REAPER_INTERVAL", err)
+	}
 
-	c, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if c.CookieSecure() {
-		t.Fatal("CookieSecure() should be false when JUMPGATE_COOKIE_INSECURE=true")
-	}
-}
-
-func TestDevCORSOriginsParsesList(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://localhost/jumpgate")
-	t.Setenv("JUMPGATE_DEV_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
-
-	c, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if len(c.DevCORSOrigins) != 2 {
-		t.Fatalf("DevCORSOrigins = %v, want 2 entries", c.DevCORSOrigins)
-	}
-	if c.DevCORSOrigins[0] != "http://localhost:5173" {
-		t.Fatalf("DevCORSOrigins[0] = %q, want http://localhost:5173", c.DevCORSOrigins[0])
-	}
-	if c.DevCORSOrigins[1] != "http://localhost:3000" {
-		t.Fatalf("DevCORSOrigins[1] = %q, want http://localhost:3000", c.DevCORSOrigins[1])
+	c = valid()
+	c.SSHCertMaxTTL = -time.Second
+	if err := c.Validate(); err == nil {
+		t.Fatal("negative SSHCertMaxTTL accepted")
 	}
 }

@@ -1,6 +1,7 @@
 package access_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -150,7 +151,7 @@ func TestDeleteRoleCascade(t *testing.T) {
 	// The grant was revoked: its row is FK-cascaded away by the role delete, so the
 	// observable proof is the audit trail — a grant-revoked event for it — and the
 	// live-session teardown below.
-	if _, err := q.GetGrant(ctx, grant.ID); err != pgx.ErrNoRows {
+	if _, err := q.GetGrant(ctx, grant.ID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("grant row should be gone (cascaded), got err=%v", err)
 	}
 

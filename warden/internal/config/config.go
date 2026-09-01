@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -123,11 +124,45 @@ type Config struct {
 // the intent that secure cookies are on by default and insecure is the opt-out.
 func (c Config) CookieSecure() bool { return !c.CookieInsecure }
 
-// Load reads configuration from environment variables.
+// Load reads configuration from environment variables and validates it.
 func Load() (Config, error) {
 	var c Config
 	if err := env.Parse(&c); err != nil {
 		return Config{}, err
 	}
+	if err := c.Validate(); err != nil {
+		return Config{}, err
+	}
 	return c, nil
+}
+
+// Validate rejects meaningless configuration that env.Parse accepts structurally.
+// The background loops and TTL clamps all assume strictly-positive durations; a
+// zero or negative (e.g. REAPER_INTERVAL=0s) would busy-loop or disable a bound
+// silently, so fail fast at boot instead. env.Parse already enforces `required`
+// presence and type, so this only checks meaning.
+func (c Config) Validate() error {
+	for _, d := range []struct {
+		name string
+		val  time.Duration
+	}{
+		{"SHUTDOWN_TIMEOUT", c.ShutdownTimeout},
+		{"MAX_GRANT_TTL", c.MaxGrantTTL},
+		{"REAPER_INTERVAL", c.ReaperInterval},
+		{"AUDIT_DRAIN_INTERVAL", c.AuditDrainInterval},
+		{"AUDIT_ANCHOR_INTERVAL", c.AuditAnchorInterval},
+		{"AUTHZ_SWEEP_INTERVAL", c.AuthzSweepInterval},
+		{"AUTHZ_SWEEP_DEBOUNCE", c.AuthzSweepDebounce},
+		{"ORPHAN_GC_INTERVAL", c.OrphanGCInterval},
+		{"ORPHAN_GRACE", c.OrphanGrace},
+		{"TEARDOWN_GRACE", c.TeardownGrace},
+		{"SESSION_TOKEN_TTL", c.SessionTokenTTL},
+		{"SSH_CERT_MAX_TTL", c.SSHCertMaxTTL},
+		{"RECORDING_URL_TTL", c.RecordingURLTTL},
+	} {
+		if d.val <= 0 {
+			return fmt.Errorf("%s must be a positive duration, got %s", d.name, d.val)
+		}
+	}
+	return nil
 }

@@ -82,7 +82,12 @@ func (c *SSHCA) SignUserKey(userPub ssh.PublicKey, p SSHCertParams) (*ssh.Certif
 	now := time.Now()
 	// SECURITY: a zero/past ValidBefore casts to a huge uint64 → an effectively
 	// non-expiring cert. The credential must be time-bounded (never outlive its
-	// grant), so refuse a non-future expiry here rather than trust the caller.
+	// grant), so refuse a non-future expiry here rather than trust the caller. The
+	// upper TTL ceiling is enforced by the sole caller: dataplane.SetupService sets
+	// ValidBefore = now + SSHCertMaxTTL (a fixed ceiling, NOT the grant's remaining
+	// duration), so an issued cert never outlives that bound. (No CRL/OCSP: mid-life
+	// revocation of a leaked cert is deferred; session teardown covers live sessions
+	// and the short TTL bounds exposure — see roadmap.)
 	if p.ValidBefore.IsZero() || !p.ValidBefore.After(now) {
 		return nil, fmt.Errorf("refusing to sign an SSH cert with a non-future ValidBefore")
 	}
@@ -207,7 +212,8 @@ func (c *X509CA) SignClient(cn string, notAfter time.Time) (certPEM, keyPEM []by
 	// SECURITY: a zero/past NotAfter yields an effectively non-expiring client
 	// cert. The credential must be time-bounded (never outlive its grant), so
 	// refuse a non-future expiry here rather than trust the caller — mirrors
-	// SignUserKey's ValidBefore guard.
+	// SignUserKey's ValidBefore guard. The TTL ceiling is enforced by the caller
+	// (dataplane.SetupService: notAfter = now + certMaxTTL), same as the SSH path.
 	if notAfter.IsZero() || !notAfter.After(now) {
 		return nil, nil, fmt.Errorf("refusing to sign an X.509 client cert with a non-future notAfter")
 	}

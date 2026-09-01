@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -257,7 +258,7 @@ func TestBootstrapSkipMeshCA(t *testing.T) {
 	// No mesh CA row was created.
 	if _, err := q.GetActiveCA(ctx, "mesh"); err == nil {
 		t.Fatalf("mesh CA should not exist with --skip-mesh-ca")
-	} else if err != pgx.ErrNoRows && err.Error() != pgx.ErrNoRows.Error() {
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("GetActiveCA(mesh) unexpected error: %v", err)
 	}
 }

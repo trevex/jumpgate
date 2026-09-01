@@ -8,6 +8,11 @@ linters:
     - unused
     - revive
     - gosec
+    # DB-heavy codebase: catch unchecked rows.Err()/unclosed rows.Scan iterations and
+    # error comparisons that break on wrapping.
+    - rowserrcheck
+    - sqlclosecheck
+    - errorlint
   exclusions:
     generated: lax
     rules:
