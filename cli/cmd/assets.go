@@ -120,6 +120,44 @@ var assetsPGLoginSetCmd = &cobra.Command{
 	RunE: runAssetsPGLoginSet,
 }
 
+var assetsRDPCmd = &cobra.Command{
+	Use:   "rdp",
+	Short: "Manage RDP assets and their per-login auth",
+}
+
+var (
+	rdpCreateFolder string
+	rdpCreateTarget string
+)
+
+var assetsRDPCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create an RDP asset with its connection config",
+	Long: "Create an RDP asset and its connection config in one call. RDP logins are " +
+		"password-only; add one afterwards with `assets rdp login set`.",
+	Args: cobra.ExactArgs(1),
+	RunE: runAssetsRDPCreate,
+}
+
+var assetsRDPLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Manage the logins of an RDP asset",
+}
+
+var (
+	rdpLoginName  string
+	rdpLoginStdin bool
+)
+
+var assetsRDPLoginSetCmd = &cobra.Command{
+	Use:   "set <asset>",
+	Short: "Add or replace a login on an RDP asset",
+	Long: "Add or replace a password login on an RDP asset. The secret is read from " +
+		"stdin (--password-stdin), sealed in the vault, and bound to the asset.",
+	Args: cobra.ExactArgs(1),
+	RunE: runAssetsRDPLoginSet,
+}
+
 var assetsK8sCmd = &cobra.Command{
 	Use:   "k8s",
 	Short: "Manage Kubernetes assets",
@@ -218,6 +256,18 @@ func init() {
 	assetsPGCmd.AddCommand(assetsPGCreateCmd)
 	assetsPGCmd.AddCommand(assetsPGLoginCmd)
 
+	assetsRDPCreateCmd.Flags().StringVar(&rdpCreateFolder, "folder", "", "folder id or name (required)")
+	assetsRDPCreateCmd.Flags().StringVar(&rdpCreateTarget, "target", "", "target host:port")
+	_ = assetsRDPCreateCmd.MarkFlagRequired("folder")
+
+	assetsRDPLoginSetCmd.Flags().StringVar(&rdpLoginName, "login", "", "login name (required)")
+	assetsRDPLoginSetCmd.Flags().BoolVar(&rdpLoginStdin, "password-stdin", false, "read the password from stdin (required)")
+	_ = assetsRDPLoginSetCmd.MarkFlagRequired("login")
+
+	assetsRDPLoginCmd.AddCommand(assetsRDPLoginSetCmd)
+	assetsRDPCmd.AddCommand(assetsRDPCreateCmd)
+	assetsRDPCmd.AddCommand(assetsRDPLoginCmd)
+
 	assetsK8sCreateCmd.Flags().StringVar(&k8sCreateFolder, "folder", "", "folder id or name (required)")
 	_ = assetsK8sCreateCmd.MarkFlagRequired("folder")
 	assetsK8sCmd.AddCommand(assetsK8sCreateCmd)
@@ -227,6 +277,7 @@ func init() {
 
 	assetsCmd.AddCommand(assetsSSHCmd)
 	assetsCmd.AddCommand(assetsPGCmd)
+	assetsCmd.AddCommand(assetsRDPCmd)
 	assetsCmd.AddCommand(assetsK8sCmd)
 	assetsCmd.AddCommand(assetsListCmd)
 	assetsCmd.AddCommand(assetsGetCmd)
@@ -669,6 +720,133 @@ func pgLoginInputKind(l *catalogv1.PostgresLoginInput) string {
 
 func pgLoginInputRow(l *catalogv1.PostgresLoginInput) []string {
 	return []string{l.GetRole(), pgLoginInputKind(l)}
+}
+
+var rdpLoginHeaders = []string{"LOGIN", "KIND"}
+
+func runAssetsRDPCreate(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	folderID, err := resolveFolderID(cmd.Context(), cl, rdpCreateFolder)
+	if err != nil {
+		return err
+	}
+
+	// RDP logins are password-only and always carry a secret, so none are added
+	// inline; use `assets rdp login set` after create.
+	createReq := connect.NewRequest(&catalogv1.CreateAssetRequest{
+		FolderId: folderID,
+		Name:     args[0],
+		Config: &catalogv1.CreateAssetRequest_Rdp{Rdp: &catalogv1.RDPConfigInput{
+			TargetAddress: rdpCreateTarget,
+		}},
+	})
+	cl.Authorize(createReq)
+	createResp, err := cl.Catalog().CreateAsset(cmd.Context(), createReq)
+	if err != nil {
+		return err
+	}
+	asset := createResp.Msg.GetAsset()
+
+	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
+		Headers: assetHeaders,
+		Rows:    [][]string{assetRow(asset)},
+	})
+}
+
+func runAssetsRDPLoginSet(cmd *cobra.Command, args []string) error {
+	if !rdpLoginStdin {
+		return fmt.Errorf("RDP logins are password-only; --password-stdin is required")
+	}
+
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	assetID, err := cl.ResolveAsset(cmd.Context(), args[0])
+	if err != nil {
+		return err
+	}
+
+	value, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		return fmt.Errorf("read password from stdin: %w", err)
+	}
+	value = trimTrailingNewline(value)
+	if len(value) == 0 {
+		return fmt.Errorf("empty password on stdin")
+	}
+
+	// Read-modify-write: fetch the current RDP config, replace/append this login,
+	// preserving target/server-CA and the other logins (with their existing secrets).
+	getReq := connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: assetID})
+	cl.Authorize(getReq)
+	getResp, err := cl.Catalog().GetAsset(cmd.Context(), getReq)
+	if err != nil {
+		return err
+	}
+
+	cur := getResp.Msg.GetAsset().GetRdp()
+
+	input := &catalogv1.RDPConfigInput{}
+	if cur != nil {
+		input.TargetAddress = cur.GetTargetAddress()
+		input.TargetServerCa = cur.GetTargetServerCa()
+		for _, l := range cur.GetLogins() {
+			if l.GetLogin() == rdpLoginName {
+				continue // the target login is (re)built below
+			}
+			input.Logins = append(input.Logins, existingRdpLoginInput(l))
+		}
+	}
+
+	input.Logins = append(input.Logins, newRdpLoginInput(rdpLoginName, value))
+
+	updReq := connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
+		AssetId: assetID,
+		Config:  &catalogv1.UpdateAssetConfigRequest_Rdp{Rdp: input},
+	})
+	cl.Authorize(updReq)
+	if _, err := cl.Catalog().UpdateAssetConfig(cmd.Context(), updReq); err != nil {
+		return err
+	}
+
+	rows := make([][]string, 0, len(input.GetLogins()))
+	msgs := make([]proto.Message, 0, len(input.GetLogins()))
+	for _, l := range input.GetLogins() {
+		rows = append(rows, []string{l.GetLogin(), "password"})
+		msgs = append(msgs, l)
+	}
+	return output.RenderProtoList(cmd.OutOrStdout(), flagOutput, msgs, &output.Table{
+		Headers: rdpLoginHeaders,
+		Rows:    rows,
+	})
+}
+
+// existingRdpLoginInput maps a read-side login to its write-side input arm,
+// preserving the already-sealed secret (by id). RDP logins are password-only.
+func existingRdpLoginInput(l *catalogv1.RDPLogin) *catalogv1.RDPLoginInput {
+	return &catalogv1.RDPLoginInput{
+		Login: l.GetLogin(),
+		Auth: &catalogv1.RDPLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_ExistingSecretId{ExistingSecretId: l.GetSecretId()},
+		}},
+	}
+}
+
+// newRdpLoginInput builds the write-side input for the login being added/replaced,
+// with the new plaintext to seal server-side in-tx.
+func newRdpLoginInput(login string, secret []byte) *catalogv1.RDPLoginInput {
+	return &catalogv1.RDPLoginInput{
+		Login: login,
+		Auth: &catalogv1.RDPLoginInput_Password{Password: &catalogv1.SecretAuth{
+			Source: &catalogv1.SecretAuth_NewValue{NewValue: secret},
+		}},
+	}
 }
 
 func runAssetsK8sCreate(cmd *cobra.Command, args []string) error {

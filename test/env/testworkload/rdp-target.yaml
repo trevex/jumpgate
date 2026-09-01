@@ -1,0 +1,56 @@
+# xrdp RDP target for the browser RDP e2e (web/e2e/rdp.spec.ts).
+#
+# danielguerra/ubuntu-xrdp:20.04 runs xrdp under supervisord with
+# security_layer=negotiate, so it accepts a plain-TLS (non-NLA) client — matching
+# the rdp-proxy worker's enable_credssp=false. It provisions users only from
+# /etc/users.list (absent here → none), so we create the `demo` login via a
+# postStart hook. The `demo` login + password MUST agree with the seeded rdp-box
+# asset (test/e2e/uiseed_test.go).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rdp-target
+  labels:
+    app: rdp-target
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rdp-target
+  template:
+    metadata:
+      labels:
+        app: rdp-target
+    spec:
+      containers:
+        - name: xrdp
+          image: danielguerra/ubuntu-xrdp:20.04
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3389
+          lifecycle:
+            postStart:
+              exec:
+                # Create the target account the worker authenticates as. The
+                # session is system-wide (/etc/X11/Xsession), so a fresh user gets
+                # a working desktop. chpasswd takes the plaintext directly.
+                command:
+                  - /bin/bash
+                  - -c
+                  - "id demo || useradd -m -s /bin/bash demo; echo 'demo:rdp-demo-pw-123' | chpasswd"
+          readinessProbe:
+            tcpSocket:
+              port: 3389
+            initialDelaySeconds: 5
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rdp-target
+spec:
+  selector:
+    app: rdp-target
+  ports:
+    - port: 3389
+      targetPort: 3389

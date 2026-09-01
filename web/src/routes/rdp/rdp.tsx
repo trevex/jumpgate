@@ -182,6 +182,13 @@ export function RdpPage() {
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
+      // ponytail: e2e-only observability hook. The browser paints RDP to a
+      // canvas whose framebuffer can't be scraped renderer-agnostically like the
+      // xterm buffer, so expose a tiny liveness struct (connected on first HEADER,
+      // a frame counter per processed PDU) for web/e2e/rdp.spec.ts to assert on.
+      const rdpHook = { connected: false, framesProcessed: 0 };
+      (window as unknown as { __jumpgateRdp?: typeof rdpHook }).__jumpgateRdp = rdpHook;
+
       // Blits the wasm framebuffer to the canvas. Re-reads the memory view
       // fresh each call — wasm memory can grow/detach between frames.
       function blit(session: RdpSession) {
@@ -215,6 +222,7 @@ export function RdpPage() {
             const session = new RdpSession(payload);
             sessionRef.current = session;
             blit(session);
+            rdpHook.connected = true;
             setStatus({ kind: "connected" });
             canvasRef.current?.focus();
           } catch (err) {
@@ -229,6 +237,7 @@ export function RdpPage() {
           try {
             const out = session.process(payload[0], payload.subarray(1));
             blit(session);
+            rdpHook.framesProcessed++;
             sendInput(out);
             if (session.terminated()) {
               setStatus({ kind: "exited" });

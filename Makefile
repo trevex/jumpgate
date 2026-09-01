@@ -101,7 +101,8 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 	$(MAKE) kind-images
 	docker pull $(KUBECTL_IMAGE)
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev jumpgate/rdp-proxy:dev jumpgate/k8s-broker:dev jumpgate/k8s-agent:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev jumpgate/testworkload-pg-target:dev $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
+	docker pull danielguerra/ubuntu-xrdp:20.04
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev jumpgate/rdp-proxy:dev jumpgate/k8s-broker:dev jumpgate/k8s-agent:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev jumpgate/testworkload-pg-target:dev danielguerra/ubuntu-xrdp:20.04 $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
 	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f test/env/testworkload/sshd.yaml
@@ -111,6 +112,8 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	kubectl rollout status deploy/ssh-target-key --timeout=120s
 	kubectl apply -f test/env/testworkload/pg-target.yaml
 	kubectl rollout status deploy/pg-target --timeout=120s
+	kubectl apply -f test/env/testworkload/rdp-target.yaml
+	kubectl rollout status deploy/rdp-target --timeout=120s
 
 kind-redeploy: ## Rebuild app images, reload into the running cluster, helm upgrade + restart app pods (NOTE: cannot apply cluster.yaml changes like extraPortMappings — those need kind-down/kind-up)
 	$(MAKE) kind-images

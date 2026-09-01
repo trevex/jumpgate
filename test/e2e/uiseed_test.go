@@ -132,6 +132,39 @@ func TestUISeed(t *testing.T) {
 	e.asActor(t, "admin", "bindings", "create",
 		"--role", "folderssh", "--group", "sre", "--folder", "cascade")
 
+	// ── RDP fixture: a standing-access RDP asset alice reaches via a concrete
+	// rdp:login:demo binding, backing the browser RDP e2e (web/e2e/rdp.spec.ts).
+	// The clientless browser client (worker does the RDP handshake with the
+	// injected password; the browser renders via WASM) is the only way to exercise
+	// an RDP session, so this mirrors password-box: a folder-scoped role carrying
+	// the rdp:login cap, bound to the sre group at the asset. The `demo` login +
+	// password agree with the xrdp target's runtime-provisioned user
+	// (test/env/testworkload/rdp-target.yaml). ──
+	rdpRoleOut := e.asActor(t, "admin", "roles", "create", "rdp-demo",
+		"--folder", "demo",
+		"--capability", "rdp:login:demo", "-o", "json")
+	rdpRoleID := jsonID(rdpRoleOut)
+	if rdpRoleID == "" {
+		t.Fatalf("no rdp-demo role id:\n%s", rdpRoleOut)
+	}
+
+	rdpOut := e.asActor(t, "admin", "assets", "rdp", "create", "rdp-box",
+		"--folder", "demo",
+		"--target", "rdp-target.default.svc.cluster.local:3389", "-o", "json")
+	rdpAssetID := jsonID(rdpOut)
+	if rdpAssetID == "" {
+		t.Fatalf("no rdp-box asset id:\n%s", rdpOut)
+	}
+	rdpPath := "rdp-box.demo"
+	e.asActorStdin(t, "admin", "rdp-demo-pw-123\n",
+		"assets", "rdp", "login", "set", rdpPath,
+		"--login", "demo", "--password-stdin")
+
+	// Standing binding for sre on rdp-box. rdp-demo is folder-scoped, so address it
+	// by its namespaced DNS name.
+	e.asActor(t, "admin", "bindings", "create",
+		"--role", "rdp-demo.demo", "--group", "sre", "--asset", rdpPath)
+
 	// ── Produce a recorded session so the browser audit view has content ──
 	e.login(t, "alice", uiAliceEmail, alicePass)
 	script := "echo " + marker + "; whoami; exit\n"
