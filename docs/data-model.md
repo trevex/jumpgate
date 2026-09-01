@@ -6,8 +6,9 @@ relate. This is the storage behind the concepts in
 columns. The schema is defined by the goose migrations embedded in the binary
 (`warden/internal/postgres/migrate/migrations`): `0001_schema.sql` is the core
 schema, `0002_postgres_asset.sql` adds the Postgres asset tables,
-`0003_agent_enrollment.sql` adds Kubernetes agent enrollment, and
-`0004_authz_mgmt_visibility_fns.sql` adds the management-visibility SQL functions.
+`0003_agent_enrollment.sql` adds Kubernetes agent enrollment,
+`0004_authz_mgmt_visibility_fns.sql` adds the management-visibility SQL functions,
+and `0005_rdp_asset.sql` adds the RDP asset tables.
 
 The relationship rows are tuple-shaped (subject → relation → object), so the whole
 model could be mirrored into an external relationship engine (OpenFGA) without
@@ -35,10 +36,13 @@ erDiagram
     assets ||--o{ ssh_asset_login : "login · kind"
     assets ||--o| postgres_asset_config : "pg target"
     assets ||--o{ postgres_asset_login : "role · kind"
+    assets ||--o| rdp_asset_config : "rdp target"
+    assets ||--o{ rdp_asset_login : "login · kind"
     assets ||--o{ agent_enrollment_tokens : "k8s enrollment"
     assets ||--o{ asset_secrets : "sealed"
     ssh_asset_login }o--|| asset_secrets : "secret_id · same-asset FK"
     postgres_asset_login }o--o| asset_secrets : "secret_id · same-asset FK"
+    rdp_asset_login }o--|| asset_secrets : "secret_id · same-asset FK"
     access_requests ||--o{ access_request_approvals : "approve / deny · unique per approver"
     access_requests ||--o{ access_grants : "on grant"
     access_grants ||--o{ live_sessions : "grant_id"
@@ -60,7 +64,7 @@ erDiagram
     assets {
         uuid id PK
         uuid folder_id FK
-        text kind "ssh / postgres / k8s"
+        text kind "ssh / postgres / k8s / rdp"
         jsonb labels
     }
     access_grants {
@@ -72,7 +76,7 @@ erDiagram
     }
     session_recordings {
         uuid session_id PK
-        text format "asciicast-v2 / pgwire-timeline-v1 / k8s-audit-v1"
+        text format "asciicast-v2 / pgwire-timeline-v1 / k8s-audit-v1 / rdp-graphics-v1"
         uuid grant_id FK
     }
     audit_log {
@@ -140,7 +144,7 @@ the recursive CTEs assume this forest shape. Names are `^[a-z0-9_-]+$`.
 | `id` | uuid PK |
 | `folder_id` | → `folders(id)`, NOT NULL (`ON DELETE CASCADE`) — every asset lives in exactly one folder |
 | `name` | `^[a-z0-9_-]+$` |
-| `kind` | text, NOT NULL DEFAULT `'ssh'`, CHECK in (`ssh`, `postgres`, `k8s`). Selects the asset's typed credential config; `assets` stays the generic authz anchor (roles, bindings, grants, and policies reference `assets.id` protocol-agnostically). An `ssh` asset has `ssh_asset_config` plus `ssh_asset_login`; a `postgres` asset has `postgres_asset_config` plus `postgres_asset_login`; a `k8s` asset has no connection config (the agent enrolls). |
+| `kind` | text, NOT NULL DEFAULT `'ssh'`, CHECK in (`ssh`, `postgres`, `k8s`, `rdp`). Selects the asset's typed credential config; `assets` stays the generic authz anchor (roles, bindings, grants, and policies reference `assets.id` protocol-agnostically). An `ssh` asset has `ssh_asset_config` plus `ssh_asset_login`; a `postgres` asset has `postgres_asset_config` plus `postgres_asset_login`; an `rdp` asset has `rdp_asset_config` plus `rdp_asset_login`; a `k8s` asset has no connection config (the agent enrolls). |
 | `labels` | jsonb (default `{}`), GIN-indexed |
 
 ### `catalog_names` — sibling-uniqueness registry
@@ -210,12 +214,36 @@ issuing any credential.
 | `kind` | text, CHECK in (`mtls`, `password`) |
 | `secret_id` | → `asset_secrets` by a composite FK `(asset_id, id)` (`ON DELETE RESTRICT`), nullable. Required unless `kind='mtls'` (`postgres_login_secret_present`); the composite FK guarantees the secret belongs to the same asset |
 
+### `rdp_asset_config` — RDP connection config
+
+1:1 with an `rdp` asset (`asset_id` is the PK). Added in `0005_rdp_asset.sql`. Holds
+how to reach the target; the per-login auth lives in `rdp_asset_login`.
+
+| Column | Notes |
+|---|---|
+| `asset_id` | uuid PK → `assets(id)` (`ON DELETE CASCADE`) |
+| `target_address` | text NOT NULL (default `''`) — the host:port the rdp-proxy worker dials |
+| `target_server_ca` | text NOT NULL (default `''`) — PEM of the target's TLS CA/cert; set verifies the target, empty requires TLS without a pin |
+
+### `rdp_asset_login` — per-login auth facts
+
+Per-asset, per-login authentication for an RDP asset. `kind` is CHECK-constrained to
+`password` only (no `ca`/`mtls` arm yet), so `secret_id` is unconditionally required.
+The broker enforces `rdp:login:<login>` before issuing any credential.
+
+| Column | Notes |
+|---|---|
+| `asset_id` | → `assets(id)` (`ON DELETE CASCADE`); part of PK `(asset_id, login)` |
+| `login` | text; part of PK |
+| `kind` | text, CHECK in (`password`) |
+| `secret_id` | → `asset_secrets` by a composite FK `(asset_id, id)` (`ON DELETE RESTRICT`), NOT NULL (`rdp_login_secret_present`); the composite FK guarantees the secret belongs to the same asset |
+
 ### `asset_secrets` — per-asset stored secrets
 
 Named sealed secrets bound to an asset (for example a stored password or private key).
 `UNIQUE (asset_id, name)`; also `UNIQUE (asset_id, id)` to back the composite FKs from
-`ssh_asset_login` and `postgres_asset_login`. Values leave warden only via the broker;
-`List` returns id, name, and created_at metadata only.
+`ssh_asset_login`, `postgres_asset_login`, and `rdp_asset_login`. Values leave warden
+only via the broker; `List` returns id, name, and created_at metadata only.
 
 | Column | Notes |
 |---|---|
@@ -453,7 +481,7 @@ oversight.
 |---|---|
 | `session_id` | uuid PK |
 | `user_id` / `asset_id` / `worker_id` | who and where |
-| `protocol` / `format` | for example `ssh` / `asciicast-v2`, `postgres` / `pgwire-timeline-v1`, `k8s` / `k8s-audit-v1` |
+| `protocol` / `format` | for example `ssh` / `asciicast-v2`, `postgres` / `pgwire-timeline-v1`, `k8s` / `k8s-audit-v1`, `rdp` / `rdp-graphics-v1` |
 | `object_key` | text — the object-store key (protocol-partitioned, for example `recordings/ssh/<date>/<session_id>.cast`) |
 | `size_bytes` / `sha256` | the uploaded size and rolling hash |
 | `status` | text — for example in-progress, completed, failed |
@@ -570,7 +598,7 @@ imperative cleanup, the schema leans on `ON DELETE CASCADE` foreign keys so a si
 | `request_policies.scope_asset_id` | asset-scoped request policies dropped (their subjects cascade in turn) |
 | `access_grants.scope_asset_id` | grants against the asset dropped |
 | `access_requests.asset_id` | requests against the asset dropped |
-| `ssh_asset_config`, `ssh_asset_login`, `postgres_asset_config`, `postgres_asset_login` | SSH and Postgres config, logins dropped |
+| `ssh_asset_config`, `ssh_asset_login`, `postgres_asset_config`, `postgres_asset_login`, `rdp_asset_config`, `rdp_asset_login` | SSH, Postgres, and RDP config, logins dropped |
 | `asset_secrets.asset_id`, `catalog_names.asset_id`, `agent_enrollment_tokens.asset_id` | secrets, the name-registry row, and enrollment tokens dropped |
 
 `DeleteAsset` first tears down the asset's live sessions (an out-of-band side effect

@@ -10,8 +10,8 @@ description: Just-in-time privileged access with zero standing credentials, full
 
 <p class="jg-tagline" markdown>
 Just-in-time privileged access with zero standing credentials, fully audited.
-One access model for SSH hosts, Postgres databases, and Kubernetes clusters —
-no permanent credentials, and nothing to install on most targets.
+One access model for SSH hosts, Postgres databases, Kubernetes clusters, and RDP
+desktops — no permanent credentials, and nothing to install on most targets.
 </p>
 
 [Get started :material-arrow-right:](development.md){ .md-button .md-button--primary }
@@ -45,16 +45,16 @@ ends. No permanent keys, no shared accounts.
 :material-lan-connect: __Broad reach, light footprint__
 { .card }
 
-An agentless network proxy fronts SSH and Postgres, so onboarding a target is a catalog
-entry rather than a rollout. Kubernetes uses a lightweight in-cluster agent that dials
-out, so no inbound port is opened on a cluster.
+An agentless network proxy fronts SSH, Postgres, and RDP, so onboarding a target is a
+catalog entry rather than a rollout. Kubernetes uses a lightweight in-cluster agent
+that dials out, so no inbound port is opened on a cluster.
 
 :material-file-document-check: __Fully audited__
 { .card }
 
 Every decision, session, and keystroke is attributable: a transactional audit outbox
-plus session recording — SSH terminal, Postgres statement log, Kubernetes API audit —
-reviewable by the grant subject and its approvers.
+plus session recording — SSH terminal, Postgres statement log, Kubernetes API audit,
+RDP graphics stream — reviewable by the grant subject and its approvers.
 
 </div>
 
@@ -66,7 +66,7 @@ reviewable by the grant subject and its approvers.
 
     ---
 
-    The control plane, the data plane (gateway plus SSH, Postgres, and Kubernetes
+    The control plane, the data plane (gateway plus SSH, Postgres, Kubernetes, and RDP
     workers), the credential vault, audit and recording, and how a session flows end to
     end.
 

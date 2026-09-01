@@ -6,10 +6,10 @@ access is time-boxed, approval-gated, credential-injected, and fully recorded. W
 the authorization behind a live session is revoked, the session is torn down, not
 merely blocked at the next connect.
 
-jumpgate proxies three protocols today. SSH and Postgres run through an agentless
-network proxy, so a target needs nothing installed. Kubernetes uses a lightweight
-agent that runs inside the target cluster and dials out, so no inbound port is
-opened on the cluster. RDP and further databases are additive workers, called out
+jumpgate proxies four protocols today. SSH, Postgres, and RDP run through an
+agentless network proxy, so a target needs nothing installed. Kubernetes uses a
+lightweight agent that runs inside the target cluster and dials out, so no inbound
+port is opened on the cluster. Further databases are additive workers, called out
 as planned where they appear.
 
 ## The three planes
@@ -27,11 +27,11 @@ flowchart TB
         ssh["ssh-proxy · Rust"]
         pg["pg-proxy · Go"]
         brk["k8s-broker · Go"]
-        rdp["rdp-proxy · planned"]
+        rdp["rdp-proxy · Rust"]
     end
 
     agent["k8s-agent · Go<br>runs inside the target cluster"]
-    targets[("SSH / Postgres targets")]
+    targets[("SSH / Postgres / RDP targets")]
     kube[("Kubernetes API server")]
 
     client -->|"ConnectRPC API · bearer token<br>CreateSession ⇒ admission token"| cpbody
@@ -43,11 +43,9 @@ flowchart TB
     gw --> rdp
     ssh -->|"inject creds · proxy · record"| targets
     pg -->|"inject creds · proxy · record"| targets
+    rdp -->|"inject creds · proxy · record"| targets
     brk <-.->|"reverse tunnel · mesh mTLS"| agent
     agent -->|"impersonate · record"| kube
-
-    classDef planned stroke-dasharray:5 4,opacity:0.55;
-    class rdp planned;
 ```
 
 The control plane brokers; the data plane enforces. Security-critical state (vault,
@@ -73,13 +71,13 @@ The API is split into focused ConnectRPC services.
 |---|---|
 | `AuthService` | password login → opaque bearer token (CLI) or `httpOnly` session cookie (browser); `WhoAmI` (identity plus global capabilities for nav gating); `Logout` |
 | `IdentityService` | users, groups, nested memberships, user lifecycle; path-scoped `ListGroups` and `GetGroupAccess` |
-| `CatalogService` | folders and assets (SSH, Postgres, and Kubernetes typed config): create, rename/move, delete; path-scoped `ListFolders`/`ListAssets`; `GetAssetAccess`/`GetFolderAccess`; `ListFolderContents`; `SearchCatalog`; `Resolve*` |
+| `CatalogService` | folders and assets (SSH, Postgres, Kubernetes, and RDP typed config): create, rename/move, delete; path-scoped `ListFolders`/`ListAssets`; `GetAssetAccess`/`GetFolderAccess`; `ListFolderContents`; `SearchCatalog`; `Resolve*` |
 | `AccessService` | roles, role-grants, standing role-bindings, request policies and subjects, `ExplainRole`; path-scoped `ListRoles`, `GetRoleAccess` |
 | `AccessRequestService` | the JIT runtime: request, approve, deny, cancel, revoke, grants, approval resolution |
 | `VaultService` | CA init and public material, mesh CA and cert issuance, session-signing-key init, asset secrets (metadata only on read) |
 | `EnrollmentService` | mint a single-use Kubernetes agent enrollment token; sign an agent's CSR into a mesh cert (`SignAgentCert`) |
-| `RecordingService` | list, get, and presigned-download of session recordings (SSH, Postgres, Kubernetes) |
-| `SessionService` | `CreateSession` (SSH), `CreatePostgresSession`, `CreateKubernetesSession`, `CreateWebSession` — each mints a data-plane admission token for an authorized (user, asset) |
+| `RecordingService` | list, get, and presigned-download of session recordings (SSH, Postgres, Kubernetes, RDP) |
+| `SessionService` | `CreateSession` (SSH), `CreatePostgresSession`, `CreateKubernetesSession`, `CreateWebSession`, `CreateRDPSession` — each mints a data-plane admission token for an authorized (user, asset) |
 | `GatewayService` | `WatchWorkers` roster stream and `GetSessionVerificationKey` for the gateway |
 | `Dataplane` (mesh) | worker registration/heartbeat stream and `SetupSession` |
 | `HealthService` | liveness |
@@ -142,6 +140,9 @@ offline (Ed25519 signature and expiry), then dispatches on the request shape:
   byte-accurate opcode protocol over the mesh to the ssh-proxy's WebSocket ingress.
   In production, `GATEWAY_CONSOLE_ORIGIN` restricts these upgrades to the console
   origin.
+- A `GET /rdp` WebSocket upgrade is the clientless browser RDP session, ticketed the
+  same way as `/terminal`; the gateway relays it to the rdp-proxy's WebSocket
+  ingress instead.
 - A plain (non-CONNECT, non-upgrade) HTTPS request is Kubernetes traffic from
   `kubectl`. The gateway reads the token's `broker_id` claim, looks that broker up
   in the roster, mesh-dials it pinning `spiffe://jumpgate/broker/<broker_id>`,
@@ -149,10 +150,10 @@ offline (Ed25519 signature and expiry), then dispatches on the request shape:
   asset→broker map; a stale broker returns a retriable 503, and the client re-mints
   against a fresh `broker_id`.
 
-The gateway never terminates SSH, Postgres, or the Kubernetes API. That protocol
-independence lets each worker be written in the best language for its protocol. It
-is also teardown-unaware: when warden force-closes a worker's session, the pump
-collapses on EOF.
+The gateway never terminates SSH, Postgres, RDP, or the Kubernetes API. That
+protocol independence lets each worker be written in the best language for its
+protocol. It is also teardown-unaware: when warden force-closes a worker's
+session, the pump collapses on EOF.
 
 ### SSH — `ssh-proxy` (Rust, russh)
 
@@ -223,7 +224,27 @@ carries is decided entirely by held `k8s:group:<name>` capabilities; the target
 cluster's own RBAC decides what those groups may do. See
 [capabilities.md](capabilities.md#data-plane-vocabulary).
 
-Planned workers: `rdp-proxy`, and beyond that further databases.
+### RDP — `rdp-proxy` (Rust, IronRDP)
+
+RDP is clientless: there is no `jumpgate connect` mode and no local proxy, only a
+browser session. The console's asset detail page offers an **Open RDP** link per
+entitled login; it calls `CreateRDPSession`, which mints a short-lived,
+cookie-authenticated ticket the same way `CreateWebSession` does for the browser
+SSH terminal. The browser opens that ticket as a `GET /rdp` WebSocket through the
+gateway to the rdp-proxy worker.
+
+The worker redeems the ticket with `SetupSession` (no client key to bind, since the
+mesh tunnel is already authenticated; the login comes from the ticket), re-checks
+the caller's `rdp:login:<login>` entitlement, and mints the target credential —
+today always a vault-sealed password — through the CredentialBroker. It then runs
+the full IronRDP handshake against the target on the worker side, so the password
+never reaches the browser. Once connected, the worker relays graphics PDUs to the
+browser and input PDUs back; a `jumpgate-rdp` WASM module in the browser renders
+the stream onto a `<canvas>`, so no plugin or native client is involved. Every RDP
+session is recorded — there is no record-exempt path for RDP (see
+[Audit and recording](#audit--recording)).
+
+Planned workers: further databases.
 
 ### Shared mesh library — `jumpgate-mesh` (Rust)
 
@@ -253,28 +274,35 @@ resolved asset kind:
   that mints (and disk-caches) a short-lived token; `jumpgate k8s kubeconfig <asset>`
   prints a kubeconfig wiring `kubectl` through jumpgate. `kubectl` then sends plain
   HTTPS to the gateway, which routes it to the broker.
+- RDP — `connect` does not dispatch to RDP at all; there is no local client and no
+  loopback proxy. An RDP session opens only from the web console's asset detail
+  page (**Open RDP**), which renders the desktop in the browser. The CLI's role for
+  an RDP asset is limited to authoring (`assets rdp`).
 
 The `<asset>` is a DNS-style dotted path (leaf-first, for example `pg-primary.db.prod`)
 or a UUID; the CLI resolves it via `CatalogService.ResolveAsset`, which performs an
 access check and returns `NotFound` for both an unknown reference and one the caller
 cannot see. Beyond `connect`, the CLI covers the full surface: admin (`users`,
-`groups`, `folders`, `assets ssh|pg|k8s`, `roles`, `bindings`, `policies`), access
+`groups`, `folders`, `assets ssh|pg|k8s|rdp`, `roles`, `bindings`, `policies`), access
 requests, and recordings. Config is a small file with kubectl-style named contexts,
 so multiple identities coexist. A React web console, embedded in the warden binary,
-offers the same access loop plus an in-browser SSH terminal; see
-[development.md](development.md#web-ui).
+offers the same access loop plus an in-browser SSH terminal and the browser RDP
+session; see [development.md](development.md#web-ui).
 
 ## How a session flows
 
-The SSH flow is the reference; Postgres and Kubernetes vary only where noted.
+The SSH flow is the reference; Postgres and Kubernetes vary only where noted. RDP
+follows the same shape but mints its admission token as a cookie-authenticated
+ticket over a `GET /rdp` WebSocket rather than an HTTP CONNECT, mirroring the
+browser SSH terminal.
 
 1. `CreateSession(user, asset)` — warden re-evaluates the held closure for the
    caller on the asset. If entitled, it mints a PASETO v4.public admission token
    (Ed25519), short-lived, carrying the session id, user, asset, and protocol. For
    SSH the token is bound to the client's ephemeral key fingerprint (`cnf`). The
-   Postgres and Kubernetes tokens are bearers; the Kubernetes token also carries the
-   caller's email, group set, and the resolved `broker_id`. The signing key is
-   DB-backed and sealed at rest.
+   Postgres, Kubernetes, and RDP tokens are bearers; the Kubernetes token also
+   carries the caller's email, group set, and the resolved `broker_id`. The signing
+   key is DB-backed and sealed at rest.
 2. The gateway verifies the token offline and routes the connection: an SSH or
    Postgres CONNECT to a pinned worker over mesh mTLS, or a Kubernetes request to
    the broker named by `broker_id`.
@@ -309,7 +337,8 @@ now), Requestable (eligible to request at least one role via a policy), or Invis
 One request engine, two timings:
 
 - Pre-session (live). Request a role before connecting; the injected credential
-  carries the privilege. SSH, Postgres, and Kubernetes all use this timing today.
+  carries the privilege. SSH, Postgres, Kubernetes, and RDP all use this timing
+  today.
   Inline TTY gating is deliberately avoided, because parsing commands from an
   interactive shell is not a robust enforcement boundary.
 - Inline (planned). During a live session a specific action would pause pending
@@ -385,10 +414,13 @@ kinds, and runs the provider for that login's kind:
 - `key` returns the OpenSSH private-key PEM from the login's linked `asset_secret`.
 
 For Postgres, the broker enforces `db:login:<role>` and mints an X.509 client cert
-(`mtls`) or returns the stored password (`password`). `ValidUntil` is supplied by the
-caller: `SetupSession` passes the granting authorization's remaining lifetime, so a
-credential never outlives the access behind it. Every successful `Issue` appends a
-`credential.issued` audit event.
+(`mtls`) or returns the stored password (`password`). For RDP, the broker enforces
+`rdp:login:<login>` the same way SSH enforces `ssh:login:<login>` — the asset's
+configured logins intersected with the caller's held capabilities — and returns
+the stored password; RDP logins are password-only today, with no `ca`/`mtls` arm.
+`ValidUntil` is supplied by the caller: `SetupSession` passes the granting
+authorization's remaining lifetime, so a credential never outlives the access
+behind it. Every successful `Issue` appends a `credential.issued` audit event.
 
 ### Agent enrollment
 
@@ -430,11 +462,13 @@ authorizes exactly the logins the user is entitled to. See
 `Set`/`Delete`/`List` (metadata only — id, name, created_at, never the value). An
 asset's connection config lives on `CatalogService`, which owns the asset:
 `CreateAsset` takes inline typed config, `GetAsset` returns it, `UpdateAssetConfig`
-replaces it, and the CLI (`assets ssh|pg|k8s`) drives it.
+replaces it, and the CLI (`assets ssh|pg|k8s|rdp`) drives it.
 
 The write model is type-safe rather than stringly-typed. The asset kind is the
-config `oneof` arm (SSH, Postgres, or Kubernetes), and for SSH each login's auth kind
-is its own `oneof` arm (`ca` / `password` / `key`). A login's credential is a
+config `oneof` arm (SSH, Postgres, Kubernetes, or RDP), and for SSH each login's
+auth kind is its own `oneof` arm (`ca` / `password` / `key`); RDP has a single
+login arm (`password`), since there is no `ca`/`mtls` kind yet. A login's credential
+is a
 `SecretAuth` that either carries a `new_value` (sealed server-side in the same
 transaction) or references an `existing_secret_id`. Onboarding is therefore atomic:
 one `CreateAsset` call seals the login secrets, creates the asset, and wires the
@@ -519,15 +553,17 @@ every protocol.
 | SSH | asciicast v2 | both directions of terminal I/O plus resizes, with timing; replayable with `asciinema play` | yes, if the subject holds `ssh:record:exempt` on the asset |
 | Postgres | `pgwire-timeline-v1` (NDJSON) | one event per client statement (query, parse, bind, execute) plus command tags and errors | no |
 | Kubernetes | `k8s-audit-v1` (NDJSON) | one event per API request: verb, path, resource, namespace, name, groups, status code | no |
+| RDP | `rdp-graphics-v1` | the negotiated session's graphics/input PDU stream, timestamped; replayed by seeding a fresh IronRDP `ActiveStage` with no live socket | no |
 
 Recording is fail-closed. SSH refuses or tears down a session when a required
 recording cannot be established or a mid-session write fails. Postgres decodes every
 client statement before forwarding, so a recorder failure kills the session before an
 un-recorded statement reaches the target; the target→client direction is best-effort.
 Kubernetes fails the request if it cannot be recorded, and the broker refuses to
-start without a recording bucket configured. Postgres redacts bind-parameter values
-and never decodes result rows; Kubernetes records request metadata, not bodies. A web
-replay player exists for all three formats (see
+start without a recording bucket configured. RDP refuses to authenticate the session
+at all if the recording upload cannot be opened up front. Postgres redacts
+bind-parameter values and never decodes result rows; Kubernetes records request
+metadata, not bodies. A web replay player exists for all four formats (see
 [development.md](development.md#web-ui)); SIEM export is planned.
 
 ## Running on Kubernetes (kind)
@@ -537,8 +573,8 @@ chart, so warden, the gateway, and the workers can be exercised end to end witho
 hand-wiring certificates or processes.
 
 - Chart — `deploy/helm/jumpgate`. Renders warden, the gateway, the ssh-proxy,
-  pg-proxy, and k8s-broker Deployments, plus their Services, Secrets, and mesh
-  Certificates. warden's user API and the gateway's external listener are exposed as
+  pg-proxy, rdp-proxy, and k8s-broker Deployments, plus their Services, Secrets, and
+  mesh Certificates. warden's user API and the gateway's external listener are exposed as
   fixed NodePorts, which the kind cluster forwards to `localhost:8080` (warden) and
   `localhost:8443` (gateway) so the host CLI reaches them directly. The k8s-agent is
   not part of this chart: it deploys into each target cluster, and the chart emits

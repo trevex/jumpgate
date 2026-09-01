@@ -22,11 +22,12 @@ only to a protocol that is not yet built, it says so.
   requester and approver predicates, which resolve standing-only (`HoldsRoleStanding`).
   A granted `requester_role` or `approver_role` can never be used to request or approve
   further access, closing self-escalation loops.
-- Minimal footprint on targets. SSH and Postgres run through an agentless L7 proxy: no
-  software is installed on the target host, and the worker terminates the protocol and
-  injects a short-lived credential at the edge. Kubernetes uses a lightweight agent
-  that runs inside the target cluster and dials out over mesh mTLS, so jumpgate opens
-  no inbound port on a cluster and holds no long-lived cluster credential.
+- Minimal footprint on targets. SSH, Postgres, and RDP run through an agentless L7
+  proxy: no software is installed on the target host, and the worker terminates the
+  protocol and injects a short-lived credential at the edge — for RDP, the browser
+  never sees the password. Kubernetes uses a lightweight agent that runs inside the
+  target cluster and dials out over mesh mTLS, so jumpgate opens no inbound port on a
+  cluster and holds no long-lived cluster credential.
 - Centralized security-critical state. The vault, policy, and grants live in warden
   (Go). A data-plane worker holds a credential only for the life of one authorized
   session.
@@ -69,13 +70,13 @@ Three distinct token mechanisms:
 
 - Session admission tokens. The short-lived token that admits a data-plane session is a
   separate mechanism: a PASETO v4.public token (Ed25519), minted by `CreateSession` (or
-  the Postgres, Kubernetes, and web variants) and verified offline by the gateway. The
-  SSH token is bound to the client's ephemeral key fingerprint (`cnf`); the Postgres
-  and Kubernetes tokens are bearers, and the Kubernetes token also carries the caller's
-  email, group set, and the resolved `broker_id`. The signing key is DB-backed and
-  sealed at rest. This is what lets the externally-exposed gateway authorize a
-  connection without a round-trip to warden, while the worker still re-authorizes at
-  session setup.
+  the Postgres, Kubernetes, web, and RDP variants) and verified offline by the gateway.
+  The SSH token is bound to the client's ephemeral key fingerprint (`cnf`); the
+  Postgres, Kubernetes, and RDP tokens are bearers, and the Kubernetes token also
+  carries the caller's email, group set, and the resolved `broker_id`. The signing key
+  is DB-backed and sealed at rest. This is what lets the externally-exposed gateway
+  authorize a connection without a round-trip to warden, while the worker still
+  re-authorizes at session setup.
 
 ### Logout
 
@@ -116,9 +117,9 @@ tokens to warden. warden decides (it resolves held roles → capability set → 
   flag, only capabilities.
 - Data plane — the worker enforces protocol semantics at a live session (mapping a
   protocol operation to a capability, checking it, and configuring the access). Live
-  for SSH (`ssh:*`), Postgres (`db:login:*`), and Kubernetes (`k8s:group:*`). Finer
-  Postgres per-statement tiers (`db:read` / `db:write` / `db:ddl`) are defined for the
-  model; per-statement step-up enforcement is not built.
+  for SSH (`ssh:*`), Postgres (`db:login:*`), RDP (`rdp:login:*`), and Kubernetes
+  (`k8s:group:*`). Finer Postgres per-statement tiers (`db:read` / `db:write` /
+  `db:ddl`) are defined for the model; per-statement step-up enforcement is not built.
 
 See [capabilities.md](capabilities.md#where-enforcement-lives--warden-decides-workers-enforce).
 A Kubernetes safety property is worth restating: because groups are enumerated rather
@@ -214,8 +215,11 @@ presigned and audited (`recording.accessed`).
 - Kubernetes: `k8s-audit-v1` NDJSON, one event per API request (verb, resource,
   namespace, name, groups, status). Recording is per connection, and the broker refuses
   to start without a recording bucket. There is no record-exempt path for Kubernetes.
+- RDP: `rdp-graphics-v1`, the session's graphics/input PDU stream with timing. The
+  worker opens the recording upload before authenticating the session and refuses the
+  session outright if it cannot. There is no record-exempt path for RDP.
 
-A web replay player exists for all three formats. SIEM export is planned.
+A web replay player exists for all four formats. SIEM export is planned.
 
 ## Secrets at rest
 
@@ -242,9 +246,12 @@ access behind it. For SSH the cert's principals are capability-derived and host-
 the broker mints only the logins the user holds `ssh:login:<login>` for, as
 `<login>@<asset>` principals, with no static host login. For Postgres the `mtls` kind
 mints a short-lived X.509 client cert whose CN is the DB role, and the `password` kind
-returns the sealed stored password; both are gated by `db:login:<role>`. An empty SSH
-entitlement is refused, and the SSH CA independently refuses to sign a principal-less
-cert. Every issuance appends `credential.issued`. See
+returns the sealed stored password; both are gated by `db:login:<role>`. For RDP the
+broker returns the sealed stored password for the entitled login, gated by
+`rdp:login:<login>` the same way SSH gates its logins; the worker injects it into the
+handshake, so the password never reaches the browser. An empty SSH entitlement is
+refused, and the SSH CA independently refuses to sign a principal-less cert. Every
+issuance appends `credential.issued`. See
 [access-model.md](access-model.md#ssh-access--os-logins-are-capabilities).
 
 ## Kubernetes agent trust
@@ -283,16 +290,17 @@ an explicit CA. See [roadmap.md](roadmap.md#known-deferrals).
 | JIT grant used to self-escalate | Grants confer access but not governance: requester/approver predicates are standing-only, excluding active grants | Implemented |
 | Over-broad management authority delegated | No-escalation subset rule: a caller can only bind or grant a role whose capabilities they already hold at that scope (`Covers`) | Implemented |
 | Over-broad capability grant slips in unnoticed | Grammar validation at role creation; `**` is the explicit, auditable "whole scope"; `CapMatch` fails closed | Implemented |
-| Access revoked but live session continues | Grant, binding, membership, or capability change re-evaluates authz and force-closes dependent live sessions (push plus pull, audited) | Implemented (SSH, Postgres, Kubernetes) |
+| Access revoked but live session continues | Grant, binding, membership, or capability change re-evaluates authz and force-closes dependent live sessions (push plus pull, audited) | Implemented (SSH, Postgres, Kubernetes, RDP) |
 | Compromised/departed user keeps acting | `deactivated_at` off-switch: rejected at Login and the auth interceptor, and filtered out of every authz closure; active grants revoked and sessions torn down | Implemented |
-| Credential exposed on a compromised target | Agentless SSH/Postgres: no credential on targets, and the credential is short-lived (bounded by the grant) and held only for a live session | Implemented |
+| Credential exposed on a compromised target | Agentless SSH/Postgres/RDP: no credential on targets, and the credential is short-lived (bounded by the grant) and held only for a live session | Implemented |
 | Over-broad SSH host login (root-for-all) | SSH cert principals are capability-derived and host-scoped: only logins the user holds `ssh:login:<login>` for, bound to the asset; empty means refused; the CA refuses a principal-less cert | Implemented |
 | Over-broad Postgres access | `db:login:<role>` gates each DB role; the broker mints a short-lived X.509 client cert (CN = the role) or returns the sealed password; the target is dialed over TLS with no plaintext downgrade | Implemented |
+| Over-broad RDP access, or the password reaching the browser | `rdp:login:<login>` gates each target account the same way SSH gates logins; the broker returns the sealed stored password, and the worker injects it into the handshake server-side — it never reaches the browser | Implemented |
 | Kubernetes admin becomes cluster-admin by accident | `k8s:group` is enumerated, not glob-matched, so `**` and `k8s:group:*` grant no groups; cluster-admin needs an explicit concrete grant and a matching cluster RBAC binding | Implemented |
 | Kubernetes client forges its own identity | The broker strips client `Authorization`/`Impersonate-*` headers and sets identity solely from the verified token (email plus token-carried groups) | Implemented |
 | Inbound reach into a customer cluster | The agent dials out over mesh mTLS and serves a reverse tunnel; jumpgate opens no inbound port and holds no long-lived cluster credential | Implemented |
 | Rogue agent enrollment | Single-use, hashed, 30-minute enrollment token; the agent's SPIFFE id is derived from the bound asset, not the CSR | Implemented |
-| Session activity not attributable | Sessions recorded by default (SSH asciicast, Postgres statement timeline, Kubernetes API audit), fail-closed, streamed to object storage with a rolling SHA-256; admin retrieval is presigned and audited | Implemented |
+| Session activity not attributable | Sessions recorded by default (SSH asciicast, Postgres statement timeline, Kubernetes API audit, RDP graphics stream), fail-closed, streamed to object storage with a rolling SHA-256; admin retrieval is presigned and audited | Implemented |
 | Audit log tampered to hide activity | Hash-chained append-only log, independently verifiable; events enqueued in-tx via a transactional outbox (crash window closed; `credential.issued` post-fact) | Implemented |
 | Secrets (CA keys, target creds) read at rest | Envelope encryption: per-secret AES-256-GCM DEK wrapped by a master KEK (`VAULT_MASTER_KEY`; KMS-pluggable); sealed bytes never leave the DB/API; fail-closed `Open` | Implemented |
 | Master key lost/leaked | Losing `VAULT_MASTER_KEY` loses all sealed secrets (no recovery); KMS custody is the future seam — treat the key as a top-tier operational secret | Residual (documented; KMS deferred) |

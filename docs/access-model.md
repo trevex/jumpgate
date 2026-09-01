@@ -20,7 +20,7 @@ interact to decide who can do what, where, and how they get there.
 | User | A local account (email, argon2id password, `deactivated_at`). There is no admin flag: administrative power comes solely from holding capabilities (the bootstrap admin holds `**` via a global role binding). |
 | Group | A named set of subjects. A group's members are users and/or other groups, which is what makes groups nested. |
 | Folder | A container in a hierarchy (`parent_id`). Organizes assets and is the unit of folder-scoped inheritance. |
-| Asset | A protected resource (an SSH host, a Postgres DB, a Kubernetes cluster). Belongs to exactly one folder; carries free-form `labels`. |
+| Asset | A protected resource (an SSH host, a Postgres DB, a Kubernetes cluster, an RDP host). Belongs to exactly one folder; carries free-form `labels`. |
 | Capability | A scoped, namespaced verb — a colon-delimited path `scope:action[:qualifier…]` (`ssh:connect`, `ssh:login:root`, `db:login:app`, `k8s:group:developers`). Format-validated at role creation and matched with glob semantics (`*` is one segment, trailing `**` is a whole scope). warden treats a data-plane capability as an opaque token; its meaning is enforced at the worker, with one already load-bearing in the control plane: `ssh:login:<account>` drives the [SSH cert principals](#ssh-access--os-logins-are-capabilities) the broker mints. Management capabilities are enforced by warden itself. See [capabilities.md](capabilities.md). |
 | Role | An admin-defined named bundle of capabilities. A role is global or homed in a folder (`folder_id`); the home governs who may administer the role and makes it DNS-addressable as `<role>.<folder-path>`, and does not restrict what the role's capabilities mean. For example, *pg-app* = `[db:login:app]`, *cluster-dev* = `[k8s:group:developers]`. |
 | RoleBinding | Attaches a role to a subject (user or group) at a scope — a folder, an asset, or global (scopeless, conferring the role everywhere). A binding is standing-only: permanent, admin-granted access. There is no `requestable` kind; requestability comes from a RequestPolicy. |
@@ -339,6 +339,11 @@ whose logins are `root` and `deploy`:
 So there is no static host login: the account a user lands as is a strict function of
 their live entitlements, bounded by the logins the asset actually offers. The
 `ssh:connect` session and the login gate are enforced live at the ssh-proxy worker.
+
+RDP reuses this exact mechanism: `rdp:login:<login>` gates a target account on an
+RDP asset (`rdp_asset_login` rows, password-only) the same way `ssh:login:<login>`
+gates an OS account, intersected the same way and enforced live at the rdp-proxy
+worker.
 
 Postgres and Kubernetes follow the same idea with their own vocabularies:
 `db:login:<role>` gates a Postgres role and drives the minted credential, and

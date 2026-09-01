@@ -1,8 +1,8 @@
 # jumpgate
 
 Just-in-time privileged access with zero standing credentials, fully audited. One
-access model for SSH hosts, Postgres databases, and Kubernetes clusters — no permanent
-credentials, and nothing to install on most targets.
+access model for SSH hosts, Postgres databases, Kubernetes clusters, and RDP desktops
+— no permanent credentials, and nothing to install on most targets.
 
 A user requests the access they need, an approver grants it for a bounded window, the
 credential is minted just in time and injected at the edge, and the session is recorded
@@ -11,16 +11,16 @@ down, not merely blocked at the next connect.
 
 - **Zero standing credentials.** Nothing is granted until requested; grants are
   time-boxed and reaped, and losing access tears down live sessions.
-- **Broad reach, light footprint.** An agentless proxy fronts SSH and Postgres;
+- **Broad reach, light footprint.** An agentless proxy fronts SSH, Postgres, and RDP;
   Kubernetes uses a lightweight in-cluster agent that dials out, so no inbound port is
   opened on a cluster.
 - **Fully audited.** A hash-chained audit log plus per-protocol session recording (SSH
-  terminal, Postgres statement log, Kubernetes API audit).
+  terminal, Postgres statement log, Kubernetes API audit, RDP graphics stream).
 
 A Go control plane (the *warden*) holds all policy and secrets; a Rust and Go data
-plane (the *gateway* and its SSH, Postgres, and Kubernetes workers) carries the traffic
-and enforces at the edge. Access is driven by the `jumpgate` CLI or an embedded web
-console.
+plane (the *gateway* and its SSH, Postgres, Kubernetes, and RDP workers) carries the
+traffic and enforces at the edge. Access is driven by the `jumpgate` CLI or an
+embedded web console.
 
 ## Development
 

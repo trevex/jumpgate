@@ -23,6 +23,11 @@ first tier is the everyday correctness gate; the two e2e tiers are opt-in and ke
 - Unit tests cover pure logic: capability matching and normalization, scope derivation,
   the pagination codec, path helpers, error mapping. `TestSQLCapMatchMatchesGo` pins the
   three-column SQL capability match equal to the Go `CapMatch` glob.
+- `workers/rdp-proxy` is its own Cargo workspace, excluded from the root
+  `Cargo.toml` because `ironrdp-connector` pins a `curve25519-dalek` version that
+  conflicts with ssh-proxy's `russh` (see `Cargo.toml`). `cargo nextest run
+  --workspace` therefore does not reach it; its unit tests run with `cargo test
+  --manifest-path workers/rdp-proxy/Cargo.toml`.
 - Integration tests boot a real, ephemeral PostgreSQL through
   `internal/testsupport.StartPostgres`, which uses the devshell's `initdb` and `pg_ctl`
   (no Docker) and tears the server down at test end. They `t.Skip` when that tooling is
@@ -63,6 +68,9 @@ and CLI, asserting even on recording content. The suite covers:
   and the load-bearing check that each authz primitive denies before it is granted, so a
   default-open regression fails the suite.
 
+RDP has no CLI connect path — it is browser-only — so this Go-driven tier does not cover
+it; its governance flow is instead exercised end to end by the UI e2e tier below.
+
 Where the unit tier proves the binaries in isolation, this proves the whole shipped stack
 delivers the same behavior. The narrated [walkthrough](demo/walkthrough.md) follows the
 same flows by hand.
@@ -76,6 +84,11 @@ plus a standing-access asset with a completed recording), then runs the multi-ac
 story (`web/e2e/access-loop.spec.ts`) — alice requests access, bob approves, alice sees her
 grant's connect command, and an admin auditor plays the recording back — each actor in an
 isolated browser context. Opt-in, kept out of `ci`.
+
+`web/e2e/rdp.spec.ts` separately proves the RDP round trip: alice opens the seeded
+`rdp-box` asset's **Open RDP** link, and the test asserts a canvas renders and the
+`jumpgate-rdp` WASM client actually processes a graphics frame — browser through the
+gateway, the rdp-proxy worker, and the target xrdp server.
 
 Scope: the browser console's request → approve → connect → audit loop over the same live
 stack the cluster tier uses, exercising the cookie-session auth and the SPA views the

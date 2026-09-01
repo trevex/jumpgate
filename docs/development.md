@@ -57,7 +57,7 @@ are identical.
 ```
 warden/             Go   — API, identity, authz, vault, JIT/approvals, enrollment, audit, data-plane control
 gateway/            Rust — session router / load balancer (only exposed component)
-workers/            per-protocol proxies: ssh-proxy (Rust), pg-proxy (Go), k8s-broker (Go), k8s-agent (Go)
+workers/            per-protocol proxies: ssh-proxy (Rust), pg-proxy (Go), rdp-proxy (Rust), k8s-broker (Go), k8s-agent (Go)
 cli/                Go   — `jumpgate` CLI
 web/                     — web SPA (Vite + React + TS), embedded in warden under -tags embedui
 proto/              Shared gRPC/protobuf contracts (buf)
@@ -71,9 +71,9 @@ Cargo.toml Cargo.lock Rust workspace (gateway, mesh, ssh-proxy)
 Makefile            Task entrypoints
 ```
 
-The SSH worker is Rust (russh); the Postgres and Kubernetes workers are Go, so a
-protocol lives in whichever language best fits it behind the shared gateway. The
-k8s-agent deploys into target clusters, not the jumpgate chart.
+The SSH and RDP workers are Rust (russh, IronRDP); the Postgres and Kubernetes
+workers are Go, so a protocol lives in whichever language best fits it behind the
+shared gateway. The k8s-agent deploys into target clusters, not the jumpgate chart.
 
 ## Module & package conventions
 
@@ -96,7 +96,11 @@ k8s-agent deploys into target clusters, not the jumpgate chart.
   without a package of shared mock interfaces.
 - Rust workspace: members under the root `Cargo.toml` (`gateway`, `mesh`,
   `workers/ssh-proxy`); shared deps in `[workspace.dependencies]`. `Cargo.lock` is
-  committed.
+  committed. `workers/rdp-proxy` is excluded: `ironrdp-connector` pins a
+  `curve25519-dalek` version that conflicts with ssh-proxy's `russh`, so it is its
+  own workspace with its own lockfile, built with `--manifest-path
+  workers/rdp-proxy/Cargo.toml` (the Docker build does this; `cargo build
+  --workspace` does not reach it).
 
 ## Protobuf codegen
 
@@ -121,7 +125,8 @@ k8s-agent deploys into target clusters, not the jumpgate chart.
 - Migrations are goose SQL files in `warden/internal/postgres/migrate/migrations`,
   embedded in the binary and applied on startup (`migrate.Up`). The schema is currently
   `0001_schema.sql` (core) plus additive migrations for the Postgres asset tables,
-  Kubernetes agent enrollment, and the management-visibility functions. While jumpgate is
+  Kubernetes agent enrollment, the management-visibility functions, and the RDP asset
+  tables. While jumpgate is
   pre-production, migrations may be squashed rather than carrying long upgrade history;
   after a squash, reset local data with `make ui-dev-reset`, since existing databases are
   not upgrade-compatible.
@@ -145,13 +150,14 @@ k8s-agent deploys into target clusters, not the jumpgate chart.
   `IdentityService` (users/groups/memberships), `CatalogService` (folders and assets —
   create, rename/move, delete; path-scoped `ListFolders`/`ListAssets`;
   `GetAssetAccess`/`GetFolderAccess`; `SearchCatalog`; `Resolve*`; typed SSH, Postgres,
-  and Kubernetes config written as `oneof` arms so onboarding is atomic), `AccessService`
-  (roles, role-grants, standing role-bindings, request-policies, `ExplainRole`),
-  `AccessRequestService` (the JIT runtime), `VaultService` (CAs, mesh certs, session key,
-  asset secrets), `EnrollmentService` (Kubernetes agent enrollment tokens and
-  `SignAgentCert`), `SessionService` (`CreateSession`, `CreatePostgresSession`,
-  `CreateKubernetesSession`, `CreateWebSession`), `RecordingService`, `GatewayService`,
-  and a mesh-only `Dataplane` contract for workers. A per-RPC-service breakdown lives in
+  Kubernetes, and RDP config written as `oneof` arms so onboarding is atomic),
+  `AccessService` (roles, role-grants, standing role-bindings, request-policies,
+  `ExplainRole`), `AccessRequestService` (the JIT runtime), `VaultService` (CAs, mesh
+  certs, session key, asset secrets), `EnrollmentService` (Kubernetes agent enrollment
+  tokens and `SignAgentCert`), `SessionService` (`CreateSession`,
+  `CreatePostgresSession`, `CreateKubernetesSession`, `CreateWebSession`,
+  `CreateRDPSession`), `RecordingService`, `GatewayService`, and a mesh-only `Dataplane`
+  contract for workers. A per-RPC-service breakdown lives in
   [architecture.md](architecture.md#control-plane--go).
 - Services are defined in `proto/` (buf) and generated to `warden/gen/…`; connect handlers
   live in the `*connect/` sub-packages. Run `make gen`.
@@ -216,7 +222,9 @@ construction in `internal/app`. `internal/rpc` is wiring only.
 Because the gateway is protocol-agnostic, a new worker only needs to speak two contracts:
 the gateway↔worker forwarding frame and the worker↔control-plane mesh gRPC service.
 Implement those, register the pool, and the worker can be in any language — as the Go
-pg-proxy and k8s workers show alongside the Rust ssh-proxy. See
+pg-proxy and k8s workers show alongside the Rust ssh-proxy and rdp-proxy. A worker with
+no CLI client (RDP is clientless) instead speaks the browser WebSocket ingress
+(`GET /terminal` or `GET /rdp` on the gateway) rather than an HTTP CONNECT tunnel. See
 [architecture.md](architecture.md#data-plane).
 
 ## Web UI
@@ -248,6 +256,9 @@ CSRF protection, cookie flags, and the `Sec-Fetch-Site: same-origin` gate are co
 
 `make gen` (buf) emits both Go stubs into `warden/gen/` and TypeScript stubs into
 `web/src/gen/`. Both are committed; regenerate with `make gen` and commit the result.
+`make wasm` is the same pattern for the browser RDP renderer: `wasm-pack` builds
+`web/wasm/jumpgate-rdp` (Rust, IronRDP) into `web/src/wasm/`, committed glue like
+`make gen`'s output.
 
 ### Dev environment
 
@@ -281,8 +292,9 @@ capabilities (from `WhoAmI`) and offers:
   role, or group. Selecting an asset shows the caller's capabilities and active roles, any
   requestable roles (which open a slide-over that files a JIT request), and a ready-to-run
   connect command. This is also where assets are authored: a create wizard toggles between
-  SSH, Postgres, and Kubernetes, and SSH and Postgres configs are editable in place. A
-  Kubernetes asset has no editable config; it exposes a re-mint enrollment-token action.
+  SSH, Postgres, Kubernetes, and RDP, and SSH, Postgres, and RDP configs are editable in
+  place. A Kubernetes asset has no editable config; it exposes a re-mint
+  enrollment-token action.
 - My Access (`/access`) — the caller's own JIT lifecycle: a Requests tab and a Grants tab
   (active grants with a live expiry countdown, self-revoke, and a copy-able connect
   command).
@@ -301,14 +313,21 @@ capabilities (from `WhoAmI`) and offers:
   Bindings, and Policies. Roles have no update RPC, so capabilities are fixed at creation.
 - Recordings (`/recordings`, when the caller holds `recording:read`) — the audit list with
   a format-aware player: an asciinema player for SSH, a statement timeline for
-  `pgwire-timeline-v1`, and an API-request table for `k8s-audit-v1`.
+  `pgwire-timeline-v1`, an API-request table for `k8s-audit-v1`, and a canvas-based
+  graphics player for `rdp-graphics-v1`.
 - Terminal (`/terminal/:assetId?login=…`, a chromeless xterm.js view) — an in-browser SSH
   session, recorded and governed like `jumpgate connect`. The browser fetches a
   short-lived `CreateWebSession` ticket, opens a WebSocket to the gateway, and the gateway
   relays a byte-accurate opcode protocol over the mesh to the ssh-proxy's WebSocket
   ingress. In production set `GATEWAY_CONSOLE_ORIGIN` so the gateway restricts terminal
-  WebSockets to the console origin. There is no in-browser SQL or Kubernetes console;
-  Postgres is reached through the loopback CLI proxy.
+  WebSockets to the console origin.
+- RDP (`/rdp/:assetId?login=…`, a chromeless canvas view) — the clientless browser RDP
+  session opened from the asset detail page's **Open RDP** link. The browser fetches a
+  `CreateRDPSession` ticket, opens a `GET /rdp` WebSocket to the gateway (the same
+  ticket/origin-restriction pattern as Terminal), and a `jumpgate-rdp` WASM module
+  decodes the relayed graphics PDUs onto the canvas and encodes keyboard/mouse input
+  back. There is no in-browser SQL or Kubernetes console; Postgres is reached through
+  the loopback CLI proxy.
 
 ## Testing
 
@@ -326,10 +345,11 @@ which run in CI — are documented in [testing.md](testing.md). A quick command 
 
 ## Status
 
-SSH, Postgres, and Kubernetes access all work end to end — the control plane, the Rust
-gateway, the ssh-proxy (Rust), pg-proxy (Go), and k8s-broker/agent (Go), plus the
-`jumpgate` CLI and the embedded web console — with JIT request and approval,
-envelope-encrypted secrets, capability-driven credentials, continuous revocation, and
-per-protocol recording, exercised by the `test/e2e` suite against a kind cluster. RDP,
-inline Postgres step-up, and enterprise SSO are not yet built. See
-[roadmap.md](roadmap.md).
+SSH, Postgres, Kubernetes, and RDP access all work end to end — the control plane, the
+Rust gateway, the ssh-proxy (Rust), pg-proxy (Go), rdp-proxy (Rust), and
+k8s-broker/agent (Go), plus the `jumpgate` CLI and the embedded web console — with JIT
+request and approval, envelope-encrypted secrets, capability-driven credentials,
+continuous revocation, and per-protocol recording. SSH, Postgres, and Kubernetes are
+exercised by the `test/e2e` suite against a kind cluster; RDP, being clientless, is
+exercised by the `web/e2e` UI suite instead. Inline Postgres step-up and enterprise SSO
+are not yet built. See [roadmap.md](roadmap.md).

@@ -2,10 +2,10 @@
 
 A capability is the primitive verb a role grants. It names what a subject may do:
 either a data-plane action on an asset (open an SSH session, log in to a Postgres
-role, act as a Kubernetes group) or a management-plane action on the API (onboard an
-asset, create a role, bind it, manage users). Roles bundle capabilities, and the
-authorizer answers one question: does this user hold a role, at the relevant scope,
-whose capabilities cover the requested action?
+role, act as a Kubernetes group, log in to an RDP host) or a management-plane action
+on the API (onboard an asset, create a role, bind it, manage users). Roles bundle
+capabilities, and the authorizer answers one question: does this user hold a role,
+at the relevant scope, whose capabilities cover the requested action?
 
 The same grammar, format validation, and glob matcher serve both halves. They differ
 only in where they are enforced (worker versus warden) and at what scope they are
@@ -16,8 +16,9 @@ checked.
   (`requireCap`). This replaced the old boolean `is_admin` gate; see
   [Management-plane capabilities](#management-plane-capabilities).
 - Data plane — enforced by the workers. The ssh-proxy enforces `ssh:*` at a live
-  session, the pg-proxy enforces `db:login:*`, and the k8s-broker projects
-  `k8s:group:*` into impersonation. See [Data-plane vocabulary](#data-plane-vocabulary).
+  session, the pg-proxy enforces `db:login:*`, the rdp-proxy enforces `rdp:login:*`,
+  and the k8s-broker projects `k8s:group:*` into impersonation. See
+  [Data-plane vocabulary](#data-plane-vocabulary).
 
 ## Grammar
 
@@ -204,7 +205,7 @@ parentheses.
 | `catalog:folder:read` | resolve a folder by path/id; read everything in the folder's subtree (descendant sub-folders, assets, roles, groups) | the folder |
 | `catalog:folder:update` | rename or move a folder | the folder |
 | `catalog:folder:delete` | delete a folder | the folder |
-| `catalog:asset:create` | onboard an asset (SSH, Postgres, or Kubernetes) | target folder |
+| `catalog:asset:create` | onboard an asset (SSH, Postgres, Kubernetes, or RDP) | target folder |
 | `catalog:asset:read` | get or resolve an asset | the asset |
 | `catalog:asset:update` | change an asset's config; re-mint a Kubernetes enrollment token | the asset |
 | `catalog:asset:delete` | delete an asset | the asset |
@@ -324,8 +325,9 @@ then into yes or no. It never interprets the meaning of a capability.
 The proxy owns the semantics and the actual enforcement. For a live session it:
 
 1. maps a concrete protocol operation to a capability — opening a shell is
-   `ssh:connect`, logging in to a Postgres role is `db:login:<role>`, acting in a
-   cluster is a `k8s:group:<name>` membership,
+   `ssh:connect`, logging in to a Postgres role is `db:login:<role>`, logging in to
+   an RDP host is `rdp:login:<login>`, acting in a cluster is a `k8s:group:<name>`
+   membership,
 2. checks it against warden (`Check`, or a warden-issued short-lived decision or
    credential minted at session start),
 3. allows or denies, and configures the access — injects the credential, sets the
@@ -334,8 +336,8 @@ The proxy owns the semantics and the actual enforcement. For a live session it:
 ## Data-plane vocabulary
 
 These are the protocol verbs a worker enforces at a live session. `ssh:*`, `db:*`,
-and `k8s:*` are all enforced today. The exact per-protocol lists grow as each worker
-gains features; the grammar and matcher are stable now.
+`rdp:*`, and `k8s:*` are all enforced today. The exact per-protocol lists grow as
+each worker gains features; the grammar and matcher are stable now.
 
 | Capability | Meaning (worker-side) | Enforced by | Live today |
 |---|---|---|---|
@@ -344,12 +346,14 @@ gains features; the grammar and matcher are stable now.
 | `ssh:record:exempt` | exempt the subject from mandatory SSH session recording on the asset (recording is otherwise fail-closed) | ssh-proxy (decided by warden at setup) | yes |
 | `db:login:<role>` | log in to the Postgres asset as DB role `<role>`. Holding it is the connect gate; the broker mints an X.509 client cert or returns the stored password for that role | broker + pg-proxy | yes |
 | `db:read`, `db:write`, `db:ddl` | finer per-statement tiers for inline step-up. Defined for the model; per-statement enforcement (`SET ROLE`) is not built | pg-proxy | no (planned) |
+| `rdp:login:<login>` | log in to the RDP asset as target account `<login>` (`rdp:login:demo`, or `rdp:login:*` for any configured login). Same mechanism as `ssh:login:<account>`: the asset's configured logins intersected with the user's held `rdp:login:*`; the broker returns the stored password for that login | broker + rdp-proxy | yes |
 | `k8s:group:<name>` | act in the target cluster as the Kubernetes group `<name>`. Projected verbatim as an `Impersonate-Group` header; the cluster's own RBAC decides what the group may do | k8s-broker + agent | yes |
 
 ### Kubernetes: holding a group is the gate, and `**` is not cluster-admin
 
 Kubernetes has exactly one capability, `k8s:group:<name>`, and it works differently
-from SSH and Postgres logins. There is no `k8s:connect` and no `k8s:impersonate`.
+from SSH, Postgres, and RDP logins. There is no `k8s:connect` and no
+`k8s:impersonate`.
 
 - The connect gate is implicit. `CreateKubernetesSession` enumerates the caller's
   concrete `k8s:group:<name>` qualifiers; holding at least one is access, and holding

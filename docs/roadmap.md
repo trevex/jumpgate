@@ -2,7 +2,8 @@
 
 What is built and what is planned. jumpgate is delivered as a sequence of milestones,
 each producing working, testable software: the JIT access core, then SSH, Postgres,
-and Kubernetes access, then the web console. Later product areas follow.
+and Kubernetes access, then the web console, then RDP access. Later product areas
+follow.
 
 ## Milestones
 
@@ -15,7 +16,8 @@ and Kubernetes access, then the web console. Later product areas follow.
 | M5 | Postgres access — pg-proxy worker, `mtls` and `password` logins, loopback CLI proxy, statement-log recording | ✅ Done |
 | M6 | Kubernetes access — dial-out in-cluster agent plus broker, exec-plugin and kubeconfig, group-to-RBAC impersonation, API-audit recording | ✅ Done |
 | M7 | Web console — embedded SPA: admin, approvals, in-browser terminal, recording playback, asset authoring | ✅ Done |
-| M8 | Inline step-up and enterprise readiness — Postgres per-statement step-up, OIDC/SAML SSO, SCIM sync, production deploy hardening | ⬜ Planned |
+| M8 | RDP access — clientless browser sessions via a Rust rdp-proxy worker (IronRDP), password logins, graphics-stream recording and replay | ✅ Done |
+| M9 | Inline step-up and enterprise readiness — Postgres per-statement step-up, OIDC/SAML SSO, SCIM sync, production deploy hardening | ⬜ Planned |
 
 ## What's built
 
@@ -66,11 +68,21 @@ decides what each group may do, and wildcards grant nothing. Each `kubectl` invo
 is recorded as a `k8s-audit-v1` API-request log. `jumpgate k8s auth` is an exec-plugin
 and `jumpgate k8s kubeconfig` wires `kubectl` through jumpgate.
 
+RDP access. A Rust rdp-proxy worker (IronRDP) fronts an RDP target; there is no CLI or
+local client. `CreateRDPSession` mints a cookie-authenticated ticket over a `GET /rdp`
+WebSocket, mirroring the browser SSH terminal, and the console's **Open RDP** link
+opens it. Logins are `rdp:login:<login>`-gated and password-only; the worker performs
+the full IronRDP handshake and injects the stored password, so it never reaches the
+browser, which renders the graphics stream via a `jumpgate-rdp` WASM module onto a
+canvas. Every session is recorded as an `rdp-graphics-v1` stream (fail-closed, no
+record-exempt path) and replays in the console's recordings viewer.
+
 Web console. A React SPA embedded in the warden binary (behind the `embedui` tag)
 serves the access loop same-origin over cookie-session auth: an Overview dashboard, a
-catalog browser with SSH/Postgres/Kubernetes asset authoring, My Access, an approver
-inbox, a directory, access-control authoring, recording playback for all three formats,
-and an in-browser SSH terminal. See [development.md](development.md#web-ui).
+catalog browser with SSH/Postgres/Kubernetes/RDP asset authoring, My Access, an
+approver inbox, a directory, access-control authoring, recording playback for all four
+formats, an in-browser SSH terminal, and the browser RDP session. See
+[development.md](development.md#web-ui).
 
 Client and environment. The `jumpgate` CLI drives the whole surface (connect, admin,
 access requests, recordings, `k8s`) with kubectl-style contexts and DNS-style asset
@@ -93,7 +105,7 @@ cascade.
 |---|---|
 | Inline step-up | Postgres per-statement approval and time-boxed `SET ROLE` tiers |
 | Enterprise identity | OIDC/SAML SSO, SCIM group sync |
-| RDP plus more databases | IronRDP (Rust), MySQL/Mongo, browser RDP |
+| More databases | MySQL/Mongo, following the RDP/Postgres agentless-proxy pattern |
 | k8s operator / CRDs | Declarative assets, roles, and policies via a Go controller |
 | Generic HTTP/API plus inline DLP | Web-app proxy, PII masking, command/query blocking, ChatOps approvals, SIEM export |
 
@@ -107,6 +119,8 @@ Carried forward deliberately, to be addressed when their area opens:
   are defined for the model; per-statement `SET ROLE` enforcement is not built.
 - In-browser SQL console — Postgres is reachable through the loopback CLI proxy; a
   clientless browser SQL console is not built.
+- RDP smartcard/certificate login — the only auth kind today is a stored password;
+  `RDPLogin.kind` has no `ca`/`mtls` arm yet.
 - Kubernetes agent certificate auto-renewal — the 24-hour agent cert is not
   auto-renewed; a long-lived agent re-enrolls when its pod is recreated.
 - Kubernetes tunnel-advertisement ownership validation and a production gateway
