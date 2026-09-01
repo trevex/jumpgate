@@ -83,6 +83,9 @@ where
         }
     };
 
+    // ponytail: ironrdp's Config takes a plain String, so this copy of the
+    // password outlives our Zeroizing wrapper un-scrubbed. Only upstream taking
+    // a zeroizing type closes that window; the wrapper still scrubs our own copy.
     let config = build_config(login.to_string(), password.to_string());
 
     let (result, target_framed) = match connect(config, &host, port, target_server_ca).await {
@@ -118,6 +121,9 @@ where
 
     // Raw two-direction pump.
     // ponytail: raw two-direction pump; genuinely raw (unlike ssh's channel bridge).
+    // ponytail: single-task select! — a slow browser writer blocks the target→browser
+    // arm's write/flush, so input isn't serviced meanwhile (HOL-block). Fine for one
+    // interactive session; split into two pump tasks only if throughput bites.
     let (mut target_read, mut target_write) = split_tokio_framed(target_framed);
 
     let outcome;
@@ -278,6 +284,10 @@ async fn connect(
 /// server cert is verified against it (fail closed / MITM protection); empty =
 /// accept any (TOFU-off, the xrdp bring-up path). Returns the TLS stream and the
 /// server's public key (required by `connect_finalize` for CredSSP).
+// ponytail: accept-any is the DEFAULT when an asset pins no CA — a blank asset
+// silently gets an unauthenticated target channel. Acceptable for Phase 2 bring-up;
+// before GA, production RDP assets MUST require a pinned target_server_ca (enforce
+// at asset-authoring or reject empty-CA at setup).
 async fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,

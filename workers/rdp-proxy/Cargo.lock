@@ -2417,7 +2417,6 @@ name = "rdp-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ironrdp-async",
  "ironrdp-connector",
  "ironrdp-pdu",
  "ironrdp-tokio",
@@ -2425,7 +2424,6 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "serde_json",
- "thiserror 1.0.69",
  "tokio",
  "tokio-rustls",
  "tokio-stream",

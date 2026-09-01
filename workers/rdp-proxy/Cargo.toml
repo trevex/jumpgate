@@ -43,7 +43,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "logg
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 # Read the target-server CA PEM into a RootCertStore when the asset pins one.
 rustls-pemfile = "2"
-thiserror = "1"
 # Scrub the warden-injected target password from our copy on drop.
 zeroize = "1"
 # ERROR opcode payload is JSON {"message":...}; serde_json escapes it safely.
@@ -52,7 +51,6 @@ serde_json = "1"
 # used git-master, whose Config/API differ). connect 0.10 tracks pdu ^0.9.
 ironrdp-connector = "0.10"
 ironrdp-pdu = "0.9"
-ironrdp-async = "0.10"
 # `reqwest` feature provides ReqwestNetworkClient (the CredSSP network client
 # connect_finalize requires; unused while enable_credssp=false but still typed).
 ironrdp-tokio = { version = "0.10", features = ["reqwest"] }
