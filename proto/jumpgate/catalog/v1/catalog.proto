@@ -58,7 +58,7 @@ message Asset {
   string folder_id = 2;
   string name = 3;
   string kind = 4;
-  oneof config { SSHConfig ssh = 5; PostgresConfig postgres = 7; }
+  oneof config { SSHConfig ssh = 5; PostgresConfig postgres = 7; RDPConfig rdp = 8; }
   string path = 6;
 }
 
@@ -111,6 +111,25 @@ message PostgresLogin {
   string secret_id = 3;
 }
 
+// RDPConfig is an RDP asset's connection + per-login auth config. Each login is a
+// target account authenticated by its kind: "password" (a sealed stored secret).
+// (Smartcard/cert auth is a future kind.)
+message RDPConfig {
+  repeated RDPLogin logins = 1;
+  // host:port the rdp-proxy worker dials (RDP default 3389).
+  string target_address = 2;
+  // Optional PEM of the target's TLS CA/cert; set = verify, empty = require-TLS without pin.
+  string target_server_ca = 3;
+}
+
+// RDPLogin is one target account and how the worker authenticates as it.
+message RDPLogin {
+  string login = 1 [(buf.validate.field).string = {min_len: 1}];
+  string kind = 2 [(buf.validate.field).string = {in: ["password"]}];
+  // Reference to a vault stored secret (asset_secrets.id); required for password.
+  string secret_id = 3;
+}
+
 // ── Write-only SSH config input. Reads still return SSHConfig/SSHLogin. ──
 message SSHConfigInput {
   repeated SSHLoginInput logins = 1;
@@ -158,6 +177,23 @@ message PostgresLoginInput {
 }
 message MtlsAuth {}
 
+// ── Write-only RDP config input. Reads still return RDPConfig. ──
+message RDPConfigInput {
+  repeated RDPLoginInput logins = 1;
+  string target_address = 2;
+  string target_server_ca = 3;
+}
+
+// RDPLoginInput: the auth oneof arm IS the kind. Single arm today (password);
+// new auth kinds add arms here, mirroring SSH/Postgres.
+message RDPLoginInput {
+  string login = 1 [(buf.validate.field).string = {min_len: 1}];
+  oneof auth {
+    option (buf.validate.oneof).required = true;
+    SecretAuth password = 2;   // plaintext password (reuses SecretAuth)
+  }
+}
+
 // KubernetesConfigInput selects the k8s asset kind at create time. A k8s asset
 // stores no connection config or credentials — the in-cluster agent dials out
 // and impersonates with its own ServiceAccount; groups come from k8s:group caps.
@@ -188,6 +224,7 @@ message CreateAssetRequest {
     SSHConfigInput ssh = 3;
     PostgresConfigInput postgres = 4;
     KubernetesConfigInput kubernetes = 5;
+    RDPConfigInput rdp = 6;
   }
 }
 message CreateAssetResponse { Asset asset = 1; }
@@ -235,6 +272,7 @@ message UpdateAssetConfigRequest {
     option (buf.validate.oneof).required = true;
     SSHConfigInput ssh = 2;
     PostgresConfigInput postgres = 3;
+    RDPConfigInput rdp = 4;
   }
 }
 message UpdateAssetConfigResponse {}
