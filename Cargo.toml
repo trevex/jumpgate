@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
 members = ["gateway", "mesh", "workers/ssh-proxy"]
+# workers/rdp-proxy is its own workspace: ironrdp-connector 0.10 (via picky
+# rc.25) hard-pins curve25519-dalek =5.0.0-rc.1, which cannot share a lockfile
+# with ssh-proxy's russh (curve25519-dalek ^5 → stable 5.0.0). See that crate's
+# Cargo.toml. It builds independently from workers/rdp-proxy.
+exclude = ["workers/rdp-proxy"]
 
 [workspace.package]
 edition = "2021"

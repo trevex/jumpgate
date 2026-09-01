@@ -13,8 +13,14 @@ pub struct ConnectReq {
     /// `true` when the `X-Jumpgate-Terminal: 1` header is present — the gateway
     /// relays a framed browser-terminal opcode stream rather than an SSH tunnel.
     pub terminal: bool,
-    /// The requested login, carried by `X-Jumpgate-Login` on terminal-mode
-    /// CONNECTs (the browser has no SSH username to offer). `None` when absent.
+    /// `true` when the `X-Jumpgate-Rdp: 1` header is present — the gateway relays
+    /// the framed RDP opcode stream and the rdp-proxy worker runs the IronRDP
+    /// bridge instead of the SSH/terminal ingress. Parsed exactly like
+    /// [`Self::terminal`].
+    pub rdp: bool,
+    /// The requested login, carried by `X-Jumpgate-Login` on terminal- and
+    /// rdp-mode CONNECTs (the browser has no SSH username to offer). `None` when
+    /// absent.
     pub login: Option<String>,
 }
 
@@ -60,6 +66,7 @@ pub fn parse_connect(buf: &[u8]) -> Result<Option<(ConnectReq, usize)>, ConnectE
     let authority = req.path.ok_or(ConnectError::Malformed)?.to_string();
     let mut token = None;
     let mut terminal = false;
+    let mut rdp = false;
     let mut login = None;
     for h in req.headers.iter() {
         if h.name.eq_ignore_ascii_case("authorization") {
@@ -77,6 +84,12 @@ pub fn parse_connect(buf: &[u8]) -> Result<Option<(ConnectReq, usize)>, ConnectE
             if let Ok(v) = std::str::from_utf8(h.value) {
                 let v = v.trim();
                 terminal = !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false");
+            }
+        } else if h.name.eq_ignore_ascii_case("x-jumpgate-rdp") {
+            // Same truthiness rule as x-jumpgate-terminal; the gateway sends "1".
+            if let Ok(v) = std::str::from_utf8(h.value) {
+                let v = v.trim();
+                rdp = !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false");
             }
         } else if h.name.eq_ignore_ascii_case("x-jumpgate-login") {
             if let Ok(v) = std::str::from_utf8(h.value) {
@@ -96,6 +109,7 @@ pub fn parse_connect(buf: &[u8]) -> Result<Option<(ConnectReq, usize)>, ConnectE
             authority,
             token,
             terminal,
+            rdp,
             login,
         },
         consumed,
@@ -216,6 +230,7 @@ mod tests {
             b"CONNECT asset-1 HTTP/1.1\r\nHost: gw\r\nAuthorization: Bearer abc.def.ghi\r\n\r\n";
         let (req, _) = parse_connect(raw).unwrap().unwrap();
         assert!(!req.terminal, "no X-Jumpgate-Terminal header → SSH path");
+        assert!(!req.rdp, "no X-Jumpgate-Rdp header → not RDP");
         assert_eq!(req.login, None);
     }
 
@@ -224,7 +239,28 @@ mod tests {
         let raw = b"CONNECT asset-1 HTTP/1.1\r\nHost: gw\r\nAuthorization: Bearer tok\r\nX-Jumpgate-Terminal: 1\r\nX-Jumpgate-Login: deploy\r\n\r\n";
         let (req, _) = parse_connect(raw).unwrap().unwrap();
         assert!(req.terminal, "X-Jumpgate-Terminal: 1 → terminal path");
+        assert!(!req.rdp, "terminal preamble must not set rdp");
         assert_eq!(req.login.as_deref(), Some("deploy"));
+    }
+
+    #[test]
+    fn parses_rdp_headers() {
+        let raw = b"CONNECT asset-1 HTTP/1.1\r\nHost: gw\r\nAuthorization: Bearer tok\r\nX-Jumpgate-Rdp: 1\r\nX-Jumpgate-Login: admin\r\n\r\n";
+        let (req, _) = parse_connect(raw).unwrap().unwrap();
+        assert!(req.rdp, "X-Jumpgate-Rdp: 1 → rdp path");
+        assert!(!req.terminal, "rdp preamble must not set terminal");
+        assert_eq!(req.login.as_deref(), Some("admin"));
+    }
+
+    #[test]
+    fn rdp_header_zero_or_false_is_not_rdp() {
+        for v in ["0", "false", " "] {
+            let raw = format!(
+                "CONNECT a HTTP/1.1\r\nAuthorization: Bearer tok\r\nX-Jumpgate-Rdp: {v}\r\n\r\n"
+            );
+            let (req, _) = parse_connect(raw.as_bytes()).unwrap().unwrap();
+            assert!(!req.rdp, "X-Jumpgate-Rdp: {v:?} must not enable");
+        }
     }
 
     #[test]
@@ -263,8 +299,9 @@ mod tests {
         assert!(s.contains("X-Jumpgate-Rdp: 1\r\n"));
         assert!(s.contains("X-Jumpgate-Login: deploy\r\n"));
         assert!(s.ends_with("\r\n\r\n"));
-        // Not a terminal preamble: parse_connect must not set `terminal`.
+        // An RDP preamble sets `rdp`, never `terminal`.
         let (req, _) = parse_connect(&out).unwrap().unwrap();
+        assert!(req.rdp);
         assert!(!req.terminal);
         assert_eq!(req.login.as_deref(), Some("deploy"));
         assert_eq!(req.token, "tok-9");

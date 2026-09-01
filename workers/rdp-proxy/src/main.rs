@@ -1,0 +1,119 @@
+//! jumpgate rdp-proxy worker: the RDP data-plane worker behind the gateway.
+//!
+//! Thin process wrapper over the `rdp_proxy` library crate: install the crypto
+//! provider, init tracing, load [`Config`], and run the data-plane mTLS server.
+//! Boot is ssh-proxy's, minus the SSH-specific host-key policy.
+
+use std::sync::Arc;
+
+use rdp_proxy::config::Config;
+use rdp_proxy::control::{run_control, SessionRegistry};
+use rdp_proxy::server::{run_dataplane_server, run_health_listener};
+use tokio::sync::Notify;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+
+    // rustls 0.23 requires a process-wide default crypto provider. We use the
+    // `ring` provider (no C toolchain needed), matching the gateway + ssh-proxy.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("failed to install rustls ring crypto provider"))?;
+
+    let config = match Config::from_env() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = %e, "invalid rdp-proxy configuration");
+            return Err(e);
+        }
+    };
+    tracing::info!(
+        worker_id = %config.worker_id,
+        dataplane_addr = %config.dataplane_addr,
+        warden_mesh_addr = %config.warden_mesh_addr,
+        capacity = config.capacity,
+        "rdp-proxy starting",
+    );
+
+    // Read the worker's mesh identity PEMs once, here, so an unreadable cert is a
+    // fatal startup error rather than a silently-disabled control plane.
+    let mesh_certs = jumpgate_mesh::tls::MeshClientCerts::from_files(
+        &config.mesh_cert,
+        &config.mesh_key,
+        &config.mesh_ca,
+    )
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to read worker mesh certs");
+        e
+    })?;
+
+    // Control-plane seam shared between the WorkerStream client and the data
+    // plane: the registry lets `Teardown` force-close live sessions; the channel
+    // carries `SessionEnded` reports from finished sessions to warden.
+    let registry = SessionRegistry::default();
+    let (session_ended_tx, session_ended_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    tokio::spawn(run_control(
+        config.clone(),
+        mesh_certs,
+        registry.clone(),
+        session_ended_rx,
+    ));
+
+    // Graceful shutdown: on ctrl-c / SIGTERM, stop accepting and force-close live
+    // sessions, then return.
+    let shutdown = Arc::new(Notify::new());
+    tokio::spawn(watch_for_signals(shutdown.clone()));
+
+    // Plaintext health listener for kubelet probes (the data-plane port is mesh
+    // mTLS and cannot be probed by a bare TCP `tcpSocket` probe).
+    let health_addr = config.health_addr.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_health_listener(&health_addr).await {
+            tracing::error!(error = %e, "health listener exited");
+        }
+    });
+
+    run_dataplane_server(&config, registry, session_ended_tx, shutdown).await
+}
+
+/// Wait for ctrl-c or SIGTERM and fire `shutdown`.
+async fn watch_for_signals(shutdown: Arc<Notify>) {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot install SIGTERM handler; ctrl-c only");
+                let _ = tokio::signal::ctrl_c().await;
+                shutdown.notify_waiters();
+                return;
+            }
+        };
+        tokio::select! {
+            r = tokio::signal::ctrl_c() => {
+                if let Err(e) = r {
+                    tracing::warn!(error = %e, "ctrl-c handler failed");
+                }
+                tracing::info!("received ctrl-c; shutting down");
+            }
+            _ = term.recv() => {
+                tracing::info!("received SIGTERM; shutting down");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::warn!(error = %e, "ctrl-c handler failed");
+        }
+        tracing::info!("received ctrl-c; shutting down");
+    }
+    shutdown.notify_waiters();
+}
