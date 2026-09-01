@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,8 +120,8 @@ func (f *rdpFixture) liveSessionProtocol(t *testing.T, sessionID string) string 
 
 // TestSetupRDPPassword drives the happy path for a password login: mint an rdp
 // bearer ticket, redeem it, and assert the credential surfaces through the
-// generic Password arm (rdp has no dedicated proto oneof), with no recording
-// required in Phase 2.
+// generic Password arm (rdp has no dedicated proto oneof), and that the session
+// is marked recording-required with a .rdpg (rdp-graphics-v1) object key.
 func TestSetupRDPPassword(t *testing.T) {
 	f := newRDPFixture(t)
 	secID := sealSecret(t, f.q, f.sealer, f.asset, "admin", []byte("s3cr3t"))
@@ -150,11 +151,11 @@ func TestSetupRDPPassword(t *testing.T) {
 	if res.Login != "admin" {
 		t.Fatalf("Login = %q, want admin", res.Login)
 	}
-	if res.RecordingRequired {
-		t.Error("rdp setup (phase 2): RecordingRequired = true, want false")
+	if !res.RecordingRequired {
+		t.Error("rdp setup: RecordingRequired = false, want true (rdp-graphics-v1 is always recorded)")
 	}
-	if res.RecordingObjectKey != "" {
-		t.Errorf("rdp setup (phase 2): RecordingObjectKey = %q, want empty", res.RecordingObjectKey)
+	if !strings.HasSuffix(res.RecordingObjectKey, ".rdpg") {
+		t.Errorf("rdp setup: RecordingObjectKey = %q, want a .rdpg key", res.RecordingObjectKey)
 	}
 	if got := f.liveSessionProtocol(t, res.SessionID); got != "rdp" {
 		t.Fatalf("live_sessions.protocol = %q, want rdp", got)

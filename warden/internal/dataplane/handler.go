@@ -255,6 +255,8 @@ func recordingFormat(protocol string) string {
 		return "pgwire-timeline-v1"
 	case "kubernetes":
 		return "k8s-audit-v1"
+	case "rdp":
+		return "rdp-graphics-v1"
 	default:
 		return "asciicast-v2" // ssh / legacy
 	}

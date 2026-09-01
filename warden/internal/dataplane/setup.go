@@ -186,9 +186,9 @@ func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login stri
 		if !containsLogin(caps.EntitledLoginsFor(authz.RDPLoginPrefix, allowed), login) {
 			return SetupResult{}, ErrNotAuthorized
 		}
-		// Phase 2: RDP session recording is not yet wired (Phase 3).
-		recordingRequired = false
-		recordingKey = ""
+		// RDP sessions are always recorded (rdp-graphics-v1 timeline).
+		recordingRequired = true
+		recordingKey = recordingObjectKey(claims.SessionID, time.Now(), "rdp", "rdpg")
 	default: // "ssh" (empty proto = legacy ssh)
 		protocol = "ssh"
 		if _, err := parseSSHPublicKey(targetPub); err != nil {
