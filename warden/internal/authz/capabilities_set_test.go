@@ -17,3 +17,12 @@ func TestEntitledLoginsForPrefix(t *testing.T) {
 		t.Fatalf("EntitledLogins(ssh default) = %v, want empty (caps are db:)", ssh)
 	}
 }
+
+func TestEntitledLoginsFor_RDP(t *testing.T) {
+	caps := Capabilities{"rdp:login:administrator"}
+	got := caps.EntitledLoginsFor(RDPLoginPrefix, []string{"administrator", "guest"})
+	want := []string{"administrator"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("EntitledLoginsFor(rdp) = %v, want %v", got, want)
+	}
+}

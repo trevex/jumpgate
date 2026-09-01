@@ -29,6 +29,7 @@ const (
 	SSHLoginPrefix = "ssh:login:"
 	DBLoginPrefix  = "db:login:"
 	K8sGroupPrefix = "k8s:group:"
+	RDPLoginPrefix = "rdp:login:"
 )
 
 // EntitledLoginsFor returns the order-preserving subset of allowedLogins for
