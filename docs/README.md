@@ -1,32 +1,13 @@
 # jumpgate documentation
 
-Technical documentation for jumpgate — an enterprise, agentless, just-in-time (JIT)
-Privileged Access Management (PAM) platform.
+This folder is the source for the jumpgate documentation site, published with
+[Zensical](https://squidfunk.github.io/mkdocs-material/) to
+<https://trevex.github.io/jumpgate/>. Read it there for navigation, search, and
+cross-links; the Markdown here is the source those pages are built from.
 
-These pages describe how jumpgate works today. Where a capability is not yet built
-(other protocols, the web UI, enterprise SSO), the page says so explicitly and
-marks it as planned, so the docs never overstate what exists.
+Start with [index.md](index.md) for what jumpgate is, then
+[architecture.md](architecture.md) for how it fits together. `make docs-serve`
+builds and serves the site locally (use `127.0.0.1`).
 
-## Contents
-
-| Page | What it covers |
-|------|----------------|
-| [architecture.md](architecture.md) | System design: the control plane, the two-tier data plane (gateway + protocol workers), the credential vault, audit & recording, and how a session flows end to end |
-| [access-model.md](access-model.md) | Conceptual reference: how groups, folders, assets, roles, standing bindings & request policies decide who can do what, where — the Active/Requestable/Invisible tiers and the request→approve→grant→reaper workflow, with worked examples |
-| [capabilities.md](capabilities.md) | The capability vocabulary: the `scope:action[:qualifier]` grammar, glob matching, the management-plane and data-plane vocabularies, and the warden-decides / worker-enforces split |
-| [data-model.md](data-model.md) | Schema/entity reference: the Postgres tables, key columns, constraints, and how they relate, with an ER diagram |
-| [security.md](security.md) | Consolidated security posture & threat model: existence-hiding, the token model, account deactivation, continuous revocation, audit integrity, and secrets-at-rest |
-| [development.md](development.md) | Getting started: Nix devshell, repo layout, codegen, data layer, the vertical-slice domain/RPC pattern, CI conventions |
-| [testing.md](testing.md) | The test tiers — in-package unit/integration, local data-plane e2e, cluster e2e, and UI e2e — what each proves and how they stay complementary |
-| [roadmap.md](roadmap.md) | What is built and what is planned next |
-| [decisions.md](decisions.md) | The load-bearing architecture decisions and their rationale |
-
-## Documentation conventions
-
-- **Describe the system as it is.** These pages document current behavior. When a
-  change alters behavior, update the relevant page in the same change; treat stale
-  docs as a bug.
-- **Mark what is planned.** When a component or verb is defined but not yet built,
-  say so plainly so readers can trust the page.
-- **Link, don't duplicate.** Cross-reference between pages instead of repeating
-  content.
+The page inventory and authoring conventions live in [index.md](index.md); this
+file exists only so the folder reads sensibly on GitHub.

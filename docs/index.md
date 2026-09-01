@@ -1,7 +1,7 @@
 ---
 icon: lucide/rocket
 title: jumpgate documentation
-description: Enterprise, agentless, just-in-time Privileged Access Management.
+description: Just-in-time privileged access with zero standing credentials, fully audited.
 ---
 
 <div class="jg-hero" markdown>
@@ -9,10 +9,9 @@ description: Enterprise, agentless, just-in-time Privileged Access Management.
 # jumpgate
 
 <p class="jg-tagline" markdown>
-**Enterprise, agentless, just-in-time Privileged Access Management.**
-A Go control plane (the *warden*) and a Rust data plane (the *gateway* and protocol
-workers) that grant time-boxed, fully audited access to infrastructure — with no
-standing credentials and no agent to install on targets.
+Just-in-time privileged access with zero standing credentials, fully audited.
+One access model for SSH hosts, Postgres databases, and Kubernetes clusters —
+no permanent credentials, and nothing to install on most targets.
 </p>
 
 [Get started :material-arrow-right:](development.md){ .md-button .md-button--primary }
@@ -20,9 +19,44 @@ standing credentials and no agent to install on targets.
 
 </div>
 
-These pages describe how jumpgate works **today**. Where a capability is defined but
-not yet built, the page says so and marks it planned — so the docs never overstate
-what exists.
+Privileged access is where breaches start: standing credentials that outlive their
+purpose, shared admin accounts nobody can attribute, and sessions no one reviews.
+jumpgate removes the standing access. A user requests the access they need, an approver
+grants it for a bounded window, the credential is minted just in time and injected at
+the edge, and the whole session is recorded. When the grant expires or is revoked, any
+live session it backed is torn down — not merely blocked at the next connect.
+
+A Go control plane (the *warden*) holds all the policy and secrets; a Rust and Go data
+plane (the *gateway* and its protocol workers) carries the traffic and enforces at the
+edge. The result is one governance model — request, approve, connect, audit — that
+spans a shell, a database, and a cluster.
+
+## What jumpgate is
+
+<div class="grid" markdown>
+
+:material-clock-fast: __Zero standing credentials__
+{ .card }
+
+Nothing is granted until it is requested. A request is approved, a grant is minted with
+a lifetime, and a reaper tears it down — live sessions included — the moment eligibility
+ends. No permanent keys, no shared accounts.
+
+:material-lan-connect: __Broad reach, light footprint__
+{ .card }
+
+An agentless network proxy fronts SSH and Postgres, so onboarding a target is a catalog
+entry rather than a rollout. Kubernetes uses a lightweight in-cluster agent that dials
+out, so no inbound port is opened on a cluster.
+
+:material-file-document-check: __Fully audited__
+{ .card }
+
+Every decision, session, and keystroke is attributable: a transactional audit outbox
+plus session recording — SSH terminal, Postgres statement log, Kubernetes API audit —
+reviewable by the grant subject and its approvers.
+
+</div>
 
 ## Explore the docs
 
@@ -32,8 +66,9 @@ what exists.
 
     ---
 
-    The control plane, the two-tier data plane (gateway + protocol workers), the
-    credential vault, audit & recording, and how a session flows end to end.
+    The control plane, the data plane (gateway plus SSH, Postgres, and Kubernetes
+    workers), the credential vault, audit and recording, and how a session flows end to
+    end.
 
     [:octicons-arrow-right-24: Read](architecture.md)
 
@@ -41,7 +76,7 @@ what exists.
 
     ---
 
-    Groups, folders, assets, roles, standing bindings & request policies — the
+    Groups, folders, assets, roles, standing bindings, and request policies. The
     Active / Requestable / Invisible tiers and the request → approve → grant → reaper
     workflow, with worked examples.
 
@@ -51,7 +86,7 @@ what exists.
 
     ---
 
-    The `scope:action[:qualifier]` grammar, glob matching, the management- and
+    The `scope:action[:qualifier]` grammar, glob matching, the management-plane and
     data-plane vocabularies, and the warden-decides / worker-enforces split.
 
     [:octicons-arrow-right-24: Read](capabilities.md)
@@ -60,7 +95,7 @@ what exists.
 
     ---
 
-    The Postgres tables, key columns, constraints and how they relate, with an ER
+    The Postgres tables, key columns, constraints, and how they relate, with an ER
     diagram.
 
     [:octicons-arrow-right-24: Read](data-model.md)
@@ -70,7 +105,7 @@ what exists.
     ---
 
     Existence-hiding, the token model, account deactivation, continuous revocation,
-    audit integrity, and secrets-at-rest — the consolidated posture & threat model.
+    audit integrity, and secrets-at-rest — the consolidated posture and threat model.
 
     [:octicons-arrow-right-24: Read](security.md)
 
@@ -78,8 +113,8 @@ what exists.
 
     ---
 
-    Nix devshell, repo layout, codegen, the data layer, the vertical-slice
-    domain/RPC pattern, and CI conventions.
+    Nix devshell, repo layout, codegen, the data layer, the vertical-slice domain/RPC
+    pattern, and CI conventions.
 
     [:octicons-arrow-right-24: Read](development.md)
 
@@ -87,8 +122,8 @@ what exists.
 
     ---
 
-    The test tiers — in-package unit/integration, local data-plane e2e, cluster e2e
-    and UI e2e — what each proves and how they stay complementary.
+    The test tiers — in-package unit/integration, cluster e2e, and UI e2e — what each
+    proves and how they stay complementary.
 
     [:octicons-arrow-right-24: Read](testing.md)
 
@@ -104,35 +139,14 @@ what exists.
 
 </div>
 
-## What jumpgate is
-
-<div class="grid" markdown>
-
-:material-shield-account: __Agentless__
-{ .card }
-
-Targets need no installed agent. Access flows through the gateway and protocol
-workers, so onboarding an asset is a catalog entry, not a rollout.
-
-:material-clock-fast: __Just-in-time__
-{ .card }
-
-No standing credentials. A request is approved, a grant is minted with a lifetime,
-and a reaper tears it down — live sessions included — the moment eligibility ends.
-
-:material-file-document-check: __Fully audited__
-{ .card }
-
-Every decision, session and keystroke is attributable: a transactional audit outbox
-plus session recording, reviewable by the grant subject and its approvers.
-
-</div>
-
 ---
 
 !!! tip "Documentation conventions"
 
-    - **Describe the system as it is.** These pages document current behavior; a
-      change that alters behavior updates the relevant page in the same change.
-    - **Mark what is planned.** Defined-but-unbuilt components say so plainly.
-    - **Link, don't duplicate.** Pages cross-reference instead of repeating.
+    These pages describe how jumpgate works today.
+
+    - Describe the system as it is. A change that alters behavior updates the relevant
+      page in the same change.
+    - Mark what is planned. Defined-but-unbuilt components say so plainly, so the docs
+      never overstate what exists.
+    - Link, don't duplicate. Pages cross-reference instead of repeating.

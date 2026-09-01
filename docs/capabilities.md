@@ -1,449 +1,374 @@
 # Capabilities
 
-The **capability vocabulary** — the primitive verbs a role grants. A capability
-names *what you may do*: either a **data-plane** action on an asset (open an SSH
-session, run a DDL statement, impersonate a k8s identity) or a **management-plane**
-action on the API (onboard an asset, create a role, bind it, manage users). Roles
-bundle capabilities; the authorizer answers "does this user hold a role — at the
-relevant scope — whose capabilities cover the requested action?" The same grammar
-and glob matcher serve both halves; they differ only in *where* they're enforced
-(worker vs. warden) and *what scope* they're checked at (see the two sections
-below).
+A capability is the primitive verb a role grants. It names what a subject may do:
+either a data-plane action on an asset (open an SSH session, log in to a Postgres
+role, act as a Kubernetes group) or a management-plane action on the API (onboard an
+asset, create a role, bind it, manage users). Roles bundle capabilities, and the
+authorizer answers one question: does this user hold a role, at the relevant scope,
+whose capabilities cover the requested action?
 
-Capabilities are enforced in two places, sharing one grammar, format validation,
-and glob matcher (`CapMatch`):
+The same grammar, format validation, and glob matcher serve both halves. They differ
+only in where they are enforced (worker versus warden) and at what scope they are
+checked.
 
-- **Management plane — enforced by warden.** Every management RPC (catalog / access
-  / identity / vault / recording admin) is gated by a capability check in the
-  handler (`requireCap`); this replaced the old boolean `is_admin` gate — see
-  [Management-plane capabilities](#management-plane-capabilities) below.
-- **Data plane — enforced by the workers.** The ssh-proxy enforces `ssh:*` at a
-  live session today; `db:*` / `k8s:*` are defined for the model and land with
-  their proxies.
+- Management plane — enforced by warden. Every management RPC (catalog, access,
+  identity, vault, recording admin) is gated by a capability check in the handler
+  (`requireCap`). This replaced the old boolean `is_admin` gate; see
+  [Management-plane capabilities](#management-plane-capabilities).
+- Data plane — enforced by the workers. The ssh-proxy enforces `ssh:*` at a live
+  session, the pg-proxy enforces `db:login:*`, and the k8s-broker projects
+  `k8s:group:*` into impersonation. See [Data-plane vocabulary](#data-plane-vocabulary).
 
 ## Grammar
 
-A capability is a **colon-delimited path of segments**:
+A capability is a colon-delimited path of segments:
 
 ```
 scope:action[:qualifier…]
 ```
 
-- It is **always scoped** — at least **two** segments (`ssh:connect`, not
-  `connect`). A bare `admin` is rejected.
-- Each segment is **lowercase alphanumeric with internal hyphens**:
-  `[a-z0-9]+(-[a-z0-9]+)*` (e.g. `cluster-admin`). No uppercase, no leading/
-  trailing/empty segments.
-- The first segment is the **scope** (the protocol/subsystem: `ssh`, `db`,
-  `k8s`), the second the **action**, and any further segments are **qualifiers**
-  (`k8s:impersonate:cluster-admin`).
+- It is always scoped, with at least two segments (`ssh:connect`, not `connect`). A
+  bare `admin` is rejected.
+- Each segment is lowercase alphanumeric with internal hyphens
+  (`[a-z0-9]+(-[a-z0-9]+)*`, for example `cluster-admin`). No uppercase, no
+  leading, trailing, or empty segments.
+- The first segment is the scope (the protocol or subsystem: `ssh`, `db`, `k8s`),
+  the second is the action, and any further segments are qualifiers
+  (`k8s:group:system:masters`).
 
-The format is validated at **`CreateRole`** by protovalidate (regex in
-[`catalog.proto`](../proto/jumpgate/catalog/v1/catalog.proto), the
+The format is validated at `CreateRole` by protovalidate (a regex in
+[`catalog.proto`](../proto/jumpgate/catalog/v1/catalog.proto), on the
 `CreateRoleRequest.capabilities` field). Invalid strings are rejected with
-`InvalidArgument` before the role is stored:
+`InvalidArgument` before the role is stored.
 
 | Rejected | Why |
 |---|---|
-| `admin` | unscoped (only 1 segment) |
+| `admin` | unscoped (only one segment) |
 | `*` | unscoped |
 | `k8s:` | empty trailing segment |
 | `k8s:**:x` | `**` is not the final segment |
-| `DROP TABLE` | space / uppercase — not a valid segment |
+| `DROP TABLE` | space and uppercase — not a valid segment |
 | `K8s:connect` | uppercase |
 
-Stored capability strings are **jsonb** on the `roles` row
-(`roles.capabilities`, a JSON array of strings).
+### Storage
 
-**The one bare-wildcard exception — `**`.** A standalone `**` is a valid stored
-pattern (the grammar allows it alongside the `scope:action…` forms) and, via
-`CapMatch`, matches **every** capability at any depth. It is the **`admin`
-role's** capability: the bootstrap admin is an ordinary user holding a role whose
-capabilities are `["**"]`, bound globally. (`**` is still rejected as a *middle*
-segment — `k8s:**:x` — and a bare `*` / `admin` are still rejected.)
+A capability is stored decomposed into segments, not as a string. Each pattern on a
+role becomes one `role_capabilities(role_id, scope, action, qualifier)` row: `ssh:login:root`
+stores `(ssh, login, root)`, `db:read` stores `(db, read, '')`, and a multi-segment
+qualifier keeps its tail intact so `k8s:group:system:masters` stores
+`(k8s, group, system:masters)`. A btree index on `(scope, action, qualifier)` makes
+the match a keyed lookup. See [data-model.md](data-model.md#role_capabilities--decomposed-capability-patterns).
+
+The one bare-wildcard exception is `**`. A standalone `**` is a valid stored pattern
+that matches every capability at any depth. It is the `admin` role's only capability:
+the bootstrap admin is an ordinary user holding a role whose capabilities are `["**"]`,
+bound globally. (`**` is still rejected as a middle segment, and a bare `*` or `admin`
+is still rejected.)
 
 ## Glob patterns
 
-A role's **stored** capability list may contain **glob patterns**. The
-**requested** capability at check-time is always **concrete** (a worker asks
-about a specific operation, never a wildcard). Two wildcards exist:
+A role's stored capability list may contain glob patterns. The requested capability
+at check-time is always concrete — a worker asks about a specific operation, never a
+wildcard. Two wildcards exist:
 
-- `*` matches **exactly one** segment. It never crosses a `:`.
-- A trailing `**` matches **one-or-more remaining** segments, and may appear
-  **only as the final segment**.
+- `*` matches exactly one segment. It never crosses a `:`.
+- A trailing `**` matches one or more remaining segments, and may appear only as the
+  final segment.
 
-Matching is done by [`CapMatch(pattern, requested)`](../warden/internal/authz/capabilities.go),
-the single auditable home of the glob semantics. `Check` unions the capability
-sets of all roles the user holds on the asset and returns `true` if any stored
-pattern `CapMatch`es the requested capability.
+The glob semantics live in one auditable function,
+[`CapMatch(pattern, requested)`](../warden/internal/authz/capabilities.go). `Check`
+unions the capability sets of all roles the user holds on the asset and returns true
+if any stored pattern `CapMatch`es the requested capability. The everyday hot path
+runs the equivalent match as a three-column SQL predicate over `role_capabilities`,
+proven identical to the Go function by `TestSQLCapMatchMatchesGo`, so the indexed
+lookup and the reference semantics never drift.
 
 | Pattern | Matches | Does NOT match |
 |---|---|---|
-| `k8s:*` | `k8s:connect`, `k8s:access` | `k8s:impersonate:cluster-admin` (3-seg) |
-| `k8s:*:*` | `k8s:impersonate:cluster-admin` | `k8s:connect` |
-| `k8s:impersonate:*` | `k8s:impersonate:cluster-admin` | `k8s:connect` |
-| `k8s:**` | all `k8s` caps, any depth | `k8s` (needs ≥1 segment after) |
-| `*:connect` | `ssh:connect`, `db:connect`, `k8s:connect` | `ssh:access` |
-| `db:ddl` (concrete) | `db:ddl` only | `db:ddl:foo` |
+| `k8s:*` | `k8s:connect`, `k8s:access` | `k8s:group:developers` (three-segment) |
+| `k8s:*:*` | `k8s:group:developers` | `k8s:connect` |
+| `k8s:group:*` | `k8s:group:developers` | `k8s:connect` |
+| `k8s:**` | all `k8s` caps, any depth | `k8s` (needs at least one segment after) |
+| `*:connect` | `ssh:connect`, `db:connect` | `ssh:access` |
+| `db:read` (concrete) | `db:read` only | `db:read:foo` |
 
 ### Safety properties
 
-- `*` is exactly **one** segment and **never crosses a `:`** — so `k8s:*`
-  cannot reach into `k8s:impersonate:cluster-admin`. Widening one level requires
-  writing `*` at each level (`k8s:*:*`).
-- A **concrete** pattern never matches deeper: `db:ddl` grants `db:ddl` and
-  nothing under it.
-- `**` is the **explicit, auditable** "this whole scope, at any depth" grant.
-  Someone reading a role's capability list sees `k8s:**` and knows it is broad;
-  breadth is never accidental.
-- `CapMatch` **fails closed** on a malformed non-final `**` (`k8s:**:x`): rather
-  than silently dropping the segments after `**` (which would over-match), it
-  returns `false`. The proto grammar already rejects such patterns at
-  `CreateRole`; `CapMatch` enforces the same invariant defensively so a pattern
-  reaching it via a non-proto path (direct SQL, a future writer) can never match
-  more than its literal segments intend.
+- `*` is exactly one segment and never crosses a `:`, so `k8s:*` cannot reach into
+  `k8s:group:developers`. Widening one level requires writing `*` at each level
+  (`k8s:*:*`).
+- A concrete pattern never matches deeper: `db:read` grants `db:read` and nothing
+  under it.
+- `**` is the explicit, auditable "this whole scope, at any depth" grant. Someone
+  reading a role's capability list sees `k8s:**` and knows it is broad, so breadth is
+  never accidental.
+- `CapMatch` fails closed on a malformed non-final `**` (`k8s:**:x`): rather than
+  silently dropping the segments after `**`, which would over-match, it returns
+  false. The proto grammar already rejects such patterns at `CreateRole`; `CapMatch`
+  enforces the same invariant defensively, so a pattern reaching it via a non-proto
+  path can never match more than its literal segments intend.
+
+### Matching versus enumeration
+
+Two different questions run over the same stored patterns, and they treat wildcards
+differently. This distinction is load-bearing for Kubernetes.
+
+- Matching (`Check` / `CapMatch`) asks "does any held pattern cover this concrete
+  request?" Wildcards match, so `**` covers everything and `ssh:login:*` covers
+  `ssh:login:root`.
+- Enumeration (`ConcreteQualifiers(prefix)`) asks "which concrete qualifiers does the
+  user hold under this prefix?" It returns only literal values and skips any pattern
+  containing a wildcard.
+
+SSH logins use matching: an asset defines a finite set of logins, and the broker
+intersects that set with the user's held `ssh:login:*` capabilities, so `ssh:login:*`
+grants every configured login. Kubernetes groups use enumeration: there is no finite
+group set to intersect against, so the broker enumerates the concrete
+`k8s:group:<name>` qualifiers the user holds and projects each as an impersonated
+group. A wildcard cannot be enumerated, so `k8s:group:*` and `**` yield no groups —
+an intended safety property, covered under [Data-plane vocabulary](#data-plane-vocabulary).
 
 ## Management-plane capabilities
 
-The **management API** (creating folders/assets/roles/bindings/policies, managing
-users/groups, vault CAs/secrets, reading recordings) is governed by capabilities
-too — but here **warden both decides *and* enforces** them directly in the RPC
-handler (there is no worker in the loop). This replaced the old boolean
-`is_admin`: there is no admin flag anymore, only capabilities.
+The management API (creating folders, assets, roles, bindings, and policies; managing
+users and groups; vault CAs and secrets; reading recordings) is governed by
+capabilities too, but here warden both decides and enforces them directly in the RPC
+handler, with no worker in the loop.
 
 ### Scope — global / folder / asset
 
-A management capability is checked at a **scope**, not just "on an asset":
+A management capability is checked at a scope, not just "on an asset":
 
-- **global** — system-wide operations (create a user, a top-level folder, a global
-  role; CA init). A capability is held globally via a **scopeless role binding**
-  (a `role_binding` with neither `scope_folder_id` nor `scope_asset_id`).
-- **folder** — operations within a folder subtree (onboard an asset *in* `prod`,
-  manage roles/bindings/policies there). A folder-scoped binding confers the cap.
-- **asset** — operations on one asset (update its config, write its stored secret).
+- global — system-wide operations (create a user, a top-level folder, a global role;
+  CA init). A capability is held globally via a scopeless role binding (a
+  `role_binding` with neither `scope_folder_id` nor `scope_asset_id`).
+- folder — operations within a folder subtree (onboard an asset in `prod`, manage
+  roles, bindings, and policies there). A folder-scoped binding confers the cap.
+- asset — operations on one asset (update its config, write its stored secret).
 
 `CapabilitiesOnScope(user, scope)` returns the caps the user holds there:
-globally-held caps **plus** — for a folder/asset scope — caps held on the object
-**and every ancestor folder**. So management authority **cascades *down* the
-folder tree**: a cap granted at `prod` applies to `prod`, its sub-folders, and all
-their assets, with no extra wiring. (This folder cascade is management-specific;
-it does not use the data-plane held-closure's opt-in `parent` role-grants.)
-`requireCap(cap, scope)` in each handler = `CapabilitiesOnScope(...).Allows(cap)`
-→ else `PermissionDenied`. The admin's global `**` satisfies every check.
+globally-held caps plus, for a folder or asset scope, caps held on the object and
+every ancestor folder. Management authority therefore cascades down the folder tree:
+a cap granted at `prod` applies to `prod`, its sub-folders, and all their assets, with
+no extra wiring. (This folder cascade is management-specific; it does not use the
+data-plane held-closure's opt-in `parent` role-grants.) `requireCap(cap, scope)` in
+each handler is `CapabilitiesOnScope(...).Allows(cap)`, else `PermissionDenied`. The
+admin's global `**` satisfies every check.
 
 ### No-escalation subset rule
 
-Binding a role, making it requestable, or wiring the role-grant graph is a
-**grant** of that role's capabilities — so it is guarded: you may bind/grant role
-`R` at scope `S` only if **every capability in `R` is subsumed by what you
-yourself hold at `S`** (`requireGrantable` → `Covers` pattern-subsumption). You
-can never grant authority you don't have. The admin (`**`) can grant anything; a
-`prod`-admin holding `catalog:**`+`access:**`+`ssh:login:*` on `prod` can grant ≤
-that within `prod`, but cannot grant `identity:*` or bind a global `admin` role.
-(Applies at `CreateRoleBinding`, `CreateRequestPolicy`, `AddRoleGrant` — the last
-checks the **recipient** `role_id`, the role that gets conferred.)
+Binding a role, making it requestable, or wiring the role-grant graph grants that
+role's capabilities, so it is guarded: a caller may bind or grant role `R` at scope
+`S` only if every capability in `R` is subsumed by what the caller holds at `S`
+(`requireGrantable` → `Covers` pattern-subsumption). No one can grant authority they
+do not have. The admin (`**`) can grant anything; a `prod`-admin holding
+`catalog:**`, `access:**`, and `ssh:login:*` on `prod` can grant up to that within
+`prod`, but cannot grant `identity:*` or bind a global `admin` role. This applies at
+`CreateRoleBinding`, `CreateRequestPolicy`, and `AddRoleGrant` — the last checks the
+recipient `role_id`, the role that gets conferred.
 
 ### The vocabulary
 
-`<service>:<resource>:<verb>`, same grammar and globs as everything else.
+The management vocabulary is `<service>:<resource>:<verb>`, with the same grammar and
+globs as everything else. Every check runs at one scope: `Global`, a folder, or an
+asset. Three rules hold everywhere, so the table stays terse:
 
-**Scope notation.** Every check runs at one scope — `Global`, a **folder**, or an
-**asset**. Three rules hold everywhere, so the table stays terse:
-
-- **Cascade** — a folder check is satisfied by the cap held on that folder, on any
-  **ancestor** folder, or **globally**. (`Global` caps satisfy every check.)
-- **No folder home → `Global`** — an object with no `folder_id` (a *global* role or
+- Cascade. A folder check is satisfied by the cap held on that folder, on any
+  ancestor folder, or globally.
+- No folder home means `Global`. An object with no `folder_id` (a global role or
   group) is checked at `Global`.
-- **List-all → `Global`** — endpoints that scan the whole table
-  (`ListRoleBindings`, `ListRequestPolicies`, `ListUsers`) require the read cap at
-  `Global`; the per-object `Get`/`Resolve` forms use the object's own scope.
-  `ListRoles` and `ListGroups` are exceptions — both are *visibility-filtered*
-  path browses (see [Role and group browse](#role-and-group-browse--listroleslistgroups)
-  below) and do **not** require a global read cap.
-- **Catalog browse is NOT cap-gated.** `ListFolders` / `ListAssets` are
-  *visibility-filtered* per-node: a caller sees a node iff it manages it (holds a
-  management capability there) **or** has or can request access under it
-  (Active ∪ Requestable). A capless caller receives an empty list — not
-  `PermissionDenied`. Browsing a folder path the caller cannot see returns
-  `NotFound` (existence-hiding). See
-  [Catalog browse](#catalog-browse--listfolderslistassets) below.
+- List-all means `Global`. Endpoints that scan the whole table (`ListRoleBindings`,
+  `ListRequestPolicies`, `ListUsers`) require the read cap at `Global`; the per-object
+  `Get`/`Resolve` forms use the object's own scope. `ListRoles`, `ListGroups`,
+  `ListFolders`, and `ListAssets` are exceptions: they are visibility-filtered path
+  browses (see [Browse endpoints](#browse-endpoints)) and require no global read cap.
 
-**`catalog:folder:read` cascades READ across the whole subtree.** Held on a folder
-`F`, it confers **read/visibility** of everything homed at or under `F` — descendant
-sub-folders **and** the assets, roles, and groups within — so a delegate governing a
-folder branch can browse and open its contents without also being granted
-`catalog:asset:read`, `access:role:read`, and `identity:group:read` object-by-object.
-It is the one cross-object read cap: every other read cap stays object-type-specific
-(`catalog:asset:read` reads only assets, `access:role:read` only roles, etc.).
-`catalog:folder:read` is **read-only** — it grants **no** authoring (create/update/
-delete), **no** CONNECT (an `ssh:login:*` entitlement is still required to open a
-session), and it is deliberately **excluded from the no-escalation subset rule**, so
-holding it can never let a delegate bind or grant an object read cap they do not
-themselves hold.
+`catalog:folder:read` cascades read across a whole subtree. Held on a folder `F`, it
+confers read and visibility of everything homed at or under `F` — descendant
+sub-folders and the assets, roles, and groups within — so a delegate governing a
+folder branch can browse and open its contents without also holding
+`catalog:asset:read`, `access:role:read`, and `identity:group:read` object by object.
+It is the one cross-object read cap; every other read cap stays object-type-specific.
+`catalog:folder:read` is read-only: it grants no authoring, no connect (a data-plane
+entitlement such as `ssh:login:*` is still required to open a session), and it is
+deliberately excluded from the no-escalation subset rule, so holding it can never let
+a delegate bind or grant an object read cap they do not themselves hold.
 
-The **Scope** column below names the object whose scope the cap is checked at.
-Where a single cap gates both a per-object read and a list-all, the list case is
-noted in parentheses. User, CA/key, and grant-oversight caps are `Global`; catalog,
-role, binding, policy, secret, recording, and **group** caps are folder/asset-scoped.
+The Scope column names the object whose scope the cap is checked at. Where a single
+cap gates both a per-object read and a list-all, the list case is noted in
+parentheses.
 
 | Capability | Grants (management RPC) | Scope |
 |---|---|---|
 | `catalog:folder:create` | create a folder | parent folder (`Global` if top-level) |
-| `catalog:folder:read` | resolve a folder by path/id (`ResolveFolder`); **read everything in the folder's subtree** — descendant sub-folders, assets, roles, and groups (see note below) | the folder |
+| `catalog:folder:read` | resolve a folder by path/id; read everything in the folder's subtree (descendant sub-folders, assets, roles, groups) | the folder |
 | `catalog:folder:update` | rename or move a folder | the folder |
 | `catalog:folder:delete` | delete a folder | the folder |
-| `catalog:asset:create` | onboard an asset | target folder |
-| `catalog:asset:read` | get / resolve an asset (`GetAsset`, `ResolveAsset`) | the asset |
-| `catalog:asset:update` | change an asset's config | the asset |
+| `catalog:asset:create` | onboard an asset (SSH, Postgres, or Kubernetes) | target folder |
+| `catalog:asset:read` | get or resolve an asset | the asset |
+| `catalog:asset:update` | change an asset's config; re-mint a Kubernetes enrollment token | the asset |
 | `catalog:asset:delete` | delete an asset | the asset |
 | `access:role:create` | create a role | target folder (`Global` if a global role) |
-| `access:role:read` | get / resolve a role; list a role's grants; explain a role | the role's folder |
-| `access:role:update` | add / remove role-rewrite grants (`role_grants`) | the role's folder |
-| `access:binding:create` | bind a role to a subject (+ subset rule) | the binding's scope |
+| `access:role:read` | get or resolve a role; list a role's grants; explain a role | the role's folder |
+| `access:role:update` | add or remove role-rewrite grants (`role_grants`) | the role's folder |
+| `access:binding:create` | bind a role to a subject (plus subset rule) | the binding's scope |
 | `access:binding:read` | list role bindings | `Global` |
 | `access:binding:delete` | remove a binding | the binding's scope |
-| `access:policy:create` | create a request policy (+ subset rule) | the policy's scope |
+| `access:policy:create` | create a request policy (plus subset rule) | the policy's scope |
 | `access:policy:read` | get a policy; list subjects; check approval eligibility; list policies | the policy's scope (approval-check: the asset; list-all: `Global`) |
 | `access:policy:update` | update a request policy | the policy's scope |
 | `access:policy:delete` | delete a request policy | the policy's scope |
-| `access:policy:manage-subjects` | add / remove requester & approver subjects | the policy's scope |
-| `access:grant:read` † | list **all** JIT access grants (oversight) | `Global` |
-| `access:grant:revoke` † | revoke a grant **outside** your approver scope (oversight) | `Global` |
+| `access:policy:manage-subjects` | add or remove requester and approver subjects | the policy's scope |
+| `access:grant:read` † | list all JIT access grants (oversight) | `Global` |
+| `access:grant:revoke` † | revoke a grant outside your approver scope (oversight) | `Global` |
 | `identity:user:create` | create a user | `Global` |
-| `identity:user:read` | get / resolve / list users | `Global` |
-| `identity:user:deactivate` | deactivate / reactivate a user | `Global` |
+| `identity:user:read` | get, resolve, or list users | `Global` |
+| `identity:user:deactivate` | deactivate or reactivate a user | `Global` |
 | `identity:user:delete` | delete a user | `Global` |
 | `identity:group:create` | create a group | target folder (`Global` if a global group) |
 | `identity:group:read` | resolve a group; list its members | the group's folder |
-| `identity:group:add-member` | add a user / group to a group | the group's folder |
+| `identity:group:add-member` | add a user or group to a group | the group's folder |
 | `identity:group:remove-member` | remove a member | the group's folder |
 | `identity:group:delete` | delete a group | the group's folder |
-| `vault:ca:init` | initialize the SSH / mesh CA | `Global` |
+| `vault:ca:init` | initialize the SSH, mesh, or X.509 CA | `Global` |
 | `vault:ca:issue` | issue a mesh certificate | `Global` |
 | `vault:ca:read` | read a CA public key | `Global` |
 | `vault:key:init` | initialize the session key | `Global` |
-| `vault:secret:write` | set / delete an asset's stored secret | the asset |
+| `vault:secret:write` | set or delete an asset's stored secret | the asset |
 | `vault:secret:read` | list an asset's secrets | the asset |
-| `recording:read` | list / fetch / download session recordings | the recording's asset (unfiltered list: `Global`) |
+| `recording:read` | list, fetch, or download session recordings | the recording's asset (unfiltered list: `Global`) |
 | `**` | everything (the `admin` role) | any |
 
-> **Moving a folder or asset requires the `…:update` capability on the moved node
-> AND the `…:create` capability on the destination folder.** A rename needs only
-> `…:update` on the node itself.
+> Moving a folder or asset requires `…:update` on the moved node and `…:create` on
+> the destination folder. A rename needs only `…:update` on the node itself.
 
-> **† `access:grant:*` is the cross-user *oversight* surface only.** Every user
-> sees and acts on their **own** just-in-time access with **no capability
-> required**: `ListMyRequests` / `ListMyGrants` return the caller's own
-> requests/grants, `ListPendingApprovals` returns the requests the caller is an
-> eligible **approver** for (per the request policy's approver set), and a user may
-> always **revoke their own** grant. A **standing approver** for a grant's
-> `(role, scope)` may also **revoke that grant** — the same eligibility that lets
-> them approve the request lets them revoke the resulting access, no capability
-> required. **Requesting** access is governed by the **request policy** (who may
-> request which role at which scope) — not by a management capability.
-> `access:grant:read` (list *everyone's* grants) and `access:grant:revoke` (revoke
-> a grant you are **not** the subject of or an eligible approver for) gate only the
-> org-wide oversight view; the normal request → approve → revoke-within-your-scope
-> loop needs neither.
+> † `access:grant:*` is the cross-user oversight surface only. Every user sees and
+> acts on their own just-in-time access with no capability required: `ListMyRequests`
+> and `ListMyGrants` return the caller's own requests and grants, `ListPendingApprovals`
+> returns the requests the caller is an eligible approver for, and a user may always
+> revoke their own grant. A standing approver for a grant's `(role, scope)` may also
+> revoke that grant, since the same eligibility that lets them approve the request
+> lets them revoke the resulting access. Requesting access is governed by the request
+> policy, not a management capability. `access:grant:read` and `access:grant:revoke`
+> gate only the org-wide oversight view.
 
 > A delegated folder-admin holds only the caps they were granted, so client-side
-> **name/path resolution** (which is itself `*:read`-gated) may be unavailable for
-> objects they can't read — they address such objects by **id**. Widening a
-> delegate's read caps (`catalog:folder:read`, `access:role:read`, …) restores
-> name-based use.
+> name and path resolution (itself `*:read`-gated) may be unavailable for objects they
+> cannot read; they address such objects by id. Widening a delegate's read caps
+> restores name-based use.
 
-**Groups are folder-governed.** Like roles, a group can be homed in a folder
-(`groups.folder_id`) — *governance-only* (it sets who may administer the group; it
-does not affect membership or what the group is bound to). `identity:group:*` is
+Groups are folder-governed. Like roles, a group can be homed in a folder
+(`groups.folder_id`) for governance only: it sets who may administer the group, and
+does not affect membership or what the group is bound to. `identity:group:*` is
 checked at the group's folder scope and cascades down the tree, so
-`identity:group:create` on `team-a` delegates creating/managing groups under
-`team-a`. Groups are addressed as **`<group>@<folder-path>`**
-(e.g. `sre@team.demo`) — `@`, distinct from a role's `<role>.<folder-path>`.
-Membership (incl. group-in-group nesting) is a separate, orthogonal axis and is not
-folder-scoped. `identity:user:*` stays global (users are not folder-homed).
-`ListGroups` is a **visibility-filtered path browse** — see
-[Role and group browse](#role-and-group-browse--listroleslistgroups) below.
+`identity:group:create` on `team-a` delegates creating and managing groups under
+`team-a`. Groups are addressed as `<group>@<folder-path>` (for example `sre@team.demo`),
+with `@` distinguishing them from a role's `<role>.<folder-path>`. Membership,
+including group-in-group nesting, is a separate axis and is not folder-scoped.
+`identity:user:*` stays global, since users are not folder-homed.
 
-**Deferred:** per-group "owner" delegation (a `scope_group_id` binding scope for
-single-group admin); folder-homing users; a subset guard on membership-adds. See
-the design docs for the full per-RPC mapping.
+Deferred: per-group owner delegation (a `scope_group_id` binding scope), folder-homing
+users, and a subset guard on membership-adds.
 
-### Catalog browse — `ListFolders`/`ListAssets`
+### Browse endpoints
 
-Catalog lists differ from all other management RPCs: they are **visibility-filtered**
-rather than cap-gated.
+Four list RPCs are visibility-filtered rather than cap-gated: `ListFolders`,
+`ListAssets`, `ListRoles`, and `ListGroups`. A capless caller receives an empty list,
+not `PermissionDenied`. Browsing a folder path the caller cannot see returns
+`NotFound` (existence-hiding).
 
-**Signatures.**
+Each takes an optional `parent` (empty for the root or global view; otherwise a
+DNS-style dotted path or a UUID) and a `cascade` flag. With `cascade=false` (the
+default) only the direct children of `parent` are returned; with `cascade=true` the
+whole subtree is walked flat. Results page via an opaque keyset `page_token`.
 
-```
-ListFolders(parent="", cascade=false, page_size, page_token) → [Folder…]
-ListAssets (parent="", cascade=false, page_size, page_token) → [Asset…]
-```
+Visibility is per node. A caller sees a node when it satisfies at least one of:
 
-- `parent` — the folder to browse: empty string = root; otherwise a DNS-style
-  dotted path (leaf-first, e.g. `db.prod`) or a UUID. Browsing a folder path the
-  caller cannot see returns `NotFound` (existence-hiding).
-- `cascade` — when `false` (the default) only **direct children** of `parent` are
-  returned; when `true` the entire subtree is walked flat. The CLI's `--cascade`
-  flag maps to this.
-- `page_token` — an opaque keyset cursor. Reuse the same `parent` / `cascade`
-  filters across pages; the CLI pages automatically and presents a merged result.
-  An empty `next_page_token` in the response signals the last page.
+1. Manageable — the caller holds a management capability at that node's scope.
+2. Active or Requestable — the caller holds a standing role that covers the node
+   (or, for a role, holds it via a binding or grant), or is eligible to request one
+   via a request policy. A group is also visible to its direct or transitive members.
 
-**Visibility rule (per-node).** A caller sees a node if and only if it satisfies
-at least one of:
+The lists return navigation-only nodes (id, name, path). Per-node capabilities come
+from the detail RPCs: `GetAssetAccess` and `GetFolderAccess` for the catalog,
+`GetRoleAccess` and `GetGroupAccess` for roles and groups. `CatalogService.ListFolderContents`
+returns a bounded per-kind preview (up to 50 folders, assets, roles, and groups) in
+one call, with `<kind>_has_more` flags; callers needing the full list of a kind use
+the per-kind browse.
 
-1. **Manageable** — the caller holds a management capability at that node's scope
-   (e.g. `catalog:asset:read` on the asset or an ancestor folder).
-2. **Active or Requestable** — the caller holds a standing role that covers the
-   node, or is eligible to request one via a request policy.
+## Where enforcement lives — warden decides, workers enforce
 
-A caller with no entitlements to any node receives an **empty list** — not
-`PermissionDenied`. There is no capability required to *attempt* a browse; the
-result is simply empty when nothing is visible.
-
-**List vs. detail split.** `ListFolders`/`ListAssets` return **navigation-only
-bare nodes** (id, name, path). Per-node capabilities come from the detail RPCs:
-
-- `GetAssetAccess(asset_id)` — the caller's `active_roles`, `requestable_roles`,
-  and **`capabilities`** (the held-closure on the asset, object/folder-scoped,
-  excluding global `**` so it faithfully mirrors connect ability).
-- `GetFolderAccess(folder_id)` — the caller's management **`capabilities`** on
-  the folder.
-
-Call these after navigating to a node the list revealed.
-
-### Role and group browse — `ListRoles`/`ListGroups`
-
-Like the catalog browse, role and group lists are **visibility-filtered rather than
-cap-gated**. A capless caller receives an empty list — not `PermissionDenied`.
-
-**Signatures.**
-
-```
-ListRoles (parent="", cascade=false, page_size, page_token) → [Role…]
-ListGroups(parent="", cascade=false, page_size, page_token) → [Group…]
-```
-
-- `parent` — the folder to browse: empty string = global/folder-less nodes only;
-  otherwise a DNS-style dotted path (leaf-first, e.g. `team.demo`) or a UUID.
-  Browsing a folder path the caller cannot see returns `NotFound` (existence-hiding).
-- `cascade` — when `false` (the default) only nodes **directly homed in `parent`**
-  are returned; when `true` the entire subtree is walked flat. Use `--cascade` to
-  include roles or groups nested under sub-folders.
-- `page_token` — opaque keyset cursor; reuse `parent` / `cascade` across pages.
-
-**Visibility rule.** A caller sees a role if it satisfies at least one of:
-
-1. **Manageable** — holds a management capability at the role's folder scope
-   (e.g. `access:role:read` on the folder or an ancestor).
-2. **Holds** — holds the role via a standing binding or an active JIT grant.
-3. **Requestable** — is eligible to request the role via a request policy.
-
-A caller sees a group if it satisfies at least one of:
-
-1. **Manageable** — holds `identity:group:read` (or a broader cap) at the group's
-   folder scope or an ancestor.
-2. **Member** — is a direct or transitive member of the group.
-
-**List vs. detail split.** `ListRoles`/`ListGroups` return navigation-only bare
-nodes (id, name, folder path). The detail RPCs return the caller's **capabilities**
-at the node's governing scope:
-
-- `GetRoleAccess(role_id)` — returns the caller's management capabilities on the
-  role's folder scope. Returns **`PermissionDenied`** (not `NotFound`) when the
-  caller has no relationship to the role at all, because roles are not catalog
-  topology and their existence is not hidden from all non-admins.
-- `GetGroupAccess(group_id)` — returns the caller's management capabilities on the
-  group's folder scope. A member with no management capabilities receives an **empty
-  capability list** (not an error). Returns **`NotFound`** when the caller is neither
-  a manager nor a member (existence-hiding: groups are catalog-adjacent topology).
-
-### Folder-contents aggregator — `ListFolderContents`
-
-`CatalogService.ListFolderContents(parent)` returns a **bounded per-kind slice** of
-the folder's direct children across all four kinds in a single call:
-
-```
-ListFolderContents(parent) → {
-  folders[], folders_has_more,
-  assets[],  assets_has_more,
-  roles[],   roles_has_more,
-  groups[],  groups_has_more,
-}
-```
-
-Each slice holds up to 50 items and applies the same visibility rule as the
-per-kind list. When `<kind>_has_more` is `true`, use the corresponding
-`List<Kind>(parent, cascade=false)` paginated browse to retrieve the rest. Useful
-for overview panels and breadcrumb expansions where one round trip per folder is
-preferable to four.
-
-## Where enforcement lives (data plane) — warden decides, workers enforce
-
-The control plane **brokers** and the data plane **enforces** (see
+The control plane brokers and the data plane enforces (see
 [architecture.md](architecture.md#the-three-planes)). Capabilities sit exactly on
-that boundary, and the split is deliberate:
+that boundary, and the split is deliberate.
 
-### warden (control plane) **DECIDES**
+### warden (control plane) decides
 
-To warden, capability strings are **opaque tokens**. It does not know that
-`db:ddl` means "run a `CREATE TABLE`" or that `k8s:impersonate:cluster-admin`
-grants god-mode on a cluster. Given `(user, asset, capability)`, warden:
+To warden, capability strings are opaque tokens. It does not know that `db:ddl` means
+"run a `CREATE TABLE`" or that a particular `k8s:group` grants god-mode on a cluster.
+Given `(user, asset, capability)`, warden:
 
-1. resolves which roles the user **holds** on the asset via the ReBAC graph —
-   nested groups, standing `role_bindings`, and the `same_object` / `parent`
-   rewrite rules in `role_grants` (`HoldsRole` / its forward-closure dual
-   `heldCTE`; see [access-model.md](access-model.md#role-inheritance)),
-2. **unions** the capability sets of those held roles,
-3. answers `Check` — `true` iff some stored pattern `CapMatch`es the requested
-   capability (glob-aware).
+1. resolves which roles the user holds on the asset via the ReBAC graph — nested
+   groups, standing `role_bindings`, and the `same_object` and `parent` rewrite rules
+   in `role_grants` (`HoldsRole`, or its forward-closure dual `heldCTE`; see
+   [access-model.md](access-model.md#role-inheritance)),
+2. unions the capability sets of those held roles,
+3. answers `Check` — true if some stored pattern `CapMatch`es the requested
+   capability.
 
-In one line: warden translates **roles-in-scope → the set of held capabilities
-→ yes/no**. It never interprets the *meaning* of a capability.
+In one line: warden translates roles-in-scope into the set of held capabilities and
+then into yes or no. It never interprets the meaning of a capability.
 
-### workers / proxies (data plane) **ENFORCE**
+### workers / proxies (data plane) enforce
 
-The proxy owns the **semantics** and the actual enforcement. For a live session
-it:
+The proxy owns the semantics and the actual enforcement. For a live session it:
 
-1. **maps a concrete protocol operation → a capability** — e.g. a `CREATE TABLE`
-   statement → `db:ddl`; opening a shell → `ssh:connect`; a k8s API request →
-   `k8s:access` or `k8s:impersonate:cluster-admin`,
-2. **checks** it against warden (`Check`, or a warden-issued short-lived
-   decision / credential minted at session start),
-3. **allows or denies**, and **configures the access** — inject the credential,
-   set the k8s impersonation identity, `SET ROLE` on the DB connection, etc.
-
-So the difference between `k8s:access` ("impersonate **as the requesting
-user**") and `k8s:impersonate:cluster-admin` ("impersonate **as
-cluster-admin**") is **worker-side semantics**: warden only sees two distinct
-opaque tokens and answers yes/no on each; the k8s-proxy is what turns a
-"yes" into an actual impersonation header.
+1. maps a concrete protocol operation to a capability — opening a shell is
+   `ssh:connect`, logging in to a Postgres role is `db:login:<role>`, acting in a
+   cluster is a `k8s:group:<name>` membership,
+2. checks it against warden (`Check`, or a warden-issued short-lived decision or
+   credential minted at session start),
+3. allows or denies, and configures the access — injects the credential, sets the
+   Kubernetes impersonation headers, and so on.
 
 ## Data-plane vocabulary
 
-The protocol verbs a **worker** enforces at a live session (the management-plane
-vocabulary is [above](#the-vocabulary)). `ssh:*` is enforced today by the ssh-proxy
-worker; `db:*` / `k8s:*` are **defined for the model** and land with their proxies.
-The exact per-protocol lists are settled when each worker is built — the grammar
-and matcher are stable now, the protocol coverage grows.
+These are the protocol verbs a worker enforces at a live session. `ssh:*`, `db:*`,
+and `k8s:*` are all enforced today. The exact per-protocol lists grow as each worker
+gains features; the grammar and matcher are stable now.
 
-| Capability | Meaning (worker-side) | Enforced by | Enforced today |
+| Capability | Meaning (worker-side) | Enforced by | Live today |
 |---|---|---|---|
-| `ssh:connect` | Open an SSH session to the target (the effective gate is `ssh:login:*`) | ssh-proxy | via `ssh:login:*` |
-| `ssh:login:<account>` | Log in **as the OS account `<account>`** (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any configured login). **Drives the SSH cert principals** the [CredentialBroker](architecture.md#vault--credentialbroker) mints: `ValidPrincipals` are the host-scoped `<login>@<asset>` forms of the asset's configured logins ∩ the user's held `ssh:login:*` | broker + ssh-proxy | **Yes** — broker cert minting + ssh-proxy session gate |
-| `ssh:record:exempt` | Exempt the subject from mandatory session recording on the asset (recording is otherwise fail-closed) | ssh-proxy (decided by warden at setup) | **Yes** |
-| `db:connect` | Open a Postgres session | pg-proxy (planned) | No |
-| `db:ddl` | Run a DDL statement (`CREATE`/`ALTER`/…) | pg-proxy (planned) | No |
-| `db:read`, `db:write`, … | Finer per-statement tiers (`readonly`/`readwrite`/`ddl`); a role may bundle these or use the `db:*` glob | pg-proxy (planned) | No |
-| `k8s:connect` | Reach the cluster API through the proxy | k8s-proxy (planned) | No |
-| `k8s:access` | Impersonate **as the requesting user** | k8s-proxy (planned) | No |
-| `k8s:impersonate:<role>` | Impersonate **as `<role>`** (e.g. `k8s:impersonate:cluster-admin`) | k8s-proxy (planned) | No |
+| `ssh:connect` | open an SSH session to the target (the effective gate is `ssh:login:*`) | ssh-proxy | yes, via `ssh:login:*` |
+| `ssh:login:<account>` | log in as the OS account `<account>` (`ssh:login:root`, `ssh:login:deploy`, or `ssh:login:*` for any configured login). Drives the SSH cert principals the broker mints: the asset's configured logins intersected with the user's held `ssh:login:*` | broker + ssh-proxy | yes |
+| `ssh:record:exempt` | exempt the subject from mandatory SSH session recording on the asset (recording is otherwise fail-closed) | ssh-proxy (decided by warden at setup) | yes |
+| `db:login:<role>` | log in to the Postgres asset as DB role `<role>`. Holding it is the connect gate; the broker mints an X.509 client cert or returns the stored password for that role | broker + pg-proxy | yes |
+| `db:read`, `db:write`, `db:ddl` | finer per-statement tiers for inline step-up. Defined for the model; per-statement enforcement (`SET ROLE`) is not built | pg-proxy | no (planned) |
+| `k8s:group:<name>` | act in the target cluster as the Kubernetes group `<name>`. Projected verbatim as an `Impersonate-Group` header; the cluster's own RBAC decides what the group may do | k8s-broker + agent | yes |
+
+### Kubernetes: holding a group is the gate, and `**` is not cluster-admin
+
+Kubernetes has exactly one capability, `k8s:group:<name>`, and it works differently
+from SSH and Postgres logins. There is no `k8s:connect` and no `k8s:impersonate`.
+
+- The connect gate is implicit. `CreateKubernetesSession` enumerates the caller's
+  concrete `k8s:group:<name>` qualifiers; holding at least one is access, and holding
+  none returns `NotFound`.
+- Impersonation authority lives in the cluster, not in jumpgate. The broker sets one
+  `Impersonate-Group` header per enumerated group. What each group can do is decided
+  by the target cluster's RBAC, and by the agent ServiceAccount's own `impersonate`
+  permissions.
+- Because groups are enumerated, not matched (see
+  [Matching versus enumeration](#matching-versus-enumeration)), wildcards grant
+  nothing. `k8s:group:*` and the admin `**` both enumerate to zero groups, so a
+  jumpgate admin holding `**` has no Kubernetes access. Cluster-admin requires an
+  explicit concrete grant, for example `k8s:group:system:masters`, and a matching
+  RBAC binding in the target cluster. Breadth in a cluster is therefore never
+  conferred by a jumpgate wildcard.
 
 ## Related
 
-- [access-model.md](access-model.md) — how roles bundle capabilities and how
-  the ReBAC graph decides which roles a user holds.
-- [architecture.md](architecture.md#the-three-planes) —
-  the control-plane-brokers / worker-enforces split.
+- [access-model.md](access-model.md) — how roles bundle capabilities and how the
+  ReBAC graph decides which roles a user holds.
+- [architecture.md](architecture.md#the-three-planes) — the control-plane-brokers /
+  worker-enforces split.
