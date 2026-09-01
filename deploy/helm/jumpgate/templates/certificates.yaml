@@ -111,6 +111,23 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: {{ include "jumpgate.fullname" . }}-rdp-worker-mesh
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "jumpgate.fullname" . }}-rdp-worker-mesh
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  duration: {{ .Values.certManager.duration }}
+  renewBefore: {{ .Values.certManager.renewBefore }}
+  commonName: spiffe://jumpgate/worker/{{ .Values.worker.rdpId }}
+  uris:
+    - spiffe://jumpgate/worker/{{ .Values.worker.rdpId }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: {{ include "jumpgate.fullname" . }}-broker-mesh
   labels:
     {{- include "jumpgate.labels" . | nindent 4 }}

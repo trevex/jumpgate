@@ -6,6 +6,7 @@ images:
   gateway:  { repository: jumpgate/gateway,   tag: dev, pullPolicy: IfNotPresent }
   sshProxy: { repository: jumpgate/ssh-proxy, tag: dev, pullPolicy: IfNotPresent }
   pgProxy:  { repository: jumpgate/pg-proxy,  tag: dev, pullPolicy: IfNotPresent }
+  rdpProxy: { repository: jumpgate/rdp-proxy, tag: dev, pullPolicy: IfNotPresent }
   k8sBroker: { repository: jumpgate/k8s-broker, tag: dev, pullPolicy: IfNotPresent }
   k8sAgent:  { repository: jumpgate/k8s-agent,  tag: dev, pullPolicy: IfNotPresent }
   # The bootstrap Job's apply step needs kubectl + a shell. alpine/kubectl fits
@@ -50,6 +51,8 @@ worker:
   capacity: 10
   pgId: pg-worker-0
   pgCapacity: 10
+  rdpId: rdp-worker-0
+  rdpCapacity: 10
 
 broker:
   id: broker-0

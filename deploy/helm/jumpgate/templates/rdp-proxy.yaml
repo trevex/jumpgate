@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-rdp-proxy
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rdp-proxy
+spec:
+  # Single replica: WORKER_ID is fixed and matches the one SAN on the mesh leaf
+  # cert, and the worker binds+advertises its own pod IP as the data-plane addr.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: rdp-proxy
+  template:
+    metadata:
+      labels:
+        {{- include "jumpgate.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rdp-proxy
+    spec:
+      containers:
+        - name: rdp-proxy
+          image: "{{ .Values.images.rdpProxy.repository }}:{{ .Values.images.rdpProxy.tag }}"
+          imagePullPolicy: {{ .Values.images.rdpProxy.pullPolicy }}
+          ports:
+            - name: dataplane
+              containerPort: 9000
+            - name: health
+              containerPort: 9001
+          env:
+            - name: WORKER_ID
+              value: {{ .Values.worker.rdpId | quote }}
+            # WORKER_DATAPLANE_ADDR is used for BOTH the mTLS listener bind and the
+            # dataplane_address the worker advertises to warden (which the gateway
+            # then dials). A pod cannot bind its Service DNS name, so we bind and
+            # advertise the pod's own IP (routable in-cluster) via the downward API.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: WORKER_DATAPLANE_ADDR
+              value: "$(POD_IP):9000"
+            # Plaintext health listener for kubelet probes. The data-plane port is
+            # mesh mTLS and cannot be probed by a bare tcpSocket probe (the TLS
+            # handshake fails), so liveness/readiness target this port instead.
+            - name: WORKER_HEALTH_ADDR
+              value: "0.0.0.0:9001"
+            - name: WORKER_MESH_CERT
+              value: /mesh/tls.crt
+            - name: WORKER_MESH_KEY
+              value: /mesh/tls.key
+            - name: WORKER_MESH_CA
+              value: /mesh/ca.crt
+            - name: WARDEN_MESH_ADDR
+              value: "https://{{ include "jumpgate.wardenMeshHost" . }}.{{ .Release.Namespace }}.svc.cluster.local:8443"
+            - name: WARDEN_SPIFFE
+              value: "spiffe://jumpgate/warden/warden"
+            - name: GATEWAY_SPIFFE
+              value: "spiffe://jumpgate/gateway/gateway"
+            - name: WORKER_CAPACITY
+              value: {{ .Values.worker.rdpCapacity | quote }}
+            - name: RUST_LOG
+              value: "info"
+            - name: RECORDING_BUCKET
+              value: {{ .Values.recording.bucket | quote }}
+            - name: RECORDING_S3_REGION
+              value: {{ .Values.recording.s3.region | quote }}
+            - name: RECORDING_S3_ENDPOINT
+              {{- if .Values.silo.enabled }}
+              value: "http://{{ include "jumpgate.siloHost" . }}:9000"
+              {{- else }}
+              value: {{ .Values.recording.s3.endpoint | quote }}
+              {{- end }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.recording.s3.accessKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.recording.s3.secretKey | quote }}
+          volumeMounts:
+            - name: worker-mesh
+              mountPath: /mesh
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 9001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: worker-mesh
+          secret:
+            secretName: {{ include "jumpgate.fullname" . }}-rdp-worker-mesh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-rdp-proxy
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rdp-proxy
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "jumpgate.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: rdp-proxy
+  ports:
+    - name: dataplane
+      port: 9000
+      targetPort: 9000
