@@ -103,7 +103,7 @@ test("catalog authoring: create folder, onboard asset, rename, blocked delete, m
     .click();
   await page.getByRole("menuitem", { name: "New asset" }).click();
 
-  const wizard = page.getByRole("dialog", { name: "Onboard SSH asset" });
+  const wizard = page.getByRole("dialog", { name: "Onboard asset" });
   await expect(wizard).toBeVisible();
   await wizard.getByPlaceholder("pg-primary").fill(asset);
   await wizard.getByPlaceholder("db-primary.internal:22").fill("10.0.0.9:22");

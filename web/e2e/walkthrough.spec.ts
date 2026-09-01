@@ -146,7 +146,7 @@ async function onboardAsset(
   },
 ): Promise<void> {
   await folderCreate(page, folder, "New asset");
-  const wizard = page.getByRole("dialog", { name: "Onboard SSH asset" });
+  const wizard = page.getByRole("dialog", { name: "Onboard asset" });
   await expect(wizard).toBeVisible();
   await wizard.getByPlaceholder("pg-primary").fill(opts.name);
   await wizard.getByPlaceholder("db-primary.internal:22").fill(opts.target);
