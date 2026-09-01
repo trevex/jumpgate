@@ -206,6 +206,40 @@ see and click* — the affordances that appear are exactly the ones you're allow
 
 ---
 
+## Chapter: onboarding an RDP asset  ·  *admin, then alice*
+
+RDP is a fourth asset kind, reached **clientlessly in the browser** — no local RDP client and no CLI.
+The admin onboards it like an SSH box; alice opens the remote desktop on a canvas; every session is
+recorded and replays in the console.
+
+**As admin, onboard `rdp-box`.** Select the **demo** folder → **+** → **New asset**. In the wizard,
+switch the asset-kind toggle to **RDP**, then:
+
+- **Name** `rdp-box`
+- **Target address** `rdp-target.default.svc.cluster.local:3389`
+- Under **Logins**, add a **Password** login named `demo` and type the password `rdp-demo-pw-123` in
+  the secret field. RDP logins are password-only. The worker injects the stored password at the target
+  hop, so it never reaches the browser.
+- **Create asset**. The tree shows `rdp-box` with a monitor icon.
+
+**Grant standing access.** Mint a folder-scoped role and bind it to the `sre` group, the same shape as
+the password box:
+
+- Select **demo** → **+** → **New role** → name `rdp-demo`, add capability `rdp:login:demo`.
+- Select **rdp-box** → **Bindings ▸ Bind a role** → role **rdp-demo**, subject **group → sre**.
+  **Create binding.**
+
+**As alice, open the desktop.** In the alice window, go to **Catalog**, expand **demo**, select
+**rdp-box**. The detail pane shows **Open RDP (demo)**. Click it → a full-screen page opens, connects
+through the gateway to the `rdp-proxy` worker, and renders the target's desktop on a canvas. Keyboard
+and mouse work. The credential was injected worker-side, so alice never sees it.
+
+**Replay it.** Every RDP session is recorded — there is no exempt capability. In the admin window go to
+**Recordings**, pick alice's `rdp-box` session, and it plays back in the RDP graphics viewer,
+reproducing what was on screen. It is also reachable from **Catalog ▸ rdp-box ▸ Recordings**.
+
+---
+
 > **Keeping the two guides honest.** This is the UI twin of the CLI [`walkthrough.md`](./walkthrough.md)
 > and the automated `test/e2e` suite. When a flow changes, update all three. The one step with no UI —
 > the target's `AuthorizedPrincipalsFile` — is a host-side operation by design, not a jumpgate action.
