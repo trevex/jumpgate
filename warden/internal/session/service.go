@@ -206,6 +206,36 @@ func (s *Service) CreateKubernetesSession(ctx context.Context, userID, assetID u
 	return Created{Token: tok, Endpoint: s.gatewayEndpoint, ExpiresAt: time.Now().Add(k8sTTL)}, nil
 }
 
+// CreateRDPSession authorizes userID to reach an RDP assetID via the given login
+// and mints a short-lived browser-terminal admission ticket (mode=web, no client
+// key), mirroring CreateWebSession. Existence-hiding: an unknown asset, a
+// non-rdp asset, and an unentitled login all yield ErrNoAccess.
+func (s *Service) CreateRDPSession(ctx context.Context, userID, assetID uuid.UUID, login string, insecure bool) (Created, error) {
+	logins, err := s.entitledRDPLogins(ctx, userID, assetID)
+	if err != nil {
+		return Created{}, err
+	}
+	if !contains(logins, login) {
+		return Created{}, ErrNoAccess
+	}
+	sid := uuid.New()
+	tok, err := s.minter.Mint(sessiontoken.Claims{
+		SessionID: sid, UserID: userID, AssetID: assetID,
+		Protocol: "rdp", Mode: "web", Login: login, ClientKeyFingerprint: "",
+	}, webTTL)
+	if err != nil {
+		return Created{}, err
+	}
+	// Fail-closed endpoint selection, identical to CreateWebSession: only a
+	// browser that both asked for insecure AND runs against a warden that allows
+	// it (with an endpoint configured) gets the plaintext endpoint.
+	endpoint, isInsecure := s.gatewayEndpoint, false
+	if insecure && s.allowInsecure && s.insecureEndpoint != "" {
+		endpoint, isInsecure = s.insecureEndpoint, true
+	}
+	return Created{Token: tok, Endpoint: endpoint, ExpiresAt: time.Now().Add(webTTL), Insecure: isInsecure}, nil
+}
+
 // entitledLogins returns the caller's entitled SSH logins on the asset, or
 // ErrNoAccess when the asset yields no reachable login (unknown/non-ssh asset,
 // or the caller holds no ssh:login capability). The two Create paths share it so
@@ -257,6 +287,30 @@ func (s *Service) entitledPostgresLogins(ctx context.Context, userID, assetID uu
 		return nil, ErrNoAccess
 	}
 	return roles, nil
+}
+
+// entitledRDPLogins returns the caller's entitled RDP logins on a rdp asset, or
+// ErrNoAccess when none (unknown/non-rdp asset, or no rdp:login cap).
+func (s *Service) entitledRDPLogins(ctx context.Context, userID, assetID uuid.UUID) ([]string, error) {
+	rows, err := s.q.ListRDPAssetLogins(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNoAccess
+	}
+	allowed := make([]string, 0, len(rows))
+	for _, r := range rows {
+		allowed = append(allowed, r.Login)
+	}
+	logins, err := authz.EntitledLoginsFor(ctx, s.authz, userID, assetID, authz.RDPLoginPrefix, allowed)
+	if err != nil {
+		return nil, err
+	}
+	if len(logins) == 0 {
+		return nil, ErrNoAccess
+	}
+	return logins, nil
 }
 
 func contains(ss []string, s string) bool {

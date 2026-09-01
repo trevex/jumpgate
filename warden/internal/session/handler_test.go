@@ -15,6 +15,7 @@ import (
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 )
 
@@ -69,6 +70,45 @@ func seedPostgresAsset(t *testing.T, q *sqlc.Queries, defaultDatabase string, al
 			AssetID: asset.ID, Role: role, Kind: "mtls", SecretID: pgtype.UUID{},
 		}); err != nil {
 			t.Fatalf("UpsertPostgresAssetLogin: %v", err)
+		}
+	}
+	return asset.ID
+}
+
+// seedRDPAsset creates a folder + rdp asset with a config row plus one password
+// login per given name, and returns the asset id. RDP logins only support kind
+// "password" and always require a real secret row (unlike ssh's "ca" or
+// postgres's "mtls"), so each login gets a throwaway sealed secret — never
+// unsealed by the session tests, so its content doesn't matter.
+func seedRDPAsset(t *testing.T, q *sqlc.Queries, allowedLogins []string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	folder, err := q.CreateFolder(ctx, sqlc.CreateFolderParams{Name: "prod-rdp-sess-" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	asset, err := q.CreateAsset(ctx, sqlc.CreateAssetParams{FolderID: folder.ID, Name: "rdp-sess", Labels: []byte("{}"), Kind: "rdp"})
+	if err != nil {
+		t.Fatalf("CreateAsset: %v", err)
+	}
+	if _, err := q.UpsertRDPAssetConfig(ctx, sqlc.UpsertRDPAssetConfigParams{
+		AssetID: asset.ID, TargetAddress: "10.0.0.20:3389",
+	}); err != nil {
+		t.Fatalf("UpsertRDPAssetConfig: %v", err)
+	}
+	for _, login := range allowedLogins {
+		sealed, err := testSealer(t).Seal([]byte("s3cr3t"), secrets.AADAssetSecret(asset.ID))
+		if err != nil {
+			t.Fatalf("seal rdp secret: %v", err)
+		}
+		secret, err := q.SetAssetSecret(ctx, sqlc.SetAssetSecretParams{AssetID: asset.ID, Name: "login:" + login, Sealed: sealed})
+		if err != nil {
+			t.Fatalf("SetAssetSecret: %v", err)
+		}
+		if _, err := q.UpsertRDPAssetLogin(ctx, sqlc.UpsertRDPAssetLoginParams{
+			AssetID: asset.ID, Login: login, Kind: "password", SecretID: pgU(secret.ID),
+		}); err != nil {
+			t.Fatalf("UpsertRDPAssetLogin: %v", err)
 		}
 	}
 	return asset.ID
@@ -457,6 +497,126 @@ func TestCreatePostgresSession(t *testing.T) {
 		}), tok))
 		if connect.CodeOf(err) != connect.CodeNotFound {
 			t.Fatalf("non-postgres CreatePostgresSession = %v, want NotFound", connect.CodeOf(err))
+		}
+	})
+}
+
+// TestCreateRDPSession drives the RPC over the wire: an entitled rdp:login login
+// gets a short-lived browser ticket (proto=rdp, mode=web); an unentitled login and
+// a non-rdp (ssh) asset both hide behind NotFound.
+func TestCreateRDPSession(t *testing.T) {
+	pool, url, signPub := newServerWithSession(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	client := sessionv1connect.NewSessionServiceClient(http.DefaultClient, url)
+
+	t.Run("entitled login returns ticket", func(t *testing.T) {
+		assetID := seedRDPAsset(t, q, []string{"administrator"})
+		role := createRoleWithCaps(t, ctx, q, "rdp-admin-"+uuid.NewString(), pgtype.UUID{}, `["rdp:login:administrator"]`)
+
+		email := "rdpuser-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		resp, err := client.CreateRDPSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateRDPSessionRequest{
+			AssetId: assetID.String(), Login: "administrator",
+		}), tok))
+		if err != nil {
+			t.Fatalf("CreateRDPSession: %v", err)
+		}
+		if resp.Msg.Ticket == "" {
+			t.Fatal("empty ticket")
+		}
+		if resp.Msg.GatewayEndpoint != testGatewayEndpoint {
+			t.Fatalf("gateway_endpoint = %q, want %q", resp.Msg.GatewayEndpoint, testGatewayEndpoint)
+		}
+		if resp.Msg.ExpiresAt == nil {
+			t.Fatal("nil expires_at")
+		}
+		if resp.Msg.Insecure {
+			t.Fatal("Insecure=true, want false (insecure not requested)")
+		}
+
+		claims, err := sessiontoken.NewVerifier(signPub).Verify(resp.Msg.Ticket)
+		if err != nil {
+			t.Fatalf("verify ticket: %v", err)
+		}
+		if claims.Protocol != "rdp" {
+			t.Fatalf("token proto = %q, want rdp", claims.Protocol)
+		}
+		if claims.Mode != "web" {
+			t.Fatalf("token mode = %q, want web", claims.Mode)
+		}
+		if claims.Login != "administrator" {
+			t.Fatalf("token login = %q, want administrator", claims.Login)
+		}
+		if claims.ClientKeyFingerprint != "" {
+			t.Fatalf("token cnf = %q, want empty for rdp", claims.ClientKeyFingerprint)
+		}
+		if claims.UserID != uid {
+			t.Fatalf("token user = %s, want %s", claims.UserID, uid)
+		}
+		if claims.AssetID != assetID {
+			t.Fatalf("token asset = %s, want %s", claims.AssetID, assetID)
+		}
+	})
+
+	t.Run("unentitled login is not found", func(t *testing.T) {
+		assetID := seedRDPAsset(t, q, []string{"administrator"})
+		role := createRoleWithCaps(t, ctx, q, "rdp-other-"+uuid.NewString(), pgtype.UUID{}, `["rdp:login:guest"]`)
+
+		email := "rdpnologin-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		_, err := client.CreateRDPSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateRDPSessionRequest{
+			AssetId: assetID.String(), Login: "administrator",
+		}), tok))
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Fatalf("unentitled CreateRDPSession = %v, want NotFound", connect.CodeOf(err))
+		}
+	})
+
+	t.Run("non-rdp asset is not found", func(t *testing.T) {
+		assetID := seedSSHAsset(t, q, []string{"administrator"})
+		role := createRoleWithCaps(t, ctx, q, "rdp-ssh-"+uuid.NewString(), pgtype.UUID{}, `["rdp:login:administrator"]`)
+
+		email := "rdpwrongkind-" + uuid.NewString() + "@sess"
+		seedUser(t, pool, email, "password123", false)
+		var uid uuid.UUID
+		if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = $1", email).Scan(&uid); err != nil {
+			t.Fatalf("lookup user: %v", err)
+		}
+		if _, err := q.CreateRoleBinding(ctx, sqlc.CreateRoleBindingParams{
+			RoleID: role.ID, ScopeAssetID: pgU(assetID), SubjectUserID: pgU(uid),
+		}); err != nil {
+			t.Fatalf("CreateRoleBinding: %v", err)
+		}
+
+		tok := authClient(t, url, email, "password123")
+		_, err := client.CreateRDPSession(ctx, withToken(connect.NewRequest(&sessionv1.CreateRDPSessionRequest{
+			AssetId: assetID.String(), Login: "administrator",
+		}), tok))
+		if connect.CodeOf(err) != connect.CodeNotFound {
+			t.Fatalf("non-rdp CreateRDPSession = %v, want NotFound", connect.CodeOf(err))
 		}
 	})
 }

@@ -143,11 +143,36 @@ func (s *Handler) CreateKubernetesSession(ctx context.Context, req *connect.Requ
 	}), nil
 }
 
-// CreateRDPSession is not yet implemented; the admission-ticket logic lands in
-// a follow-up task. Stubbed here only to satisfy SessionServiceHandler so the
-// proto regen builds.
-func (s *Handler) CreateRDPSession(_ context.Context, _ *connect.Request[sessionv1.CreateRDPSessionRequest]) (*connect.Response[sessionv1.CreateRDPSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("CreateRDPSession is not implemented"))
+// CreateRDPSession authorizes the caller to reach the RDP asset via the given
+// login (held-closure rdp:login check) and mints a short-lived browser-terminal
+// admission ticket with no client-key binding, mirroring CreateWebSession.
+// Existence-hiding: an unentitled caller, an unknown asset, and a non-rdp asset
+// all yield NotFound.
+func (s *Handler) CreateRDPSession(ctx context.Context, req *connect.Request[sessionv1.CreateRDPSessionRequest]) (*connect.Response[sessionv1.CreateRDPSessionResponse], error) {
+	caller, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	assetID, err := uuid.Parse(req.Msg.AssetId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad asset_id"))
+	}
+	if req.Msg.Login == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("empty login"))
+	}
+	out, err := s.svc.CreateRDPSession(ctx, caller.ID, assetID, req.Msg.Login, req.Msg.Insecure)
+	switch {
+	case errors.Is(err, ErrNoAccess):
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no session access"))
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&sessionv1.CreateRDPSessionResponse{
+		Ticket:          out.Token,
+		GatewayEndpoint: out.Endpoint,
+		ExpiresAt:       timestamppb.New(out.ExpiresAt),
+		Insecure:        out.Insecure,
+	}), nil
 }
 
 // parseSSHPublicKey accepts the client public key in either OpenSSH
