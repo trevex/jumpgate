@@ -1,0 +1,23 @@
+# Standalone workspace: keep IronRDP's transitive picky/curve25519-dalek rc-pins
+# out of the root and rdp-proxy Cargo.locks (same isolation reason as
+# workers/rdp-proxy). Browser-only renderer — decodes graphics + encodes input,
+# connects to nothing, does no TLS/auth. So it needs NONE of connector/tokio/
+# sspi/reqwest/rustls.
+[workspace]
+
+[package]
+name = "jumpgate-rdp"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ironrdp-graphics = "0.9.0"
+ironrdp-input = "0.7"
+ironrdp-pdu = "0.9"
+ironrdp-session = "0.11"
+ironrdp-svc = "0.8.0"
+wasm-bindgen = "0.2.127"

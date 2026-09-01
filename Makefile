@@ -10,7 +10,7 @@ KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 ZENSICAL_IMAGE ?= zensical/zensical:latest
 
-.PHONY: help gen sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
+.PHONY: help gen wasm sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build docs docs-serve
 
@@ -37,6 +37,10 @@ help: ## List targets
 gen: ## Generate protobuf stubs (Go + Rust) and sqlc database code
 	buf generate
 	$(MAKE) sqlc
+
+wasm: ## Build the browser RDP renderer to web/src/wasm (committed glue, like gen)
+	cd web/wasm/jumpgate-rdp && wasm-pack build --target web --out-dir ../../src/wasm
+	rm -f web/src/wasm/.gitignore web/src/wasm/package.json
 
 sqlc: ## Generate sqlc database access code (spins an ephemeral PostgreSQL)
 	bash hack/gen-sqlc.sh

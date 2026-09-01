@@ -79,7 +79,11 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          inherit (pre-commit-check) shellHook;
+          # Run the git-hooks installer, then ensure the wasm target is present
+          # (rustup-managed) so `wasm-pack build` / `make wasm` works out of the box.
+          shellHook = pre-commit-check.shellHook + ''
+            rustup target add wasm32-unknown-unknown 2>/dev/null || true
+          '';
 
           buildInputs = [
             go.withDefaultTools
@@ -87,6 +91,7 @@
             pkgs.sqlc
             pkgs.goose
             pkgs.rustup
+            pkgs.wasm-pack
             pkgs.cargo-nextest
             pkgs.cargo-watch
             pkgs.cargo-deny
