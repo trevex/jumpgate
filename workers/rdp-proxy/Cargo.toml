@@ -56,3 +56,13 @@ ironrdp-pdu = "0.9"
 ironrdp-tokio = { version = "0.10", features = ["reqwest"] }
 # Extract the target's TLS server public key from its leaf cert (for CredSSP).
 x509-cert = "0.2"
+# Session-recording upload stack, ported verbatim from ssh-proxy: rusty-s3 signs
+# S3 multipart requests, reqwest (rustls-no-provider → ring installed by us) sends
+# them, sha2/hex for the recording digest, async-trait for the PartUploader seam.
+rusty-s3 = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"] }
+url = "2"
+webpki-roots = "1"
+sha2 = "0.10"
+hex = "0.4"
+async-trait = "0.1"

@@ -11,7 +11,6 @@
 //! and sent to the browser as the seed frame). The frame writer/reader are
 //! shared with the Phase-3 recorder; kept here as the single source of the
 //! wire format. All integers little-endian; pure std, no IronRDP types.
-#![allow(dead_code)] // frame codec is exercised by tests + the Phase-3 recorder.
 
 use std::io::{self, Read, Write};
 

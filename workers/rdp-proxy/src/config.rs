@@ -1,8 +1,8 @@
 //! rdp-proxy worker runtime configuration from the environment.
 //!
-//! The same `WORKER_*` / `WARDEN_*` / `*_SPIFFE` vars ssh-proxy reads, minus the
-//! recording-S3 and host-key-pin knobs (Phase 2 does not record and RDP pins the
-//! target's server CA per-session via SetupSession, not a deploy-time toggle).
+//! The same `WORKER_*` / `WARDEN_*` / `*_SPIFFE` / `RECORDING_*` vars ssh-proxy
+//! reads, minus the host-key-pin knob (RDP pins the target's server CA
+//! per-session via SetupSession, not a deploy-time toggle).
 use std::env;
 
 #[derive(Clone, Debug)]
@@ -30,6 +30,14 @@ pub struct Config {
     /// WARDEN_SPIFFE — the expected SPIFFE id of warden's mesh server cert,
     /// pinned by the WorkerStream control client.
     pub warden_spiffe: String,
+    /// RECORDING_BUCKET — S3 bucket session recordings are uploaded to.
+    pub recording_bucket: String,
+    /// RECORDING_S3_ENDPOINT — custom S3 endpoint (e.g. MinIO); empty = AWS default.
+    pub recording_s3_endpoint: String,
+    /// RECORDING_S3_REGION — S3 region for recording uploads.
+    pub recording_s3_region: String,
+    /// RECORDING_PART_SIZE — multipart upload part size in bytes.
+    pub recording_part_size: usize,
 }
 
 impl Config {
@@ -46,6 +54,25 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("WORKER_CAPACITY must be a non-negative integer"))?,
             Err(_) => 100,
         };
+        let recording_part_size = match env::var("RECORDING_PART_SIZE") {
+            Ok(v) => v.parse::<usize>().map_err(|_| {
+                anyhow::anyhow!("RECORDING_PART_SIZE must be a non-negative integer")
+            })?,
+            Err(_) => crate::record::MIN_PART_SIZE,
+        };
+        // S3 rejects a non-final multipart part below 5 MiB, so a smaller part size
+        // can never trigger an early upload — it would silently do nothing. Clamp
+        // up to the floor and tell the operator rather than accept a dead value.
+        let recording_part_size = if recording_part_size < crate::record::MIN_PART_SIZE {
+            tracing::warn!(
+                requested = recording_part_size,
+                floor = crate::record::MIN_PART_SIZE,
+                "RECORDING_PART_SIZE is below S3's 5 MiB minimum; clamping up to the floor",
+            );
+            crate::record::MIN_PART_SIZE
+        } else {
+            recording_part_size
+        };
         Ok(Self {
             worker_id: req("WORKER_ID")?,
             dataplane_addr: opt("WORKER_DATAPLANE_ADDR", "0.0.0.0:9000"),
@@ -57,6 +84,10 @@ impl Config {
             capacity,
             gateway_spiffe: opt("GATEWAY_SPIFFE", "spiffe://jumpgate/gateway/gateway"),
             warden_spiffe: opt("WARDEN_SPIFFE", "spiffe://jumpgate/warden/warden"),
+            recording_bucket: opt("RECORDING_BUCKET", ""),
+            recording_s3_endpoint: opt("RECORDING_S3_ENDPOINT", ""),
+            recording_s3_region: opt("RECORDING_S3_REGION", "us-east-1"),
+            recording_part_size,
         })
     }
 }
@@ -82,6 +113,10 @@ mod tests {
             "WORKER_CAPACITY",
             "GATEWAY_SPIFFE",
             "WARDEN_SPIFFE",
+            "RECORDING_BUCKET",
+            "RECORDING_S3_ENDPOINT",
+            "RECORDING_S3_REGION",
+            "RECORDING_PART_SIZE",
         ];
         for k in keys {
             env::remove_var(k);
@@ -103,6 +138,11 @@ mod tests {
         assert_eq!(cfg.capacity, 100);
         assert_eq!(cfg.gateway_spiffe, "spiffe://jumpgate/gateway/gateway");
         assert_eq!(cfg.warden_spiffe, "spiffe://jumpgate/warden/warden");
+        // Recording knobs default to disabled bucket + the 5 MiB part floor.
+        assert_eq!(cfg.recording_bucket, "");
+        assert_eq!(cfg.recording_s3_endpoint, "");
+        assert_eq!(cfg.recording_s3_region, "us-east-1");
+        assert_eq!(cfg.recording_part_size, 5 * 1024 * 1024);
 
         for k in keys {
             env::remove_var(k);

@@ -12,6 +12,7 @@ pub mod bridge;
 pub mod config;
 pub mod control;
 pub mod frame;
+pub mod record;
 pub mod record_format;
 pub mod server;
 pub mod setup;

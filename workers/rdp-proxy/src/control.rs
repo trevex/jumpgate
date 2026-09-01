@@ -4,8 +4,9 @@
 //! `SessionEnded`.
 //!
 //! Identical to ssh-proxy's control plane except the `Register.protocols` list
-//! (`["rdp"]`) and that Phase-2 RDP sessions carry no recording (`recording:
-//! None` on every `SessionEnded`).
+//! (`["rdp"]`); a recorded RDP session carries its `rdp-graphics-v1` disposition
+//! on `SessionEnded.recording`, with self-attribution fields left empty (warden
+//! resolves parties from the `live_sessions` row).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,7 +19,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
-    Register, ServerMessage, SessionEnded, WorkerMessage,
+    Register, RecordingInfo, ServerMessage, SessionEnded, WorkerMessage,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
 
@@ -174,8 +175,8 @@ async fn connect_and_run(
                 }
             }
 
-            // Data plane → warden: a finished session to report. Phase 2 never
-            // records, so `recording` is always None.
+            // Data plane → warden: a finished session to report, carrying the
+            // recording disposition for a recorded session.
             ended = session_ended_rx.recv() => {
                 match ended {
                     Some(rep) => {
@@ -183,7 +184,21 @@ async fn connect_and_run(
                             msg: Some(worker_message::Msg::SessionEnded(SessionEnded {
                                 session_id: rep.session_id,
                                 reason: rep.reason,
-                                recording: None,
+                                recording: rep.recording.map(|r| RecordingInfo {
+                                    object_key: r.object_key,
+                                    size_bytes: r.size_bytes,
+                                    sha256: r.sha256,
+                                    started_at_unix_ms: r.started_at_unix_ms,
+                                    ended_at_unix_ms: r.ended_at_unix_ms,
+                                    status: r.status,
+                                    grant_id: r.grant_id,
+                                    // Self-attribution fields are for the k8s broker only;
+                                    // rdp resolves parties from its live_sessions row (empty here).
+                                    user_id: String::new(),
+                                    asset_id: String::new(),
+                                    worker_id: String::new(),
+                                    session_id: String::new(),
+                                }),
                             })),
                         };
                         if tx.send(frame).await.is_err() {

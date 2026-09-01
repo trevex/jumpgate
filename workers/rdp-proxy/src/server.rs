@@ -20,14 +20,68 @@ use jumpgate_mesh::tls::MeshClientCerts;
 use crate::config::Config;
 use crate::control::SessionRegistry;
 use crate::frame;
+use crate::record::{PartUploader, RecordStatus, RecorderConfig, S3Uploader};
 use crate::setup::{setup_session, TargetCredential};
 
-/// A finished session to report to warden via the control plane. Phase 2 carries
-/// no recording, so this is just the id + reason (see [`crate::control`]).
-#[derive(Debug, Clone)]
+/// Current wall-clock time as unix milliseconds (saturating at 0 before the
+/// epoch). Stamps the recording end timestamp.
+fn unix_millis_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// A finished session to report to warden via the control plane: the id, the end
+/// reason, and — for a recorded session — its recording disposition.
 pub struct SessionEndReport {
     pub session_id: String,
     pub reason: String,
+    pub recording: Option<RecordingOutcome>,
+}
+
+/// The recorded-session disposition carried to warden (a port of ssh-proxy's).
+pub struct RecordingOutcome {
+    pub object_key: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub started_at_unix_ms: i64,
+    pub ended_at_unix_ms: i64,
+    pub status: String, // "completed" | "failed"
+    /// The access grant that authorized the session (empty for standing-only
+    /// access), for warden to attribute the recording.
+    pub grant_id: String,
+}
+
+/// A synthetic `failed` recording outcome for a `recording_required` session whose
+/// multipart upload could never be opened (nothing was ever written). Reported
+/// when the session is refused up front.
+fn failed_recording_outcome(object_key: &str, grant_id: &str) -> RecordingOutcome {
+    RecordingOutcome {
+        object_key: object_key.to_string(),
+        size_bytes: 0,
+        sha256: String::new(),
+        started_at_unix_ms: 0,
+        ended_at_unix_ms: 0,
+        status: "failed".into(),
+        grant_id: grant_id.to_string(),
+    }
+}
+
+/// Open the S3 multipart upload for a required recording, keyed at `object_key`.
+/// Fails when no bucket is configured or the object store rejects the
+/// `CreateMultipartUpload` — either is a fail-closed trigger (refuse before dial).
+async fn build_uploader(config: &Config, object_key: &str) -> anyhow::Result<S3Uploader> {
+    if config.recording_bucket.is_empty() {
+        anyhow::bail!("recording bucket not configured");
+    }
+    S3Uploader::create(
+        &config.recording_s3_endpoint,
+        &config.recording_s3_region,
+        &config.recording_bucket,
+        object_key.to_string(),
+    )
+    .await
 }
 
 /// Bind the data-plane mTLS listener and dispatch each accepted gateway
@@ -203,42 +257,76 @@ async fn run_rdp<S>(
         }
     };
 
-    // 2. Fail closed on a required recording: Phase 2 has no recorder, so a
-    //    session warden marked must-record cannot be served.
-    if outcome.recording_required {
-        tracing::warn!(session_id = %outcome.session_id, "recording required but unsupported on rdp-proxy; refusing");
-        frame::send_error(&mut stream, "session recording is required but unsupported").await;
-        let _ = session_ended_tx.send(SessionEndReport {
-            session_id: outcome.session_id.clone(),
-            reason: "recording_unavailable".into(),
-        });
-        return;
-    }
+    // 2. If warden requires a recording, open the multipart upload UP FRONT —
+    //    BEFORE dialing/authenticating the target. If it cannot be opened (no
+    //    bucket / the object store rejects create), refuse the session: the target
+    //    must never be authenticated when we cannot record.
+    let uploader: Option<Box<dyn PartUploader>> = if outcome.recording_required {
+        match build_uploader(config, &outcome.recording_object_key).await {
+            Ok(u) => Some(Box::new(u)),
+            Err(e) => {
+                tracing::warn!(session_id = %outcome.session_id, error = %e, "recording unavailable; refusing session");
+                frame::send_error(&mut stream, "session recording is required but unavailable").await;
+                let _ = session_ended_tx.send(SessionEndReport {
+                    session_id: outcome.session_id.clone(),
+                    reason: "recording_unavailable".into(),
+                    recording: Some(failed_recording_outcome(
+                        &outcome.recording_object_key,
+                        &outcome.grant_id,
+                    )),
+                });
+                return;
+            }
+        }
+    } else {
+        None
+    };
 
     // setup_session already rejected every non-password arm, so this destructure
     // of the single-variant credential enum is infallible.
     let TargetCredential::Password(password) = &outcome.credential;
 
-    // 3. Register the live session (so a Teardown force-closes it) and bridge.
+    // 3. Register the live session (so a Teardown force-closes it) and bridge. The
+    //    bridge spawns the recorder after the handshake, tees each graphics frame
+    //    into it (fail-closed), and finalizes it on exit.
     let handle = registry.insert(&outcome.session_id);
     tracing::info!(session_id = %outcome.session_id, %login, "RDP session set up");
 
-    let reason = crate::bridge::run(
+    let run_report = crate::bridge::run(
         &outcome.target_address,
         &outcome.target_server_ca,
         &login,
         password,
         handle.cancel,
         stream,
+        uploader,
+        RecorderConfig {
+            part_size: config.recording_part_size,
+            channel_bound: 1024,
+        },
     )
-    .await
-    .reason();
+    .await;
 
-    // 4. Exactly-once cleanup: drop from the registry, report the end once.
+    // 4. Exactly-once cleanup: drop from the registry, report the end (with the
+    //    recording disposition) once.
     registry.remove(&outcome.session_id);
+    let reason = run_report.outcome.reason();
+    let recording = run_report.recording.map(|r| RecordingOutcome {
+        object_key: outcome.recording_object_key.clone(),
+        size_bytes: r.size_bytes,
+        sha256: r.sha256_hex,
+        started_at_unix_ms: run_report.started_at_unix_ms,
+        ended_at_unix_ms: unix_millis_now(),
+        status: match r.status {
+            RecordStatus::Completed => "completed".into(),
+            RecordStatus::Failed => "failed".into(),
+        },
+        grant_id: outcome.grant_id.clone(),
+    });
     let _ = session_ended_tx.send(SessionEndReport {
         session_id: outcome.session_id.clone(),
         reason: reason.to_string(),
+        recording,
     });
     tracing::info!(session_id = %outcome.session_id, reason, "RDP session ended");
 }

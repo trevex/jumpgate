@@ -13,6 +13,7 @@
 //! Ported from the PoC `capture.rs` blocking flow to async (`ironrdp-tokio`).
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Context;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -20,6 +21,10 @@ use tokio::net::TcpStream;
 use tokio::sync::Notify;
 use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
+
+use crate::record::{
+    spawn_recorder, PartUploader, RecordStatus, RecorderConfig, RecorderHandle, RecordingReport,
+};
 
 use ironrdp_connector::{
     ClientConnector, Config, ConnectionResult, Credentials, DesktopSize, ServerName,
@@ -45,6 +50,10 @@ pub enum BridgeOutcome {
     Closed,
     /// The target handshake failed (already surfaced to the browser as ERROR).
     ConnectFailed,
+    /// A required recording could not keep up (its channel overflowed/closed):
+    /// fail closed — the frame is never forwarded and the bridge tears down
+    /// rather than run the session unrecorded.
+    RecordingFailed,
 }
 
 impl BridgeOutcome {
@@ -53,14 +62,51 @@ impl BridgeOutcome {
             BridgeOutcome::Terminated => "terminated",
             BridgeOutcome::Closed => "closed",
             BridgeOutcome::ConnectFailed => "target_unavailable",
+            BridgeOutcome::RecordingFailed => "recording_failed",
         }
     }
+}
+
+/// A synthetic `Failed` report for a recording that was aborted before (or
+/// without) the recorder task ever producing one — e.g. a target-connect failure
+/// after the multipart upload was already opened. Nothing was durably written.
+fn failed_report() -> RecordingReport {
+    RecordingReport {
+        size_bytes: 0,
+        sha256_hex: String::new(),
+        status: RecordStatus::Failed,
+    }
+}
+
+/// Current wall-clock time as unix milliseconds (saturating at 0 before the
+/// epoch). Stamps the recording's start timestamp.
+fn unix_millis_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Run the RDP bridge over an already-authenticated mesh stream (the gateway has
 /// read the CONNECT preamble and answered `200`; it now relays the framed opcode
 /// protocol). Connects to the target, seeds the browser with the HEADER, then
 /// pumps PDUs/input until either side closes or `cancel` fires.
+/// The recording disposition of a finished [`run`]: the recorder task's report
+/// (if the session was recorded) and the recording's start timestamp (unix ms,
+/// stamped by the bridge right after the handshake). The caller maps this to the
+/// `SessionEnded.recording` proto, stamping the end timestamp.
+pub struct RunReport {
+    pub outcome: BridgeOutcome,
+    pub recording: Option<RecordingReport>,
+    pub started_at_unix_ms: i64,
+}
+
+/// A recorder was requested via `uploader = Some`. The multipart upload is opened
+/// by the CALLER before dialing (so a session that cannot be recorded is refused
+/// before the target is ever authenticated); `bridge::run` only spawns the encoder
+/// task once the handshake yields the seed [`Header`]. If the handshake fails
+/// after the upload was opened, the bridge aborts it (no dangling multipart).
+#[allow(clippy::too_many_arguments)]
 pub async fn run<S>(
     target_address: &str,
     target_server_ca: &str,
@@ -68,18 +114,40 @@ pub async fn run<S>(
     password: &Zeroizing<String>,
     cancel: Arc<Notify>,
     stream: S,
-) -> BridgeOutcome
+    uploader: Option<Box<dyn PartUploader>>,
+    rec_cfg: RecorderConfig,
+) -> RunReport
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let (mut mesh_reader, mut mesh_writer) = tokio::io::split(stream);
+
+    // On any failure BEFORE the recorder task is spawned, abort the (already
+    // opened) multipart upload so no dangling upload is left behind, and surface a
+    // synthetic `Failed` report.
+    macro_rules! refuse {
+        ($outcome:expr) => {{
+            let recording = match uploader {
+                Some(u) => {
+                    u.abort().await;
+                    Some(failed_report())
+                }
+                None => None,
+            };
+            return RunReport {
+                outcome: $outcome,
+                recording,
+                started_at_unix_ms: 0,
+            };
+        }};
+    }
 
     let (host, port) = match split_host_port(target_address) {
         Some(v) => v,
         None => {
             tracing::warn!(%target_address, "malformed RDP target address");
             frame::send_error(&mut mesh_writer, "malformed target address").await;
-            return BridgeOutcome::ConnectFailed;
+            refuse!(BridgeOutcome::ConnectFailed);
         }
     };
 
@@ -93,9 +161,13 @@ where
         Err(e) => {
             tracing::warn!(%target_address, error = %e, "RDP target handshake failed");
             frame::send_error(&mut mesh_writer, "target connection failed").await;
-            return BridgeOutcome::ConnectFailed;
+            refuse!(BridgeOutcome::ConnectFailed);
         }
     };
+    // Handshake done: anchor the session clock now, before the seed frame, so the
+    // first recorded PDU's relative timestamp starts from ~0.
+    let start = Instant::now();
+    let started_at_unix_ms = unix_millis_now();
     tracing::info!(
         %target_address,
         width = result.desktop_size.width,
@@ -109,15 +181,23 @@ where
     let mut header_bytes = Vec::new();
     if header.write(&mut header_bytes).is_err() {
         frame::send_error(&mut mesh_writer, "failed to encode session header").await;
-        return BridgeOutcome::ConnectFailed;
+        refuse!(BridgeOutcome::ConnectFailed);
     }
     if frame::write_frame(&mut mesh_writer, OP_HEADER, &header_bytes)
         .await
         .is_err()
         || mesh_writer.flush().await.is_err()
     {
-        return BridgeOutcome::Closed;
+        refuse!(BridgeOutcome::Closed);
     }
+
+    // Spawn the recorder now that the seed HEADER is known: it is written as the
+    // FIRST recording bytes, then every server→client PDU is teed into it before
+    // being forwarded. `spawn_recorder` itself is infallible (the fallible
+    // multipart-create already happened caller-side), so there is no fail-closed
+    // gap between here and the pump.
+    let recorder: Option<(RecorderHandle, tokio::task::JoinHandle<RecordingReport>)> =
+        uploader.map(|u| spawn_recorder(u, header, rec_cfg));
 
     // Raw two-direction pump.
     // ponytail: raw two-direction pump; genuinely raw (unlike ssh's channel bridge).
@@ -135,6 +215,19 @@ where
             pdu = target_read.read_pdu() => {
                 match pdu {
                     Ok((action, payload)) => {
+                        // FAIL CLOSED: tee the graphics frame into the recorder
+                        // FIRST. If a required recording can't accept it (channel
+                        // full/closed), the frame is NEVER forwarded — tear down.
+                        // The payload copy is only materialized when recording.
+                        if let Some((rec, _)) = recorder.as_ref() {
+                            let mut data = Vec::with_capacity(payload.len());
+                            data.extend_from_slice(&payload);
+                            let millis = start.elapsed().as_millis() as u64;
+                            if rec.try_frame(millis, action_u8(action), data).is_err() {
+                                outcome = BridgeOutcome::RecordingFailed;
+                                break;
+                            }
+                        }
                         let mut out = Vec::with_capacity(payload.len() + 1);
                         out.push(action_u8(action));
                         out.extend_from_slice(&payload);
@@ -170,7 +263,30 @@ where
     }
 
     tracing::debug!(?outcome, "RDP pump finished");
-    outcome
+
+    // Finalize the recording: a clean end (terminated / natural close) completes
+    // the multipart upload; a recording failure aborts it. Await the recorder task
+    // for the authoritative report (a join failure maps to a `Failed` report).
+    let recording = match recorder {
+        Some((handle, join)) => {
+            if outcome == BridgeOutcome::RecordingFailed {
+                handle.fail().await;
+            } else {
+                handle.finish().await;
+            }
+            Some(join.await.unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "recorder task join failed");
+                failed_report()
+            }))
+        }
+        None => None,
+    };
+
+    RunReport {
+        outcome,
+        recording,
+        started_at_unix_ms,
+    }
 }
 
 /// Build the IronRDP connector config. Exactly the 30 fields published
@@ -469,6 +585,46 @@ mod tests {
         assert_eq!(split_host_port("nohost"), None);
         assert_eq!(split_host_port(":3389"), None);
         assert_eq!(split_host_port("host:notaport"), None);
+    }
+
+    #[test]
+    fn outcome_maps_to_session_ended_reason() {
+        assert_eq!(BridgeOutcome::Terminated.reason(), "terminated");
+        assert_eq!(BridgeOutcome::Closed.reason(), "closed");
+        assert_eq!(BridgeOutcome::ConnectFailed.reason(), "target_unavailable");
+        assert_eq!(BridgeOutcome::RecordingFailed.reason(), "recording_failed");
+    }
+
+    /// FAIL CLOSED (tee seam): the `read_pdu` arm tees each frame into the
+    /// recorder BEFORE forwarding and, on an overflow/closed channel, sets the
+    /// outcome to `RecordingFailed` and never forwards. The full pump loop needs a
+    /// live IronRDP handshake (no framed streams can be built in a unit test), so
+    /// this exercises the exact tee→outcome decision the loop makes: a bounded
+    /// channel already full makes `try_frame` fail, which selects `RecordingFailed`.
+    #[test]
+    fn full_recorder_channel_selects_recording_failed() {
+        use crate::record::RecorderHandle;
+
+        // bound = 1, receiver retained → the first frame fills the buffer, the
+        // second overflows (try_send Full → try_frame errors).
+        let (handle, _rx) = RecorderHandle::for_test(1);
+        assert!(
+            handle.try_frame(0, record_format::ACTION_FASTPATH, b"first".to_vec()).is_ok(),
+            "first frame fills the single-slot buffer",
+        );
+
+        // Mirror the bridge's inline tee: an errored try_frame selects RecordingFailed
+        // and the frame is NOT forwarded.
+        let outcome = if handle
+            .try_frame(10, record_format::ACTION_FASTPATH, b"second".to_vec())
+            .is_err()
+        {
+            BridgeOutcome::RecordingFailed
+        } else {
+            BridgeOutcome::Closed
+        };
+        assert_eq!(outcome, BridgeOutcome::RecordingFailed);
+        assert_eq!(outcome.reason(), "recording_failed");
     }
 
     #[test]
