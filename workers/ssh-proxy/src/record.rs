@@ -1,8 +1,12 @@
 //! Streaming session recorder: consumes recording events, encodes them as
-//! asciicast v2, buffers them into multipart-upload parts, streams those parts
-//! to object storage as the session runs, and maintains a rolling SHA-256 over
-//! the exact bytes written. On finish it completes the multipart upload (or on
-//! failure aborts it) and returns a [`RecordingReport`].
+//! asciicast v2, and buffers them into multipart-upload parts. A part is
+//! uploaded to object storage once it reaches the part-size floor
+//! ([`MIN_PART_SIZE`], 5 MiB — S3's minimum for a non-final part), so a session
+//! buffers up to one part in memory and uploads per part rather than streaming
+//! continuously; a low-traffic session's bytes are not durable until it
+//! accumulates a full part. A rolling SHA-256 is kept over the exact bytes
+//! written. On finish it completes the multipart upload (or on failure aborts
+//! it) and returns a [`RecordingReport`].
 //!
 //! The multipart backend is abstracted behind [`PartUploader`] so the recorder
 //! can be unit-tested without a real object store; [`S3Uploader`] is the

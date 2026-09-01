@@ -37,8 +37,6 @@ pub struct Config {
     pub recording_s3_region: String,
     /// RECORDING_PART_SIZE — multipart upload part size in bytes.
     pub recording_part_size: usize,
-    /// RECORDING_FLUSH_INTERVAL_SECS — max interval between recording flushes.
-    pub recording_flush_interval_secs: u64,
     /// WORKER_REQUIRE_HOST_KEY_PIN — when true, a target with no configured
     /// host-key pin is rejected (fail closed) instead of accept-and-logged.
     /// Default false preserves accept-and-log for unpinned assets.
@@ -65,12 +63,6 @@ impl Config {
             })?,
             Err(_) => 5 * 1024 * 1024,
         };
-        let recording_flush_interval_secs = match env::var("RECORDING_FLUSH_INTERVAL_SECS") {
-            Ok(v) => v.parse::<u64>().map_err(|_| {
-                anyhow::anyhow!("RECORDING_FLUSH_INTERVAL_SECS must be a non-negative integer")
-            })?,
-            Err(_) => 5,
-        };
         Ok(Self {
             worker_id: req("WORKER_ID")?,
             dataplane_addr: opt("WORKER_DATAPLANE_ADDR", "0.0.0.0:9000"),
@@ -86,7 +78,6 @@ impl Config {
             recording_s3_endpoint: opt("RECORDING_S3_ENDPOINT", ""),
             recording_s3_region: opt("RECORDING_S3_REGION", "us-east-1"),
             recording_part_size,
-            recording_flush_interval_secs,
             require_host_key_pin: matches!(
                 opt("WORKER_REQUIRE_HOST_KEY_PIN", "false").trim(),
                 "true" | "1"
@@ -120,7 +111,6 @@ mod tests {
             "RECORDING_S3_ENDPOINT",
             "RECORDING_S3_REGION",
             "RECORDING_PART_SIZE",
-            "RECORDING_FLUSH_INTERVAL_SECS",
         ];
         for k in keys {
             env::remove_var(k);
@@ -139,21 +129,18 @@ mod tests {
         assert_eq!(cfg.recording_s3_endpoint, "");
         assert_eq!(cfg.recording_s3_region, "us-east-1");
         assert_eq!(cfg.recording_part_size, 5 * 1024 * 1024);
-        assert_eq!(cfg.recording_flush_interval_secs, 5);
 
         // Recording vars set → parsed.
         env::set_var("RECORDING_BUCKET", "recordings");
         env::set_var("RECORDING_S3_ENDPOINT", "http://minio:9000");
         env::set_var("RECORDING_S3_REGION", "eu-central-1");
         env::set_var("RECORDING_PART_SIZE", "8388608");
-        env::set_var("RECORDING_FLUSH_INTERVAL_SECS", "2");
 
         let cfg = Config::from_env().expect("set values parse");
         assert_eq!(cfg.recording_bucket, "recordings");
         assert_eq!(cfg.recording_s3_endpoint, "http://minio:9000");
         assert_eq!(cfg.recording_s3_region, "eu-central-1");
         assert_eq!(cfg.recording_part_size, 8 * 1024 * 1024);
-        assert_eq!(cfg.recording_flush_interval_secs, 2);
 
         for k in keys {
             env::remove_var(k);
