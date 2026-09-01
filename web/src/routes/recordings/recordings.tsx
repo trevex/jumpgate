@@ -26,6 +26,7 @@ import { getUserDisplay } from "@/gen/jumpgate/identity/v1/identity-IdentityServ
 import type { Recording } from "@/gen/jumpgate/recording/v1/recording_pb";
 import { PgTimelineViewer } from "./pg-timeline-view";
 import { K8sAuditViewer } from "./k8s-audit-view";
+import { RdpView } from "./rdp-view";
 import {
   Table,
   TableHeader,
@@ -231,9 +232,14 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    // Postgres and Kubernetes recordings use their own structured viewers, not
-    // the terminal player.
-    if (recData?.format === "pgwire-timeline-v1" || recData?.format === "k8s-audit-v1") return;
+    // Postgres, Kubernetes, and RDP recordings use their own structured
+    // viewers, not the terminal player.
+    if (
+      recData?.format === "pgwire-timeline-v1" ||
+      recData?.format === "k8s-audit-v1" ||
+      recData?.format === "rdp-graphics-v1"
+    )
+      return;
     setPlayerError(null);
 
     // Dispose previous instance before creating a new one.
@@ -346,6 +352,10 @@ function PlayerPanel({ sessionId, onClose }: PlayerPanelProps) {
       ) : recData.format === "k8s-audit-v1" ? (
         <div className="flex-1 overflow-hidden">
           <K8sAuditViewer sessionId={sessionId} />
+        </div>
+      ) : recData.format === "rdp-graphics-v1" ? (
+        <div className="flex-1 overflow-hidden">
+          <RdpView sessionId={sessionId} />
         </div>
       ) : (
         <div className="flex-1 overflow-hidden flex items-center justify-center p-2">
