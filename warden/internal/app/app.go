@@ -207,11 +207,11 @@ func Run(ctx context.Context, cfg config.Config) error {
 		// of the in-DB chain is detectable. *S3Presigner.Put satisfies audit.AnchorStore.
 		// Best-effort: errors are logged inside RunAnchorer and never block. Exits on
 		// ctx.Done() (graceful shutdown).
+		// RunAnchorer both writes anchors and verifies the live chain against the last
+		// one each interval (tamper detection). It tracks the last anchor in memory, so
+		// steady-state verification reads no object store — it LISTs once at startup to
+		// recover the previous run's anchor. Best-effort; errors logged, never blocks.
 		spawn(func(ctx context.Context) { auditLog.RunAnchorer(ctx, presign, cfg.AuditAnchorInterval) })
-		// Read side of the tamper-evidence: verify the live chain still covers the
-		// last externalized anchor, at startup and each interval. Detection only
-		// (logs ERROR on truncation); the anchorer above is the writer.
-		spawn(func(ctx context.Context) { auditLog.RunIntegrityVerifier(ctx, presign, cfg.AuditAnchorInterval) })
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}

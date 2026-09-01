@@ -16,13 +16,17 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// AnchorStore is the minimal object-store write capability the anchorer needs.
-// It is defined here (consumer-side) so the audit package stays decoupled from
-// any concrete S3 client: the wiring adapts warden's real object-store client to
-// this interface. Put MUST use a distinct key per anchor (never overwrite) so
-// anchors accumulate append-only.
+// AnchorStore is the object-store capability the anchorer/verifier needs. It is
+// defined here (consumer-side) so the audit package stays decoupled from any
+// concrete S3 client: the wiring adapts warden's real object-store client to it.
+// Put MUST use a distinct key per anchor (never overwrite) so anchors accumulate
+// append-only. ListKeys/GetObject are used ONCE at startup to recover the last
+// anchor of a previous run (see RunAnchorer); steady-state verification reads no
+// object store at all. recording.S3Presigner satisfies all three.
 type AnchorStore interface {
 	Put(ctx context.Context, key string, body []byte) error
+	ListKeys(ctx context.Context, prefix string) ([]string, error)
+	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 // Anchor is the small JSON object written to the object store to pin the audit
@@ -50,23 +54,26 @@ func anchorKey(seq int64) string {
 }
 
 // AnchorTip reads the current chain tip and, if it has advanced past lastSeq,
-// writes a fresh anchor object to the store and returns the new tip seq. If the
-// tip has not advanced (or the log is empty) it returns lastSeq unchanged and
-// writes nothing. All object-store and DB errors are returned to the caller,
-// which logs them (fail-open) — anchoring never blocks audit writes.
-func (l *Logger) AnchorTip(ctx context.Context, store AnchorStore, lastSeq int64) (int64, error) {
+// writes a fresh anchor object to the store and returns the new tip's (seq, hash).
+// If the tip has not advanced (or the log is empty) it returns (lastSeq, nil) and
+// writes nothing — a nil hash signals "no new anchor". The returned hash is the one
+// just externalized, captured here from a freshly-read (trusted) tip, so the caller
+// can retain it as an in-memory reference for later truncation checks without
+// re-reading the DB (which would be circular). All object-store and DB errors are
+// returned to the caller, which logs them (fail-open) — anchoring never blocks.
+func (l *Logger) AnchorTip(ctx context.Context, store AnchorStore, lastSeq int64) (int64, []byte, error) {
 	tip, err := sqlc.New(l.pool).AuditChainTip(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Empty log: nothing to anchor yet.
-		return lastSeq, nil
+		return lastSeq, nil, nil
 	}
 	if err != nil {
-		return lastSeq, fmt.Errorf("read chain tip: %w", err)
+		return lastSeq, nil, fmt.Errorf("read chain tip: %w", err)
 	}
 	seq := tip.Seq
 	if seq <= lastSeq {
 		// Tip has not advanced since the last anchor: no new anchor needed.
-		return lastSeq, nil
+		return lastSeq, nil, nil
 	}
 
 	body, err := json.Marshal(Anchor{
@@ -75,29 +82,66 @@ func (l *Logger) AnchorTip(ctx context.Context, store AnchorStore, lastSeq int64
 		AnchoredAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
-		return lastSeq, fmt.Errorf("marshal anchor: %w", err)
+		return lastSeq, nil, fmt.Errorf("marshal anchor: %w", err)
 	}
 	if err := store.Put(ctx, anchorKey(seq), body); err != nil {
-		return lastSeq, fmt.Errorf("put anchor: %w", err)
+		return lastSeq, nil, fmt.Errorf("put anchor: %w", err)
 	}
-	return seq, nil
+	return seq, tip.EntryHash, nil
 }
 
-// RunAnchorer periodically anchors the audit hash-chain tip to the object store.
-// Every interval it reads the tip and, if it advanced since the last anchor,
-// writes a distinct append-only anchor object. It is best-effort defense-in-depth:
-// any error (store unreachable, DB error) is LOGGED and never blocks anything, and
-// the loop retries on the next tick. It exits on ctx.Done() (graceful shutdown).
-// The caller MUST only start it when an object store is configured; a nil store is
-// treated as "not configured" and the goroutine returns immediately with a notice.
+// RunAnchorer periodically anchors the audit hash-chain tip to the object store AND
+// verifies the live chain still covers the last anchor. Every interval it (1) checks
+// the chain against the last anchor it knows, then (2) writes a new anchor if the tip
+// advanced. It is best-effort defense-in-depth: ErrTailTruncated is logged at ERROR
+// (the in-DB chain no longer covers a provably-externalized tip — investigate now);
+// operational errors are WARN and retried next tick; nothing ever blocks. Exits on
+// ctx.Done(). Start only when an object store is configured (nil → immediate return).
+//
+// COST: the last anchor's (seq, hash) is tracked IN MEMORY — captured from AnchorTip
+// at write time, when the DB read is trusted — so steady-state verification is just
+// two indexed DB lookups (VerifyTipAtLeast) with NO object-store access. The store is
+// LISTed exactly once, at startup, to recover the previous run's last anchor; that is
+// the only way to detect truncation that happened while warden was down (the reference
+// of truth must live outside the DB being verified). See VerifyLatestAnchor.
 func (l *Logger) RunAnchorer(ctx context.Context, store AnchorStore, interval time.Duration) {
 	if store == nil {
 		slog.Info("audit anchorer disabled: no object store configured")
 		return
 	}
-	// lastSeq tracks the highest tip we have already anchored, so we skip writing
-	// when the chain has not advanced (avoids churn / duplicate anchors).
+
+	// lastSeq/lastHash: the highest tip we have anchored (and its hash). Skips
+	// re-writing when the chain has not advanced, and is the reference the periodic
+	// verify checks against without touching the store.
 	var lastSeq int64
+	var lastHash []byte
+
+	// Bootstrap (one-time, the ONLY store read on the verify path): recover the last
+	// anchor from a previous run so a restart still detects truncation that happened
+	// while warden was down. A missing/unreadable anchor just means "nothing to verify
+	// yet" — the first tick below will write one.
+	if a, err := l.latestAnchor(ctx, store); err != nil {
+		slog.Warn("audit anchor bootstrap read failed", "err", err)
+	} else if a != nil {
+		if h, derr := hex.DecodeString(a.EntryHash); derr == nil {
+			lastSeq, lastHash = a.Seq, h
+		}
+	}
+
+	verify := func() {
+		if lastHash == nil {
+			return // nothing anchored yet
+		}
+		switch err := l.VerifyTipAtLeast(ctx, lastSeq, lastHash); {
+		case errors.Is(err, ErrTailTruncated):
+			slog.Error("AUDIT CHAIN TAMPER DETECTED: live chain no longer covers the last externalized anchor", "anchored_seq", lastSeq)
+		case err != nil && ctx.Err() == nil:
+			slog.Warn("audit integrity verify failed", "err", err)
+		}
+	}
+
+	verify() // startup check against the recovered anchor
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -105,41 +149,31 @@ func (l *Logger) RunAnchorer(ctx context.Context, store AnchorStore, interval ti
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			newSeq, err := l.AnchorTip(ctx, store, lastSeq)
+			verify() // in-memory reference — 2 indexed DB reads, no store access
+			seq, hash, err := l.AnchorTip(ctx, store, lastSeq)
 			if err != nil {
-				// Fail-open: log and keep going. A future tick retries.
 				slog.Warn("audit anchor failed", "err", err)
 				continue
 			}
-			if newSeq != lastSeq {
-				slog.Info("audit chain tip anchored", "seq", newSeq)
-				lastSeq = newSeq
+			if hash != nil { // tip advanced → a new anchor was written
+				slog.Info("audit chain tip anchored", "seq", seq)
+				lastSeq, lastHash = seq, hash
 			}
 		}
 	}
 }
 
-// AnchorReadStore reads back externalized anchors so the live chain can be verified
-// against them. It is the read counterpart of AnchorStore; recording.S3Presigner
-// satisfies it (ListKeys + GetObject).
-type AnchorReadStore interface {
-	ListKeys(ctx context.Context, prefix string) ([]string, error)
-	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
-}
-
-// VerifyLatestAnchor reads the most recent externalized anchor and cross-checks the
-// live audit chain against it via VerifyTipAtLeast. nil means the chain still covers
-// the anchored tip (or nothing has been anchored yet); ErrTailTruncated means the
-// chain was truncated/rewritten below a tip that was provably externalized — tamper
-// evidence the in-DB Verify alone cannot detect. Other errors are operational
-// (store unreachable, malformed anchor).
-func (l *Logger) VerifyLatestAnchor(ctx context.Context, store AnchorReadStore) error {
+// latestAnchor returns the most recently externalized anchor (the lexically-greatest
+// key under the anchor prefix), or nil if none exist. It LISTs the whole prefix, so
+// it is used sparingly: once at RunAnchorer startup, and by the on-demand
+// VerifyLatestAnchor. Steady-state anchoring/verification does not call it.
+func (l *Logger) latestAnchor(ctx context.Context, store AnchorStore) (*Anchor, error) {
 	keys, err := store.ListKeys(ctx, anchorKeyPrefix)
 	if err != nil {
-		return fmt.Errorf("list anchors: %w", err)
+		return nil, fmt.Errorf("list anchors: %w", err)
 	}
 	if len(keys) == 0 {
-		return nil // nothing externalized yet
+		return nil, nil
 	}
 	// Keys are zero-padded seq (see anchorKey), so the lexically greatest is the latest.
 	latest := keys[0]
@@ -150,50 +184,36 @@ func (l *Logger) VerifyLatestAnchor(ctx context.Context, store AnchorReadStore) 
 	}
 	rc, err := store.GetObject(ctx, latest)
 	if err != nil {
-		return fmt.Errorf("get anchor %s: %w", latest, err)
+		return nil, fmt.Errorf("get anchor %s: %w", latest, err)
 	}
 	defer func() { _ = rc.Close() }()
 	var a Anchor
 	if err := json.NewDecoder(rc).Decode(&a); err != nil {
-		return fmt.Errorf("decode anchor %s: %w", latest, err)
+		return nil, fmt.Errorf("decode anchor %s: %w", latest, err)
+	}
+	return &a, nil
+}
+
+// VerifyLatestAnchor reads the most recent externalized anchor and cross-checks the
+// live audit chain against it via VerifyTipAtLeast. nil means the chain still covers
+// the anchored tip (or nothing has been anchored yet); ErrTailTruncated means the
+// chain was truncated/rewritten below a tip that was provably externalized — tamper
+// evidence the in-DB Verify alone cannot detect. Other errors are operational
+// (store unreachable, malformed anchor). This is the on-demand entry point (a future
+// admin verify RPC/CLI); the background path in RunAnchorer avoids the LIST.
+func (l *Logger) VerifyLatestAnchor(ctx context.Context, store AnchorStore) error {
+	a, err := l.latestAnchor(ctx, store)
+	if err != nil {
+		return err
+	}
+	if a == nil {
+		return nil // nothing externalized yet
 	}
 	hash, err := hex.DecodeString(a.EntryHash)
 	if err != nil {
-		return fmt.Errorf("anchor %s has a malformed entry_hash: %w", latest, err)
+		return fmt.Errorf("anchor at seq %d has a malformed entry_hash: %w", a.Seq, err)
 	}
 	return l.VerifyTipAtLeast(ctx, a.Seq, hash)
-}
-
-// RunIntegrityVerifier cross-checks the live audit chain against the latest
-// externalized anchor once at startup (catching truncation that happened while
-// warden was down) and then every interval. It is the read side of the tamper-
-// evidence the anchorer writes: ErrTailTruncated is logged at ERROR (the in-DB chain
-// no longer covers a provably-externalized tip — investigate now); operational errors
-// are WARN. Best-effort — never blocks. Exits on ctx.Done(). Start only when an
-// object store is configured (a nil store returns immediately).
-func (l *Logger) RunIntegrityVerifier(ctx context.Context, store AnchorReadStore, interval time.Duration) {
-	if store == nil {
-		return
-	}
-	check := func() {
-		switch err := l.VerifyLatestAnchor(ctx, store); {
-		case errors.Is(err, ErrTailTruncated):
-			slog.Error("AUDIT CHAIN TAMPER DETECTED: live chain no longer covers the last externalized anchor", "err", err)
-		case err != nil && ctx.Err() == nil:
-			slog.Warn("audit integrity verify failed", "err", err)
-		}
-	}
-	check()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			check()
-		}
-	}
 }
 
 // ErrTailTruncated indicates the live audit chain no longer covers an anchored

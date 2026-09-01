@@ -88,7 +88,7 @@ func TestAnchorTipWritesAndSkips(t *testing.T) {
 	store := newFakeStore()
 
 	// Empty log: nothing to anchor.
-	seq, err := log.AnchorTip(ctx, store, 0)
+	seq, _, err := log.AnchorTip(ctx, store, 0)
 	if err != nil {
 		t.Fatalf("anchor empty: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestAnchorTipWritesAndSkips(t *testing.T) {
 	}
 
 	// First anchor after appends: writes one object at the current tip.
-	seq, err = log.AnchorTip(ctx, store, 0)
+	seq, _, err = log.AnchorTip(ctx, store, 0)
 	if err != nil {
 		t.Fatalf("anchor: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestAnchorTipWritesAndSkips(t *testing.T) {
 	}
 
 	// Tip has not advanced: no new anchor, count unchanged.
-	seq2, err := log.AnchorTip(ctx, store, seq)
+	seq2, _, err := log.AnchorTip(ctx, store, seq)
 	if err != nil {
 		t.Fatalf("anchor (no advance): %v", err)
 	}
@@ -137,7 +137,7 @@ func TestAnchorTipWritesAndSkips(t *testing.T) {
 	if err := log.Append(ctx, audit.Event{Type: "e", Subject: "s"}); err != nil {
 		t.Fatal(err)
 	}
-	seq3, err := log.AnchorTip(ctx, store, seq)
+	seq3, _, err := log.AnchorTip(ctx, store, seq)
 	if err != nil {
 		t.Fatalf("anchor after advance: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestVerifyTipAtLeastDetectsTruncation(t *testing.T) {
 		}
 	}
 	store := newFakeStore()
-	anchoredSeq, err := log.AnchorTip(ctx, store, 0)
+	anchoredSeq, _, err := log.AnchorTip(ctx, store, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestVerifyLatestAnchor(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := log.AnchorTip(ctx, store, 0); err != nil {
+	if _, _, err := log.AnchorTip(ctx, store, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,6 +220,47 @@ func TestVerifyLatestAnchor(t *testing.T) {
 	}
 	if err := log.VerifyLatestAnchor(ctx, store); !errors.Is(err, audit.ErrTailTruncated) {
 		t.Fatalf("after truncation: got %v, want ErrTailTruncated", err)
+	}
+}
+
+// TestAnchorTipHashDetectsTruncation pins the contract RunAnchorer's in-memory verify
+// relies on: the hash AnchorTip returns (captured from the trusted tip at write time)
+// feeds straight into VerifyTipAtLeast — no store read — to catch later truncation.
+func TestAnchorTipHashDetectsTruncation(t *testing.T) {
+	pool := newPool(t)
+	log := audit.New(pool)
+	ctx := context.Background()
+	store := newFakeStore()
+
+	for range 4 {
+		if err := log.Append(ctx, audit.Event{Type: "e", Subject: "s"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seq, hash, err := log.AnchorTip(ctx, store, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash == nil {
+		t.Fatal("AnchorTip should return the anchored tip hash")
+	}
+
+	// Intact: the retained in-memory (seq, hash) verifies with no store access.
+	if err := log.VerifyTipAtLeast(ctx, seq, hash); err != nil {
+		t.Fatalf("intact chain should verify against in-memory anchor: %v", err)
+	}
+
+	// Truncate the anchored tip: the retained hash catches it.
+	if _, err := pool.Exec(ctx, `DELETE FROM audit_log WHERE seq = (SELECT max(seq) FROM audit_log)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.VerifyTipAtLeast(ctx, seq, hash); !errors.Is(err, audit.ErrTailTruncated) {
+		t.Fatalf("truncation after in-memory anchor: got %v, want ErrTailTruncated", err)
+	}
+
+	// A no-advance AnchorTip returns a nil hash (nothing re-anchored).
+	if _, h, err := log.AnchorTip(ctx, store, seq); err != nil || h != nil {
+		t.Fatalf("no-advance AnchorTip: h=%v err=%v, want (nil, nil)", h, err)
 	}
 }
 
