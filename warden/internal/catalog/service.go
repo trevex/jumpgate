@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
-	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -62,11 +61,6 @@ func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminat
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────
-
-// mapWrite maps a Postgres write error to an appropriate Connect code (see
-// apierr.MapWrite): bad-input constraint failures surface as
-// InvalidArgument/AlreadyExists rather than Internal.
-func mapWrite(err error) error { return apierr.MapWrite(err) }
 
 // joinPath builds an asset's DNS-style path: the asset name (the leaf) followed by
 // its folder's leaf->root path. folderPath is the containing folder's own leaf-first

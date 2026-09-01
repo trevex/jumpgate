@@ -257,7 +257,7 @@ func (h *Handler) ListGroups(ctx context.Context, req *connect.Request[identityv
 	}
 	out := &identityv1.ListGroupsResponse{NextPageToken: next}
 	for _, r := range rows {
-		out.Groups = append(out.Groups, groupMsg(GroupResult(r)))
+		out.Groups = append(out.Groups, groupMsg(r))
 	}
 	return connect.NewResponse(out), nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
@@ -48,7 +49,7 @@ func (s *Service) CreateFolder(ctx context.Context, parent pgtype.UUID, name str
 	// InvalidArgument and a sibling collision is AlreadyExists.
 	f, err := qtx.CreateFolder(ctx, sqlc.CreateFolderParams{Name: name, ParentID: parent})
 	if err != nil {
-		return FolderResult{}, mapWrite(err)
+		return FolderResult{}, apierr.MapWrite(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return FolderResult{}, connect.NewError(connect.CodeInternal, err)
@@ -148,22 +149,14 @@ func (s *Service) ListFolders(ctx context.Context, caller uuid.UUID, parentRef s
 	if err != nil {
 		return nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	allPaths, err := s.q.FolderPaths(ctx)
-	if err != nil {
-		return nil, "", connect.NewError(connect.CodeInternal, err)
-	}
-	pathByID := make(map[string]string, len(allPaths))
-	for _, p := range allPaths {
-		pathByID[p.ID.String()] = p.Path
-	}
 	out := make([]FolderRow, 0, len(rows))
 	for i := range rows {
-		out = append(out, FolderRow{Folder: rows[i], Path: pathByID[rows[i].ID.String()], Governed: govByID[rows[i].ID]})
+		out = append(out, FolderRow{Folder: rows[i].Folder, Path: rows[i].FolderPath, Governed: govByID[rows[i].Folder.ID]})
 	}
 	next := ""
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		next = apipage.EncodeNameToken(last.Name, last.ID)
+		next = apipage.EncodeNameToken(last.Folder.Name, last.Folder.ID)
 	}
 	return out, next, nil
 }
@@ -343,15 +336,15 @@ func (s *Service) UpdateFolder(ctx context.Context, caller uuid.UUID, id uuid.UU
 			return FolderResult{}, err
 		}
 		if err := q.UpdateFolderParent(ctx, sqlc.UpdateFolderParentParams{ID: id, ParentID: newParent}); err != nil {
-			return FolderResult{}, mapWrite(err)
+			return FolderResult{}, apierr.MapWrite(err)
 		}
 	}
 	if newName != cur.Name || moving {
 		if err := q.UpdateFolderName(ctx, sqlc.UpdateFolderNameParams{ID: id, Name: newName}); err != nil {
-			return FolderResult{}, mapWrite(err)
+			return FolderResult{}, apierr.MapWrite(err)
 		}
 		if err := q.UpdateFolderCatalogName(ctx, sqlc.UpdateFolderCatalogNameParams{FolderID: pgconv.UUID(id), ParentID: newParent, Name: newName}); err != nil {
-			return FolderResult{}, mapWrite(err) // sibling collision -> AlreadyExists
+			return FolderResult{}, apierr.MapWrite(err) // sibling collision -> AlreadyExists
 		}
 	}
 	if moving {

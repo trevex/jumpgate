@@ -517,7 +517,7 @@ func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMember
 }
 
 const listGroupsByIDsPaged = `-- name: ListGroupsByIDsPaged :many
-SELECT id, name, folder_id, created_at FROM groups
+SELECT groups.id, groups.name, groups.folder_id, groups.created_at, folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -534,7 +534,14 @@ type ListGroupsByIDsPagedParams struct {
 	Lim       int64       `json:"lim"`
 }
 
-func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error) {
+type ListGroupsByIDsPagedRow struct {
+	Group      Group  `json:"group"`
+	FolderPath string `json:"folder_path"`
+}
+
+// Groups by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+// for a global/folder-less group) resolved in SQL via folder_path().
+func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]ListGroupsByIDsPagedRow, error) {
 	rows, err := q.db.Query(ctx, listGroupsByIDsPaged,
 		arg.Column1,
 		arg.AfterName,
@@ -545,14 +552,15 @@ func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsP
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Group
+	var items []ListGroupsByIDsPagedRow
 	for rows.Next() {
-		var i Group
+		var i ListGroupsByIDsPagedRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
+			&i.Group.ID,
+			&i.Group.Name,
+			&i.Group.FolderID,
+			&i.Group.CreatedAt,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -692,6 +700,37 @@ type RemoveUserFromGroupParams struct {
 func (q *Queries) RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error {
 	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.GroupID, arg.MemberUserID)
 	return err
+}
+
+const roleCapabilitiesByRoleIDs = `-- name: RoleCapabilitiesByRoleIDs :many
+SELECT role_id, scope, action, qualifier FROM role_capabilities WHERE role_id = ANY($1::uuid[])
+`
+
+// Capability rows for a set of roles in one query, tagged by role_id so the caller can
+// assemble map[role]→caps without a per-role round-trip.
+func (q *Queries) RoleCapabilitiesByRoleIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]RoleCapability, error) {
+	rows, err := q.db.Query(ctx, roleCapabilitiesByRoleIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleCapability
+	for rows.Next() {
+		var i RoleCapability
+		if err := rows.Scan(
+			&i.RoleID,
+			&i.Scope,
+			&i.Action,
+			&i.Qualifier,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const roleCapabilityRows = `-- name: RoleCapabilityRows :many

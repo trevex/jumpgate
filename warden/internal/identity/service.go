@@ -108,14 +108,9 @@ func resolveParentFolderRef(ctx context.Context, q *sqlc.Queries, ref string) (u
 
 // ── domain result rows (proto-free; the handler maps these to proto) ─────────────
 
-// GroupResult is a single group plus its resolved folder path ("" for a global group).
+// GroupResult is a group plus its resolved folder path ("" for a global group).
+// Used for both single-group results and list/browse rows.
 type GroupResult struct {
-	Group      sqlc.Group
-	FolderPath string
-}
-
-// GroupRow is a browse/list group row plus its resolved folder path ("" for global).
-type GroupRow struct {
 	Group      sqlc.Group
 	FolderPath string
 }

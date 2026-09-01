@@ -50,22 +50,11 @@ func (s *Service) roleRefs(ctx context.Context, ids []uuid.UUID) ([]RoleRef, err
 	if err != nil {
 		return nil, err
 	}
-	pathByFolder := map[uuid.UUID]string{}
-	refByID := map[uuid.UUID]RoleRef{}
+	refByID := make(map[uuid.UUID]RoleRef, len(rows))
 	for _, r := range rows {
-		ref := RoleRef{ID: r.ID.String(), Name: r.Name}
-		if r.FolderID.Valid {
-			fid := uuid.UUID(r.FolderID.Bytes)
-			p, ok := pathByFolder[fid]
-			if !ok {
-				if p, err = s.q.FolderPath(ctx, fid); err != nil {
-					return nil, err
-				}
-				pathByFolder[fid] = p
-			}
-			ref.FolderPath = p
-		}
-		refByID[r.ID] = ref
+		// folder_path() yields "" for a global/folder-less role, matching the prior
+		// "leave FolderPath unset when folder_id is invalid" behavior.
+		refByID[r.Role.ID] = RoleRef{ID: r.Role.ID.String(), Name: r.Role.Name, FolderPath: r.FolderPath}
 	}
 	out := make([]RoleRef, 0, len(ids))
 	for _, id := range ids {
@@ -248,16 +237,8 @@ func (s *Service) ListFolderContents(ctx context.Context, caller uuid.UUID, pare
 			out.FoldersHasMore = true
 			rows = rows[:contentsSlice]
 		}
-		allPaths, err := s.q.FolderPaths(ctx)
-		if err != nil {
-			return FolderContents{}, connect.NewError(connect.CodeInternal, err)
-		}
-		pathByID := make(map[string]string, len(allPaths))
-		for _, p := range allPaths {
-			pathByID[p.ID.String()] = p.Path
-		}
 		for i := range rows {
-			out.Folders = append(out.Folders, FolderRow{Folder: rows[i], Path: pathByID[rows[i].ID.String()], Governed: folderGovByID[rows[i].ID]})
+			out.Folders = append(out.Folders, FolderRow{Folder: rows[i].Folder, Path: rows[i].FolderPath, Governed: folderGovByID[rows[i].Folder.ID]})
 		}
 	}
 
@@ -278,16 +259,8 @@ func (s *Service) ListFolderContents(ctx context.Context, caller uuid.UUID, pare
 			out.AssetsHasMore = true
 			rows = rows[:contentsSlice]
 		}
-		pathByFolder := map[uuid.UUID]string{}
 		for i := range rows {
-			fp, ok := pathByFolder[rows[i].FolderID]
-			if !ok {
-				if fp, err = s.q.FolderPath(ctx, rows[i].FolderID); err != nil {
-					return FolderContents{}, connect.NewError(connect.CodeInternal, err)
-				}
-				pathByFolder[rows[i].FolderID] = fp
-			}
-			out.Assets = append(out.Assets, AssetRow{Asset: rows[i], Path: joinPath(fp, rows[i].Name)})
+			out.Assets = append(out.Assets, AssetRow{Asset: rows[i].Asset, Path: joinPath(rows[i].FolderPath, rows[i].Asset.Name)})
 		}
 	}
 
@@ -308,25 +281,16 @@ func (s *Service) ListFolderContents(ctx context.Context, caller uuid.UUID, pare
 			out.RolesHasMore = true
 			rows = rows[:contentsSlice]
 		}
-		pathByFolder := map[uuid.UUID]string{}
+		pageIDs := make([]uuid.UUID, len(rows))
 		for i := range rows {
-			caps, err := apiguard.RoleCapsStrings(ctx, s.q, rows[i].ID)
-			if err != nil {
-				return FolderContents{}, connect.NewError(connect.CodeInternal, err)
-			}
-			row := RoleRow{Role: rows[i], Caps: caps}
-			if rows[i].FolderID.Valid {
-				fid := apiguard.UUIDFromPg(rows[i].FolderID)
-				p, ok := pathByFolder[fid]
-				if !ok {
-					if p, err = s.q.FolderPath(ctx, fid); err != nil {
-						return FolderContents{}, connect.NewError(connect.CodeInternal, err)
-					}
-					pathByFolder[fid] = p
-				}
-				row.FolderPath = p
-			}
-			out.Roles = append(out.Roles, row)
+			pageIDs[i] = rows[i].Role.ID
+		}
+		capsByID, err := apiguard.RoleCapsByRoleIDs(ctx, s.q, pageIDs)
+		if err != nil {
+			return FolderContents{}, connect.NewError(connect.CodeInternal, err)
+		}
+		for i := range rows {
+			out.Roles = append(out.Roles, RoleRow{Role: rows[i].Role, Caps: capsByID[rows[i].Role.ID], FolderPath: rows[i].FolderPath})
 		}
 	}
 
@@ -347,21 +311,8 @@ func (s *Service) ListFolderContents(ctx context.Context, caller uuid.UUID, pare
 			out.GroupsHasMore = true
 			rows = rows[:contentsSlice]
 		}
-		pathByFolder := map[uuid.UUID]string{}
 		for i := range rows {
-			row := GroupRow{Group: rows[i]}
-			if rows[i].FolderID.Valid {
-				fid := apiguard.UUIDFromPg(rows[i].FolderID)
-				p, ok := pathByFolder[fid]
-				if !ok {
-					if p, err = s.q.FolderPath(ctx, fid); err != nil {
-						return FolderContents{}, connect.NewError(connect.CodeInternal, err)
-					}
-					pathByFolder[fid] = p
-				}
-				row.FolderPath = p
-			}
-			out.Groups = append(out.Groups, row)
+			out.Groups = append(out.Groups, GroupRow{Group: rows[i].Group, FolderPath: rows[i].FolderPath})
 		}
 	}
 
@@ -407,20 +358,6 @@ func (s *Service) SearchCatalog(ctx context.Context, caller uuid.UUID, query str
 	full := func() bool { return len(hits) >= int(limit) }
 	remaining := func() int64 { return int64(limit) - int64(len(hits)) }
 
-	// Home-folder path lookup, memoized across kinds (roles/groups reuse it).
-	pathByFolder := map[uuid.UUID]string{}
-	folderPath := func(fid uuid.UUID) (string, error) {
-		if p, ok := pathByFolder[fid]; ok {
-			return p, nil
-		}
-		p, err := s.q.FolderPath(ctx, fid)
-		if err != nil {
-			return "", err
-		}
-		pathByFolder[fid] = p
-		return p, nil
-	}
-
 	// ── folders ────────────────────────────────────────────────────────────────
 	visibleFolders, err := s.authz.VisibleFoldersUnder(ctx, caller, uuid.Nil, true)
 	if err != nil {
@@ -433,11 +370,7 @@ func (s *Service) SearchCatalog(ctx context.Context, caller uuid.UUID, query str
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		for i := range rows {
-			fp, err := folderPath(rows[i].ID)
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInternal, err)
-			}
-			hits = append(hits, SearchHit{Kind: "folder", ID: rows[i].ID.String(), Name: rows[i].Name, Path: fp})
+			hits = append(hits, SearchHit{Kind: "folder", ID: rows[i].Folder.ID.String(), Name: rows[i].Folder.Name, Path: rows[i].FolderPath})
 		}
 	}
 
@@ -452,11 +385,7 @@ func (s *Service) SearchCatalog(ctx context.Context, caller uuid.UUID, query str
 			return nil, connect.NewError(connect.CodeInternal, err)
 		}
 		for i := range rows {
-			fp, err := folderPath(rows[i].FolderID)
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInternal, err)
-			}
-			hits = append(hits, SearchHit{Kind: "asset", ID: rows[i].ID.String(), Name: rows[i].Name, Path: joinPath(fp, rows[i].Name)})
+			hits = append(hits, SearchHit{Kind: "asset", ID: rows[i].Asset.ID.String(), Name: rows[i].Asset.Name, Path: joinPath(rows[i].FolderPath, rows[i].Asset.Name)})
 		}
 	}
 
@@ -472,16 +401,9 @@ func (s *Service) SearchCatalog(ctx context.Context, caller uuid.UUID, query str
 		}
 		for i := range rows {
 			// A folder-scoped role is addressed "<role>.<folder-path>"; a global role is
-			// just its name.
-			path := rows[i].Name
-			if rows[i].FolderID.Valid {
-				fp, err := folderPath(apiguard.UUIDFromPg(rows[i].FolderID))
-				if err != nil {
-					return nil, connect.NewError(connect.CodeInternal, err)
-				}
-				path = joinPath(fp, rows[i].Name)
-			}
-			hits = append(hits, SearchHit{Kind: "role", ID: rows[i].ID.String(), Name: rows[i].Name, Path: path})
+			// just its name. folder_path() yields "" for a global role, and joinPath("",
+			// name) == name, so this uniformly reproduces both cases.
+			hits = append(hits, SearchHit{Kind: "role", ID: rows[i].Role.ID.String(), Name: rows[i].Role.Name, Path: joinPath(rows[i].FolderPath, rows[i].Role.Name)})
 		}
 	}
 
@@ -497,16 +419,13 @@ func (s *Service) SearchCatalog(ctx context.Context, caller uuid.UUID, query str
 		}
 		for i := range rows {
 			// A folder-homed group is addressed "<group>@<folder-path>"; a global group
-			// is just its name.
-			path := rows[i].Name
-			if rows[i].FolderID.Valid {
-				fp, err := folderPath(apiguard.UUIDFromPg(rows[i].FolderID))
-				if err != nil {
-					return nil, connect.NewError(connect.CodeInternal, err)
-				}
-				path = rows[i].Name + "@" + fp
+			// is just its name. folder_path() yields "" for a global group (⟺ folder_id
+			// NULL), so a non-empty path is exactly the folder-homed case.
+			path := rows[i].Group.Name
+			if rows[i].FolderPath != "" {
+				path = rows[i].Group.Name + "@" + rows[i].FolderPath
 			}
-			hits = append(hits, SearchHit{Kind: "group", ID: rows[i].ID.String(), Name: rows[i].Name, Path: path})
+			hits = append(hits, SearchHit{Kind: "group", ID: rows[i].Group.ID.String(), Name: rows[i].Group.Name, Path: path})
 		}
 	}
 

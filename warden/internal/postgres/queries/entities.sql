@@ -81,6 +81,11 @@ INSERT INTO role_capabilities (role_id, scope, action, qualifier) VALUES ($1, $2
 -- name: RoleCapabilityRows :many
 SELECT scope, action, qualifier FROM role_capabilities WHERE role_id = $1;
 
+-- name: RoleCapabilitiesByRoleIDs :many
+-- Capability rows for a set of roles in one query, tagged by role_id so the caller can
+-- assemble map[role]→caps without a per-role round-trip.
+SELECT role_id, scope, action, qualifier FROM role_capabilities WHERE role_id = ANY($1::uuid[]);
+
 -- name: DeleteRole :exec
 -- Deletes the role row. The role's name uniqueness is enforced by the partial
 -- UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
@@ -119,7 +124,9 @@ ORDER BY name, id
 LIMIT sqlc.arg('lim');
 
 -- name: ListGroupsByIDsPaged :many
-SELECT * FROM groups
+-- Groups by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+-- for a global/folder-less group) resolved in SQL via folder_path().
+SELECT sqlc.embed(groups), folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[])
   AND (
     sqlc.narg('after_name')::text IS NULL

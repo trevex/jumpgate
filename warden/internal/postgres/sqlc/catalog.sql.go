@@ -247,42 +247,6 @@ func (q *Queries) FolderPath(ctx context.Context, id uuid.UUID) (string, error) 
 	return path, err
 }
 
-const folderPaths = `-- name: FolderPaths :many
-WITH RECURSIVE chain AS (
-    SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
-    UNION ALL
-    SELECT f.id, f.parent_id, (f.name || '.' || c.path)::text
-    FROM folders f JOIN chain c ON f.parent_id = c.id
-)
-SELECT chain.id, chain.path FROM chain
-`
-
-type FolderPathsRow struct {
-	ID   uuid.UUID `json:"id"`
-	Path string    `json:"path"`
-}
-
-// Every folder's full leaf->root dotted path in one query (for list responses).
-func (q *Queries) FolderPaths(ctx context.Context) ([]FolderPathsRow, error) {
-	rows, err := q.db.Query(ctx, folderPaths)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []FolderPathsRow
-	for rows.Next() {
-		var i FolderPathsRow
-		if err := rows.Scan(&i.ID, &i.Path); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const folderSubtreeIDs = `-- name: FolderSubtreeIDs :many
 WITH RECURSIVE sub AS (
     SELECT f.id FROM folders f WHERE f.id = $1
@@ -482,7 +446,7 @@ func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]
 }
 
 const listAssetsByIDsPaged = `-- name: ListAssetsByIDsPaged :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets
+SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -499,7 +463,14 @@ type ListAssetsByIDsPagedParams struct {
 	Lim       int64       `json:"lim"`
 }
 
-func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error) {
+type ListAssetsByIDsPagedRow struct {
+	Asset      Asset  `json:"asset"`
+	FolderPath string `json:"folder_path"`
+}
+
+// Assets by id, keyset-paged, each with its containing folder's leaf->root dotted
+// path resolved in SQL via folder_path() (no per-row Go resolution).
+func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error) {
 	rows, err := q.db.Query(ctx, listAssetsByIDsPaged,
 		arg.Ids,
 		arg.AfterName,
@@ -510,16 +481,17 @@ func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsP
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Asset
+	var items []ListAssetsByIDsPagedRow
 	for rows.Next() {
-		var i Asset
+		var i ListAssetsByIDsPagedRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.FolderID,
-			&i.Name,
-			&i.Labels,
-			&i.CreatedAt,
-			&i.Kind,
+			&i.Asset.ID,
+			&i.Asset.FolderID,
+			&i.Asset.Name,
+			&i.Asset.Labels,
+			&i.Asset.CreatedAt,
+			&i.Asset.Kind,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -567,7 +539,7 @@ func (q *Queries) ListFolders(ctx context.Context, arg ListFoldersParams) ([]Fol
 }
 
 const listFoldersByIDsPaged = `-- name: ListFoldersByIDsPaged :many
-SELECT id, name, parent_id, created_at, path_ids FROM folders
+SELECT folders.id, folders.name, folders.parent_id, folders.created_at, folders.path_ids, folder_path(folders.id) AS folder_path FROM folders
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -584,7 +556,14 @@ type ListFoldersByIDsPagedParams struct {
 	Lim       int64       `json:"lim"`
 }
 
-func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error) {
+type ListFoldersByIDsPagedRow struct {
+	Folder     Folder `json:"folder"`
+	FolderPath string `json:"folder_path"`
+}
+
+// Folders by id, keyset-paged, each with its own leaf->root dotted path resolved in
+// SQL via folder_path() (no per-row Go resolution).
+func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]ListFoldersByIDsPagedRow, error) {
 	rows, err := q.db.Query(ctx, listFoldersByIDsPaged,
 		arg.Ids,
 		arg.AfterName,
@@ -595,15 +574,16 @@ func (q *Queries) ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByID
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Folder
+	var items []ListFoldersByIDsPagedRow
 	for rows.Next() {
-		var i Folder
+		var i ListFoldersByIDsPagedRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.ParentID,
-			&i.CreatedAt,
-			&i.PathIds,
+			&i.Folder.ID,
+			&i.Folder.Name,
+			&i.Folder.ParentID,
+			&i.Folder.CreatedAt,
+			&i.Folder.PathIds,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -867,23 +847,31 @@ func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, e
 }
 
 const listRolesByIDs = `-- name: ListRolesByIDs :many
-SELECT id, name, folder_id, created_at FROM roles WHERE id = ANY($1::uuid[])
+SELECT roles.id, roles.name, roles.folder_id, roles.created_at, folder_path(roles.folder_id) AS folder_path FROM roles WHERE id = ANY($1::uuid[])
 `
 
-func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error) {
+type ListRolesByIDsRow struct {
+	Role       Role   `json:"role"`
+	FolderPath string `json:"folder_path"`
+}
+
+// Roles by id (unordered), each with its home-folder leaf->root dotted path (empty
+// for a global/folder-less role) resolved in SQL via folder_path().
+func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]ListRolesByIDsRow, error) {
 	rows, err := q.db.Query(ctx, listRolesByIDs, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Role
+	var items []ListRolesByIDsRow
 	for rows.Next() {
-		var i Role
+		var i ListRolesByIDsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
+			&i.Role.ID,
+			&i.Role.Name,
+			&i.Role.FolderID,
+			&i.Role.CreatedAt,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -896,7 +884,7 @@ func (q *Queries) ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]R
 }
 
 const listRolesByIDsPaged = `-- name: ListRolesByIDsPaged :many
-SELECT id, name, folder_id, created_at FROM roles
+SELECT roles.id, roles.name, roles.folder_id, roles.created_at, folder_path(roles.folder_id) AS folder_path FROM roles
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -913,7 +901,14 @@ type ListRolesByIDsPagedParams struct {
 	Lim       int64       `json:"lim"`
 }
 
-func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error) {
+type ListRolesByIDsPagedRow struct {
+	Role       Role   `json:"role"`
+	FolderPath string `json:"folder_path"`
+}
+
+// Roles by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+// for a global/folder-less role) resolved in SQL via folder_path().
+func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]ListRolesByIDsPagedRow, error) {
 	rows, err := q.db.Query(ctx, listRolesByIDsPaged,
 		arg.Column1,
 		arg.AfterName,
@@ -924,14 +919,15 @@ func (q *Queries) ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPag
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Role
+	var items []ListRolesByIDsPagedRow
 	for rows.Next() {
-		var i Role
+		var i ListRolesByIDsPagedRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
+			&i.Role.ID,
+			&i.Role.Name,
+			&i.Role.FolderID,
+			&i.Role.CreatedAt,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -1014,7 +1010,7 @@ func (q *Queries) PoliciesScopedToFoldersOrAssets(ctx context.Context, arg Polic
 }
 
 const searchAssetsByIDs = `-- name: SearchAssetsByIDs :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets
+SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1026,22 +1022,28 @@ type SearchAssetsByIDsParams struct {
 	Limit   int64       `json:"limit"`
 }
 
-func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error) {
+type SearchAssetsByIDsRow struct {
+	Asset      Asset  `json:"asset"`
+	FolderPath string `json:"folder_path"`
+}
+
+func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]SearchAssetsByIDsRow, error) {
 	rows, err := q.db.Query(ctx, searchAssetsByIDs, arg.Column1, arg.Name, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Asset
+	var items []SearchAssetsByIDsRow
 	for rows.Next() {
-		var i Asset
+		var i SearchAssetsByIDsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.FolderID,
-			&i.Name,
-			&i.Labels,
-			&i.CreatedAt,
-			&i.Kind,
+			&i.Asset.ID,
+			&i.Asset.FolderID,
+			&i.Asset.Name,
+			&i.Asset.Labels,
+			&i.Asset.CreatedAt,
+			&i.Asset.Kind,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -1054,7 +1056,7 @@ func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsPa
 }
 
 const searchFoldersByIDs = `-- name: SearchFoldersByIDs :many
-SELECT id, name, parent_id, created_at, path_ids FROM folders
+SELECT folders.id, folders.name, folders.parent_id, folders.created_at, folders.path_ids, folder_path(folders.id) AS folder_path FROM folders
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1066,24 +1068,30 @@ type SearchFoldersByIDsParams struct {
 	Limit   int64       `json:"limit"`
 }
 
+type SearchFoldersByIDsRow struct {
+	Folder     Folder `json:"folder"`
+	FolderPath string `json:"folder_path"`
+}
+
 // Name-matching folders within a visible-id set. The `name ILIKE` predicate is
 // served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
 // name in the database instead of materializing the whole visible catalog.
-func (q *Queries) SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]Folder, error) {
+func (q *Queries) SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]SearchFoldersByIDsRow, error) {
 	rows, err := q.db.Query(ctx, searchFoldersByIDs, arg.Column1, arg.Name, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Folder
+	var items []SearchFoldersByIDsRow
 	for rows.Next() {
-		var i Folder
+		var i SearchFoldersByIDsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.ParentID,
-			&i.CreatedAt,
-			&i.PathIds,
+			&i.Folder.ID,
+			&i.Folder.Name,
+			&i.Folder.ParentID,
+			&i.Folder.CreatedAt,
+			&i.Folder.PathIds,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -1096,7 +1104,7 @@ func (q *Queries) SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDs
 }
 
 const searchGroupsByIDs = `-- name: SearchGroupsByIDs :many
-SELECT id, name, folder_id, created_at FROM groups
+SELECT groups.id, groups.name, groups.folder_id, groups.created_at, folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1108,20 +1116,26 @@ type SearchGroupsByIDsParams struct {
 	Limit   int64       `json:"limit"`
 }
 
-func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]Group, error) {
+type SearchGroupsByIDsRow struct {
+	Group      Group  `json:"group"`
+	FolderPath string `json:"folder_path"`
+}
+
+func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]SearchGroupsByIDsRow, error) {
 	rows, err := q.db.Query(ctx, searchGroupsByIDs, arg.Column1, arg.Name, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Group
+	var items []SearchGroupsByIDsRow
 	for rows.Next() {
-		var i Group
+		var i SearchGroupsByIDsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
+			&i.Group.ID,
+			&i.Group.Name,
+			&i.Group.FolderID,
+			&i.Group.CreatedAt,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}
@@ -1134,7 +1148,7 @@ func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsPa
 }
 
 const searchRolesByIDs = `-- name: SearchRolesByIDs :many
-SELECT id, name, folder_id, created_at FROM roles
+SELECT roles.id, roles.name, roles.folder_id, roles.created_at, folder_path(roles.folder_id) AS folder_path FROM roles
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1146,20 +1160,26 @@ type SearchRolesByIDsParams struct {
 	Limit   int64       `json:"limit"`
 }
 
-func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]Role, error) {
+type SearchRolesByIDsRow struct {
+	Role       Role   `json:"role"`
+	FolderPath string `json:"folder_path"`
+}
+
+func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]SearchRolesByIDsRow, error) {
 	rows, err := q.db.Query(ctx, searchRolesByIDs, arg.Column1, arg.Name, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Role
+	var items []SearchRolesByIDsRow
 	for rows.Next() {
-		var i Role
+		var i SearchRolesByIDsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.FolderID,
-			&i.CreatedAt,
+			&i.Role.ID,
+			&i.Role.Name,
+			&i.Role.FolderID,
+			&i.Role.CreatedAt,
+			&i.FolderPath,
 		); err != nil {
 			return nil, err
 		}

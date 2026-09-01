@@ -112,27 +112,19 @@ func (s *Service) ListRoles(ctx context.Context, caller uuid.UUID, parentRef str
 	if err != nil {
 		return nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	pathByFolder := map[uuid.UUID]string{}
+	pageIDs := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		pageIDs[i] = rows[i].Role.ID
+	}
+	capsByID, err := apiguard.RoleCapsByRoleIDs(ctx, s.q, pageIDs)
+	if err != nil {
+		return nil, "", connect.NewError(connect.CodeInternal, err)
+	}
 	out := make([]RoleResult, 0, len(rows))
 	for i := range rows {
-		caps, err := apiguard.RoleCapsStrings(ctx, s.q, rows[i].ID)
-		if err != nil {
-			return nil, "", connect.NewError(connect.CodeInternal, err)
-		}
-		res := RoleResult{Role: rows[i], Caps: caps}
-		if rows[i].FolderID.Valid {
-			fid := apiguard.UUIDFromPg(rows[i].FolderID)
-			p, ok := pathByFolder[fid]
-			if !ok {
-				p, err = s.q.FolderPath(ctx, fid)
-				if err != nil {
-					return nil, "", connect.NewError(connect.CodeInternal, err)
-				}
-				pathByFolder[fid] = p
-			}
-			res.FolderPath = p
-		}
-		out = append(out, res)
+		// folder_path() yields "" for a global/folder-less role, matching the prior
+		// "leave FolderPath unset when folder_id is invalid" behavior.
+		out = append(out, RoleResult{Role: rows[i].Role, Caps: capsByID[rows[i].Role.ID], FolderPath: rows[i].FolderPath})
 	}
 	// Emit a token only when the page was filled; an exact multiple of page_size
 	// therefore costs one extra round-trip returning an empty final page (the standard
@@ -140,7 +132,7 @@ func (s *Service) ListRoles(ctx context.Context, caller uuid.UUID, parentRef str
 	next := ""
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		next = apipage.EncodeNameToken(last.Name, last.ID)
+		next = apipage.EncodeNameToken(last.Role.Name, last.Role.ID)
 	}
 	return out, next, nil
 }

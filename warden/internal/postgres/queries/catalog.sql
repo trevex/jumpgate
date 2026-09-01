@@ -5,7 +5,9 @@ SELECT * FROM folders WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2;
 SELECT * FROM folders WHERE id = $1;
 
 -- name: ListFoldersByIDsPaged :many
-SELECT * FROM folders
+-- Folders by id, keyset-paged, each with its own leaf->root dotted path resolved in
+-- SQL via folder_path() (no per-row Go resolution).
+SELECT sqlc.embed(folders), folder_path(folders.id) AS folder_path FROM folders
 WHERE id = ANY(sqlc.arg('ids')::uuid[])
   AND (
     sqlc.narg('after_name')::text IS NULL
@@ -15,7 +17,9 @@ ORDER BY name, id
 LIMIT sqlc.arg('lim');
 
 -- name: ListAssetsByIDsPaged :many
-SELECT * FROM assets
+-- Assets by id, keyset-paged, each with its containing folder's leaf->root dotted
+-- path resolved in SQL via folder_path() (no per-row Go resolution).
+SELECT sqlc.embed(assets), folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY(sqlc.arg('ids')::uuid[])
   AND (
     sqlc.narg('after_name')::text IS NULL
@@ -25,7 +29,9 @@ ORDER BY name, id
 LIMIT sqlc.arg('lim');
 
 -- name: ListRolesByIDsPaged :many
-SELECT * FROM roles
+-- Roles by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+-- for a global/folder-less role) resolved in SQL via folder_path().
+SELECT sqlc.embed(roles), folder_path(roles.folder_id) AS folder_path FROM roles
 WHERE id = ANY($1::uuid[])
   AND (
     sqlc.narg('after_name')::text IS NULL
@@ -55,7 +61,9 @@ SELECT * FROM roles WHERE name = $1 AND folder_id IS NULL;
 SELECT * FROM roles WHERE folder_id = $1 AND name = $2;
 
 -- name: ListRolesByIDs :many
-SELECT * FROM roles WHERE id = ANY($1::uuid[]);
+-- Roles by id (unordered), each with its home-folder leaf->root dotted path (empty
+-- for a global/folder-less role) resolved in SQL via folder_path().
+SELECT sqlc.embed(roles), folder_path(roles.folder_id) AS folder_path FROM roles WHERE id = ANY($1::uuid[]);
 
 -- name: ListAssetsByIDs :many
 SELECT * FROM assets WHERE id = ANY($1::uuid[]);
@@ -178,16 +186,6 @@ WITH RECURSIVE chain AS (
 )
 SELECT COALESCE(string_agg(chain.name, '.' ORDER BY chain.depth ASC), '')::text AS path FROM chain;
 
--- name: FolderPaths :many
--- Every folder's full leaf->root dotted path in one query (for list responses).
-WITH RECURSIVE chain AS (
-    SELECT id, parent_id, name::text AS path FROM folders WHERE parent_id IS NULL
-    UNION ALL
-    SELECT f.id, f.parent_id, (f.name || '.' || c.path)::text
-    FROM folders f JOIN chain c ON f.parent_id = c.id
-)
-SELECT chain.id, chain.path FROM chain;
-
 -- name: FolderByParentName :one
 -- One folder by (parent, name). parent_id NULL matches a top-level folder
 -- (IS NOT DISTINCT FROM treats NULL = NULL as a match).
@@ -249,25 +247,25 @@ WHERE s.asset_id = $1
 -- Name-matching folders within a visible-id set. The `name ILIKE` predicate is
 -- served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
 -- name in the database instead of materializing the whole visible catalog.
-SELECT * FROM folders
+SELECT sqlc.embed(folders), folder_path(folders.id) AS folder_path FROM folders
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3;
 
 -- name: SearchAssetsByIDs :many
-SELECT * FROM assets
+SELECT sqlc.embed(assets), folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3;
 
 -- name: SearchRolesByIDs :many
-SELECT * FROM roles
+SELECT sqlc.embed(roles), folder_path(roles.folder_id) AS folder_path FROM roles
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3;
 
 -- name: SearchGroupsByIDs :many
-SELECT * FROM groups
+SELECT sqlc.embed(groups), folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3;

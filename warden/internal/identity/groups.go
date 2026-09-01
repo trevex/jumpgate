@@ -72,7 +72,7 @@ func (s *Service) ResolveGroup(ctx context.Context, caller uuid.UUID, ref string
 // not an error. Cascade descends the whole subtree; otherwise only groups homed
 // directly in the parent folder (or, for root, folder-less groups). Returns the page
 // rows and an opaque next-page token.
-func (s *Service) ListGroups(ctx context.Context, caller uuid.UUID, parentRef string, cascade bool, pageSize int32, pageToken string) ([]GroupRow, string, error) {
+func (s *Service) ListGroups(ctx context.Context, caller uuid.UUID, parentRef string, cascade bool, pageSize int32, pageToken string) ([]GroupResult, string, error) {
 	parent, err := resolveParentFolderRef(ctx, s.q, parentRef)
 	if err != nil {
 		return nil, "", err
@@ -98,30 +98,18 @@ func (s *Service) ListGroups(ctx context.Context, caller uuid.UUID, parentRef st
 	if err != nil {
 		return nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	pathByFolder := map[uuid.UUID]string{}
-	out := make([]GroupRow, 0, len(rows))
+	out := make([]GroupResult, 0, len(rows))
 	for i := range rows {
-		row := GroupRow{Group: rows[i]}
-		if rows[i].FolderID.Valid {
-			fid := apiguard.UUIDFromPg(rows[i].FolderID)
-			p, ok := pathByFolder[fid]
-			if !ok {
-				p, err = s.q.FolderPath(ctx, fid)
-				if err != nil {
-					return nil, "", connect.NewError(connect.CodeInternal, err)
-				}
-				pathByFolder[fid] = p
-			}
-			row.FolderPath = p
-		}
-		out = append(out, row)
+		// folder_path() yields "" for a global/folder-less group, matching the prior
+		// "leave FolderPath unset when folder_id is invalid" behavior.
+		out = append(out, GroupResult{Group: rows[i].Group, FolderPath: rows[i].FolderPath})
 	}
 	// Emit a token only when the page was filled (the standard strict-last-page
 	// tradeoff). The sort key is name.
 	next := ""
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		next = apipage.EncodeNameToken(last.Name, last.ID)
+		next = apipage.EncodeNameToken(last.Group.Name, last.Group.ID)
 	}
 	return out, next, nil
 }

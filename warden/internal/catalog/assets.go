@@ -223,21 +223,13 @@ func (s *Service) ListAssets(ctx context.Context, caller uuid.UUID, parentRef st
 		return nil, "", connect.NewError(connect.CodeInternal, err)
 	}
 	out := make([]AssetRow, 0, len(rows))
-	pathByFolder := map[uuid.UUID]string{}
 	for i := range rows {
-		fp, ok := pathByFolder[rows[i].FolderID]
-		if !ok {
-			if fp, err = s.q.FolderPath(ctx, rows[i].FolderID); err != nil {
-				return nil, "", connect.NewError(connect.CodeInternal, err)
-			}
-			pathByFolder[rows[i].FolderID] = fp
-		}
-		out = append(out, AssetRow{Asset: rows[i], Path: joinPath(fp, rows[i].Name)})
+		out = append(out, AssetRow{Asset: rows[i].Asset, Path: joinPath(rows[i].FolderPath, rows[i].Asset.Name)})
 	}
 	next := ""
 	if len(rows) == int(limit) {
 		last := rows[len(rows)-1]
-		next = apipage.EncodeNameToken(last.Name, last.ID)
+		next = apipage.EncodeNameToken(last.Asset.Name, last.Asset.ID)
 	}
 	return out, next, nil
 }

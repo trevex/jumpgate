@@ -145,8 +145,6 @@ type Querier interface {
 	// OR inside a folder the user manages (cascade down) — the same predicate as
 	// VisibleFoldersUnder, for one folder.
 	FolderPathVisible(ctx context.Context, arg FolderPathVisibleParams) (pgtype.Bool, error)
-	// Every folder's full leaf->root dotted path in one query (for list responses).
-	FolderPaths(ctx context.Context) ([]FolderPathsRow, error)
 	// All folder ids in the subtree rooted at $1 (including $1 itself).
 	FolderSubtreeIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
 	// folderSubtreeIDs: every folder id in the subtrees rooted at `roots` (inclusive),
@@ -224,12 +222,16 @@ type Querier interface {
 	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
 	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
-	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]Asset, error)
+	// Assets by id, keyset-paged, each with its containing folder's leaf->root dotted
+	// path resolved in SQL via folder_path() (no per-row Go resolution).
+	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
-	ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]Folder, error)
+	// Folders by id, keyset-paged, each with its own leaf->root dotted path resolved in
+	// SQL via folder_path() (no per-row Go resolution).
+	ListFoldersByIDsPaged(ctx context.Context, arg ListFoldersByIDsPagedParams) ([]ListFoldersByIDsPagedRow, error)
 	ListGrantsBySubject(ctx context.Context, subjectUserID uuid.UUID) ([]AccessGrant, error)
 	// Keyset pagination on (granted_at DESC, id ASC) for caller-scoped grants.
 	ListGrantsBySubjectPaged(ctx context.Context, arg ListGrantsBySubjectPagedParams) ([]AccessGrant, error)
@@ -244,7 +246,9 @@ type Querier interface {
 	// Each row is either a user-member (member_user_id non-null) or group-member
 	// (member_group_id non-null); the handler splits them.
 	ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]GroupMembership, error)
-	ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]Group, error)
+	// Groups by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+	// for a global/folder-less group) resolved in SQL via folder_path().
+	ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]ListGroupsByIDsPagedRow, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
 	ListLiveSessionsByAsset(ctx context.Context, assetID uuid.UUID) ([]LiveSession, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
@@ -278,8 +282,12 @@ type Querier interface {
 	ListRoleBindingsByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RoleBinding, error)
 	ListRoleGrants(ctx context.Context, arg ListRoleGrantsParams) ([]RoleGrant, error)
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]Role, error)
-	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Role, error)
-	ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]Role, error)
+	// Roles by id (unordered), each with its home-folder leaf->root dotted path (empty
+	// for a global/folder-less role) resolved in SQL via folder_path().
+	ListRolesByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]ListRolesByIDsRow, error)
+	// Roles by id, keyset-paged, each with its home-folder leaf->root dotted path (empty
+	// for a global/folder-less role) resolved in SQL via folder_path().
+	ListRolesByIDsPaged(ctx context.Context, arg ListRolesByIDsPagedParams) ([]ListRolesByIDsPagedRow, error)
 	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
 	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]uuid.UUID, error)
@@ -332,6 +340,9 @@ type Querier interface {
 	// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
+	// Capability rows for a set of roles in one query, tagged by role_id so the caller can
+	// assemble map[role]→caps without a per-role round-trip.
+	RoleCapabilitiesByRoleIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]RoleCapability, error)
 	RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]RoleCapabilityRowsRow, error)
 	// Subjects whose standing binding confers p_role on the given object (asset|folder),
 	// mirroring the base arm of authz_held over the backward goal-expansion. Subjects are
@@ -342,13 +353,13 @@ type Querier interface {
 	ScopeCapabilitiesAsset(ctx context.Context, arg ScopeCapabilitiesAssetParams) ([]ScopeCapabilitiesAssetRow, error)
 	// CapabilitiesOnScope folder arm (global_held ∪ held on folders in the scope subtree).
 	ScopeCapabilitiesFolder(ctx context.Context, arg ScopeCapabilitiesFolderParams) ([]ScopeCapabilitiesFolderRow, error)
-	SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]Asset, error)
+	SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsParams) ([]SearchAssetsByIDsRow, error)
 	// Name-matching folders within a visible-id set. The `name ILIKE` predicate is
 	// served by the pg_trgm GIN index (idx_folders_name_trgm), so search filters by
 	// name in the database instead of materializing the whole visible catalog.
-	SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]Folder, error)
-	SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]Group, error)
-	SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]Role, error)
+	SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDsParams) ([]SearchFoldersByIDsRow, error)
+	SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsParams) ([]SearchGroupsByIDsRow, error)
+	SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]SearchRolesByIDsRow, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
