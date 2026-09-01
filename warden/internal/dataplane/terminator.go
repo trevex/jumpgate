@@ -57,19 +57,56 @@ func (t *Terminator) Reevaluate(ctx context.Context, userID, assetID uuid.UUID) 
 	if len(sessions) == 0 {
 		return nil
 	}
-	loginRows, err := q.ListSSHAssetLogins(ctx, assetID)
+	// The connect predicate is per-kind: each asset kind authorizes via its own
+	// login table + capability prefix (mirrors dataplane/setup.go's switch). Using
+	// the SSH prefix for every kind wrongly revokes non-SSH sessions — an rdp/pg
+	// asset has no ssh:login rows, so the check would find nothing entitled and tear
+	// the session down on the first sweep. Branch on the asset's kind.
+	asset, err := q.GetAsset(ctx, assetID)
 	if err != nil {
 		return err
 	}
-	allowed := make([]string, 0, len(loginRows))
-	for _, r := range loginRows {
-		allowed = append(allowed, r.Login)
+	var allowed []string
+	var entitled []string
+	switch asset.Kind {
+	case "postgres":
+		rows, err := q.ListPostgresAssetLogins(ctx, assetID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Role)
+		}
+		entitled, err = authz.EntitledLoginsFor(ctx, t.authz, userID, assetID, authz.DBLoginPrefix, allowed)
+		if err != nil {
+			return err
+		}
+	case "rdp":
+		rows, err := q.ListRDPAssetLogins(ctx, assetID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Login)
+		}
+		entitled, err = authz.EntitledLoginsFor(ctx, t.authz, userID, assetID, authz.RDPLoginPrefix, allowed)
+		if err != nil {
+			return err
+		}
+	default: // "ssh" (and any other login-keyed kind)
+		rows, err := q.ListSSHAssetLogins(ctx, assetID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			allowed = append(allowed, r.Login)
+		}
+		entitled, err = authz.EntitledLogins(ctx, t.authz, userID, assetID, allowed)
+		if err != nil {
+			return err
+		}
 	}
-	logins, err := authz.EntitledLogins(ctx, t.authz, userID, assetID, allowed)
-	if err != nil {
-		return err
-	}
-	if len(logins) > 0 {
+	if len(entitled) > 0 {
 		return nil // still authorized; keep every session
 	}
 	for _, sess := range sessions {

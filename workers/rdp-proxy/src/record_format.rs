@@ -190,7 +190,10 @@ mod tests {
             (10, ACTION_FASTPATH, vec![1, 2, 3])
         );
         let f2 = read_frame(&mut r).unwrap().unwrap();
-        assert_eq!((f2.millis, f2.action, f2.payload), (25, ACTION_X224, vec![9, 9]));
+        assert_eq!(
+            (f2.millis, f2.action, f2.payload),
+            (25, ACTION_X224, vec![9, 9])
+        );
         assert!(read_frame(&mut r).unwrap().is_none());
     }
 }

@@ -283,14 +283,6 @@ impl RecorderHandle {
     pub async fn fail(&self) {
         let _ = self.tx.send(RecMsg::Fail).await;
     }
-
-    /// Test-only: build a handle over a raw channel so a test can observe the
-    /// exact [`RecMsg`]s a producer (e.g. the bridge tap) emits.
-    #[cfg(test)]
-    pub(crate) fn for_test(bound: usize) -> (RecorderHandle, mpsc::Receiver<RecMsg>) {
-        let (tx, rx) = mpsc::channel(bound);
-        (RecorderHandle { tx }, rx)
-    }
 }
 
 /// Internal recorder state driving the consume loop.
@@ -562,7 +554,9 @@ mod tests {
 
         let (handle, join) = spawn_recorder(ArcUploader(uploader.clone()), header, cfg);
         for (millis, action, data) in &frames {
-            handle.try_frame(*millis, *action, data.clone()).expect("send");
+            handle
+                .try_frame(*millis, *action, data.clone())
+                .expect("send");
         }
         handle.finish().await;
         let report = join.await.expect("join");
@@ -621,7 +615,9 @@ mod tests {
         };
 
         let (handle, join) = spawn_recorder(uploader, test_header(), cfg);
-        handle.try_frame(0, ACTION_FASTPATH, b"hi".to_vec()).expect("send");
+        handle
+            .try_frame(0, ACTION_FASTPATH, b"hi".to_vec())
+            .expect("send");
         handle.fail().await;
         let report = join.await.expect("join");
 

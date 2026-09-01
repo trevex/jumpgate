@@ -101,7 +101,9 @@ pub async fn setup_session(
         | Some(setup_session_response::Credential::PrivateKey(_))
         | Some(setup_session_response::Credential::X509Certificate(_))
         | Some(setup_session_response::Credential::PgPassword(_)) => {
-            return Err(anyhow!("unexpected non-password credential on an rdp worker"));
+            return Err(anyhow!(
+                "unexpected non-password credential on an rdp worker"
+            ));
         }
         None => return Err(anyhow!("SetupSession returned no credential")),
     };

@@ -1,45 +1,46 @@
-//! The IronRDP bridge: the worker performs the full RDP handshake with the
-//! injected password (so credentials never reach the browser), then becomes a
-//! dumb byte relay between the browser (framed opcode stream over the mesh) and
-//! the target RDP socket.
+//! The RDCleanPath gateway: the worker terminates neither the RDP connector nor
+//! the graphics session — the BROWSER runs the full IronRDP `ClientConnector` +
+//! `ActiveStage`. The worker is an [RDCleanPath] server: it does the TCP + X.224 +
+//! TLS hop to the target on the browser's behalf (so the browser never speaks TCP
+//! or holds the target's TLS trust), returns the target's X.224 CC + certificate
+//! chain, then relays PLAINTEXT RDP bidirectionally — INJECTING the vault
+//! credentials into the browser's Client Info PDU so the browser never sees them.
 //!
-//! Handshake: TCP → `connect_begin` (X.224) → TLS upgrade (tokio-rustls; verify
-//! against the asset CA when pinned, else accept-any) → `mark_as_upgraded` →
-//! `connect_finalize` (CredSSP disabled for the xrdp bring-up) → `ConnectionResult`.
-//! Then: send the browser the seed HEADER (negotiated params) and relay
-//! `(action, payload)` PDUs; the browser runs `ironrdp-session::ActiveStage` to
-//! render and emits input bytes back. This is the architecture the P0 PoC proved.
+//! [RDCleanPath]: https://github.com/Devolutions/devolutions-gateway (mirrors
+//! `devolutions-gateway/src/rd_clean_path.rs`).
 //!
-//! Ported from the PoC `capture.rs` blocking flow to async (`ironrdp-tokio`).
+//! Flow (server side):
+//! 1. Read the browser's RDCleanPath request off the mesh stream
+//!    (`RDCleanPathPdu::detect` + `from_der`); take its `x224_connection_pdu` (CR).
+//! 2. SECURITY: ignore the request's `destination`. The target is the
+//!    warden/vault-resolved `target_address` — the browser must not pick it.
+//! 3. TCP-connect the target, write the client's X.224 CR, read the target's
+//!    X.224 CC (framed via `ironrdp_pdu::find_size`).
+//! 4. TLS-upgrade to the target (verify against the pinned asset CA, else
+//!    accept-any) and capture the peer certificate chain (DER).
+//! 5. Write back `RDCleanPathPdu::new_response(target_addr, x224_cc, cert_chain)`.
+//! 6. Relay plaintext RDP in two independent futures. Both directions are raw byte
+//!    copies EXCEPT a one-shot Client Info injection on the browser→target path:
+//!    the first `SendDataRequest` carrying a `ClientInfoPdu` has its credentials
+//!    replaced with the login + vault password and `AUTOLOGON` set, then that
+//!    direction switches to raw pass-through.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::Context;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use ironrdp_core::{decode, encode_vec};
+use ironrdp_pdu::mcs::SendDataRequest;
+use ironrdp_pdu::rdp::client_info::ClientInfoFlags;
+use ironrdp_pdu::rdp::ClientInfoPdu;
+use ironrdp_pdu::x224::X224;
+use ironrdp_rdcleanpath::{DetectionResult, RDCleanPathPdu};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Notify;
 use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
-use crate::record::{
-    spawn_recorder, PartUploader, RecordStatus, RecorderConfig, RecorderHandle, RecordingReport,
-};
-
-use ironrdp_connector::{
-    ClientConnector, Config, ConnectionResult, Credentials, DesktopSize, ServerName,
-};
-use ironrdp_pdu::gcc::KeyboardType;
-use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
-use ironrdp_pdu::rdp::client_info::{CompressionType, PerformanceFlags, TimezoneInfo};
-use ironrdp_pdu::Action;
-use ironrdp_tokio::reqwest::ReqwestNetworkClient;
-use ironrdp_tokio::{
-    connect_begin, connect_finalize, mark_as_upgraded, split_tokio_framed, FramedWrite, TokioFramed,
-};
-
-use crate::frame::{self, OP_HEADER, OP_INPUT, OP_PDU};
-use crate::record_format::{self, Header};
+use crate::record::{PartUploader, RecordStatus, RecorderConfig, RecordingReport};
 
 /// How a [`run`] session ended, mapped to the `SessionEnded` reason string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,11 +49,11 @@ pub enum BridgeOutcome {
     Terminated,
     /// Either side closed naturally (browser WS close / target EOF).
     Closed,
-    /// The target handshake failed (already surfaced to the browser as ERROR).
+    /// The target handshake failed (surfaced to the browser as an RDCleanPath
+    /// error response where possible, else the stream is just closed).
     ConnectFailed,
-    /// A required recording could not keep up (its channel overflowed/closed):
-    /// fail closed — the frame is never forwarded and the bridge tears down
-    /// rather than run the session unrecorded.
+    /// A required recording could not keep up: fail closed. Retained for the
+    /// deferred recording tee (see TODO(5.4)); not produced today.
     RecordingFailed,
 }
 
@@ -68,8 +69,8 @@ impl BridgeOutcome {
 }
 
 /// A synthetic `Failed` report for a recording that was aborted before (or
-/// without) the recorder task ever producing one — e.g. a target-connect failure
-/// after the multipart upload was already opened. Nothing was durably written.
+/// without) any bytes being durably written — e.g. a target-connect failure after
+/// the multipart upload was already opened caller-side.
 fn failed_report() -> RecordingReport {
     RecordingReport {
         size_bytes: 0,
@@ -79,7 +80,7 @@ fn failed_report() -> RecordingReport {
 }
 
 /// Current wall-clock time as unix milliseconds (saturating at 0 before the
-/// epoch). Stamps the recording's start timestamp.
+/// epoch). Stamps the session's start timestamp.
 fn unix_millis_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -87,25 +88,25 @@ fn unix_millis_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// Run the RDP bridge over an already-authenticated mesh stream (the gateway has
-/// read the CONNECT preamble and answered `200`; it now relays the framed opcode
-/// protocol). Connects to the target, seeds the browser with the HEADER, then
-/// pumps PDUs/input until either side closes or `cancel` fires.
-/// The recording disposition of a finished [`run`]: the recorder task's report
-/// (if the session was recorded) and the recording's start timestamp (unix ms,
-/// stamped by the bridge right after the handshake). The caller maps this to the
-/// `SessionEnded.recording` proto, stamping the end timestamp.
+/// The disposition of a finished [`run`]: the end outcome, the (deferred)
+/// recording report, and the session's start timestamp (unix ms). The caller maps
+/// this to the `SessionEnded` proto, stamping the end timestamp.
 pub struct RunReport {
     pub outcome: BridgeOutcome,
     pub recording: Option<RecordingReport>,
     pub started_at_unix_ms: i64,
 }
 
-/// A recorder was requested via `uploader = Some`. The multipart upload is opened
-/// by the CALLER before dialing (so a session that cannot be recorded is refused
-/// before the target is ever authenticated); `bridge::run` only spawns the encoder
-/// task once the handshake yields the seed [`Header`]. If the handshake fails
-/// after the upload was opened, the bridge aborts it (no dangling multipart).
+/// Run the RDCleanPath bridge over an already-authenticated mesh stream (the
+/// gateway has read the CONNECT preamble, answered `200`, and now relays a raw
+/// byte stream). Does the TCP+X.224+TLS hop to `target_address`, hands the browser
+/// the target's X.224 CC + cert chain, then relays plaintext RDP with a one-shot
+/// Client Info credential injection browser→target.
+///
+/// `uploader` is opened by the CALLER before dialing (so a session that cannot be
+/// recorded is refused before the target is ever contacted). Recording itself is
+/// DEFERRED (see TODO(5.4)): the tee is not wired, so any opened upload is aborted
+/// here — only the fail-closed-before-dial gate is preserved.
 #[allow(clippy::too_many_arguments)]
 pub async fn run<S>(
     target_address: &str,
@@ -115,15 +116,15 @@ pub async fn run<S>(
     cancel: Arc<Notify>,
     stream: S,
     uploader: Option<Box<dyn PartUploader>>,
-    rec_cfg: RecorderConfig,
+    _rec_cfg: RecorderConfig,
 ) -> RunReport
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let (mut mesh_reader, mut mesh_writer) = tokio::io::split(stream);
 
-    // On any failure BEFORE the recorder task is spawned, abort the (already
-    // opened) multipart upload so no dangling upload is left behind, and surface a
+    // On any failure BEFORE the relay starts, abort the (already opened, if any)
+    // multipart upload so no dangling upload is left behind, and surface a
     // synthetic `Failed` report.
     macro_rules! refuse {
         ($outcome:expr) => {{
@@ -142,142 +143,126 @@ where
         }};
     }
 
+    // 1. Read the browser's RDCleanPath request off the mesh stream.
+    let (request, leftover) = match read_cleanpath_request(&mut mesh_reader).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read RDCleanPath request");
+            refuse!(BridgeOutcome::ConnectFailed);
+        }
+    };
+    let x224_cr = match request.x224_connection_pdu {
+        Some(os) => os.into_bytes(),
+        None => {
+            tracing::warn!("RDCleanPath request carried no X.224 connection PDU");
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_http_error(400)).await;
+            refuse!(BridgeOutcome::ConnectFailed);
+        }
+    };
+
+    // 2. SECURITY: the browser's `destination` is ignored. The target is the
+    //    warden/vault-resolved address — the browser never dictates it.
+    if let Some(dest) = request.destination.as_deref() {
+        tracing::debug!(browser_destination = %dest, %target_address, "ignoring browser destination; using warden target");
+    }
     let (host, port) = match split_host_port(target_address) {
         Some(v) => v,
         None => {
             tracing::warn!(%target_address, "malformed RDP target address");
-            frame::send_error(&mut mesh_writer, "malformed target address").await;
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_http_error(500)).await;
             refuse!(BridgeOutcome::ConnectFailed);
         }
     };
 
-    // ponytail: ironrdp's Config takes a plain String, so this copy of the
-    // password outlives our Zeroizing wrapper un-scrubbed. Only upstream taking
-    // a zeroizing type closes that window; the wrapper still scrubs our own copy.
-    let config = build_config(login.to_string(), password.to_string());
-
-    let (result, target_framed) = match connect(config, &host, port, target_server_ca).await {
+    // 3. TCP-connect the target, forward the client's X.224 CR, read the CC.
+    let (tcp, x224_cc) = match tcp_x224_exchange(&host, port, &x224_cr).await {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(%target_address, error = %e, "RDP target handshake failed");
-            frame::send_error(&mut mesh_writer, "target connection failed").await;
+            tracing::warn!(%target_address, error = %e, "RDP target X.224 exchange failed");
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_http_error(502)).await;
             refuse!(BridgeOutcome::ConnectFailed);
         }
     };
-    // Handshake done: anchor the session clock now, before the seed frame, so the
-    // first recorded PDU's relative timestamp starts from ~0.
-    let start = Instant::now();
-    let started_at_unix_ms = unix_millis_now();
-    tracing::info!(
-        %target_address,
-        width = result.desktop_size.width,
-        height = result.desktop_size.height,
-        "RDP target connected; seeding browser",
-    );
 
-    // Seed HEADER frame (once, first): the negotiated params the browser needs to
-    // build its ActiveStage.
-    let header = header_from(&result);
-    let mut header_bytes = Vec::new();
-    if header.write(&mut header_bytes).is_err() {
-        frame::send_error(&mut mesh_writer, "failed to encode session header").await;
-        refuse!(BridgeOutcome::ConnectFailed);
-    }
-    if frame::write_frame(&mut mesh_writer, OP_HEADER, &header_bytes)
-        .await
-        .is_err()
-        || mesh_writer.flush().await.is_err()
-    {
-        refuse!(BridgeOutcome::Closed);
-    }
+    // 4. TLS-upgrade to the target, capturing its certificate chain (DER).
+    let (tls_stream, cert_chain) = match tls_upgrade(tcp, &host, target_server_ca).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(%target_address, error = %e, "RDP target TLS upgrade failed");
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_tls_error(0)).await;
+            refuse!(BridgeOutcome::ConnectFailed);
+        }
+    };
 
-    // Spawn the recorder now that the seed HEADER is known: it is written as the
-    // FIRST recording bytes, then every server→client PDU is teed into it before
-    // being forwarded. `spawn_recorder` itself is infallible (the fallible
-    // multipart-create already happened caller-side), so there is no fail-closed
-    // gap between here and the pump.
-    let recorder: Option<(RecorderHandle, tokio::task::JoinHandle<RecordingReport>)> =
-        uploader.map(|u| spawn_recorder(u, header, rec_cfg));
-
-    // Raw two-direction pump.
-    // ponytail: raw two-direction pump; genuinely raw (unlike ssh's channel bridge).
-    // ponytail: single-task select! — a slow browser writer blocks the target→browser
-    // arm's write/flush, so input isn't serviced meanwhile (HOL-block). Fine for one
-    // interactive session; split into two pump tasks only if throughput bites.
-    let (mut target_read, mut target_write) = split_tokio_framed(target_framed);
-
-    let outcome;
-    loop {
-        tokio::select! {
-            _ = cancel.notified() => { outcome = BridgeOutcome::Terminated; break; }
-
-            // target → browser: one RDP PDU → [0x01 PDU][action:u8][pdu bytes].
-            pdu = target_read.read_pdu() => {
-                match pdu {
-                    Ok((action, payload)) => {
-                        // FAIL CLOSED: tee the graphics frame into the recorder
-                        // FIRST. If a required recording can't accept it (channel
-                        // full/closed), the frame is NEVER forwarded — tear down.
-                        // The payload copy is only materialized when recording.
-                        if let Some((rec, _)) = recorder.as_ref() {
-                            let mut data = Vec::with_capacity(payload.len());
-                            data.extend_from_slice(&payload);
-                            let millis = start.elapsed().as_millis() as u64;
-                            if rec.try_frame(millis, action_u8(action), data).is_err() {
-                                outcome = BridgeOutcome::RecordingFailed;
-                                break;
-                            }
-                        }
-                        let mut out = Vec::with_capacity(payload.len() + 1);
-                        out.push(action_u8(action));
-                        out.extend_from_slice(&payload);
-                        if frame::write_frame(&mut mesh_writer, OP_PDU, &out).await.is_err()
-                            || mesh_writer.flush().await.is_err()
-                        {
-                            outcome = BridgeOutcome::Closed;
-                            break;
-                        }
-                    }
-                    // EOF / decode error on the target socket: natural close.
-                    Err(_) => { outcome = BridgeOutcome::Closed; break; }
-                }
+    // 5. Hand the browser the RDCleanPath response: target addr, X.224 CC, certs.
+    let response =
+        match RDCleanPathPdu::new_response(target_address.to_string(), x224_cc, cert_chain) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to build RDCleanPath response");
+                refuse!(BridgeOutcome::ConnectFailed);
             }
-
-            // browser → target: INPUT bytes written raw to the target socket
-            // (the browser's already-wire-formatted ActiveStage output).
-            inbound = frame::read_frame(&mut mesh_reader) => {
-                match inbound {
-                    Ok((OP_INPUT, payload)) => {
-                        if target_write.write_all(&payload).await.is_err() {
-                            outcome = BridgeOutcome::Closed;
-                            break;
-                        }
-                    }
-                    // Any other opcode from the browser is unexpected; log + ignore.
-                    Ok((op, _)) => tracing::debug!(opcode = op, "ignoring unexpected inbound opcode"),
-                    // EOF / read error: the browser closed the WS. Natural close.
-                    Err(_) => { outcome = BridgeOutcome::Closed; break; }
-                }
+        };
+    match response.to_der() {
+        Ok(der) => {
+            if mesh_writer.write_all(&der).await.is_err() || mesh_writer.flush().await.is_err() {
+                refuse!(BridgeOutcome::Closed);
             }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to encode RDCleanPath response");
+            refuse!(BridgeOutcome::ConnectFailed);
         }
     }
 
-    tracing::debug!(?outcome, "RDP pump finished");
+    let started_at_unix_ms = unix_millis_now();
+    tracing::info!(%target_address, "RDCleanPath established; relaying plaintext RDP");
 
-    // Finalize the recording: a clean end (terminated / natural close) completes
-    // the multipart upload; a recording failure aborts it. Await the recorder task
-    // for the authoritative report (a join failure maps to a `Failed` report).
-    let recording = match recorder {
-        Some((handle, join)) => {
-            if outcome == BridgeOutcome::RecordingFailed {
-                handle.fail().await;
-            } else {
-                handle.finish().await;
+    // 6. Relay plaintext RDP, each direction its own concurrently-polled future so
+    //    a blocked write in one never head-of-line-blocks the other.
+    let (mut target_read, mut target_write) = tokio::io::split(tls_stream);
+
+    // target → browser: raw byte copy.
+    // TODO(5.4): re-add the rdp-graphics-v1 tee here by parsing PDUs off this path
+    // (instead of a raw copy) and feeding them to a spawned recorder before forwarding.
+    let to_browser = async {
+        let mut buf = [0u8; 32 * 1024];
+        loop {
+            match target_read.read(&mut buf).await {
+                Ok(0) | Err(_) => return BridgeOutcome::Closed,
+                Ok(n) => {
+                    if mesh_writer.write_all(&buf[..n]).await.is_err()
+                        || mesh_writer.flush().await.is_err()
+                    {
+                        return BridgeOutcome::Closed;
+                    }
+                }
             }
-            Some(join.await.unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "recorder task join failed");
-                failed_report()
-            }))
+        }
+    };
+
+    // browser → target: one-shot Client Info injection, then raw pass-through.
+    let to_target = inject_then_relay(
+        &mut mesh_reader,
+        &mut target_write,
+        login,
+        password,
+        leftover,
+    );
+
+    tokio::pin!(to_browser, to_target);
+    let outcome = tokio::select! {
+        _ = cancel.notified() => BridgeOutcome::Terminated,
+        o = &mut to_browser => o,
+        o = &mut to_target => o,
+    };
+    tracing::debug!(?outcome, "RDP relay finished");
+
+    // Recording is deferred: abort any opened upload (nothing was teed into it).
+    let recording = match uploader {
+        Some(u) => {
+            u.abort().await;
+            Some(failed_report())
         }
         None => None,
     };
@@ -289,126 +274,214 @@ where
     }
 }
 
-/// Build the IronRDP connector config. Exactly the 30 fields published
-/// `connector::Config` (0.10) exposes. `autologon: true` so the injected
-/// password is actually used for logon.
-fn build_config(username: String, password: String) -> Config {
-    Config {
-        desktop_size: DesktopSize {
-            width: 1280,
-            height: 1024,
-        },
-        desktop_scale_factor: 0,
-        enable_tls: true,
-        // ponytail: credssp=false for xrdp bring-up; per-asset knob when a Windows/NLA target lands.
-        enable_credssp: false,
-        credentials: Credentials::UsernamePassword { username, password },
-        domain: None,
-        client_build: 0,
-        client_name: "jumpgate-rdp-proxy".to_owned(),
-        keyboard_type: KeyboardType::IbmEnhanced,
-        keyboard_subtype: 0,
-        keyboard_functional_keys_count: 12,
-        keyboard_layout: 0,
-        ime_file_name: String::new(),
-        bitmap: None,
-        dig_product_id: String::new(),
-        client_dir: "C:\\Windows\\System32\\mstscax.dll".to_owned(),
-        alternate_shell: String::new(),
-        work_dir: String::new(),
-        platform: platform(),
-        hardware_id: None,
-        request_data: None,
-        // The injected password is only consumed at logon when autologon is set.
-        autologon: true,
-        enable_audio_playback: false,
-        performance_flags: PerformanceFlags::default(),
-        license_cache: None,
-        timezone_info: TimezoneInfo::default(),
-        compression_type: Some(CompressionType::Rdp61),
-        // No user-visible pointer/cursor state is rendered worker-side (the
-        // browser's ActiveStage owns that); mirror the proven PoC settings.
-        enable_server_pointer: false,
-        pointer_software_rendering: true,
-        multitransport_flags: None,
+/// Read one RDCleanPath PDU off the mesh stream, mirroring Devolutions'
+/// `read_cleanpath_pdu`: accumulate bytes until `detect` frames a complete PDU,
+/// then `from_der`. Any bytes past the PDU are returned as `leftover` (fed to the
+/// browser→target relay so nothing the browser pipelined is dropped).
+async fn read_cleanpath_request<R>(reader: &mut R) -> anyhow::Result<(RDCleanPathPdu, Vec<u8>)>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut buf = Vec::with_capacity(1024);
+    let mut tmp = [0u8; 8192];
+    loop {
+        if let DetectionResult::Detected { total_length, .. } = RDCleanPathPdu::detect(&buf) {
+            if buf.len() >= total_length {
+                let pdu = RDCleanPathPdu::from_der(&buf[..total_length])
+                    .map_err(|e| anyhow::anyhow!("decode RDCleanPath PDU: {e}"))?;
+                let leftover = buf.split_off(total_length);
+                return Ok((pdu, leftover));
+            }
+        } else if let DetectionResult::Failed = RDCleanPathPdu::detect(&buf) {
+            anyhow::bail!("RDCleanPath detection failed");
+        }
+        let n = reader
+            .read(&mut tmp)
+            .await
+            .context("read RDCleanPath bytes")?;
+        if n == 0 {
+            anyhow::bail!("EOF before a complete RDCleanPath PDU");
+        }
+        buf.extend_from_slice(&tmp[..n]);
     }
 }
 
-fn platform() -> MajorPlatformType {
-    #[cfg(target_os = "windows")]
-    {
-        MajorPlatformType::WINDOWS
-    }
-    #[cfg(target_os = "macos")]
-    {
-        MajorPlatformType::MACINTOSH
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        MajorPlatformType::UNIX
-    }
-}
-
-/// Async port of the PoC `connect()`: TCP → connect_begin → TLS upgrade →
-/// mark_as_upgraded → connect_finalize.
-async fn connect(
-    config: Config,
+/// TCP-connect the target, write the client's X.224 CR, and read the target's
+/// X.224 CC (framed with `ironrdp_pdu::find_size`). Returns the (still plaintext)
+/// TCP stream ready for the TLS upgrade, plus the CC bytes.
+async fn tcp_x224_exchange(
     host: &str,
     port: u16,
-    target_server_ca: &str,
-) -> anyhow::Result<(ConnectionResult, TokioFramed<TlsStream<TcpStream>>)> {
-    let tcp = TcpStream::connect((host, port))
+    x224_cr: &[u8],
+) -> anyhow::Result<(TcpStream, Vec<u8>)> {
+    let mut tcp = TcpStream::connect((host, port))
         .await
         .with_context(|| format!("TCP connect to RDP target {host}:{port}"))?;
-    let client_addr = tcp.local_addr().context("target socket local addr")?;
-
-    let mut framed: TokioFramed<TcpStream> = TokioFramed::new(tcp);
-    let mut connector = ClientConnector::new(config, client_addr);
-
-    let should_upgrade = connect_begin(&mut framed, &mut connector)
+    tcp.write_all(x224_cr)
         .await
-        .context("RDP connect_begin")?;
-
-    // The X.224 connection-confirm is fully consumed by connect_begin, so there
-    // is no leftover before the TLS ClientHello.
-    let initial = framed.into_inner_no_leftover();
-    let (tls_stream, server_public_key) = tls_upgrade(initial, host, target_server_ca)
+        .context("write X.224 CR to target")?;
+    tcp.flush().await.context("flush X.224 CR to target")?;
+    let x224_cc = read_x224_response(&mut tcp)
         .await
-        .context("target TLS upgrade")?;
-
-    let upgraded = mark_as_upgraded(should_upgrade, &mut connector);
-    let mut upgraded_framed: TokioFramed<TlsStream<TcpStream>> = TokioFramed::new(tls_stream);
-
-    let mut network_client = ReqwestNetworkClient::new();
-    let result = connect_finalize(
-        upgraded,
-        connector,
-        &mut upgraded_framed,
-        &mut network_client,
-        ServerName::new(host),
-        server_public_key,
-        // No Kerberos: enable_credssp is false for the xrdp bring-up.
-        None,
-    )
-    .await
-    .context("RDP connect_finalize")?;
-
-    Ok((result, upgraded_framed))
+        .context("read X.224 CC from target")?;
+    Ok((tcp, x224_cc))
 }
 
-/// Upgrade the target TCP stream to TLS. When `target_server_ca` is non-empty the
-/// server cert is verified against it (fail closed / MITM protection); empty =
-/// accept any (TOFU-off, the xrdp bring-up path). Returns the TLS stream and the
-/// server's public key (required by `connect_finalize` for CredSSP).
+/// Read one framed X.224 response (the connection confirm) from the target, using
+/// `ironrdp_pdu::find_size` to find the PDU boundary. Mirrors Devolutions'
+/// `read_x224_response`.
+async fn read_x224_response<R>(reader: &mut R) -> anyhow::Result<Vec<u8>>
+where
+    R: AsyncRead + Unpin,
+{
+    const MAX_READ_SIZE: usize = 512;
+    let mut buf = vec![0u8; 19];
+    let mut filled = 0;
+    loop {
+        if let Some(info) = ironrdp_pdu::find_size(&buf[..filled]).context("find X.224 PDU size")? {
+            match filled.cmp(&info.length) {
+                std::cmp::Ordering::Less => {}
+                std::cmp::Ordering::Equal => {
+                    buf.truncate(filled);
+                    return Ok(buf);
+                }
+                std::cmp::Ordering::Greater => anyhow::bail!("received more than one X.224 PDU"),
+            }
+        }
+        if filled == buf.len() {
+            if buf.len() >= MAX_READ_SIZE {
+                anyhow::bail!("X.224 response exceeds {MAX_READ_SIZE} bytes");
+            }
+            buf.resize(MAX_READ_SIZE, 0);
+        }
+        let n = reader
+            .read(&mut buf[filled..])
+            .await
+            .context("read X.224 response bytes")?;
+        if n == 0 {
+            anyhow::bail!("EOF before a complete X.224 response");
+        }
+        filled += n;
+    }
+}
+
+/// Locate the Client Info PDU on the browser→target byte stream, inject the vault
+/// credentials + `AUTOLOGON`, forward it, then switch to raw pass-through for the
+/// rest of the session. Everything before the Client Info PDU (the MCS connect
+/// sequence) passes through unchanged; if the stream can't be framed, it degrades
+/// to raw pass-through rather than wedging the session.
+async fn inject_then_relay<R, W>(
+    mesh_reader: &mut R,
+    target_write: &mut W,
+    login: &str,
+    password: &str,
+    mut buf: Vec<u8>,
+) -> BridgeOutcome
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut tmp = [0u8; 32 * 1024];
+    loop {
+        match ironrdp_pdu::find_size(&buf) {
+            Ok(Some(info)) if buf.len() >= info.length => {
+                // One complete PDU is buffered.
+                if let Some(rewritten) = rewrite_client_info(&buf[..info.length], login, password) {
+                    // Found + injected the Client Info PDU. Forward it, then any
+                    // already-buffered bytes, then raw-pump the rest.
+                    let rest = buf.split_off(info.length);
+                    if target_write.write_all(&rewritten).await.is_err()
+                        || (!rest.is_empty() && target_write.write_all(&rest).await.is_err())
+                        || target_write.flush().await.is_err()
+                    {
+                        return BridgeOutcome::Closed;
+                    }
+                    tracing::debug!("injected vault credentials into Client Info PDU");
+                    return raw_copy(mesh_reader, target_write, &mut tmp).await;
+                }
+                // Not the Client Info PDU (MCS connect sequence) — forward raw.
+                if target_write.write_all(&buf[..info.length]).await.is_err()
+                    || target_write.flush().await.is_err()
+                {
+                    return BridgeOutcome::Closed;
+                }
+                buf.drain(..info.length);
+            }
+            Ok(_) => {
+                // Not enough bytes for a full PDU yet — read more.
+                match mesh_reader.read(&mut tmp).await {
+                    Ok(0) | Err(_) => return BridgeOutcome::Closed,
+                    Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                }
+            }
+            Err(e) => {
+                // Unframable input: don't wedge — forward what we have and go raw.
+                // ponytail: giving up on injection means logon has no credentials;
+                // only reachable on a malformed/unexpected client stream.
+                tracing::warn!(error = %e, "could not frame client PDU; skipping Client Info injection");
+                if !buf.is_empty() && target_write.write_all(&buf).await.is_err() {
+                    return BridgeOutcome::Closed;
+                }
+                let _ = target_write.flush().await;
+                return raw_copy(mesh_reader, target_write, &mut tmp).await;
+            }
+        }
+    }
+}
+
+/// Raw byte copy from `reader` to `writer` until EOF/error. Used for both the
+/// post-injection browser→target tail and (implicitly) the target→browser path.
+async fn raw_copy<R, W>(reader: &mut R, writer: &mut W, tmp: &mut [u8]) -> BridgeOutcome
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    loop {
+        match reader.read(tmp).await {
+            Ok(0) | Err(_) => return BridgeOutcome::Closed,
+            Ok(n) => {
+                if writer.write_all(&tmp[..n]).await.is_err() || writer.flush().await.is_err() {
+                    return BridgeOutcome::Closed;
+                }
+            }
+        }
+    }
+}
+
+/// If `pdu` is an X.224 data PDU wrapping an MCS `SendDataRequest` whose user data
+/// is a `ClientInfoPdu`, replace its credentials with `login` + `password`, set
+/// `AUTOLOGON`, and re-encode the whole X.224/MCS/ClientInfo stack. Returns `None`
+/// when `pdu` is not a Client Info PDU (any other PDU passes through untouched).
+///
+/// Mirrors the connector's `create_client_info_pdu` wrapping (ironrdp-connector
+/// `connection.rs`): `encode_send_data_request` wraps the `ClientInfoPdu` as the
+/// user data of an MCS `SendDataRequest`, itself wrapped in `X224`.
+fn rewrite_client_info(pdu: &[u8], login: &str, password: &str) -> Option<Vec<u8>> {
+    let X224(mut sdr) = decode::<X224<SendDataRequest>>(pdu).ok()?;
+    let mut info = decode::<ClientInfoPdu>(&sdr.user_data[..]).ok()?;
+
+    info.client_info.credentials.username = login.to_string();
+    info.client_info.credentials.password = password.to_string();
+    info.client_info.credentials.domain = None;
+    info.client_info.flags |= ClientInfoFlags::AUTOLOGON;
+
+    let new_user_data = encode_vec(&info).ok()?;
+    sdr.user_data = std::borrow::Cow::Owned(new_user_data);
+    encode_vec(&X224(sdr)).ok()
+}
+
+/// Upgrade the target TCP stream to TLS and capture its certificate chain (DER).
+/// When `target_server_ca` is non-empty the server cert is verified against it
+/// (fail closed / MITM protection); empty = accept any (TOFU-off bring-up path).
 // ponytail: accept-any is the DEFAULT when an asset pins no CA — a blank asset
-// silently gets an unauthenticated target channel. Acceptable for Phase 2 bring-up;
-// before GA, production RDP assets MUST require a pinned target_server_ca (enforce
-// at asset-authoring or reject empty-CA at setup).
+// silently gets an unauthenticated target channel. Acceptable for bring-up; before
+// GA, production RDP assets MUST require a pinned target_server_ca (enforce at
+// asset-authoring or reject empty-CA at setup).
 async fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     target_server_ca: &str,
-) -> anyhow::Result<(TlsStream<TcpStream>, Vec<u8>)> {
+) -> anyhow::Result<(TlsStream<TcpStream>, Vec<Vec<u8>>)> {
     let mut config = if target_server_ca.trim().is_empty() {
         rustls::ClientConfig::builder()
             .dangerous()
@@ -425,7 +498,7 @@ async fn tls_upgrade(
             .with_root_certificates(roots)
             .with_no_client_auth()
     };
-    // CredSSP does not support TLS resumption; disable it (harmless when off too).
+    // RDP does not use TLS resumption; disable it (harmless when off too).
     config.resumption = rustls::client::Resumption::disabled();
 
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
@@ -436,59 +509,27 @@ async fn tls_upgrade(
         .await
         .context("TLS handshake with target")?;
 
-    let server_public_key = {
+    // Capture the peer certificate chain (DER) for the RDCleanPath response — the
+    // browser needs it to complete its own connector (server public key binding).
+    let cert_chain: Vec<Vec<u8>> = {
         let (_io, conn) = tls_stream.get_ref();
-        let cert = conn
-            .peer_certificates()
-            .and_then(|c| c.first())
-            .context("target presented no TLS certificate")?;
-        extract_tls_server_public_key(cert.as_ref())?
+        conn.peer_certificates()
+            .map(|certs| certs.iter().map(|c| c.as_ref().to_vec()).collect())
+            .unwrap_or_default()
     };
 
-    Ok((tls_stream, server_public_key))
+    Ok((tls_stream, cert_chain))
 }
 
-/// Extract the DER-encoded SubjectPublicKey BIT STRING from the server leaf cert.
-fn extract_tls_server_public_key(cert: &[u8]) -> anyhow::Result<Vec<u8>> {
-    use x509_cert::der::Decode as _;
-    let cert = x509_cert::Certificate::from_der(cert).context("parse target TLS certificate")?;
-    let key = cert
-        .tbs_certificate
-        .subject_public_key_info
-        .subject_public_key
-        .as_bytes()
-        .context("subject public key BIT STRING is not byte-aligned")?
-        .to_owned();
-    Ok(key)
-}
-
-/// Map a decoded `ConnectionResult` to the `rdp-graphics-v1` seed [`Header`] —
-/// the exact field mapping from the PoC `active_stage()`.
-fn header_from(r: &ConnectionResult) -> Header {
-    use record_format::compression;
-    Header {
-        width: r.desktop_size.width,
-        height: r.desktop_size.height,
-        user_channel_id: r.user_channel_id,
-        io_channel_id: r.io_channel_id,
-        message_channel_id: r.message_channel_id,
-        share_id: r.share_id,
-        compression: match r.compression_type {
-            None => compression::NONE,
-            Some(CompressionType::K8) => compression::K8,
-            Some(CompressionType::K64) => compression::K64,
-            Some(CompressionType::Rdp6) => compression::RDP6,
-            Some(CompressionType::Rdp61) => compression::RDP61,
-        },
-        enable_server_pointer: r.enable_server_pointer,
-        pointer_software_rendering: r.pointer_software_rendering,
-    }
-}
-
-fn action_u8(a: Action) -> u8 {
-    match a {
-        Action::FastPath => record_format::ACTION_FASTPATH,
-        Action::X224 => record_format::ACTION_X224,
+/// Best-effort RDCleanPath error response before closing (a handshake failure the
+/// browser can surface). Ignores write errors — the peer may already be gone.
+async fn send_error_response<W>(w: &mut W, pdu: RDCleanPathPdu)
+where
+    W: AsyncWrite + Unpin,
+{
+    if let Ok(der) = pdu.to_der() {
+        let _ = w.write_all(&der).await;
+        let _ = w.flush().await;
     }
 }
 
@@ -503,8 +544,8 @@ fn split_host_port(addr: &str) -> Option<(String, u16)> {
     Some((host.to_string(), port.parse().ok()?))
 }
 
-/// Accept-any TLS verifier for the unpinned target path — ported verbatim from
-/// the PoC. Only reachable when the asset configures no `target_server_ca`.
+/// Accept-any TLS verifier for the unpinned target path. Only reachable when the
+/// asset configures no `target_server_ca`.
 mod danger {
     use tokio_rustls::rustls::client::danger::{
         HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
@@ -567,6 +608,12 @@ mod danger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ironrdp_pdu::rdp::client_info::{
+        AddressFamily, ClientInfo, ClientInfoFlags, CompressionType, Credentials,
+        ExtendedClientInfo, ExtendedClientOptionalInfo,
+    };
+    use ironrdp_pdu::rdp::headers::{BasicSecurityHeader, BasicSecurityHeaderFlags};
+    use std::borrow::Cow;
 
     #[test]
     fn split_host_port_parses() {
@@ -595,72 +642,124 @@ mod tests {
         assert_eq!(BridgeOutcome::RecordingFailed.reason(), "recording_failed");
     }
 
-    /// FAIL CLOSED (tee seam): the `read_pdu` arm tees each frame into the
-    /// recorder BEFORE forwarding and, on an overflow/closed channel, sets the
-    /// outcome to `RecordingFailed` and never forwards. The full pump loop needs a
-    /// live IronRDP handshake (no framed streams can be built in a unit test), so
-    /// this exercises the exact tee→outcome decision the loop makes: a bounded
-    /// channel already full makes `try_frame` fail, which selects `RecordingFailed`.
-    #[test]
-    fn full_recorder_channel_selects_recording_failed() {
-        use crate::record::RecorderHandle;
-
-        // bound = 1, receiver retained → the first frame fills the buffer, the
-        // second overflows (try_send Full → try_frame errors).
-        let (handle, _rx) = RecorderHandle::for_test(1);
-        assert!(
-            handle.try_frame(0, record_format::ACTION_FASTPATH, b"first".to_vec()).is_ok(),
-            "first frame fills the single-slot buffer",
-        );
-
-        // Mirror the bridge's inline tee: an errored try_frame selects RecordingFailed
-        // and the frame is NOT forwarded.
-        let outcome = if handle
-            .try_frame(10, record_format::ACTION_FASTPATH, b"second".to_vec())
-            .is_err()
-        {
-            BridgeOutcome::RecordingFailed
-        } else {
-            BridgeOutcome::Closed
+    /// Build a wire-encoded Client Info PDU (as the browser would send it) with
+    /// blank credentials, exactly as the connector wraps it: `ClientInfoPdu` →
+    /// MCS `SendDataRequest` user data → `X224`.
+    fn encode_browser_client_info() -> Vec<u8> {
+        let info = ClientInfoPdu {
+            security_header: BasicSecurityHeader {
+                flags: BasicSecurityHeaderFlags::INFO_PKT,
+            },
+            client_info: ClientInfo {
+                credentials: Credentials {
+                    username: String::new(),
+                    password: String::new(),
+                    domain: None,
+                },
+                code_page: 0,
+                flags: ClientInfoFlags::UNICODE,
+                compression_type: CompressionType::K8,
+                alternate_shell: String::new(),
+                work_dir: String::new(),
+                extra_info: ExtendedClientInfo {
+                    address_family: AddressFamily::INET,
+                    address: String::new(),
+                    dir: String::new(),
+                    optional_data: ExtendedClientOptionalInfo::default(),
+                },
+            },
         };
-        assert_eq!(outcome, BridgeOutcome::RecordingFailed);
-        assert_eq!(outcome.reason(), "recording_failed");
+        let user_data = encode_vec(&info).expect("encode ClientInfoPdu");
+        let sdr = SendDataRequest {
+            initiator_id: 1004,
+            channel_id: 1003,
+            user_data: Cow::Owned(user_data),
+        };
+        encode_vec(&X224(sdr)).expect("encode X224<SendDataRequest>")
     }
 
+    /// The make-or-break path: a browser Client Info PDU is decoded, has the vault
+    /// login + password injected with AUTOLOGON set, is re-encoded, and the
+    /// re-encoded bytes decode back to the injected values.
     #[test]
-    fn build_config_uses_autologon_and_no_credssp() {
-        let cfg = build_config("admin".into(), "pw".into());
-        assert!(cfg.autologon, "injected password requires autologon");
-        assert!(!cfg.enable_credssp, "xrdp bring-up is TLS-only");
-        assert!(cfg.enable_tls);
-        match cfg.credentials {
-            Credentials::UsernamePassword { username, .. } => assert_eq!(username, "admin"),
-            _ => panic!("expected username/password credentials"),
-        }
+    fn client_info_inject_round_trip() {
+        let wire = encode_browser_client_info();
+
+        // Sanity: find_size frames exactly this one PDU.
+        let info = ironrdp_pdu::find_size(&wire)
+            .expect("find_size ok")
+            .expect("a full PDU");
+        assert_eq!(info.length, wire.len(), "one framed PDU");
+
+        let rewritten =
+            rewrite_client_info(&wire, "vault-user", "s3cr3t").expect("recognized as Client Info");
+        assert_ne!(rewritten, wire, "bytes changed after injection");
+
+        // Decode the rewritten PDU back and assert the injection took.
+        let X224(sdr) = decode::<X224<SendDataRequest>>(&rewritten).expect("decode rewritten");
+        let decoded = decode::<ClientInfoPdu>(&sdr.user_data[..]).expect("decode ClientInfo");
+        assert_eq!(decoded.client_info.credentials.username, "vault-user");
+        assert_eq!(decoded.client_info.credentials.password, "s3cr3t");
+        assert_eq!(decoded.client_info.credentials.domain, None);
+        assert!(
+            decoded
+                .client_info
+                .flags
+                .contains(ClientInfoFlags::AUTOLOGON),
+            "AUTOLOGON must be set so the injected password is used at logon",
+        );
+        assert!(
+            decoded.client_info.flags.contains(ClientInfoFlags::UNICODE),
+            "pre-existing flags must be preserved",
+        );
     }
 
-    /// LIVE decode test (requires a real xrdp target — NOT available in CI, so
-    /// `#[ignore]`d). Run manually:
-    ///
-    /// ```text
-    /// docker run --rm -p 3389:3389 danielguerra/ubuntu-xrdp:20.04
-    /// cargo test -p rdp-proxy --lib -- --ignored bridge::tests::live_connect_seeds_header
-    /// ```
-    ///
-    /// Connects, finalizes, and asserts the negotiated `ConnectionResult` maps to
-    /// a non-degenerate seed HEADER (the same handshake `run` performs).
+    /// A non-Client-Info PDU (a bare X.224 data PDU) is NOT recognized as a Client
+    /// Info PDU, so the injector passes it through untouched.
+    #[test]
+    fn non_client_info_pdu_is_passed_through() {
+        // An MCS SendDataRequest whose user data is not a ClientInfoPdu.
+        let sdr = SendDataRequest {
+            initiator_id: 1004,
+            channel_id: 1003,
+            user_data: Cow::Owned(vec![0xde, 0xad, 0xbe, 0xef]),
+        };
+        let wire = encode_vec(&X224(sdr)).expect("encode");
+        assert!(rewrite_client_info(&wire, "u", "p").is_none());
+    }
+
+    /// An RDCleanPath request round-trips through `detect` + `from_der`, and the
+    /// reader recovers the embedded X.224 connection PDU. Locks the request-parse
+    /// contract the bridge depends on.
     #[tokio::test]
-    #[ignore = "requires a live danielguerra/ubuntu-xrdp:20.04 on 127.0.0.1:3389"]
-    async fn live_connect_seeds_header() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = build_config("admin".into(), "password".into());
-        let (result, _framed) = connect(config, "127.0.0.1", 3389, "")
+    async fn cleanpath_request_detect_and_read() {
+        // Build a request the way the browser (iron-remote-desktop) would.
+        let x224_cr = vec![0x03, 0x00, 0x00, 0x13, 0x0e, 0xe0]; // arbitrary CR-ish bytes
+        let request = RDCleanPathPdu {
+            x224_connection_pdu: Some(
+                ironrdp_rdcleanpath::der::asn1::OctetString::new(x224_cr.clone()).unwrap(),
+            ),
+            destination: Some("attacker-chosen:3389".to_string()),
+            ..Default::default()
+        };
+        let der = request.to_der().expect("encode request");
+
+        // detect frames the whole PDU.
+        match RDCleanPathPdu::detect(&der) {
+            DetectionResult::Detected { total_length, .. } => {
+                assert_eq!(total_length, der.len())
+            }
+            other => panic!("expected Detected, got {other:?}"),
+        }
+
+        // The reader recovers the request (and its X.224 CR), plus no leftover.
+        let mut cursor = std::io::Cursor::new(der);
+        let (parsed, leftover) = read_cleanpath_request(&mut cursor)
             .await
-            .expect("connect to live xrdp");
-        let header = header_from(&result);
-        assert!(header.width > 0 && header.height > 0, "non-degenerate size");
-        let mut buf = Vec::new();
-        header.write(&mut buf).expect("encode header");
-        assert_eq!(&buf[..4], record_format::MAGIC, "header carries the RDPG magic");
+            .expect("read request");
+        assert!(leftover.is_empty());
+        assert_eq!(parsed.x224_connection_pdu.unwrap().into_bytes(), x224_cr);
+        // The destination is present but the bridge deliberately ignores it.
+        assert_eq!(parsed.destination.as_deref(), Some("attacker-chosen:3389"));
     }
 }

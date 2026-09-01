@@ -19,7 +19,6 @@ use jumpgate_mesh::tls::MeshClientCerts;
 
 use crate::config::Config;
 use crate::control::SessionRegistry;
-use crate::frame;
 use crate::record::{PartUploader, RecordStatus, RecorderConfig, S3Uploader};
 use crate::setup::{setup_session, TargetCredential};
 
@@ -153,9 +152,16 @@ pub async fn run_dataplane_server(
         let registry = registry.clone();
         let session_ended_tx = session_ended_tx.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                handle_conn(acceptor, mesh_certs, config, registry, session_ended_tx, tcp, peer)
-                    .await
+            if let Err(e) = handle_conn(
+                acceptor,
+                mesh_certs,
+                config,
+                registry,
+                session_ended_tx,
+                tcp,
+                peer,
+            )
+            .await
             {
                 tracing::warn!(%peer, error = %e, "data-plane connection failed");
             }
@@ -209,8 +215,7 @@ async fn handle_conn(
     // This worker serves RDP only. A preamble without `X-Jumpgate-Rdp: 1` is a
     // gateway misroute — refuse it rather than guess.
     if !req.rdp {
-        tracing::warn!(%peer, authority = %req.authority, "non-RDP CONNECT reached rdp-proxy; refusing");
-        frame::send_error(&mut tls, "rdp-proxy received a non-rdp connection").await;
+        tracing::warn!(%peer, authority = %req.authority, "non-RDP CONNECT reached rdp-proxy; closing");
         return Ok(());
     }
     let login = req
@@ -219,15 +224,26 @@ async fn handle_conn(
         .ok_or_else(|| anyhow::anyhow!("rdp CONNECT missing X-Jumpgate-Login header"))?;
 
     tracing::info!(%peer, authority = %req.authority, %login, "gateway RDP CONNECT received; starting RDP ingress");
-    run_rdp(tls, login, req.token, &config, &mesh_certs, registry, session_ended_tx).await;
+    run_rdp(
+        tls,
+        login,
+        req.token,
+        &config,
+        &mesh_certs,
+        registry,
+        session_ended_tx,
+    )
+    .await;
     Ok(())
 }
 
 /// Redeem the session with warden, register it for teardown, run the bridge, then
-/// report the end. Any pre-bridge failure surfaces an ERROR frame to the browser.
+/// report the end. Any pre-bridge failure logs and closes the mesh stream (the
+/// browser observes the WS close); the RDCleanPath bridge itself surfaces target
+/// handshake failures to the browser as RDCleanPath error responses where it can.
 #[allow(clippy::too_many_arguments)]
 async fn run_rdp<S>(
-    mut stream: S,
+    stream: S,
     login: String,
     token: String,
     config: &Config,
@@ -238,7 +254,7 @@ async fn run_rdp<S>(
     S: AsyncRead + AsyncWrite + Unpin,
 {
     // 1. Redeem the session (web mode: no client key). Any failure is a hard
-    //    refuse — surface an ERROR frame and close.
+    //    refuse — log and close the stream.
     let outcome = match setup_session(
         &config.warden_mesh_addr,
         &config.warden_spiffe,
@@ -251,8 +267,7 @@ async fn run_rdp<S>(
     {
         Ok(o) => o,
         Err(e) => {
-            tracing::warn!(%login, error = %e, "RDP SetupSession rejected");
-            frame::send_error(&mut stream, "session setup failed").await;
+            tracing::warn!(%login, error = %e, "RDP SetupSession rejected; closing");
             return;
         }
     };
@@ -266,7 +281,6 @@ async fn run_rdp<S>(
             Ok(u) => Some(Box::new(u)),
             Err(e) => {
                 tracing::warn!(session_id = %outcome.session_id, error = %e, "recording unavailable; refusing session");
-                frame::send_error(&mut stream, "session recording is required but unavailable").await;
                 let _ = session_ended_tx.send(SessionEndReport {
                     session_id: outcome.session_id.clone(),
                     reason: "recording_unavailable".into(),

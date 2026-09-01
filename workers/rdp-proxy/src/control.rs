@@ -19,7 +19,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
-    Register, RecordingInfo, ServerMessage, SessionEnded, WorkerMessage,
+    RecordingInfo, Register, ServerMessage, SessionEnded, WorkerMessage,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
 

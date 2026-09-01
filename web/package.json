@@ -15,6 +15,8 @@
     "@connectrpc/connect": "^2.1.2",
     "@connectrpc/connect-query": "^2.3.1",
     "@connectrpc/connect-web": "^2.1.2",
+    "@devolutions/iron-remote-desktop": "0.11.0",
+    "@devolutions/iron-remote-desktop-rdp": "0.7.0",
     "@fontsource-variable/fira-code": "^5.3.0",
     "@fontsource/fira-sans": "^5.3.0",
     "@radix-ui/react-context-menu": "^2.3.7",

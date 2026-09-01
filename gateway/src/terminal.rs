@@ -49,6 +49,12 @@ use crate::{lb, proxy, token, GatewayState};
 /// terminal frame.
 pub const MAX_FRAME: u32 = 1024 * 1024;
 
+/// WebSocket message/frame cap for the RDP byte-stream relay. RDP bulk graphics
+/// (`/rdp`) is a transparent byte stream — not our length-framed opcode protocol —
+/// and a single WS binary message can carry a large burst, so the terminal's 1 MiB
+/// cap is too small. 16 MiB comfortably covers RDP handshake + bulk data.
+pub const RDP_MAX_WS_MESSAGE: usize = 16 * 1024 * 1024;
+
 /// Keepalive: send a WebSocket ping if no frame has flowed for this long, so idle
 /// browser sessions survive intermediary idle timeouts.
 const KEEPALIVE: Duration = Duration::from_secs(30);
@@ -242,6 +248,32 @@ async fn read_len_frame<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<Vec<
     Ok(frame)
 }
 
+/// Read the next chunk of worker→browser bytes for `proto`:
+/// - [`WsProto::Terminal`]: one length-delimited frame ([`read_len_frame`]);
+/// - [`WsProto::Rdp`]: whatever raw bytes are available (up to 64 KiB). A clean
+///   EOF surfaces as `UnexpectedEof` so the relay breaks with `Closed`.
+///
+/// Each returned chunk becomes one browser `Message::Binary`. For the RDP byte
+/// stream the chunk boundaries are arbitrary — iron-remote-desktop reassembles the
+/// ordered byte stream, so message framing carries no semantics.
+async fn worker_recv<R: AsyncRead + Unpin>(r: &mut R, proto: WsProto) -> std::io::Result<Vec<u8>> {
+    match proto {
+        WsProto::Terminal => read_len_frame(r).await,
+        WsProto::Rdp => {
+            let mut buf = vec![0u8; 64 * 1024];
+            let n = r.read(&mut buf).await?;
+            if n == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "worker closed the RDP byte stream",
+                ));
+            }
+            buf.truncate(n);
+            Ok(buf)
+        }
+    }
+}
+
 /// Write one `[u32 BE len][frame]` to the worker mesh stream (not flushed). The
 /// `frame` is the verbatim WebSocket binary payload (`[opcode][payload]`).
 async fn write_len_frame<W: AsyncWrite + Unpin>(w: &mut W, frame: &[u8]) -> std::io::Result<()> {
@@ -295,12 +327,19 @@ pub async fn handle_terminal<S>(
     let ticket_slot = &mut captured_ticket;
     let policy = origin_policy.clone();
 
-    // Bound tungstenite's buffering to the relay's own frame cap: the default
-    // 64 MiB message / 16 MiB frame limits would let a post-auth peer force large
+    // Bound tungstenite's buffering. For `/terminal` (length-framed opcode
+    // protocol) the relay's own 1 MiB frame cap applies — the default 64 MiB
+    // message / 16 MiB frame limits would let a post-auth peer force large
     // allocations before `write_len_frame` rejects the oversized frame downstream.
+    // For `/rdp` (transparent byte stream) a single WS message can carry a large
+    // RDP burst, so raise the cap ([`RDP_MAX_WS_MESSAGE`]).
+    let ws_max = match proto {
+        WsProto::Terminal => MAX_FRAME as usize,
+        WsProto::Rdp => RDP_MAX_WS_MESSAGE,
+    };
     let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
-        .max_message_size(Some(MAX_FRAME as usize))
-        .max_frame_size(Some(MAX_FRAME as usize));
+        .max_message_size(Some(ws_max))
+        .max_frame_size(Some(ws_max));
 
     let ws = match tokio_tungstenite::accept_hdr_async_with_config(
         prefixed,
@@ -420,7 +459,7 @@ pub async fn handle_terminal<S>(
         "browser session relay established"
     );
 
-    match relay(ws, worker, limits).await {
+    match relay(ws, worker, limits, proto).await {
         Ok(StopReason::Closed) => {}
         Ok(reason) => {
             tracing::info!(
@@ -459,15 +498,21 @@ where
     let _ = ws.close(None).await;
 }
 
-/// Relay frames between the browser WebSocket and the worker mesh stream until
-/// either side closes.
+/// Relay between the browser WebSocket and the worker mesh stream until either
+/// side closes. `proto` selects the worker-side wire format:
 ///
-/// - browser `Message::Binary(b)` → `[u32 BE len][b]` to the worker;
-/// - worker `[u32 BE len][frame]` → browser `Message::Binary(frame)`;
-/// - browser `Ping` → `Pong`; `Close`/EOF (either side) → tear down both;
-/// - a ~30s keepalive ping is sent when idle.
+/// - [`WsProto::Terminal`] — length-framed opcode protocol: browser
+///   `Message::Binary(b)` → `[u32 BE len][b]`; worker `[u32 BE len][frame]` →
+///   browser `Message::Binary(frame)`.
+/// - [`WsProto::Rdp`] — transparent byte stream (iron-remote-desktop's
+///   RDCleanPath/RDP is an ordered byte stream, not our frames): browser
+///   `Message::Binary(b)` → raw `worker.write_all(b)`; worker raw bytes →
+///   `Message::Binary(bytes)`. No length framing either direction.
 ///
-/// Bounded by `limits`: a session with no frames flowing in EITHER direction for
+/// Both share `Ping`→`Pong`, the ~30s idle keepalive, `Close`/EOF teardown, and
+/// the resource bounds.
+///
+/// Bounded by `limits`: a session with no data flowing in EITHER direction for
 /// `idle_timeout` is torn down ([`StopReason::Idle`]); one exceeding
 /// `max_lifetime` is torn down ([`StopReason::Lifetime`]). A zero [`Duration`]
 /// disables the corresponding bound. The keepalive ping/pong is NOT counted as
@@ -480,6 +525,7 @@ async fn relay<C, W>(
     ws: tokio_tungstenite::WebSocketStream<C>,
     mut worker: W,
     limits: SessionLimits,
+    proto: WsProto,
 ) -> std::io::Result<StopReason>
 where
     C: AsyncRead + AsyncWrite + Unpin,
@@ -514,7 +560,12 @@ where
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
                         last_activity = tokio::time::Instant::now();
-                        write_len_frame(&mut worker, &data).await?;
+                        match proto {
+                            // Length-framed opcode protocol.
+                            WsProto::Terminal => write_len_frame(&mut worker, &data).await?,
+                            // Transparent byte stream — no length frame.
+                            WsProto::Rdp => worker.write_all(&data).await?,
+                        }
                         worker.flush().await?;
                     }
                     Some(Ok(Message::Ping(p))) => {
@@ -533,7 +584,7 @@ where
             }
 
             // Worker → browser.
-            frame = read_len_frame(&mut worker) => {
+            frame = worker_recv(&mut worker, proto) => {
                 match frame {
                     Ok(f) => {
                         last_activity = tokio::time::Instant::now();

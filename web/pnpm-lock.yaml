@@ -20,6 +20,12 @@ importers:
       '@connectrpc/connect-web':
         specifier: ^2.1.2
         version: 2.1.2(@bufbuild/protobuf@2.14.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.14.0))
+      '@devolutions/iron-remote-desktop':
+        specifier: 0.11.0
+        version: 0.11.0
+      '@devolutions/iron-remote-desktop-rdp':
+        specifier: 0.7.0
+        version: 0.7.0
       '@fontsource-variable/fira-code':
         specifier: ^5.3.0
         version: 5.3.0
@@ -248,6 +254,12 @@ packages:
     resolution: {integrity: sha512-MXkBijtcX09R10Eb6sFeIetc6w6746eio6xtfuyVOH7oQAacT1X0GzMIQFux6Qy8cq3W/T5qX5Bei8YbFtmRGA==}
     peerDependencies:
       '@bufbuild/protobuf': ^2.7.0
+
+  '@devolutions/iron-remote-desktop-rdp@0.7.0':
+    resolution: {integrity: sha512-CclAh4OS9aBoPJT0l7bih7ETOHPnB9KjT0drB0a6r5+Qh95pTEuQCx7uFN/XA2AlkFlrqx+DBAMDGYXmgsjHAQ==}
+
+  '@devolutions/iron-remote-desktop@0.11.0':
+    resolution: {integrity: sha512-ZH8xfabDA+6rAXkW2V3XgRdj0LHOsHoXAzars/H22DmKsHM39LdMfheKFUR3qLaFDM8mjf6DTFngzjgr+Byx0Q==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -1855,6 +1867,10 @@ snapshots:
   '@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.14.0)':
     dependencies:
       '@bufbuild/protobuf': 2.14.0
+
+  '@devolutions/iron-remote-desktop-rdp@0.7.0': {}
+
+  '@devolutions/iron-remote-desktop@0.11.0': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
