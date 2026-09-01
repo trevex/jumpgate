@@ -266,7 +266,14 @@ pub async fn handle_terminal<S>(
     let ticket_slot = &mut captured_ticket;
     let policy = origin_policy.clone();
 
-    let ws = match tokio_tungstenite::accept_hdr_async(
+    // Bound tungstenite's buffering to the relay's own frame cap: the default
+    // 64 MiB message / 16 MiB frame limits would let a post-auth peer force large
+    // allocations before `write_len_frame` rejects the oversized frame downstream.
+    let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+        .max_message_size(Some(MAX_FRAME as usize))
+        .max_frame_size(Some(MAX_FRAME as usize));
+
+    let ws = match tokio_tungstenite::accept_hdr_async_with_config(
         prefixed,
         |req: &WsRequest, resp: WsResponse| -> Result<WsResponse, ErrorResponse> {
             if !is_terminal_path(req.uri()) {
@@ -285,6 +292,7 @@ pub async fn handle_terminal<S>(
             *ticket_slot = extract_ticket(req.uri());
             Ok(resp)
         },
+        Some(ws_config),
     )
     .await
     {
@@ -589,12 +597,12 @@ mod tests {
 
     // ---- length-frame codec ----------------------------------------------
 
-    #[test]
-    fn len_frame_wire_layout() {
+    #[tokio::test]
+    async fn len_frame_wire_layout() {
         // A 3-byte frame ([opcode][2-byte payload]) → 4-byte BE length prefix.
         let frame = vec![0x00u8, b'h', b'i'];
         let mut buf = Vec::new();
-        futures_executor_block_on(write_len_frame(&mut buf, &frame)).unwrap();
+        write_len_frame(&mut buf, &frame).await.unwrap();
         assert_eq!(&buf, &[0, 0, 0, 3, 0x00, b'h', b'i']);
     }
 
@@ -668,26 +676,5 @@ mod tests {
         s.read_to_end(&mut out).await.unwrap();
         writer.await.unwrap();
         assert_eq!(out, b"hello world");
-    }
-
-    /// Minimal synchronous block-on for the one non-async codec test above,
-    /// avoiding a full runtime for a pure buffer write.
-    fn futures_executor_block_on<F: std::future::Future>(fut: F) -> F::Output {
-        // The write futures against a `Vec` never actually suspend, so a trivial
-        // no-op-waker poll loop resolves them immediately.
-        use std::task::{RawWaker, RawWakerVTable, Waker};
-        fn noop(_: *const ()) {}
-        fn clone(_: *const ()) -> RawWaker {
-            RawWaker::new(std::ptr::null(), &VTABLE)
-        }
-        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
-        let waker = unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) };
-        let mut cx = Context::from_waker(&waker);
-        let mut fut = Box::pin(fut);
-        loop {
-            if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
-                return v;
-            }
-        }
     }
 }

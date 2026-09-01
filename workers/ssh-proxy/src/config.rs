@@ -61,7 +61,20 @@ impl Config {
             Ok(v) => v.parse::<usize>().map_err(|_| {
                 anyhow::anyhow!("RECORDING_PART_SIZE must be a non-negative integer")
             })?,
-            Err(_) => 5 * 1024 * 1024,
+            Err(_) => crate::record::MIN_PART_SIZE,
+        };
+        // S3 rejects a non-final multipart part below 5 MiB, so a smaller part size
+        // can never trigger an early upload — it would silently do nothing. Clamp
+        // up to the floor and tell the operator rather than accept a dead value.
+        let recording_part_size = if recording_part_size < crate::record::MIN_PART_SIZE {
+            tracing::warn!(
+                requested = recording_part_size,
+                floor = crate::record::MIN_PART_SIZE,
+                "RECORDING_PART_SIZE is below S3's 5 MiB minimum; clamping up to the floor",
+            );
+            crate::record::MIN_PART_SIZE
+        } else {
+            recording_part_size
         };
         Ok(Self {
             worker_id: req("WORKER_ID")?,

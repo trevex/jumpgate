@@ -43,6 +43,19 @@ async fn main() -> anyhow::Result<()> {
     // Install the deploy-time host-key policy before any target hop runs.
     ssh_proxy::target::set_require_host_key_pin(config.require_host_key_pin);
 
+    // Read the worker's mesh identity PEMs once, here, so an unreadable cert is a
+    // fatal startup error rather than a silently-disabled control plane (which
+    // would leave the worker serving the data plane with no teardown/revocation).
+    let mesh_certs = jumpgate_mesh::tls::MeshClientCerts::from_files(
+        &config.mesh_cert,
+        &config.mesh_key,
+        &config.mesh_ca,
+    )
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to read worker mesh certs");
+        e
+    })?;
+
     // Control-plane seam shared between the WorkerStream client and the data
     // plane: the registry lets `Teardown` force-close live sessions; the channel
     // carries `SessionEnded` reports from finished sessions to warden.
@@ -54,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
     // dispatches Teardown into `registry`. It reconnects on its own.
     tokio::spawn(run_control(
         config.clone(),
+        mesh_certs,
         registry.clone(),
         session_ended_rx,
     ));

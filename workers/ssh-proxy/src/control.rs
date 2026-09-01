@@ -90,23 +90,13 @@ const OUTBOUND_CHANNEL_CAP: usize = 64;
 /// the data plane asks to report a finished session (session_id, reason).
 pub async fn run_control(
     config: Config,
+    certs: MeshClientCerts,
     registry: SessionRegistry,
     mut session_ended_rx: mpsc::UnboundedReceiver<SessionEndReport>,
 ) {
-    // Read the worker's mesh identity PEMs once; each connect builds a cheap,
-    // warden-pinned client config from them.
-    let certs = match MeshClientCerts::from_files(
-        &config.mesh_cert,
-        &config.mesh_key,
-        &config.mesh_ca,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to read worker mesh certs; control plane disabled");
-            return;
-        }
-    };
-
+    // `certs` are the worker's mesh identity PEMs, read once in `main` (a read
+    // failure there is fatal — the data plane cannot run without them, so the
+    // control plane is never silently disabled while the worker keeps serving).
     loop {
         match connect_and_run(&config, &certs, &registry, &mut session_ended_rx).await {
             Ok(()) => tracing::warn!("worker_stream ended; reconnecting"),
@@ -140,7 +130,7 @@ async fn connect_and_run(
         msg: Some(worker_message::Msg::Register(Register {
             worker_id: config.worker_id.clone(),
             protocols: vec!["ssh".into()],
-            capacity: config.capacity as i32,
+            capacity: i32::try_from(config.capacity).unwrap_or(i32::MAX),
             live_session_ids: registry.live_ids(),
             dataplane_address: config.dataplane_addr.clone(),
         })),

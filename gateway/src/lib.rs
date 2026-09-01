@@ -51,9 +51,8 @@ async fn read_request_head<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Res
     // rather than O(n²) from re-scanning the accumulated buffer every read.
     let mut scan_from = 0usize;
     loop {
-        if let Some(rel) = buf[scan_from..].windows(4).position(|w| w == b"\r\n\r\n") {
+        if buf[scan_from..].windows(4).any(|w| w == b"\r\n\r\n") {
             // Terminator found; return the head (including the CRLFCRLF).
-            let _ = rel; // position is relative; the full buffer is the head.
             return Ok(buf);
         }
         if buf.len() > connect::MAX_HEADER {

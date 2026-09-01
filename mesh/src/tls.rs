@@ -1,8 +1,8 @@
 //! rustls TLS configuration for the internal service mesh, built from PEM files.
 //!
 //!   * [`server_config`] — an external server TLS listener (no client auth).
-//!   * [`mesh_client_config`] / [`mesh_client_config_no_hostname`] — the internal
-//!     mesh mTLS client, used by the gRPC clients and the worker proxy dial.
+//!   * [`mesh_client_config_no_hostname`] — the internal mesh mTLS client (pins
+//!     the peer's SPIFFE URI SAN), used by the gRPC clients and the worker dial.
 //!   * [`server_config_mtls`] — a mesh mTLS server that requires + pins a peer.
 //!
 //! Mesh leaves carry a SPIFFE URI SAN only (no DNS name), so the custom
@@ -132,36 +132,37 @@ pub fn server_config(cert_pem_path: &str, key_pem_path: &str) -> anyhow::Result<
     Ok(Arc::new(config))
 }
 
-/// Build the internal mesh mTLS client config.
-///
-/// The root store is populated from the mesh CA bundle; the client presents its
-/// own leaf certificate + key for mutual authentication.
-pub fn mesh_client_config(
-    cert_pem_path: &str,
-    key_pem_path: &str,
-    ca_pem_path: &str,
-) -> anyhow::Result<Arc<ClientConfig>> {
-    let certs = load_certs(cert_pem_path)?;
-    let key = load_key(key_pem_path)?;
+/// Fail-closed check that a mesh peer's end-entity certificate carries exactly
+/// one URI SAN equal to `expected` (the pinned SPIFFE identity). Shared by the
+/// server- and client-side verifiers so this security check lives in one place.
+/// A missing/unparseable SAN, no URI SAN, more than one, or a mismatch all reject.
+fn verify_spiffe_uri_san(
+    end_entity: &CertificateDer<'_>,
+    expected: &str,
+) -> Result<(), RustlsError> {
+    let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
+        .map_err(|_| RustlsError::General("mesh peer certificate unparseable".into()))?;
 
-    let ca_certs = load_certs(ca_pem_path)?;
-    let mut roots = RootCertStore::empty();
-    for ca in ca_certs {
-        roots
-            .add(ca)
-            .with_context(|| format!("add mesh CA cert from {ca_pem_path}"))?;
+    let san = cert
+        .subject_alternative_name()
+        .map_err(|_| RustlsError::General("mesh peer SAN unparseable".into()))?
+        .ok_or_else(|| RustlsError::General("mesh peer has no SAN extension".into()))?;
+
+    let uris: Vec<&str> = san
+        .value
+        .general_names
+        .iter()
+        .filter_map(|gn| match gn {
+            GeneralName::URI(u) => Some(*u),
+            _ => None,
+        })
+        .collect();
+
+    if uris.len() == 1 && uris[0] == expected {
+        Ok(())
+    } else {
+        Err(RustlsError::General("mesh peer identity mismatch".into()))
     }
-
-    let mut config = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_client_auth_cert(certs, key)
-        .context("build mesh client config")?;
-    // The mesh RPCs (roster / worker stream / setup) are gRPC over HTTP/2, so the
-    // client MUST offer h2 via ALPN or the server falls back to HTTP/1.1 and the
-    // h2 transport never establishes.
-    config.alpn_protocols = vec![b"h2".to_vec()];
-
-    Ok(Arc::new(config))
 }
 
 /// A [`ServerCertVerifier`] that verifies the peer's certificate chains to the
@@ -198,32 +199,7 @@ impl MeshServerCertVerifier {
     /// Fail-closed check that the end-entity cert carries exactly one URI SAN
     /// equal to `self.expected_spiffe`.
     fn verify_spiffe_identity(&self, end_entity: &CertificateDer<'_>) -> Result<(), RustlsError> {
-        let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
-            .map_err(|_| RustlsError::General("mesh peer certificate unparseable".into()))?;
-
-        // Collect the URI SAN(s). Fail closed if the SAN extension is absent or
-        // carries no URI GeneralName.
-        let san = cert
-            .subject_alternative_name()
-            .map_err(|_| RustlsError::General("mesh peer SAN unparseable".into()))?
-            .ok_or_else(|| RustlsError::General("mesh peer has no SAN extension".into()))?;
-
-        let uris: Vec<&str> = san
-            .value
-            .general_names
-            .iter()
-            .filter_map(|gn| match gn {
-                GeneralName::URI(u) => Some(*u),
-                _ => None,
-            })
-            .collect();
-
-        // Require exactly one URI SAN, equal to the expected identity.
-        if uris.len() == 1 && uris[0] == self.expected_spiffe {
-            Ok(())
-        } else {
-            Err(RustlsError::General("mesh peer identity mismatch".into()))
-        }
+        verify_spiffe_uri_san(end_entity, &self.expected_spiffe)
     }
 }
 
@@ -354,29 +330,7 @@ impl MeshClientCertVerifier {
     /// Fail-closed check that the end-entity cert carries exactly one URI SAN
     /// equal to `self.expected_spiffe`.
     fn verify_spiffe_identity(&self, end_entity: &CertificateDer<'_>) -> Result<(), RustlsError> {
-        let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref())
-            .map_err(|_| RustlsError::General("mesh peer certificate unparseable".into()))?;
-
-        let san = cert
-            .subject_alternative_name()
-            .map_err(|_| RustlsError::General("mesh peer SAN unparseable".into()))?
-            .ok_or_else(|| RustlsError::General("mesh peer has no SAN extension".into()))?;
-
-        let uris: Vec<&str> = san
-            .value
-            .general_names
-            .iter()
-            .filter_map(|gn| match gn {
-                GeneralName::URI(u) => Some(*u),
-                _ => None,
-            })
-            .collect();
-
-        if uris.len() == 1 && uris[0] == self.expected_spiffe {
-            Ok(())
-        } else {
-            Err(RustlsError::General("mesh peer identity mismatch".into()))
-        }
+        verify_spiffe_uri_san(end_entity, &self.expected_spiffe)
     }
 }
 
@@ -487,25 +441,6 @@ mod tests {
             key_pem.path().to_str().unwrap(),
         );
         assert!(cfg.is_ok(), "server_config failed: {:?}", cfg.err());
-    }
-
-    #[test]
-    fn mesh_client_config_loads_ca_and_leaf() {
-        // A CA-ish cert used as the trust root.
-        let ca = rcgen::generate_simple_self_signed(vec!["mesh-ca".to_string()]).unwrap();
-        // A separate self-signed leaf used as the client identity.
-        let leaf = rcgen::generate_simple_self_signed(vec!["gateway".to_string()]).unwrap();
-
-        let ca_pem = write_pem(&ca.cert.pem());
-        let leaf_cert_pem = write_pem(&leaf.cert.pem());
-        let leaf_key_pem = write_pem(&leaf.key_pair.serialize_pem());
-
-        let cfg = mesh_client_config(
-            leaf_cert_pem.path().to_str().unwrap(),
-            leaf_key_pem.path().to_str().unwrap(),
-            ca_pem.path().to_str().unwrap(),
-        );
-        assert!(cfg.is_ok(), "mesh_client_config failed: {:?}", cfg.err());
     }
 
     #[test]
