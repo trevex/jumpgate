@@ -9,7 +9,7 @@
  */
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
-import { Terminal, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send, KeyRound } from "lucide-react";
+import { Terminal, Monitor, SquareArrowOutUpRight, Pencil, MoreHorizontal, FolderInput, Trash2, Film, Plus, Send, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -186,6 +186,53 @@ function PostgresConnectBlock({ roles, assetPath }: PostgresConnectBlockProps) {
                 {cmd}
               </code>
               <CopyButton text={cmd} label="Copy command" size="md" />
+            </div>
+          );
+        })}
+      </div>
+    </DetailSection>
+  );
+}
+
+// ─── RDP connect block ────────────────────────────────────────────────────────
+
+interface RdpConnectBlockProps {
+  assetId: string;
+  logins: string[];
+}
+
+/** Browser-only connect affordance for RDP assets — no CLI client exists, so
+ *  this is just an "Open RDP" link per entitled login (opens the clientless
+ *  in-browser client at /rdp/:assetId?login=, new tab). */
+function RdpConnectBlock({ assetId, logins }: RdpConnectBlockProps) {
+  if (logins.length === 0) return null;
+
+  return (
+    <DetailSection title="Connect">
+      <div className="flex flex-col gap-1.5" role="list" aria-label="Connect commands">
+        {logins.map((login) => {
+          const rdpHref = `/rdp/${assetId}?login=${encodeURIComponent(login)}`;
+          return (
+            <div
+              key={login}
+              className="flex items-center gap-2 rounded border border-border bg-muted px-3 py-2"
+              role="listitem"
+            >
+              <Monitor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1 font-mono text-micro text-foreground">{login}</span>
+              <a
+                href={rdpHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-micro font-medium text-primary transition-colors hover:underline",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                )}
+                aria-label={`Open RDP session as ${login}`}
+              >
+                <SquareArrowOutUpRight className="h-3 w-3" aria-hidden="true" />
+                Open RDP
+              </a>
             </div>
           );
         })}
@@ -444,6 +491,12 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
     .map((c) => c.slice("db:login:".length))
     .filter((role) => role.length > 0 && !role.includes("*"));
   const hasDbConnect = data.capabilities.some((c) => c.startsWith("db:login"));
+  // Same derivation as pgRoles: entitled_logins is SSH-only, so RDP logins
+  // come straight out of the connect capability set's rdp:login:* entries.
+  const rdpLogins = data.capabilities
+    .filter((c) => c.startsWith("rdp:login:"))
+    .map((c) => c.slice("rdp:login:".length))
+    .filter((login) => login.length > 0 && !login.includes("*"));
   const hasRequestable = data.requestableRoles.length > 0;
   // Connect-vs-`**` hint: connect affordances derive from the CONNECT capability
   // set (`data.capabilities`), which STRIPS `**`. A bare-`**` admin therefore
@@ -588,6 +641,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
       {assetKind === "postgres" && hasDbConnect && (
         <>
           <PostgresConnectBlock roles={pgRoles} assetPath={path ?? ""} />
+          <div className="h-px bg-border" role="separator" />
+        </>
+      )}
+
+      {/* RDP connect block (browser-only; only when entitled logins present) */}
+      {assetKind === "rdp" && rdpLogins.length > 0 && (
+        <>
+          <RdpConnectBlock assetId={id} logins={rdpLogins} />
           <div className="h-px bg-border" role="separator" />
         </>
       )}

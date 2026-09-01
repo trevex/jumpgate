@@ -18,6 +18,7 @@ import { RecordingsPage } from "./routes/recordings/recordings";
 import { DirectoryPage } from "./routes/directory/directory";
 import { AccessControlPage } from "./routes/access-control/access-control";
 import { TerminalPage } from "./routes/terminal/terminal";
+import { RdpPage } from "./routes/rdp/rdp";
 import { RequireAnyCap, RequireRecordingAccess } from "./lib/capabilities";
 import { Toaster } from "./components/ui/sonner";
 
@@ -50,6 +51,15 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <TerminalPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    // Bare, chromeless full-screen RDP client — same shape as /terminal.
+    path: "/rdp/:assetId",
+    element: (
+      <RequireAuth>
+        <RdpPage />
       </RequireAuth>
     ),
   },
