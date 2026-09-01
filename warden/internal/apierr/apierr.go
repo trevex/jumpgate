@@ -5,7 +5,9 @@
 package apierr
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	"github.com/jackc/pgx/v5"
@@ -29,7 +31,8 @@ func MapWrite(err error) error {
 	}
 	// A pre-mapped Connect error (e.g. an InvalidArgument from login validation)
 	// passes through unchanged rather than being masked as Internal.
-	if _, ok := err.(*connect.Error); ok {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
 		return err
 	}
 	var pgErr *pgconn.PgError
@@ -44,6 +47,37 @@ func MapWrite(err error) error {
 		}
 	}
 	return connect.NewError(connect.CodeInternal, err)
+}
+
+// errInternal is the message clients see for any CodeInternal error, so raw
+// driver/internal text (Postgres constraint names, SQL fragments, host details)
+// never crosses the wire.
+var errInternal = errors.New("internal error")
+
+// NewInternalRedactor returns an interceptor that redacts the message of any
+// outgoing CodeInternal error to a generic string, logging the real error
+// server-side (keyed by procedure) so debuggability is preserved. It is the
+// single boundary guard for the whole handler set: individual handlers may keep
+// wrapping CodeInternal with a raw error for logging; this ensures the client only
+// ever sees "internal error". Non-Internal codes (InvalidArgument, NotFound,
+// PermissionDenied, …) are already-sanitized domain signals and pass through
+// unchanged. Streaming RPCs pass through (UnaryInterceptorFunc), which is
+// sufficient: the user-facing API is unary; streaming lives on the mTLS mesh.
+func NewInternalRedactor() connect.Interceptor {
+	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			resp, err := next(ctx, req)
+			if err == nil {
+				return resp, nil
+			}
+			var ce *connect.Error
+			if errors.As(err, &ce) && ce.Code() == connect.CodeInternal {
+				slog.Error("internal rpc error", "procedure", req.Spec().Procedure, "err", err)
+				return resp, connect.NewError(connect.CodeInternal, errInternal)
+			}
+			return resp, err
+		}
+	})
 }
 
 // IsUniqueViolation reports whether err is a Postgres unique-constraint violation.

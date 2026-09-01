@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
+	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
@@ -53,7 +54,10 @@ type UserServices struct {
 // RegisterUserServices mounts the bearer-authenticated user services.
 func RegisterUserServices(mux *http.ServeMux, services UserServices) {
 	validator := validate.NewInterceptor()
-	opts := connect.WithInterceptors(auth.NewInterceptor(services.Lookup), validator)
+	// The internal-error redactor is OUTERMOST so it observes the final error from
+	// every handler and inner interceptor, replacing any CodeInternal message with a
+	// generic one (logged server-side) — raw driver/SQL text never reaches a client.
+	opts := connect.WithInterceptors(apierr.NewInternalRedactor(), auth.NewInterceptor(services.Lookup), validator)
 
 	authPath, authHandler := authv1connect.NewAuthServiceHandler(services.Auth, opts)
 	mux.Handle(authPath, authHandler)
