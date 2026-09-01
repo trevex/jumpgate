@@ -1,10 +1,11 @@
-//! Browser-terminal endpoint: accept a `GET /terminal?ticket=…` WebSocket on the
-//! already-TLS-terminated external listener and relay it to an ssh-proxy worker's
-//! framed-terminal ingress over the mesh.
+//! Browser WebSocket endpoints: accept a `GET /terminal?ticket=…` or
+//! `GET /rdp?ticket=…` WebSocket on the already-TLS-terminated external listener
+//! and relay it to the matching worker's ingress over the mesh.
 //!
 //! The external listener normally reads an HTTP `CONNECT` (the CLI tunnel; see
 //! [`crate::handle_connection`]). When the request line is instead a
-//! `GET /terminal…` with an `Upgrade: websocket`, control lands here:
+//! `GET /terminal…` or `GET /rdp…` with an `Upgrade: websocket`, control lands
+//! here, parameterized by which endpoint matched ([`WsProto`]):
 //!
 //! 1. The WebSocket handshake is completed on the raw `TlsStream` with
 //!    [`tokio_tungstenite::accept_hdr_async`]; a header callback validates the
@@ -13,13 +14,16 @@
 //! 2. The ticket is verified offline ([`crate::token::verify`]); it MUST be a
 //!    `mode="web"` ticket (browser tickets carry no client key). Anything else —
 //!    wrong mode, expired, bad signature — closes the WebSocket.
-//! 3. A worker is picked ([`crate::lb::pick`]) and mesh-dialed
-//!    ([`crate::proxy::connect_worker_terminal`]) with the terminal CONNECT
-//!    preamble (`X-Jumpgate-Terminal: 1` + `X-Jumpgate-Login: <ticket login>`).
+//! 3. A worker is picked ([`crate::lb::pick`]) and mesh-dialed with the matching
+//!    CONNECT preamble: [`crate::proxy::connect_worker_terminal`]
+//!    (`X-Jumpgate-Terminal: 1`) for `/terminal`, or
+//!    [`crate::proxy::connect_worker_rdp`] (`X-Jumpgate-Rdp: 1`) for `/rdp` — both
+//!    also carry `X-Jumpgate-Login: <ticket login>`.
 //! 4. Frames are relayed 1:1 in both directions: each browser binary WebSocket
 //!    message becomes one `[u32 BE len][frame]` on the mesh stream and vice versa.
-//!    The gateway never interprets an opcode; the worker owns the terminal
-//!    semantics (see `workers/ssh-proxy/src/terminal.rs`).
+//!    The gateway never interprets an opcode or the payload — it is content-
+//!    agnostic; the worker owns the protocol semantics (see
+//!    `workers/ssh-proxy/src/terminal.rs`, and the future rdp-proxy worker).
 //!
 //! # Wire contract (shared with the worker)
 //! Browser↔gateway: one binary WebSocket message per frame (`[opcode][payload]`).
@@ -128,10 +132,31 @@ pub fn extract_ticket(uri: &http::Uri) -> Option<String> {
     None
 }
 
-/// `true` when the request path is the terminal endpoint (`/terminal`, ignoring
-/// the query string). Lets the branch reject stray WS paths.
-pub fn is_terminal_path(uri: &http::Uri) -> bool {
-    uri.path() == "/terminal"
+/// Which browser WebSocket endpoint a request matched. The relay itself
+/// ([`relay`]) is content-agnostic; this only selects which CONNECT preamble
+/// [`handle_terminal`] sends when it dials the worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WsProto {
+    /// `/terminal` — browser xterm session; dials with `X-Jumpgate-Terminal: 1`.
+    Terminal,
+    /// `/rdp` — browser RDP session; dials with `X-Jumpgate-Rdp: 1`.
+    Rdp,
+}
+
+impl WsProto {
+    /// The request path this endpoint matches.
+    pub fn path(self) -> &'static str {
+        match self {
+            WsProto::Terminal => "/terminal",
+            WsProto::Rdp => "/rdp",
+        }
+    }
+}
+
+/// `true` when the request path is `proto`'s WebSocket endpoint (ignoring the
+/// query string). Lets the handshake callback reject stray WS paths.
+pub fn is_ws_path(uri: &http::Uri, proto: WsProto) -> bool {
+    uri.path() == proto.path()
 }
 
 /// Read the `Origin` header value (borrowed, lossy-utf8-free: non-utf8 → `None`).
@@ -238,13 +263,16 @@ async fn write_len_frame<W: AsyncWrite + Unpin>(w: &mut W, frame: &[u8]) -> std:
 // Entry point
 // ---------------------------------------------------------------------------
 
-/// Handle a browser-terminal request on the external TLS listener.
+/// Handle a browser WebSocket request (`/terminal` or `/rdp`) on the external
+/// TLS listener.
 ///
 /// `head` is the request bytes already read while branching CONNECT vs WS; they
-/// are replayed into the WebSocket handshake. This completes the handshake
-/// (validating `Origin` + capturing `ticket`), verifies the ticket is
-/// `mode="web"`, picks + mesh-dials a worker with the terminal preamble, and
-/// relays frames until either side closes.
+/// are replayed into the WebSocket handshake. `proto` is which endpoint matched
+/// (decided by the caller from the request path) and selects the worker CONNECT
+/// preamble at dial time — everything else is shared. This completes the
+/// handshake (validating `Origin` + the path against `proto` + capturing
+/// `ticket`), verifies the ticket is `mode="web"`, picks + mesh-dials a worker
+/// with the matching preamble, and relays frames until either side closes.
 // The handshake callback's `Result<Response, ErrorResponse>` type is dictated by
 // tokio-tungstenite's `Callback` API; the large `Err` variant is unavoidable.
 #[allow(clippy::result_large_err)]
@@ -254,6 +282,7 @@ pub async fn handle_terminal<S>(
     stream: S,
     origin_policy: Arc<OriginPolicy>,
     limits: SessionLimits,
+    proto: WsProto,
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -276,12 +305,12 @@ pub async fn handle_terminal<S>(
     let ws = match tokio_tungstenite::accept_hdr_async_with_config(
         prefixed,
         |req: &WsRequest, resp: WsResponse| -> Result<WsResponse, ErrorResponse> {
-            if !is_terminal_path(req.uri()) {
+            if !is_ws_path(req.uri(), proto) {
                 return Err(reject(http::StatusCode::NOT_FOUND, "not found"));
             }
             let origin = origin_header(req);
             if !policy.allow(origin) {
-                tracing::warn!(origin = ?origin, "terminal WS rejected: Origin not allowed");
+                tracing::warn!(origin = ?origin, "browser WS rejected: Origin not allowed");
                 return Err(reject(http::StatusCode::FORBIDDEN, "origin not allowed"));
             }
             if policy.is_unset() {
@@ -300,7 +329,7 @@ pub async fn handle_terminal<S>(
         Err(e) => {
             // The handshake itself failed (bad request, or our callback rejected
             // it). tokio-tungstenite has already written the response.
-            tracing::warn!(error = %e, "terminal WebSocket handshake failed");
+            tracing::warn!(error = %e, "browser WebSocket handshake failed");
             return;
         }
     };
@@ -308,7 +337,7 @@ pub async fn handle_terminal<S>(
     let ticket = match captured_ticket {
         Some(t) => t,
         None => {
-            tracing::warn!("terminal WS missing ticket query param");
+            tracing::warn!("browser WS missing ticket query param");
             close_ws(ws, "missing ticket").await;
             return;
         }
@@ -319,7 +348,7 @@ pub async fn handle_terminal<S>(
     let key = match key {
         Some(k) => k,
         None => {
-            tracing::warn!("terminal WS: no verification key yet");
+            tracing::warn!("browser WS: no verification key yet");
             close_ws(ws, "service unavailable").await;
             return;
         }
@@ -327,13 +356,13 @@ pub async fn handle_terminal<S>(
     let claims = match token::verify(&ticket, &key) {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!(error = %e, "terminal ticket verify failed");
+            tracing::warn!(error = %e, "browser ticket verify failed");
             close_ws(ws, "invalid ticket").await;
             return;
         }
     };
     if claims.mode != "web" {
-        tracing::warn!(mode = %claims.mode, "terminal ticket is not mode=web");
+        tracing::warn!(mode = %claims.mode, "browser ticket is not mode=web");
         close_ws(ws, "invalid ticket mode").await;
         return;
     }
@@ -344,29 +373,40 @@ pub async fn handle_terminal<S>(
         return;
     }
 
-    // Pick + mesh-dial a worker for the protocol, sending the terminal preamble.
+    // Pick + mesh-dial a worker for the protocol, sending the matching preamble.
     let entries = state.roster.snapshot_for(&claims.proto);
     let entry = match lb::pick(&entries, &state.counters) {
         Some(e) => e.clone(),
         None => {
-            tracing::warn!(proto = %claims.proto, "terminal: no worker available");
+            tracing::warn!(proto = %claims.proto, "browser: no worker available");
             close_ws(ws, "no worker available").await;
             return;
         }
     };
     let _guard = state.counters.acquire(&entry.worker_id);
-    let worker = match proxy::connect_worker_terminal(
-        &entry,
-        &state.mesh_certs,
-        &ticket,
-        &claims.asset_id,
-        &login,
-    )
-    .await
-    {
+    // The one real difference between the two endpoints: which CONNECT preamble
+    // the worker dial sends. Everything else — mTLS dial, SPIFFE pin, response
+    // read, relay — is shared.
+    let dial = match proto {
+        WsProto::Terminal => {
+            proxy::connect_worker_terminal(
+                &entry,
+                &state.mesh_certs,
+                &ticket,
+                &claims.asset_id,
+                &login,
+            )
+            .await
+        }
+        WsProto::Rdp => {
+            proxy::connect_worker_rdp(&entry, &state.mesh_certs, &ticket, &claims.asset_id, &login)
+                .await
+        }
+    };
+    let worker = match dial {
         Ok(w) => w,
         Err(e) => {
-            tracing::warn!(worker = %entry.worker_id, error = %e, "terminal worker dial failed");
+            tracing::warn!(worker = %entry.worker_id, error = %e, "browser worker dial failed");
             close_ws(ws, "worker unavailable").await;
             return;
         }
@@ -376,7 +416,8 @@ pub async fn handle_terminal<S>(
         session_id = %claims.session_id,
         worker = %entry.worker_id,
         login = %login,
-        "terminal session relay established"
+        path = proto.path(),
+        "browser session relay established"
     );
 
     match relay(ws, worker, limits).await {
@@ -386,10 +427,10 @@ pub async fn handle_terminal<S>(
                 session_id = %claims.session_id,
                 worker = %entry.worker_id,
                 ?reason,
-                "terminal session ended by resource bound"
+                "browser session ended by resource bound"
             );
         }
-        Err(e) => tracing::debug!(error = %e, "terminal relay ended"),
+        Err(e) => tracing::debug!(error = %e, "browser relay ended"),
     }
     // _guard drops here → decrements the worker's in-flight count.
 }
@@ -485,7 +526,7 @@ where
                     | Some(Ok(Message::Frame(_))) => {}
                     Some(Ok(Message::Close(_))) | None => break StopReason::Closed,
                     Some(Err(e)) => {
-                        tracing::debug!(error = %e, "terminal WS read error");
+                        tracing::debug!(error = %e, "browser WS read error");
                         break StopReason::Closed;
                     }
                 }
@@ -588,11 +629,19 @@ mod tests {
     }
 
     #[test]
-    fn terminal_path_recognised() {
-        assert!(is_terminal_path(&"/terminal?ticket=x".parse().unwrap()));
-        assert!(is_terminal_path(&"/terminal".parse().unwrap()));
-        assert!(!is_terminal_path(&"/other".parse().unwrap()));
-        assert!(!is_terminal_path(&"/terminal/extra".parse().unwrap()));
+    fn ws_path_matches_only_its_own_proto() {
+        let terminal: http::Uri = "/terminal?ticket=x".parse().unwrap();
+        let rdp: http::Uri = "/rdp?ticket=x".parse().unwrap();
+        assert!(is_ws_path(&terminal, WsProto::Terminal));
+        assert!(!is_ws_path(&terminal, WsProto::Rdp));
+        assert!(is_ws_path(&rdp, WsProto::Rdp));
+        assert!(!is_ws_path(&rdp, WsProto::Terminal));
+        assert!(!is_ws_path(&"/other".parse().unwrap(), WsProto::Terminal));
+        assert!(!is_ws_path(
+            &"/terminal/extra".parse().unwrap(),
+            WsProto::Terminal
+        ));
+        assert!(!is_ws_path(&"/rdp/extra".parse().unwrap(), WsProto::Rdp));
     }
 
     // ---- length-frame codec ----------------------------------------------

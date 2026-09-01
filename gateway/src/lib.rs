@@ -73,43 +73,44 @@ async fn read_request_head<R: AsyncRead + Unpin>(stream: &mut R) -> std::io::Res
     }
 }
 
-/// `true` when the request head is a WebSocket upgrade for the browser-terminal
-/// endpoint: a `GET` to path `/terminal` (query ignored) carrying an
-/// `Upgrade: websocket` header.
+/// `Some(proto)` when the request head is a WebSocket upgrade for one of the
+/// browser endpoints: a `GET` to path `/terminal` or `/rdp` (query ignored)
+/// carrying an `Upgrade: websocket` header. `None` for anything else.
 ///
 /// The path check is load-bearing: Kubernetes ≥1.31 runs `kubectl exec`/`attach`/
 /// `port-forward` over a WebSocket upgrade too (`GET /api/…/exec?… Upgrade:
 /// websocket`). Matching on the upgrade alone would misroute those to the
-/// terminal handler (which then rejects the non-`/terminal` path); requiring the
-/// path lets them fall through to [`handle_kube`].
-fn is_terminal_websocket(head: &[u8]) -> bool {
+/// browser WS handler (which then rejects the unrecognized path); requiring an
+/// exact `/terminal`/`/rdp` path lets them fall through to [`handle_kube`].
+fn websocket_proto(head: &[u8]) -> Option<terminal::WsProto> {
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut req = httparse::Request::new(&mut headers);
     if req.parse(head).is_err() {
-        return false;
+        return None;
     }
     if !req.method.is_some_and(|m| m.eq_ignore_ascii_case("GET")) {
-        return false;
+        return None;
     }
-    // Only the terminal path itself — not every websocket upgrade.
-    if !req
-        .path
-        .is_some_and(|p| p.split('?').next() == Some("/terminal"))
-    {
-        return false;
-    }
-    req.headers.iter().any(|h| {
+    // Only a recognized browser WS path itself — not every websocket upgrade.
+    let proto = match req.path.and_then(|p| p.split('?').next()) {
+        Some(p) if p == terminal::WsProto::Terminal.path() => terminal::WsProto::Terminal,
+        Some(p) if p == terminal::WsProto::Rdp.path() => terminal::WsProto::Rdp,
+        _ => return None,
+    };
+    let is_upgrade = req.headers.iter().any(|h| {
         h.name.eq_ignore_ascii_case("upgrade")
             && std::str::from_utf8(h.value).is_ok_and(|v| v.eq_ignore_ascii_case("websocket"))
-    })
+    });
+    is_upgrade.then_some(proto)
 }
 
 /// Handle one accepted client connection, generic over the transport stream.
 ///
 /// Two ingresses share the external listener: the CLI tunnel (HTTP `CONNECT`)
-/// and the browser terminal (`GET /terminal?ticket=…` WebSocket upgrade). This
-/// reads the request head, branches on the request line, and runs the matching
-/// path. CONNECT → verify token, pick + dial a worker, reply 200, pump bytes.
+/// and the browser terminal/RDP (`GET /terminal?ticket=…` or `GET /rdp?ticket=…`
+/// WebSocket upgrade). This reads the request head, branches on the request
+/// line, and runs the matching path. CONNECT → verify token, pick + dial a
+/// worker, reply 200, pump bytes.
 ///
 /// The stream is generic so the SAME handler (with the SAME ticket/token
 /// verification) serves both the production TLS listener (`S = TlsStream`) and the
@@ -131,9 +132,9 @@ where
         }
     };
 
-    // Browser terminal: a WebSocket upgrade GET. The head is replayed into the
-    // WS handshake, which reads the request itself.
-    if is_terminal_websocket(&head) {
+    // Browser terminal/RDP: a WebSocket upgrade GET to `/terminal` or `/rdp`. The
+    // head is replayed into the WS handshake, which reads the request itself.
+    if let Some(proto) = websocket_proto(&head) {
         let limits = state.session_limits;
         terminal::handle_terminal(
             state.clone(),
@@ -141,6 +142,7 @@ where
             client,
             state.console_origin.clone(),
             limits,
+            proto,
         )
         .await;
         return;
@@ -438,28 +440,47 @@ mod tests {
     }
 
     #[test]
-    fn terminal_websocket_matches_only_terminal_path() {
+    fn websocket_proto_matches_terminal_and_rdp_paths() {
         let ws = b"Upgrade: websocket\r\nConnection: Upgrade\r\n";
         // The browser terminal: GET /terminal (with/without query) + upgrade.
-        assert!(is_terminal_websocket(
-            format!("GET /terminal HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
-        ));
-        assert!(is_terminal_websocket(
-            format!("GET /terminal?ticket=abc HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
-        ));
+        assert_eq!(
+            websocket_proto(format!("GET /terminal HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()),
+            Some(terminal::WsProto::Terminal)
+        );
+        assert_eq!(
+            websocket_proto(
+                format!("GET /terminal?ticket=abc HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
+            ),
+            Some(terminal::WsProto::Terminal)
+        );
+        // The browser RDP endpoint: GET /rdp (with/without query) + upgrade.
+        assert_eq!(
+            websocket_proto(format!("GET /rdp HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()),
+            Some(terminal::WsProto::Rdp)
+        );
+        assert_eq!(
+            websocket_proto(
+                format!("GET /rdp?ticket=abc HTTP/1.1\r\n{}\r\n", str_ws(ws)).as_bytes()
+            ),
+            Some(terminal::WsProto::Rdp)
+        );
         // A kubectl exec/attach websocket upgrade (k8s >=1.31) must NOT match —
         // it has to fall through to the k8s broker ingress.
-        assert!(!is_terminal_websocket(
-            format!(
-                "GET /api/v1/namespaces/x/pods/y/exec?command=sh HTTP/1.1\r\n{}\r\n",
-                str_ws(ws)
-            )
-            .as_bytes()
-        ));
-        // A plain GET /terminal without an upgrade is not a websocket.
-        assert!(!is_terminal_websocket(b"GET /terminal HTTP/1.1\r\n\r\n"));
+        assert_eq!(
+            websocket_proto(
+                format!(
+                    "GET /api/v1/namespaces/x/pods/y/exec?command=sh HTTP/1.1\r\n{}\r\n",
+                    str_ws(ws)
+                )
+                .as_bytes()
+            ),
+            None
+        );
+        // A plain GET /terminal or /rdp without an upgrade is not a websocket.
+        assert_eq!(websocket_proto(b"GET /terminal HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(websocket_proto(b"GET /rdp HTTP/1.1\r\n\r\n"), None);
         // A CONNECT tunnel is not a websocket.
-        assert!(!is_terminal_websocket(b"CONNECT asset-1 HTTP/1.1\r\n\r\n"));
+        assert_eq!(websocket_proto(b"CONNECT asset-1 HTTP/1.1\r\n\r\n"), None);
     }
 
     fn str_ws(b: &[u8]) -> String {

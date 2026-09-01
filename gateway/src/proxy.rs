@@ -121,6 +121,42 @@ pub async fn connect_worker_terminal(
     Ok(stream)
 }
 
+/// mTLS-dial the chosen worker exactly like [`connect_worker`], but forward the
+/// **RDP** CONNECT preamble (`X-Jumpgate-Rdp: 1` + `X-Jumpgate-Login: <login>`)
+/// so the (future) rdp-proxy worker branches to its IronRDP ingress instead of
+/// the terminal/SSH ingress. On `200` the established mesh TLS stream is
+/// returned, ready for the gateway's content-agnostic frame relay.
+pub async fn connect_worker_rdp(
+    entry: &WorkerEntry,
+    certs: &MeshClientCerts,
+    token: &str,
+    authority: &str,
+    login: &str,
+) -> Result<TlsStream<TcpStream>, ProxyError> {
+    let expected = format!("spiffe://jumpgate/worker/{}", entry.worker_id);
+    let client_config = certs.client_config(&expected)?;
+
+    let tcp = TcpStream::connect(&entry.address)
+        .await
+        .map_err(ProxyError::Connect)?;
+
+    let sni = rustls::pki_types::ServerName::try_from(PLACEHOLDER_SNI)
+        .map_err(|_| ProxyError::Address("invalid placeholder SNI".into()))?;
+
+    let connector = TlsConnector::from(client_config);
+    let mut stream = connector.connect(sni, tcp).await.map_err(ProxyError::Tls)?;
+
+    stream
+        .write_all(&connect::write_rdp_connect_request(authority, token, login))
+        .await
+        .map_err(ConnectError::Io)?;
+    stream.flush().await.map_err(ConnectError::Io)?;
+
+    connect::read_worker_response(&mut stream).await?;
+
+    Ok(stream)
+}
+
 /// Dial a k8s broker's gateway-facing front door over mesh mTLS, pinning
 /// `spiffe://jumpgate/broker/<broker_id>` and negotiating `http/1.1`. Unlike
 /// [`connect_worker`], there is NO CONNECT preamble: the caller replays kubectl's
@@ -493,6 +529,48 @@ mod tests {
         let mut got = vec![0u8; b"hello worker".len()];
         rd.read_exact(&mut got).await.unwrap();
         assert_eq!(&got, b"hello worker");
+    }
+
+    #[tokio::test]
+    async fn connect_worker_rdp_happy() {
+        install_provider();
+        let pki = build_pki("spiffe://jumpgate/worker/w1");
+        let addr = spawn_stub_worker(&pki).await;
+        let certs = gateway_certs(&pki);
+
+        let entry = entry("w1", addr);
+        let stream = connect_worker_rdp(&entry, &certs, "session-token-abc", "asset-1", "deploy")
+            .await
+            .expect("connect_worker_rdp should succeed for matching identity");
+
+        let (mut rd, mut wr) = tokio::io::split(stream);
+        wr.write_all(b"hello worker").await.unwrap();
+        wr.flush().await.unwrap();
+        let mut got = vec![0u8; b"hello worker".len()];
+        rd.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, b"hello worker");
+    }
+
+    #[tokio::test]
+    async fn connect_worker_rdp_san_mismatch() {
+        install_provider();
+        // Stub worker presents worker/w2 ...
+        let pki = build_pki("spiffe://jumpgate/worker/w2");
+        let addr = spawn_stub_worker(&pki).await;
+        let certs = gateway_certs(&pki);
+
+        // ... but we expect worker/w1: the TLS handshake must fail on the pin —
+        // a forged/mismatched worker identity is rejected fail-closed, same as
+        // the plain CONNECT and terminal dial paths.
+        let entry = entry("w1", addr);
+        let err = connect_worker_rdp(&entry, &certs, "tok", "asset-1", "deploy")
+            .await
+            .expect_err("identity mismatch must fail the handshake");
+
+        match err {
+            ProxyError::Tls(_) => {}
+            other => panic!("expected ProxyError::Tls (handshake), got {other:?}"),
+        }
     }
 
     #[tokio::test]

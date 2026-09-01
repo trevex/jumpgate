@@ -153,6 +153,18 @@ pub fn write_terminal_connect_request(authority: &str, token: &str, login: &str)
     .into_bytes()
 }
 
+/// Build the RDP-mode CONNECT request the gateway sends the worker: the same
+/// shape as [`write_connect_request`] plus the `X-Jumpgate-Rdp: 1` and
+/// `X-Jumpgate-Login` headers that make the (future) rdp-proxy worker branch to
+/// its IronRDP ingress instead of the terminal/SSH ingress. The `login` is
+/// authoritative for the browser hop (the browser offers no login of its own).
+pub fn write_rdp_connect_request(authority: &str, token: &str, login: &str) -> Vec<u8> {
+    format!(
+        "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nAuthorization: Bearer {token}\r\nX-Jumpgate-Rdp: 1\r\nX-Jumpgate-Login: {login}\r\n\r\n"
+    )
+    .into_bytes()
+}
+
 /// Read + validate the worker's CONNECT response status line (expect 200).
 pub async fn read_worker_response<R: AsyncRead + Unpin>(
     stream: &mut R,
@@ -238,6 +250,22 @@ mod tests {
         // The parser round-trips exactly what we emit.
         let (req, _) = parse_connect(&out).unwrap().unwrap();
         assert!(req.terminal);
+        assert_eq!(req.login.as_deref(), Some("deploy"));
+        assert_eq!(req.token, "tok-9");
+    }
+
+    #[test]
+    fn writes_rdp_connect_request() {
+        let out = write_rdp_connect_request("asset-9", "tok-9", "deploy");
+        let s = std::str::from_utf8(&out).unwrap();
+        assert!(s.starts_with("CONNECT asset-9 HTTP/1.1\r\n"));
+        assert!(s.contains("Authorization: Bearer tok-9\r\n"));
+        assert!(s.contains("X-Jumpgate-Rdp: 1\r\n"));
+        assert!(s.contains("X-Jumpgate-Login: deploy\r\n"));
+        assert!(s.ends_with("\r\n\r\n"));
+        // Not a terminal preamble: parse_connect must not set `terminal`.
+        let (req, _) = parse_connect(&out).unwrap().unwrap();
+        assert!(!req.terminal);
         assert_eq!(req.login.as_deref(), Some("deploy"));
         assert_eq!(req.token, "tok-9");
     }
