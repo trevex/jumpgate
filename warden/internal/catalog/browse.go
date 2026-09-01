@@ -26,6 +26,8 @@ type AssetDisplayResult struct {
 	Logins     []sqlc.SshAssetLogin      // kind == "ssh"
 	PGConfig   *sqlc.PostgresAssetConfig // kind == "postgres"
 	PGLogins   []sqlc.PostgresAssetLogin // kind == "postgres"
+	RDPConfig  *sqlc.RdpAssetConfig      // kind == "rdp"
+	RDPLogins  []sqlc.RdpAssetLogin      // kind == "rdp"
 }
 
 // FolderContents is the bounded per-kind first slice returned by ListFolderContents.
@@ -126,6 +128,19 @@ func (s *Service) GetAssetDisplay(ctx context.Context, caller uuid.UUID, id uuid
 			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
 		}
 		res.PGConfig, res.PGLogins = &cfg, logins
+	case "rdp":
+		cfg, err := s.q.GetRDPAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := s.q.ListRDPAssetLogins(ctx, id)
+		if err != nil {
+			return AssetDisplayResult{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.RDPConfig, res.RDPLogins = &cfg, logins
 	}
 	return res, nil
 }

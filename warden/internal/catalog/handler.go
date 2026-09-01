@@ -88,6 +88,19 @@ func toAssetMsgWithPGConfig(a sqlc.Asset, cfg sqlc.PostgresAssetConfig, logins [
 	return msg
 }
 
+// toAssetMsgWithRDPConfig builds an Asset carrying its typed RDP config.
+func toAssetMsgWithRDPConfig(a sqlc.Asset, cfg sqlc.RdpAssetConfig, logins []sqlc.RdpAssetLogin) *catalogv1.Asset {
+	msg := toAssetMsg(a)
+	out := make([]*catalogv1.RDPLogin, 0, len(logins))
+	for _, l := range logins {
+		out = append(out, &catalogv1.RDPLogin{Login: l.Login, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
+	}
+	msg.Config = &catalogv1.Asset_Rdp{Rdp: &catalogv1.RDPConfig{
+		Logins: out, TargetAddress: cfg.TargetAddress, TargetServerCa: cfg.TargetServerCa,
+	}}
+	return msg
+}
+
 // assetMsg renders an AssetWithConfig: with typed config when present (by kind),
 // else the bare asset. Path is copied from the domain result.
 func assetMsg(res AssetWithConfig) *catalogv1.Asset {
@@ -97,6 +110,8 @@ func assetMsg(res AssetWithConfig) *catalogv1.Asset {
 		m = toAssetMsgWithSSHConfig(res.Asset, *res.Config, res.Logins)
 	case res.PGConfig != nil:
 		m = toAssetMsgWithPGConfig(res.Asset, *res.PGConfig, res.PGLogins)
+	case res.RDPConfig != nil:
+		m = toAssetMsgWithRDPConfig(res.Asset, *res.RDPConfig, res.RDPLogins)
 	default:
 		m = toAssetMsg(res.Asset)
 	}
@@ -255,10 +270,58 @@ func toDomainPostgresConfig(in *catalogv1.PostgresConfigInput) (PostgresConfigIn
 	return out, nil
 }
 
-// toAssetConfigInput converts a create/update config oneof (SSH, Postgres, or
+// validateRDPConfigInput checks the parts protovalidate can't: target_address must
+// be present, an optional target_server_ca must be PEM-decodable, and login names
+// must be unique within the config (a duplicate would collapse under the
+// (asset_id, login) upsert conflict).
+func validateRDPConfigInput(in *catalogv1.RDPConfigInput) error {
+	if in.GetTargetAddress() == "" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("target_address required"))
+	}
+	if ca := in.GetTargetServerCa(); ca != "" {
+		if block, _ := pem.Decode([]byte(ca)); block == nil {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad target_server_ca"))
+		}
+	}
+	seen := make(map[string]struct{}, len(in.GetLogins()))
+	for _, l := range in.GetLogins() {
+		if _, dup := seen[l.GetLogin()]; dup {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate login "+l.GetLogin()))
+		}
+		seen[l.GetLogin()] = struct{}{}
+	}
+	return nil
+}
+
+// toDomainRDPConfig converts a wire RDPConfigInput into the proto-free domain form,
+// deriving each login's kind from its auth oneof arm.
+func toDomainRDPConfig(in *catalogv1.RDPConfigInput) (RDPConfigInput, error) {
+	out := RDPConfigInput{
+		TargetAddress:  in.GetTargetAddress(),
+		TargetServerCA: in.GetTargetServerCa(),
+	}
+	for _, l := range in.GetLogins() {
+		li := RDPLoginInput{Login: l.GetLogin()}
+		switch a := l.GetAuth().(type) {
+		case *catalogv1.RDPLoginInput_Password:
+			li.Kind = "password"
+			src, err := toSecretSource(a.Password, l.GetLogin())
+			if err != nil {
+				return RDPConfigInput{}, err
+			}
+			li.Secret = src
+		default:
+			return RDPConfigInput{}, connect.NewError(connect.CodeInvalidArgument, errors.New("login "+l.GetLogin()+": auth kind required"))
+		}
+		out.Logins = append(out.Logins, li)
+	}
+	return out, nil
+}
+
+// toAssetConfigInput converts a create/update config oneof (SSH, Postgres, RDP, or
 // Kubernetes) into the kind-tagged domain union, running each kind's non-proto
 // validation.
-func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresConfigInput, k8s *catalogv1.KubernetesConfigInput) (AssetConfigInput, error) {
+func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresConfigInput, rdp *catalogv1.RDPConfigInput, k8s *catalogv1.KubernetesConfigInput) (AssetConfigInput, error) {
 	switch {
 	case ssh != nil:
 		if err := validateSSHConfigInput(ssh); err != nil {
@@ -278,6 +341,15 @@ func toAssetConfigInput(ssh *catalogv1.SSHConfigInput, pg *catalogv1.PostgresCon
 			return AssetConfigInput{}, err
 		}
 		return AssetConfigInput{Kind: "postgres", Postgres: &in}, nil
+	case rdp != nil:
+		if err := validateRDPConfigInput(rdp); err != nil {
+			return AssetConfigInput{}, err
+		}
+		in, err := toDomainRDPConfig(rdp)
+		if err != nil {
+			return AssetConfigInput{}, err
+		}
+		return AssetConfigInput{Kind: "rdp", RDP: &in}, nil
 	case k8s != nil:
 		return AssetConfigInput{Kind: "k8s", Kubernetes: true}, nil
 	default:
@@ -392,7 +464,7 @@ func (h *Handler) CreateAsset(ctx context.Context, req *connect.Request[catalogv
 	if err := h.guard.RequireCap(ctx, c, authz.AssetCreateCap, authz.FolderScope(fid)); err != nil {
 		return nil, err
 	}
-	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), req.Msg.GetKubernetes())
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), req.Msg.GetRdp(), req.Msg.GetKubernetes())
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +508,7 @@ func (h *Handler) UpdateAssetConfig(ctx context.Context, req *connect.Request[ca
 	if err := h.guard.RequireCap(ctx, c, authz.AssetUpdateCap, authz.AssetScope(assetID)); err != nil {
 		return nil, err
 	}
-	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), nil)
+	in, err := toAssetConfigInput(req.Msg.GetSsh(), req.Msg.GetPostgres(), req.Msg.GetRdp(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -557,6 +629,17 @@ func (h *Handler) GetAssetDisplay(ctx context.Context, req *connect.Request[cata
 			pg.Logins = append(pg.Logins, &catalogv1.PostgresLoginDisplay{Role: l.Role, Kind: l.Kind})
 		}
 		disp.Config = &catalogv1.AssetDisplay_Postgres{Postgres: pg}
+	}
+	if res.RDPConfig != nil {
+		rdp := &catalogv1.RDPConfigDisplay{
+			TargetAddress:  res.RDPConfig.TargetAddress,
+			TargetServerCa: res.RDPConfig.TargetServerCa,
+		}
+		for _, l := range res.RDPLogins {
+			// Copy ONLY login + kind — never a secret id.
+			rdp.Logins = append(rdp.Logins, &catalogv1.RDPLoginDisplay{Login: l.Login, Kind: l.Kind})
+		}
+		disp.Config = &catalogv1.AssetDisplay_Rdp{Rdp: rdp}
 	}
 	return connect.NewResponse(&catalogv1.GetAssetDisplayResponse{Asset: disp}), nil
 }

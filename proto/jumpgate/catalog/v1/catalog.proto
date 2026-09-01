@@ -242,7 +242,7 @@ message AssetDisplay {
   string folder_id = 2;
   string name = 3;
   string kind = 4;
-  oneof config { SSHConfigDisplay ssh = 5; PostgresConfigDisplay postgres = 8; }
+  oneof config { SSHConfigDisplay ssh = 5; PostgresConfigDisplay postgres = 8; RDPConfigDisplay rdp = 9; }
   string path = 6;
   string folder_path = 7;
 }
@@ -264,6 +264,15 @@ message PostgresConfigDisplay {
 message PostgresLoginDisplay {
   string role = 1;
   string kind = 2; // mtls | password — secret_id intentionally omitted
+}
+message RDPConfigDisplay {
+  repeated RDPLoginDisplay logins = 1;
+  string target_address = 2;
+  string target_server_ca = 3;
+}
+message RDPLoginDisplay {
+  string login = 1;
+  string kind = 2; // password — secret_id intentionally omitted
 }
 
 message UpdateAssetConfigRequest {

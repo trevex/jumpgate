@@ -91,10 +91,10 @@ type Querier interface {
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
-	// Drop asset_secrets no longer referenced by any of the asset's logins (ssh OR
-	// postgres). A postgres password login references a secret via secret_id too, so it
-	// must be counted here or the secret is wrongly deemed orphan and its DELETE trips
-	// the postgres_login_secret_same_asset FK (ON DELETE RESTRICT).
+	// Drop asset_secrets no longer referenced by any of the asset's logins (ssh,
+	// postgres, OR rdp). A postgres/rdp password login references a secret via secret_id
+	// too, so it must be counted here or the secret is wrongly deemed orphan and its
+	// DELETE trips the *_login_secret_same_asset FK (ON DELETE RESTRICT).
 	DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteOutboxEvent(ctx context.Context, id uuid.UUID) error
 	// Deletes the policies for which the role is the requestable role (meaningless once
@@ -104,6 +104,7 @@ type Querier interface {
 	// are about to be deleted). Part of the DeleteRole cascade.
 	DeletePolicySubjectsForRole(ctx context.Context, roleID uuid.UUID) error
 	DeletePostgresAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
+	DeleteRDPAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteRequestPolicy(ctx context.Context, id uuid.UUID) error
 	// Deletes the role row. The role's name uniqueness is enforced by the partial
 	// UNIQUE indexes on roles(name)/roles(folder_id, name), so deleting the row frees
@@ -172,6 +173,7 @@ type Querier interface {
 	GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNameAndAssetParams) (RequestPolicy, error)
 	GetPolicySubject(ctx context.Context, id uuid.UUID) (RequestPolicySubject, error)
 	GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID) (PostgresAssetConfig, error)
+	GetRDPAssetConfig(ctx context.Context, assetID uuid.UUID) (RdpAssetConfig, error)
 	GetRequestPolicy(ctx context.Context, id uuid.UUID) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleBinding(ctx context.Context, id uuid.UUID) (RoleBinding, error)
@@ -272,6 +274,7 @@ type Querier interface {
 	// group-home path (via folder_path()), and member count. No per-row Go resolution.
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error)
 	ListPostgresAssetLogins(ctx context.Context, assetID uuid.UUID) ([]PostgresAssetLogin, error)
+	ListRDPAssetLogins(ctx context.Context, assetID uuid.UUID) ([]RdpAssetLogin, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
 	// Bindings matching the (all-optional) filters, fully resolved for display in SQL:
@@ -377,6 +380,8 @@ type Querier interface {
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertPostgresAssetConfig(ctx context.Context, arg UpsertPostgresAssetConfigParams) (PostgresAssetConfig, error)
 	UpsertPostgresAssetLogin(ctx context.Context, arg UpsertPostgresAssetLoginParams) (PostgresAssetLogin, error)
+	UpsertRDPAssetConfig(ctx context.Context, arg UpsertRDPAssetConfigParams) (RdpAssetConfig, error)
+	UpsertRDPAssetLogin(ctx context.Context, arg UpsertRDPAssetLoginParams) (RdpAssetLogin, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)
 	UpsertSSHAssetLogin(ctx context.Context, arg UpsertSSHAssetLoginParams) (SshAssetLogin, error)
 	UpsertSessionRecording(ctx context.Context, arg UpsertSessionRecordingParams) error

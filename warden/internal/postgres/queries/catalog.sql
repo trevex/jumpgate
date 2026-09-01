@@ -176,6 +176,31 @@ RETURNING *;
 -- name: DeletePostgresAssetLoginsForAsset :exec
 DELETE FROM postgres_asset_login WHERE asset_id = $1;
 
+-- name: UpsertRDPAssetConfig :one
+INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca)
+VALUES ($1, $2, $3)
+ON CONFLICT (asset_id) DO UPDATE SET
+  target_address = EXCLUDED.target_address,
+  target_server_ca = EXCLUDED.target_server_ca
+RETURNING *;
+
+-- name: GetRDPAssetConfig :one
+SELECT * FROM rdp_asset_config WHERE asset_id = $1;
+
+-- name: ListRDPAssetLogins :many
+SELECT * FROM rdp_asset_login WHERE asset_id = $1 ORDER BY login;
+
+-- name: UpsertRDPAssetLogin :one
+INSERT INTO rdp_asset_login (asset_id, login, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, login) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING *;
+
+-- name: DeleteRDPAssetLoginsForAsset :exec
+DELETE FROM rdp_asset_login WHERE asset_id = $1;
+
 -- name: FolderPath :one
 -- Dotted leaf->root path of a single folder (the folder's own name first).
 WITH RECURSIVE chain AS (
@@ -234,14 +259,15 @@ SELECT * FROM request_policies
 WHERE scope_folder_id = ANY($1::uuid[]) OR scope_asset_id = ANY($2::uuid[]);
 
 -- name: DeleteOrphanSecretsForAsset :exec
--- Drop asset_secrets no longer referenced by any of the asset's logins (ssh OR
--- postgres). A postgres password login references a secret via secret_id too, so it
--- must be counted here or the secret is wrongly deemed orphan and its DELETE trips
--- the postgres_login_secret_same_asset FK (ON DELETE RESTRICT).
+-- Drop asset_secrets no longer referenced by any of the asset's logins (ssh,
+-- postgres, OR rdp). A postgres/rdp password login references a secret via secret_id
+-- too, so it must be counted here or the secret is wrongly deemed orphan and its
+-- DELETE trips the *_login_secret_same_asset FK (ON DELETE RESTRICT).
 DELETE FROM asset_secrets s
 WHERE s.asset_id = $1
   AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
-  AND s.id NOT IN (SELECT l.secret_id FROM postgres_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL);
+  AND s.id NOT IN (SELECT l.secret_id FROM postgres_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
+  AND s.id NOT IN (SELECT l.secret_id FROM rdp_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL);
 
 -- name: SearchFoldersByIDs :many
 -- Name-matching folders within a visible-id set. The `name ILIKE` predicate is

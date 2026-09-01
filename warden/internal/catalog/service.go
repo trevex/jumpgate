@@ -95,12 +95,14 @@ func folderNotFoundOrInternal(err error) error {
 // config. At most one of the config pairs is set, per the asset's kind (nil = the
 // asset has no config row of that kind).
 type AssetWithConfig struct {
-	Asset    sqlc.Asset
-	Path     string
-	Config   *sqlc.SshAssetConfig      // kind == "ssh"
-	Logins   []sqlc.SshAssetLogin      // kind == "ssh"
-	PGConfig *sqlc.PostgresAssetConfig // kind == "postgres"
-	PGLogins []sqlc.PostgresAssetLogin // kind == "postgres"
+	Asset     sqlc.Asset
+	Path      string
+	Config    *sqlc.SshAssetConfig      // kind == "ssh"
+	Logins    []sqlc.SshAssetLogin      // kind == "ssh"
+	PGConfig  *sqlc.PostgresAssetConfig // kind == "postgres"
+	PGLogins  []sqlc.PostgresAssetLogin // kind == "postgres"
+	RDPConfig *sqlc.RdpAssetConfig      // kind == "rdp"
+	RDPLogins []sqlc.RdpAssetLogin      // kind == "rdp"
 }
 
 // FolderResult is a single folder plus its computed DNS path.

@@ -126,12 +126,13 @@ DELETE FROM asset_secrets s
 WHERE s.asset_id = $1
   AND s.id NOT IN (SELECT l.secret_id FROM ssh_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
   AND s.id NOT IN (SELECT l.secret_id FROM postgres_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
+  AND s.id NOT IN (SELECT l.secret_id FROM rdp_asset_login l WHERE l.asset_id = $1 AND l.secret_id IS NOT NULL)
 `
 
-// Drop asset_secrets no longer referenced by any of the asset's logins (ssh OR
-// postgres). A postgres password login references a secret via secret_id too, so it
-// must be counted here or the secret is wrongly deemed orphan and its DELETE trips
-// the postgres_login_secret_same_asset FK (ON DELETE RESTRICT).
+// Drop asset_secrets no longer referenced by any of the asset's logins (ssh,
+// postgres, OR rdp). A postgres/rdp password login references a secret via secret_id
+// too, so it must be counted here or the secret is wrongly deemed orphan and its
+// DELETE trips the *_login_secret_same_asset FK (ON DELETE RESTRICT).
 func (q *Queries) DeleteOrphanSecretsForAsset(ctx context.Context, assetID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteOrphanSecretsForAsset, assetID)
 	return err
@@ -143,6 +144,15 @@ DELETE FROM postgres_asset_login WHERE asset_id = $1
 
 func (q *Queries) DeletePostgresAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deletePostgresAssetLoginsForAsset, assetID)
+	return err
+}
+
+const deleteRDPAssetLoginsForAsset = `-- name: DeleteRDPAssetLoginsForAsset :exec
+DELETE FROM rdp_asset_login WHERE asset_id = $1
+`
+
+func (q *Queries) DeleteRDPAssetLoginsForAsset(ctx context.Context, assetID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRDPAssetLoginsForAsset, assetID)
 	return err
 }
 
@@ -307,6 +317,17 @@ func (q *Queries) GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID)
 		&i.TargetServerCa,
 		&i.DefaultDatabase,
 	)
+	return i, err
+}
+
+const getRDPAssetConfig = `-- name: GetRDPAssetConfig :one
+SELECT asset_id, target_address, target_server_ca FROM rdp_asset_config WHERE asset_id = $1
+`
+
+func (q *Queries) GetRDPAssetConfig(ctx context.Context, assetID uuid.UUID) (RdpAssetConfig, error) {
+	row := q.db.QueryRow(ctx, getRDPAssetConfig, assetID)
+	var i RdpAssetConfig
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.TargetServerCa)
 	return i, err
 }
 
@@ -611,6 +632,35 @@ func (q *Queries) ListPostgresAssetLogins(ctx context.Context, assetID uuid.UUID
 		if err := rows.Scan(
 			&i.AssetID,
 			&i.Role,
+			&i.Kind,
+			&i.SecretID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRDPAssetLogins = `-- name: ListRDPAssetLogins :many
+SELECT asset_id, login, kind, secret_id FROM rdp_asset_login WHERE asset_id = $1 ORDER BY login
+`
+
+func (q *Queries) ListRDPAssetLogins(ctx context.Context, assetID uuid.UUID) ([]RdpAssetLogin, error) {
+	rows, err := q.db.Query(ctx, listRDPAssetLogins, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RdpAssetLogin
+	for rows.Next() {
+		var i RdpAssetLogin
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.Login,
 			&i.Kind,
 			&i.SecretID,
 		); err != nil {
@@ -1252,6 +1302,61 @@ func (q *Queries) UpsertPostgresAssetLogin(ctx context.Context, arg UpsertPostgr
 	err := row.Scan(
 		&i.AssetID,
 		&i.Role,
+		&i.Kind,
+		&i.SecretID,
+	)
+	return i, err
+}
+
+const upsertRDPAssetConfig = `-- name: UpsertRDPAssetConfig :one
+INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca)
+VALUES ($1, $2, $3)
+ON CONFLICT (asset_id) DO UPDATE SET
+  target_address = EXCLUDED.target_address,
+  target_server_ca = EXCLUDED.target_server_ca
+RETURNING asset_id, target_address, target_server_ca
+`
+
+type UpsertRDPAssetConfigParams struct {
+	AssetID        uuid.UUID `json:"asset_id"`
+	TargetAddress  string    `json:"target_address"`
+	TargetServerCa string    `json:"target_server_ca"`
+}
+
+func (q *Queries) UpsertRDPAssetConfig(ctx context.Context, arg UpsertRDPAssetConfigParams) (RdpAssetConfig, error) {
+	row := q.db.QueryRow(ctx, upsertRDPAssetConfig, arg.AssetID, arg.TargetAddress, arg.TargetServerCa)
+	var i RdpAssetConfig
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.TargetServerCa)
+	return i, err
+}
+
+const upsertRDPAssetLogin = `-- name: UpsertRDPAssetLogin :one
+INSERT INTO rdp_asset_login (asset_id, login, kind, secret_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (asset_id, login) DO UPDATE SET
+  kind = EXCLUDED.kind,
+  secret_id = EXCLUDED.secret_id
+RETURNING asset_id, login, kind, secret_id
+`
+
+type UpsertRDPAssetLoginParams struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Login    string      `json:"login"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
+}
+
+func (q *Queries) UpsertRDPAssetLogin(ctx context.Context, arg UpsertRDPAssetLoginParams) (RdpAssetLogin, error) {
+	row := q.db.QueryRow(ctx, upsertRDPAssetLogin,
+		arg.AssetID,
+		arg.Login,
+		arg.Kind,
+		arg.SecretID,
+	)
+	var i RdpAssetLogin
+	err := row.Scan(
+		&i.AssetID,
+		&i.Login,
 		&i.Kind,
 		&i.SecretID,
 	)

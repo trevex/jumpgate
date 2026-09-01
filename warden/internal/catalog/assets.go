@@ -18,11 +18,12 @@ import (
 )
 
 // AssetConfigInput is a kind-tagged union of a create/update config write. Exactly
-// one of SSH/Postgres/Kubernetes is set; Kind names which and becomes the asset's kind.
+// one of SSH/Postgres/RDP/Kubernetes is set; Kind names which and becomes the asset's kind.
 type AssetConfigInput struct {
 	Kind       string
 	SSH        *SSHConfigInput
 	Postgres   *PostgresConfigInput
+	RDP        *RDPConfigInput
 	Kubernetes bool // kind == "k8s": no config to persist
 }
 
@@ -90,6 +91,23 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 		}
 		res.PGConfig, res.PGLogins = &cfg, logins
+	case "rdp":
+		rows, err := s.resolveRDPConfigInput(ctx, qtx, a.ID, *in.RDP, true)
+		if err != nil {
+			return AssetWithConfig{}, err
+		}
+		if err := writeRDPConfig(ctx, qtx, a.ID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
+			return AssetWithConfig{}, apierr.MapWrite(err)
+		}
+		cfg, err := qtx.GetRDPAssetConfig(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := qtx.ListRDPAssetLogins(ctx, a.ID)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.RDPConfig, res.RDPLogins = &cfg, logins
 	case "k8s":
 		// A k8s asset carries no connection config or logins; the asset row
 		// (kind="k8s") is the whole record. Groups come from k8s:group caps.
@@ -142,6 +160,19 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (AssetWithConfig, 
 			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
 		}
 		res.PGConfig, res.PGLogins = &cfg, logins
+	case "rdp":
+		cfg, err := s.q.GetRDPAssetConfig(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return res, nil
+			}
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		logins, err := s.q.ListRDPAssetLogins(ctx, id)
+		if err != nil {
+			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
+		}
+		res.RDPConfig, res.RDPLogins = &cfg, logins
 	}
 	return res, nil
 }
@@ -177,6 +208,14 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 			return err
 		}
 		if err := writePostgresConfig(ctx, qtx, assetID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
+			return apierr.MapWrite(err)
+		}
+	case "rdp":
+		rows, err := s.resolveRDPConfigInput(ctx, qtx, assetID, *in.RDP, false)
+		if err != nil {
+			return err
+		}
+		if err := writeRDPConfig(ctx, qtx, assetID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
 			return apierr.MapWrite(err)
 		}
 	default:
@@ -334,6 +373,9 @@ func (s *Service) DeleteAsset(ctx context.Context, caller uuid.UUID, id uuid.UUI
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	if err := q.DeletePostgresAssetLoginsForAsset(ctx, id); err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if err := q.DeleteRDPAssetLoginsForAsset(ctx, id); err != nil {
 		return connect.NewError(connect.CodeInternal, err)
 	}
 	if err := q.DeleteAssetSecretsForAsset(ctx, id); err != nil {

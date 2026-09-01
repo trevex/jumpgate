@@ -180,6 +180,19 @@ type PostgresAssetLogin struct {
 	SecretID pgtype.UUID `json:"secret_id"`
 }
 
+type RdpAssetConfig struct {
+	AssetID        uuid.UUID `json:"asset_id"`
+	TargetAddress  string    `json:"target_address"`
+	TargetServerCa string    `json:"target_server_ca"`
+}
+
+type RdpAssetLogin struct {
+	AssetID  uuid.UUID   `json:"asset_id"`
+	Login    string      `json:"login"`
+	Kind     string      `json:"kind"`
+	SecretID pgtype.UUID `json:"secret_id"`
+}
+
 type RequestPolicy struct {
 	ID                uuid.UUID       `json:"id"`
 	RoleID            uuid.UUID       `json:"role_id"`
