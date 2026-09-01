@@ -27,6 +27,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
@@ -230,7 +231,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSSHCA: %v", err)
 	}
-	sealedSeed, err := sealer.Seal(seed)
+	sealedSeed, err := sealer.Seal(seed, secrets.AADCA("ssh"))
 	if err != nil {
 		t.Fatalf("seal ca seed: %v", err)
 	}

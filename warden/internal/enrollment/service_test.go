@@ -69,7 +69,7 @@ func provisionMeshCA(t *testing.T, q *sqlc.Queries, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatalf("GenerateMeshCA: %v", err)
 	}
-	sealed, err := sealer.Seal(keyDER)
+	sealed, err := sealer.Seal(keyDER, secrets.AADCA("mesh"))
 	if err != nil {
 		t.Fatalf("seal mesh ca: %v", err)
 	}

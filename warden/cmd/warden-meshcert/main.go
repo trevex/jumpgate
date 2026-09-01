@@ -81,7 +81,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load mesh CA: %v", err)
 	}
-	caKeyDER, err := sealer.Open(row.Sealed)
+	caKeyDER, err := sealer.Open(row.Sealed, secrets.AADCA("mesh"))
 	if err != nil {
 		log.Fatalf("unseal mesh CA key: %v", err)
 	}

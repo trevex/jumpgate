@@ -259,7 +259,7 @@ func (b *Broker) issueStoredSecret(ctx context.Context, userID, assetID uuid.UUI
 		}
 		return Credential{}, fmt.Errorf("get asset secret: %w", err)
 	}
-	pt, err := b.sealer.Open(sec.Sealed)
+	pt, err := b.sealer.Open(sec.Sealed, secrets.AADAssetSecret(assetID))
 	if err != nil {
 		return Credential{}, fmt.Errorf("open asset secret: %w", err)
 	}
@@ -282,7 +282,7 @@ func (b *Broker) issueSSHCert(ctx context.Context, userID uuid.UUID, asset sqlc.
 		}
 		return Credential{}, fmt.Errorf("get active ssh CA: %w", err)
 	}
-	seed, err := b.sealer.Open(caRow.Sealed)
+	seed, err := b.sealer.Open(caRow.Sealed, secrets.AADCA("ssh"))
 	if err != nil {
 		return Credential{}, fmt.Errorf("open ssh CA seed: %w", err)
 	}
@@ -344,7 +344,7 @@ func (b *Broker) issueX509Cert(ctx context.Context, userID uuid.UUID, asset sqlc
 		}
 		return Credential{}, fmt.Errorf("get active x509 CA: %w", err)
 	}
-	keyDER, err := b.sealer.Open(caRow.Sealed)
+	keyDER, err := b.sealer.Open(caRow.Sealed, secrets.AADCA("x509"))
 	if err != nil {
 		return Credential{}, fmt.Errorf("open x509 CA key: %w", err)
 	}

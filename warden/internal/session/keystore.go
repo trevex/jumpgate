@@ -41,7 +41,7 @@ func (k *KeyStore) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sealed, err := k.sealer.Seal(priv)
+	sealed, err := k.sealer.Seal(priv, secrets.AADSessionSigningKey())
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (k *KeyStore) LoadActive(ctx context.Context) (ed25519.PrivateKey, ed25519.
 	if err != nil {
 		return nil, nil, err
 	}
-	priv, err := k.sealer.Open(row.Sealed)
+	priv, err := k.sealer.Open(row.Sealed, secrets.AADSessionSigningKey())
 	if err != nil {
 		return nil, nil, fmt.Errorf("open signing key: %w", err)
 	}

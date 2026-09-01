@@ -11,6 +11,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 // Sealer seals/opens secrets under a 32-byte master KEK.
@@ -52,7 +54,7 @@ const (
 	sealHeaderLen = 1 + nonceLen + wrappedDEKLen + nonceLen
 )
 
-func gcmSeal(key, pt []byte) (nonce, ct []byte, err error) {
+func gcmSeal(key, pt, aad []byte) (nonce, ct []byte, err error) {
 	blk, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, nil, err
@@ -68,10 +70,10 @@ func gcmSeal(key, pt []byte) (nonce, ct []byte, err error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, nil, err
 	}
-	return nonce, g.Seal(nil, nonce, pt, nil), nil
+	return nonce, g.Seal(nil, nonce, pt, aad), nil
 }
 
-func gcmOpen(key, nonce, ct []byte) ([]byte, error) {
+func gcmOpen(key, nonce, ct, aad []byte) ([]byte, error) {
 	blk, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -80,7 +82,7 @@ func gcmOpen(key, nonce, ct []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return g.Open(nil, nonce, ct, nil)
+	return g.Open(nil, nonce, ct, aad)
 }
 
 // Seal returns a versioned sealed blob:
@@ -89,16 +91,21 @@ func gcmOpen(key, nonce, ct []byte) ([]byte, error) {
 //
 // wrappedDEK = 32B DEK + 16B GCM tag = 48; GCM nonce = 12. Fixed widths make
 // parsing unambiguous.
-func (s *Sealer) Seal(plaintext []byte) ([]byte, error) {
+//
+// aad binds the ciphertext GCM layer to the blob's purpose/identity: Open MUST
+// pass the identical aad or it fails closed (see the AAD* helpers). This defeats
+// relocating a sealed blob to a different DB row/purpose. The DEK-wrap layer is
+// sealed with nil aad (KEK rotation re-wraps DEKs independent of purpose).
+func (s *Sealer) Seal(plaintext, aad []byte) ([]byte, error) {
 	dek := make([]byte, 32)
 	if _, err := rand.Read(dek); err != nil {
 		return nil, err
 	}
-	ctNonce, ct, err := gcmSeal(dek, plaintext)
+	ctNonce, ct, err := gcmSeal(dek, plaintext, aad)
 	if err != nil {
 		return nil, err
 	}
-	wrapNonce, wrapped, err := gcmSeal(s.kek, dek)
+	wrapNonce, wrapped, err := gcmSeal(s.kek, dek, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +118,10 @@ func (s *Sealer) Seal(plaintext []byte) ([]byte, error) {
 	return out, nil
 }
 
-// Open reverses Seal. Fails (fail-closed) on a wrong KEK, a tampered blob, or a
-// malformed layout.
-func (s *Sealer) Open(sealed []byte) ([]byte, error) {
+// Open reverses Seal. Fails (fail-closed) on a wrong KEK, a tampered blob, a
+// malformed layout, or an aad that differs from the one Seal used (relocation
+// defense — pass the identical AAD* value the sealing path used).
+func (s *Sealer) Open(sealed, aad []byte) ([]byte, error) {
 	if len(sealed) < sealHeaderLen || sealed[0] != sealVersion {
 		return nil, errors.New("malformed sealed blob")
 	}
@@ -125,9 +133,25 @@ func (s *Sealer) Open(sealed []byte) ([]byte, error) {
 	ctNonce := sealed[p : p+nonceLen]
 	p += nonceLen
 	ct := sealed[p:]
-	dek, err := gcmOpen(s.kek, wrapNonce, wrapped)
+	dek, err := gcmOpen(s.kek, wrapNonce, wrapped, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unwrap DEK: %w", err)
 	}
-	return gcmOpen(dek, ctNonce, ct)
+	return gcmOpen(dek, ctNonce, ct, aad)
 }
+
+// AAD constructor helpers bind a sealed blob to its purpose/identity. Seal and
+// Open MUST pass the identical AAD; a mismatch fails closed (that is the point —
+// it defeats relocating a sealed blob to a different DB row/purpose). The
+// "jumpgate/…" namespace prefix keeps purposes from colliding.
+
+// AADCA binds a CA key blob to its kind ("ssh"|"x509"|"mesh").
+func AADCA(kind string) []byte { return []byte("jumpgate/ca:" + kind) }
+
+// AADAssetSecret binds a stored asset secret to its owning asset.
+func AADAssetSecret(assetID uuid.UUID) []byte {
+	return []byte("jumpgate/asset-secret:" + assetID.String())
+}
+
+// AADSessionSigningKey binds the session-token signing key blob.
+func AADSessionSigningKey() []byte { return []byte("jumpgate/session-signing-key") }

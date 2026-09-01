@@ -10,6 +10,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/secrets"
 )
 
 // SSHConfigInput is the proto-free domain form of an asset's SSH connection config
@@ -87,7 +88,7 @@ func (s *Service) resolveSecretSource(ctx context.Context, q *sqlc.Queries, asse
 		if s.sealer == nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
 		}
-		sealed, err := s.sealer.Seal(sa.NewValue)
+		sealed, err := s.sealer.Seal(sa.NewValue, secrets.AADAssetSecret(assetID))
 		if err != nil {
 			return pgtype.UUID{}, connect.NewError(connect.CodeInternal, err)
 		}

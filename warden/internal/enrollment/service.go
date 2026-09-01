@@ -92,7 +92,7 @@ func (s *Service) SignAgentCert(ctx context.Context, rawToken string, csrPEM []b
 		}
 		return nil, nil, fmt.Errorf("get mesh CA: %w", err)
 	}
-	keyDER, err := s.sealer.Open(caRow.Sealed)
+	keyDER, err := s.sealer.Open(caRow.Sealed, secrets.AADCA("mesh"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("unseal mesh CA: %w", err)
 	}

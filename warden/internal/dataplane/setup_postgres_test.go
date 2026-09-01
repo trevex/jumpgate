@@ -54,7 +54,7 @@ func newPGFixture(t *testing.T) *pgFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := sealer.Seal(keyDER)
+	sealed, err := sealer.Seal(keyDER, secrets.AADCA("x509"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func (f *pgFixture) grantCap(t *testing.T, name, capPat string) {
 // sealSecret seals value as an asset secret and returns its id.
 func sealSecret(t *testing.T, q *sqlc.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
 	t.Helper()
-	sealed, err := sealer.Seal(value)
+	sealed, err := sealer.Seal(value, secrets.AADAssetSecret(asset))
 	if err != nil {
 		t.Fatal(err)
 	}

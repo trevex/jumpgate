@@ -87,7 +87,7 @@ func (s *Handler) InitCA(ctx context.Context, req *connect.Request[vaultv1.InitC
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported CA kind"))
 	}
-	sealed, err := s.sealer.Seal(sealedPlaintext)
+	sealed, err := s.sealer.Seal(sealedPlaintext, secrets.AADCA(kind))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -113,7 +113,7 @@ func (s *Handler) InitMeshCA(ctx context.Context, _ *connect.Request[vaultv1.Ini
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	sealed, err := s.sealer.Seal(keyDER)
+	sealed, err := s.sealer.Seal(keyDER, secrets.AADCA("mesh"))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -149,7 +149,7 @@ func (s *Handler) IssueMeshCert(ctx context.Context, req *connect.Request[vaultv
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	keyDER, err := s.sealer.Open(row.Sealed)
+	keyDER, err := s.sealer.Open(row.Sealed, secrets.AADCA("mesh"))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -221,7 +221,7 @@ func (s *Handler) SetAssetSecret(ctx context.Context, req *connect.Request[vault
 	if s.sealer == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("vault not configured"))
 	}
-	sealed, err := s.sealer.Seal(req.Msg.Value)
+	sealed, err := s.sealer.Seal(req.Msg.Value, secrets.AADAssetSecret(assetID))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

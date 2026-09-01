@@ -93,7 +93,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := sealer.Seal(seed)
+	sealed, err := sealer.Seal(seed, secrets.AADCA("ssh"))
 	if err != nil {
 		t.Fatal(err)
 	}

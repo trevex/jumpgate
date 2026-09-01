@@ -88,7 +88,7 @@ func initSSHCA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := sealer.Seal(seed)
+	sealed, err := sealer.Seal(seed, secrets.AADCA("ssh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func initX509CA(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := sealer.Seal(keyDER)
+	sealed, err := sealer.Seal(keyDER, secrets.AADCA("x509"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func wantAssetPrincipals(t *testing.T, q *sqlc.Queries, assetID uuid.UUID, login
 // returning the secret id.
 func sealSecret(t *testing.T, q *sqlc.Queries, sealer *secrets.Sealer, asset uuid.UUID, name string, value []byte) uuid.UUID {
 	t.Helper()
-	sealed, err := sealer.Seal(value)
+	sealed, err := sealer.Seal(value, secrets.AADAssetSecret(asset))
 	if err != nil {
 		t.Fatal(err)
 	}

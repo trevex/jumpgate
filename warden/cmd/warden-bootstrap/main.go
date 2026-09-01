@@ -157,7 +157,7 @@ func provisionSSHCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Sealer
 		if gerr != nil {
 			return fmt.Errorf("generate ssh ca: %w", gerr)
 		}
-		sealed, serr := sealer.Seal(seed)
+		sealed, serr := sealer.Seal(seed, secrets.AADCA("ssh"))
 		if serr != nil {
 			return fmt.Errorf("seal ssh ca: %w", serr)
 		}
@@ -192,7 +192,7 @@ func provisionX509CA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Seale
 		if gerr != nil {
 			return fmt.Errorf("generate x509 ca: %w", gerr)
 		}
-		sealed, serr := sealer.Seal(keyDER)
+		sealed, serr := sealer.Seal(keyDER, secrets.AADCA("x509"))
 		if serr != nil {
 			return fmt.Errorf("seal x509 ca: %w", serr)
 		}
@@ -244,7 +244,7 @@ func provisionMeshCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Seale
 		if gerr != nil {
 			return fmt.Errorf("generate mesh ca: %w", gerr)
 		}
-		sealed, serr := sealer.Seal(keyDER)
+		sealed, serr := sealer.Seal(keyDER, secrets.AADCA("mesh"))
 		if serr != nil {
 			return fmt.Errorf("seal mesh ca: %w", serr)
 		}
@@ -261,7 +261,7 @@ func provisionMeshCA(ctx context.Context, q *sqlc.Queries, sealer *secrets.Seale
 
 	// Unseal the active key so the emitted key.pem always matches the emitted cert
 	// (works whether we just generated it or it already existed).
-	keyDER, err := sealer.Open(row.Sealed)
+	keyDER, err := sealer.Open(row.Sealed, secrets.AADCA("mesh"))
 	if err != nil {
 		return fmt.Errorf("unseal mesh ca key: %w", err)
 	}
