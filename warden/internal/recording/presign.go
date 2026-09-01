@@ -90,6 +90,28 @@ func (p *S3Presigner) GetObject(ctx context.Context, key string) (io.ReadCloser,
 	return out.Body, nil
 }
 
+// ListKeys returns every object key under prefix (following pagination). The audit
+// integrity verifier uses it to find the latest externalized anchor.
+func (p *S3Presigner) ListKeys(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	pager := s3.NewListObjectsV2Paginator(p.raw, &s3.ListObjectsV2Input{
+		Bucket: &p.bucket,
+		Prefix: &prefix,
+	})
+	for pager.HasMorePages() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list objects: %w", err)
+		}
+		for _, o := range page.Contents {
+			if o.Key != nil {
+				keys = append(keys, *o.Key)
+			}
+		}
+	}
+	return keys, nil
+}
+
 // HeadObject verifies key exists and the store is reachable without transferring
 // the body (an S3 HEAD). The cast HEAD probe uses it so a missing object or an
 // unreachable store yields the same failure the streaming GET would.

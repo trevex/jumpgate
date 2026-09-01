@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -114,6 +115,83 @@ func (l *Logger) RunAnchorer(ctx context.Context, store AnchorStore, interval ti
 				slog.Info("audit chain tip anchored", "seq", newSeq)
 				lastSeq = newSeq
 			}
+		}
+	}
+}
+
+// AnchorReadStore reads back externalized anchors so the live chain can be verified
+// against them. It is the read counterpart of AnchorStore; recording.S3Presigner
+// satisfies it (ListKeys + GetObject).
+type AnchorReadStore interface {
+	ListKeys(ctx context.Context, prefix string) ([]string, error)
+	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
+}
+
+// VerifyLatestAnchor reads the most recent externalized anchor and cross-checks the
+// live audit chain against it via VerifyTipAtLeast. nil means the chain still covers
+// the anchored tip (or nothing has been anchored yet); ErrTailTruncated means the
+// chain was truncated/rewritten below a tip that was provably externalized — tamper
+// evidence the in-DB Verify alone cannot detect. Other errors are operational
+// (store unreachable, malformed anchor).
+func (l *Logger) VerifyLatestAnchor(ctx context.Context, store AnchorReadStore) error {
+	keys, err := store.ListKeys(ctx, anchorKeyPrefix)
+	if err != nil {
+		return fmt.Errorf("list anchors: %w", err)
+	}
+	if len(keys) == 0 {
+		return nil // nothing externalized yet
+	}
+	// Keys are zero-padded seq (see anchorKey), so the lexically greatest is the latest.
+	latest := keys[0]
+	for _, k := range keys[1:] {
+		if k > latest {
+			latest = k
+		}
+	}
+	rc, err := store.GetObject(ctx, latest)
+	if err != nil {
+		return fmt.Errorf("get anchor %s: %w", latest, err)
+	}
+	defer func() { _ = rc.Close() }()
+	var a Anchor
+	if err := json.NewDecoder(rc).Decode(&a); err != nil {
+		return fmt.Errorf("decode anchor %s: %w", latest, err)
+	}
+	hash, err := hex.DecodeString(a.EntryHash)
+	if err != nil {
+		return fmt.Errorf("anchor %s has a malformed entry_hash: %w", latest, err)
+	}
+	return l.VerifyTipAtLeast(ctx, a.Seq, hash)
+}
+
+// RunIntegrityVerifier cross-checks the live audit chain against the latest
+// externalized anchor once at startup (catching truncation that happened while
+// warden was down) and then every interval. It is the read side of the tamper-
+// evidence the anchorer writes: ErrTailTruncated is logged at ERROR (the in-DB chain
+// no longer covers a provably-externalized tip — investigate now); operational errors
+// are WARN. Best-effort — never blocks. Exits on ctx.Done(). Start only when an
+// object store is configured (a nil store returns immediately).
+func (l *Logger) RunIntegrityVerifier(ctx context.Context, store AnchorReadStore, interval time.Duration) {
+	if store == nil {
+		return
+	}
+	check := func() {
+		switch err := l.VerifyLatestAnchor(ctx, store); {
+		case errors.Is(err, ErrTailTruncated):
+			slog.Error("AUDIT CHAIN TAMPER DETECTED: live chain no longer covers the last externalized anchor", "err", err)
+		case err != nil && ctx.Err() == nil:
+			slog.Warn("audit integrity verify failed", "err", err)
+		}
+	}
+	check()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			check()
 		}
 	}
 }

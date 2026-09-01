@@ -208,6 +208,10 @@ func Run(ctx context.Context, cfg config.Config) error {
 		// Best-effort: errors are logged inside RunAnchorer and never block. Exits on
 		// ctx.Done() (graceful shutdown).
 		spawn(func(ctx context.Context) { auditLog.RunAnchorer(ctx, presign, cfg.AuditAnchorInterval) })
+		// Read side of the tamper-evidence: verify the live chain still covers the
+		// last externalized anchor, at startup and each interval. Detection only
+		// (logs ERROR on truncation); the anchorer above is the writer.
+		spawn(func(ctx context.Context) { auditLog.RunIntegrityVerifier(ctx, presign, cfg.AuditAnchorInterval) })
 	} else {
 		slog.Warn("recording retrieval disabled (no RECORDING_BUCKET); download fails closed")
 	}

@@ -1,10 +1,13 @@
 package audit_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -25,6 +28,29 @@ func (f *fakeStore) Put(_ context.Context, key string, body []byte) error {
 	defer f.mu.Unlock()
 	f.objs[key] = append([]byte(nil), body...)
 	return nil
+}
+
+// ListKeys and GetObject make fakeStore an audit.AnchorReadStore too.
+func (f *fakeStore) ListKeys(_ context.Context, prefix string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var keys []string
+	for k := range f.objs {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+func (f *fakeStore) GetObject(_ context.Context, key string) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, ok := f.objs[key]
+	if !ok {
+		return nil, errors.New("not found: " + key)
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
 func (f *fakeStore) count() int {
@@ -159,6 +185,41 @@ func TestVerifyTipAtLeastDetectsTruncation(t *testing.T) {
 	}
 	if err := log.VerifyTipAtLeast(ctx, anchoredSeq, anchorHash); !errors.Is(err, audit.ErrTailTruncated) {
 		t.Fatalf("expected ErrTailTruncated after truncation, got %v", err)
+	}
+}
+
+func TestVerifyLatestAnchor(t *testing.T) {
+	pool := newPool(t)
+	log := audit.New(pool)
+	ctx := context.Background()
+	store := newFakeStore()
+
+	// No anchor externalized yet → nothing to verify.
+	if err := log.VerifyLatestAnchor(ctx, store); err != nil {
+		t.Fatalf("no-anchor case should be nil, got %v", err)
+	}
+
+	for range 5 {
+		if err := log.Append(ctx, audit.Event{Type: "e", Subject: "s"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := log.AnchorTip(ctx, store, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Intact chain verifies against the latest externalized anchor.
+	if err := log.VerifyLatestAnchor(ctx, store); err != nil {
+		t.Fatalf("intact chain should verify against latest anchor: %v", err)
+	}
+
+	// Truncate the anchored tip: the live chain no longer covers the externalized
+	// anchor, so VerifyLatestAnchor must surface ErrTailTruncated.
+	if _, err := pool.Exec(ctx, `DELETE FROM audit_log WHERE seq = (SELECT max(seq) FROM audit_log)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.VerifyLatestAnchor(ctx, store); !errors.Is(err, audit.ErrTailTruncated) {
+		t.Fatalf("after truncation: got %v, want ErrTailTruncated", err)
 	}
 }
 
