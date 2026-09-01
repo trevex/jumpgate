@@ -169,8 +169,9 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 				// Persist the recording report BEFORE marking the session ended: the
 				// parties lookup reads live_sessions, which handleSessionEnded deletes.
 				if rec := se.GetRecording(); rec != nil {
-					if err := s.persistRecording(ctx, se.SessionId, rec); err != nil {
-						slog.Error("session recording persist failed", "session_id", se.SessionId, "err", err)
+					if err := s.persistRecordingRetry(ctx, se.SessionId, rec); err != nil {
+						slog.Error("session recording persist failed after retries; object orphaned in the store",
+							"session_id", se.SessionId, "err", err)
 					}
 				}
 				if err := s.handleSessionEnded(ctx, se.SessionId, se.Reason); err != nil {
@@ -265,6 +266,31 @@ func recordingFormat(protocol string) string {
 // trusts the worker-reported parties directly instead of looking them up. Failures are
 // returned for the caller to LOG (not fatal to the worker stream): a
 // recording-persistence hiccup must never sever the worker's lifeline.
+// persistRecordingRetry wraps persistRecording in a short bounded retry. The
+// recording object is already uploaded to the store by the worker, so a transient
+// DB error here would otherwise orphan it (no session_recordings row → invisible to
+// the recording API forever). Each attempt is a fresh single-tx insert (a failed
+// attempt rolls back cleanly), so retrying is safe. It runs before handleSessionEnded
+// deletes the live_sessions row, so the parties lookup stays valid across attempts.
+func (s *Handler) persistRecordingRetry(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
+	const attempts = 3
+	var err error
+	for i := range attempts {
+		if err = s.persistRecording(ctx, sessionID, rec); err == nil {
+			return nil
+		}
+		if i == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(i+1) * 250 * time.Millisecond):
+		}
+	}
+	return err
+}
+
 func (s *Handler) persistRecording(ctx context.Context, sessionID string, rec *dataplanev1.RecordingInfo) error {
 	sid, err := uuid.Parse(sessionID)
 	if err != nil {

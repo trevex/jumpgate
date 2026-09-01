@@ -108,6 +108,14 @@ func (s *Sweeper) SweepGC(ctx context.Context, orphanGrace, teardownGrace time.D
 		return fmt.Errorf("list stuck sessions: %w", err)
 	}
 	for _, id := range stuck {
+		// Re-deliver one final teardown before we forget the session. The row is still
+		// in the ledger marked-terminating, so a worker that never received (or never
+		// acted on) the earlier signal gets a last chance to close the real connection;
+		// once MarkEnded deletes the row, teardown can no longer be routed to it. A
+		// dropped notify here just means the worker is genuinely gone (the common case).
+		if err := NotifyTeardown(ctx, s.pool, id.String(), "teardown unconfirmed (final)"); err != nil {
+			slog.Warn("stuck gc final teardown notify failed", "session", id, "err", err)
+		}
 		if err := s.terminator.MarkEnded(ctx, id, "teardown unconfirmed"); err != nil {
 			slog.Error("stuck gc mark-ended failed", "session", id, "err", err)
 		}

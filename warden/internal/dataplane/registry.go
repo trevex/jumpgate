@@ -239,12 +239,33 @@ func (r *Registry) ClearWorkerMeta(workerID string) {
 // caller must hold r.mu; since cancel removes-then-closes a subscriber under the
 // same lock, we never send on a closed channel here.
 func (r *Registry) broadcastLocked(ev RosterEvent) {
+	var overflowed []chan RosterEvent
 	for ch := range r.rosterSubs {
 		select {
 		case ch <- ev:
-		default: // slow/full subscriber; it will resync via a fresh snapshot
+		default:
+			// Buffer full: silently dropping this one delta could leave the subscriber
+			// (the gateway) routing to a since-removed worker. Instead drop the whole
+			// subscription and close it — WatchWorkers ends the stream, the gateway
+			// reconnects and receives a fresh authoritative snapshot. Collected here
+			// and dropped after the range (can't delete from the map mid-iteration).
+			overflowed = append(overflowed, ch)
 		}
 	}
+	for _, ch := range overflowed {
+		r.dropSubLocked(ch)
+	}
+}
+
+// dropSubLocked unsubscribes and closes a roster subscriber. Idempotent: map
+// membership is the guard, so a channel dropped on overflow and later cancelled (or
+// vice versa) is closed exactly once. The caller must hold r.mu.
+func (r *Registry) dropSubLocked(ch chan RosterEvent) {
+	if _, ok := r.rosterSubs[ch]; !ok {
+		return
+	}
+	delete(r.rosterSubs, ch)
+	close(ch)
 }
 
 // SubscribeRoster returns a channel that first receives a RosterAdded snapshot of
@@ -280,14 +301,10 @@ func (r *Registry) SubscribeRoster() (<-chan RosterEvent, func()) {
 	}
 	r.rosterSubs[ch] = struct{}{}
 
-	var once sync.Once
 	cancel := func() {
-		once.Do(func() {
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			delete(r.rosterSubs, ch) // remove before close so broadcasts skip it
-			close(ch)
-		})
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.dropSubLocked(ch) // idempotent; also closes it if overflow hasn't already
 	}
 	return ch, cancel
 }

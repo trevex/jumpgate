@@ -1,9 +1,39 @@
 package dataplane
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
+
+// TestRegistryRosterOverflowDropsSubscriber pins the resync-on-overflow behaviour: a
+// subscriber whose buffer fills is dropped and its channel closed (rather than
+// silently losing a delta), so WatchWorkers ends the stream and the gateway
+// reconnects for a fresh authoritative snapshot. cancel() must stay safe afterwards.
+func TestRegistryRosterOverflowDropsSubscriber(t *testing.T) {
+	r := NewRegistry()
+	sub, cancel := r.SubscribeRoster()
+	defer cancel()
+
+	// Flood far past the (64) buffer without draining.
+	for i := range 200 {
+		r.SetWorkerMeta(fmt.Sprintf("w%d", i), WorkerMeta{Protocol: "ssh"})
+	}
+
+	done := make(chan struct{})
+	go func() {
+		for range sub { //nolint:revive // draining until the channel is closed
+		}
+		close(done)
+	}()
+	select {
+	case <-done: // drained the buffered events, then observed the close
+	case <-time.After(2 * time.Second):
+		t.Fatal("overflowed roster subscription should be closed so the gateway resyncs")
+	}
+
+	cancel() // idempotent after an overflow drop — must not double-close/panic
+}
 
 func TestRegistryAddPushRemove(t *testing.T) {
 	r := NewRegistry()

@@ -59,7 +59,13 @@ func (s *Handler) WatchWorkers(ctx context.Context, _ *connect.Request[gatewayv1
 		select {
 		case <-ctx.Done():
 			return nil
-		case ev := <-sub:
+		case ev, ok := <-sub:
+			if !ok {
+				// The registry dropped this subscription (its buffer overflowed) or is
+				// shutting down. End the stream so the gateway reconnects and pulls a
+				// fresh authoritative snapshot rather than continuing on a stale roster.
+				return nil
+			}
 			kind := gatewayv1.RosterEvent_ADDED
 			if ev.Kind == dataplane.RosterRemoved {
 				kind = gatewayv1.RosterEvent_REMOVED
