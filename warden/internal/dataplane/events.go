@@ -8,6 +8,5 @@ const (
 
 	EventRecordingCompleted = "recording.completed"
 	EventRecordingFailed    = "recording.failed"
-	EventRecordingMissing   = "recording.missing"
 	EventRecordingAccessed  = "recording.accessed"
 )

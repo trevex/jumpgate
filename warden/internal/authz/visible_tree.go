@@ -1,8 +1,6 @@
 package authz
 
 import (
-	"fmt"
-
 	"github.com/google/uuid"
 )
 
@@ -47,38 +45,4 @@ func mapKeys(m map[uuid.UUID]struct{}) []uuid.UUID {
 		out = append(out, k)
 	}
 	return out
-}
-
-// scanUUIDs collects a single-column uuid result into a slice.
-func scanUUIDs(rows interface {
-	Next() bool
-	Scan(...any) error
-	Err() error
-}) ([]uuid.UUID, error) {
-	var out []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan uuid: %w", err)
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
-}
-
-// scanUUIDSet collects a single-column uuid result into a set.
-func scanUUIDSet(rows interface {
-	Next() bool
-	Scan(...any) error
-	Err() error
-}) (map[uuid.UUID]struct{}, error) {
-	out := map[uuid.UUID]struct{}{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scan uuid: %w", err)
-		}
-		out[id] = struct{}{}
-	}
-	return out, rows.Err()
 }

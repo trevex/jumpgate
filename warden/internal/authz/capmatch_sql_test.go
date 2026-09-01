@@ -11,6 +11,21 @@ var diffPatterns = []string{
 	"catalog:asset:read", "access:role:create", "identity:group:add-member",
 	"ssh:login:deploy", "ssh:connect", "recording:read", "db:read", "k8s:impersonate:cluster-admin",
 }
+
+// diffRequests are CONCRETE capabilities as workers/queries actually present them
+// to the 3-column glob predicate. They are deliberately all ≤3 segments / colon-free
+// in the qualifier: the SQL predicate compares a single `qualifier` column and is
+// provably ≡ Go CapMatch only over this reachable space.
+//
+// BOUNDARY (intentionally NOT covered): a colon-bearing qualifier (a 4+-segment cap,
+// e.g. `k8s:group:system:masters`) collapses its tail into one `qualifier` column, so
+// the 3-column model cannot reproduce CapMatch's per-segment `*` vs `**` distinction
+// (a stored `*` there is ambiguous — it may have come from a lone `*` OR from a `**`).
+// This is sound because such caps NEVER reach this predicate: k8s group entitlement is
+// matched by concrete enumeration (Capabilities.ConcreteQualifiers, see k8sgroups.go),
+// and SSH logins / the caps checked here are single-segment by construction. Do not add
+// colon-bearing requests here expecting equivalence — they are out of the predicate's
+// domain by design.
 var diffRequests = []string{
 	"catalog:asset:read", "catalog:folder:create", "access:role:read",
 	"identity:group:read", "ssh:login:deploy", "ssh:login:root",

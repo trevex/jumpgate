@@ -144,6 +144,12 @@ func (az *Authorizer) RolesOnAsset(ctx context.Context, userID, assetID uuid.UUI
 // via the held (standing) closure. It runs the closure ONCE and flattens all
 // patterns, so callers testing several capabilities pay a single query. Glob
 // matching happens in Go (CapMatch), keeping '*'/'**' semantics in one function.
+//
+// REFERENCE PRIMITIVE, NOT THE LIVE GATE: this asset-object-only closure has no
+// production caller — the live data-plane decision is ConnectCapabilities →
+// CapabilitiesOnScope(AssetScope) (the full scope cascade). It is retained as the
+// Go reference oracle the differential/behavioral authz tests and benchmarks pin
+// against; keep it in step with the SQL closures, do not wire it as an authz gate.
 func (az *Authorizer) CapabilitiesOnAsset(ctx context.Context, userID, assetID uuid.UUID) (Capabilities, error) {
 	return az.CapabilitiesOnObject(ctx, userID, assetID, "asset")
 }
@@ -173,10 +179,16 @@ func (az *Authorizer) CapabilitiesOnObject(ctx context.Context, userID, objectID
 // into the three-column predicate proven ≡ Go CapMatch by TestSQLCapMatchMatchesGo.
 //
 // It deliberately does NOT fold in the folder-management cascade or global
-// scopeless bindings — that is CapabilitiesOnScope's job (the management plane);
-// Check is the data-plane grant decision, keyed strictly to the asset object. A
-// nonexistent asset matches no row, so EXISTS is false with no error. `capability`
-// is internal (from workers), assumed concrete, not proto-validated.
+// scopeless bindings — that is CapabilitiesOnScope's job. A nonexistent asset
+// matches no row, so EXISTS is false with no error. `capability` is assumed
+// concrete, not proto-validated.
+//
+// REFERENCE ORACLE, NOT THE LIVE GATE: Check has no production caller. The live
+// data-plane grant decision is ConnectCapabilities → CapabilitiesOnScope (the full
+// asset-scope cascade, a strictly broader closure than this asset-object-only one).
+// Check is retained as the single-query Go oracle whose ≡ to the SQL predicate is
+// pinned by TestSQLCapMatchMatchesGo and exercised across the authz behavioral
+// suite; keep it in lockstep with the SQL closures, do not route a gate through it.
 func (az *Authorizer) Check(ctx context.Context, userID, assetID uuid.UUID, capability string) (bool, error) {
 	reqScope, reqAction, reqQual := NormalizeCap(capability)
 	ok, err := az.queries().HeldCheckAssetCapability(ctx, sqlc.HeldCheckAssetCapabilityParams{

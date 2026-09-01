@@ -64,9 +64,15 @@ func Covers(held []string, target string) bool {
 func covers1(h, t []string) bool {
 	for i, hs := range h {
 		if hs == "**" {
-			// trailing '**' subsumes any non-empty remaining target tail. A
-			// non-final '**' is malformed; treat it as final (fail safe by only
-			// covering when there is a remaining segment to cover).
+			// A non-final '**' is malformed. Fail CLOSED (return false) rather than
+			// treat it as final — this matches CapMatch's fail-closed handling and
+			// keeps the two sibling glob engines that gate escalation in agreement.
+			// (Unreachable via canonical caps: ReconstructCap only ever emits a
+			// trailing '**'.)
+			if i != len(h)-1 {
+				return false
+			}
+			// Trailing '**' subsumes any non-empty remaining target tail.
 			return len(t) > i
 		}
 		if i >= len(t) {
