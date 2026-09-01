@@ -157,6 +157,9 @@ func recordingSuffix(format string) string {
 	if format == "pgwire-timeline-v1" || format == "k8s-audit-v1" {
 		return ".ndjson"
 	}
+	if format == "rdp-graphics-v1" {
+		return ".rdpg"
+	}
 	return ".cast" // asciicast-v2 / unknown
 }
 
@@ -167,6 +170,8 @@ func replayHint(format, file string) string {
 		return "Statement log (NDJSON). Inspect with: jq . " + file + " — or view it in the web console."
 	case "k8s-audit-v1":
 		return "Kubernetes audit log (NDJSON). Inspect with: jq . " + file
+	case "rdp-graphics-v1":
+		return "RDP graphics recording. Replay it in the web console's recordings viewer."
 	default:
 		return "Replay with: asciinema play " + file
 	}
