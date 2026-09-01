@@ -47,6 +47,12 @@ import {
   emptyPgDraft,
   type PgConfigDraft,
 } from "./postgres-config-form";
+import {
+  RdpConfigForm,
+  buildRdpConfigInput,
+  emptyRdpDraft,
+  type RdpConfigDraft,
+} from "./rdp-config-form";
 import { EnrollmentTokenReveal } from "./enrollment-token-dialog";
 
 interface NewAssetWizardProps {
@@ -74,8 +80,9 @@ export function NewAssetWizard({
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
-  const [kind, setKind] = useState<"ssh" | "postgres" | "kubernetes">("ssh");
+  const [kind, setKind] = useState<"ssh" | "postgres" | "rdp" | "kubernetes">("ssh");
   const [pgDraft, setPgDraft] = useState<PgConfigDraft>(emptyPgDraft);
+  const [rdpDraft, setRdpDraft] = useState<RdpConfigDraft>(emptyRdpDraft);
   const [configError, setConfigError] = useState<string | null>(null);
   // Set once a k8s asset is created — swaps the form for the one-time
   // enrollment-token reveal (the wizard unmounts on close, so we can't render
@@ -88,6 +95,7 @@ export function NewAssetWizard({
     setDraft(emptyDraft());
     setKind("ssh");
     setPgDraft(emptyPgDraft());
+    setRdpDraft(emptyRdpDraft());
     setConfigError(null);
   }
 
@@ -125,7 +133,9 @@ export function NewAssetWizard({
       ? draft.logins.length >= 1
       : kind === "postgres"
         ? pgDraft.logins.length >= 1
-        : true;
+        : kind === "rdp"
+          ? rdpDraft.logins.length >= 1
+          : true;
   const formValid = nameValid && hasLogin;
 
   function handleOpenChange(next: boolean) {
@@ -153,6 +163,14 @@ export function NewAssetWizard({
       }
       setConfigError(null);
       doCreate({ folderId, name: name.trim(), config: { case: "postgres", value: config } });
+    } else if (kind === "rdp") {
+      const { config, error } = buildRdpConfigInput(rdpDraft, "create");
+      if (error) {
+        setConfigError(error);
+        return;
+      }
+      setConfigError(null);
+      doCreate({ folderId, name: name.trim(), config: { case: "rdp", value: config } });
     } else {
       setConfigError(null);
       doCreate({ folderId, name: name.trim(), config: { case: "kubernetes", value: {} } });
@@ -201,7 +219,7 @@ export function NewAssetWizard({
           <div className="flex flex-col gap-1.5">
             <span className={FIELD_LABEL}>Asset type</span>
             <div className="inline-flex w-fit rounded-md border border-border p-0.5">
-              {(["ssh", "postgres", "kubernetes"] as const).map((k) => (
+              {(["ssh", "postgres", "rdp", "kubernetes"] as const).map((k) => (
                 <Button
                   key={k}
                   type="button"
@@ -213,7 +231,13 @@ export function NewAssetWizard({
                   }}
                   className="h-7 text-body"
                 >
-                  {k === "ssh" ? "SSH" : k === "postgres" ? "Postgres" : "Kubernetes"}
+                  {k === "ssh"
+                    ? "SSH"
+                    : k === "postgres"
+                      ? "Postgres"
+                      : k === "rdp"
+                        ? "RDP"
+                        : "Kubernetes"}
                 </Button>
               ))}
             </div>
@@ -265,6 +289,15 @@ export function NewAssetWizard({
               value={pgDraft}
               onChange={(next) => {
                 setPgDraft(next);
+                if (configError) setConfigError(null);
+              }}
+            />
+          ) : kind === "rdp" ? (
+            <RdpConfigForm
+              mode="create"
+              value={rdpDraft}
+              onChange={(next) => {
+                setRdpDraft(next);
                 if (configError) setConfigError(null);
               }}
             />

@@ -68,6 +68,13 @@ import {
   emptyPgDraft,
   type PgConfigDraft,
 } from "../postgres-config-form";
+import {
+  RdpConfigForm,
+  buildRdpConfigInput,
+  rdpDraftFromAsset,
+  emptyRdpDraft,
+  type RdpConfigDraft,
+} from "../rdp-config-form";
 import { assetKindIcon } from "../asset-kind-icon";
 import { EnrollmentTokenReveal } from "../enrollment-token-dialog";
 import {
@@ -220,12 +227,15 @@ function EditConfigDialog({
 
   const [draft, setDraft] = useState<ConfigDraft>(emptyDraft);
   const [pgDraft, setPgDraft] = useState<PgConfigDraft>(emptyPgDraft);
+  const [rdpDraft, setRdpDraft] = useState<RdpConfigDraft>(emptyRdpDraft);
   const [configError, setConfigError] = useState<string | null>(null);
 
   const ssh =
     data?.asset?.config.case === "ssh" ? data.asset.config.value : undefined;
   const pg =
     data?.asset?.config.case === "postgres" ? data.asset.config.value : undefined;
+  const rdp =
+    data?.asset?.config.case === "rdp" ? data.asset.config.value : undefined;
 
   // Seed the draft once the config loads (or when re-opening a fresh asset).
   useEffect(() => {
@@ -234,6 +244,9 @@ function EditConfigDialog({
   useEffect(() => {
     if (pg) setPgDraft(pgDraftFromAsset(pg));
   }, [pg]);
+  useEffect(() => {
+    if (rdp) setRdpDraft(rdpDraftFromAsset(rdp));
+  }, [rdp]);
 
   const { mutate: doUpdate, isPending } = useMutation(updateAssetConfig, {
     onSuccess: () => {
@@ -266,6 +279,16 @@ function EditConfigDialog({
       doUpdate({ assetId, config: { case: "postgres", value: config } });
       return;
     }
+    if (rdp) {
+      const { config, error: buildError } = buildRdpConfigInput(rdpDraft, "edit");
+      if (buildError) {
+        setConfigError(buildError);
+        return;
+      }
+      setConfigError(null);
+      doUpdate({ assetId, config: { case: "rdp", value: config } });
+      return;
+    }
     const { config, error: buildError } = buildSSHConfigInput(draft, "edit");
     if (buildError) {
       setConfigError(buildError);
@@ -275,7 +298,11 @@ function EditConfigDialog({
     doUpdate({ assetId, config: { case: "ssh", value: config } });
   }
 
-  const hasLogin = pg ? pgDraft.logins.length >= 1 : draft.logins.length >= 1;
+  const hasLogin = pg
+    ? pgDraft.logins.length >= 1
+    : rdp
+      ? rdpDraft.logins.length >= 1
+      : draft.logins.length >= 1;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -283,7 +310,8 @@ function EditConfigDialog({
         <DialogHeader>
           <DialogTitle className="text-title">Edit config</DialogTitle>
           <DialogDescription className="text-body">
-            Update the {pg ? "Postgres" : "SSH"} connection and per-login auth for{" "}
+            Update the {pg ? "Postgres" : rdp ? "RDP" : "SSH"} connection and
+            per-login auth for{" "}
             <span className="font-mono text-compact">{assetName}</span>. Leave a
             secret blank to keep the current one.
           </DialogDescription>
@@ -297,7 +325,7 @@ function EditConfigDialog({
           <p className="py-6 text-center text-body text-destructive">
             {connectErrorMessage(error)}
           </p>
-        ) : ssh || pg ? (
+        ) : ssh || pg || rdp ? (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {pg ? (
               <PostgresConfigForm
@@ -305,6 +333,15 @@ function EditConfigDialog({
                 value={pgDraft}
                 onChange={(next) => {
                   setPgDraft(next);
+                  if (configError) setConfigError(null);
+                }}
+              />
+            ) : rdp ? (
+              <RdpConfigForm
+                mode="edit"
+                value={rdpDraft}
+                onChange={(next) => {
+                  setRdpDraft(next);
                   if (configError) setConfigError(null);
                 }}
               />
