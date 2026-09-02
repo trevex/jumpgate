@@ -45,17 +45,11 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls-pemfile = "2"
 # Scrub the warden-injected target password from our copy on drop.
 zeroize = "1"
-# ERROR opcode payload is JSON {"message":...}; serde_json escapes it safely.
-serde_json = "1"
-# IronRDP connector + async I/O. Pinned to the published versions (the P0 PoC
-# used git-master, whose Config/API differ). connect 0.10 tracks pdu ^0.9.
-ironrdp-connector = "0.10"
+# PDU framing/decoding for the RDCleanPath relay: find_size to frame the plaintext
+# RDP stream, and decode/encode the Client Info + MCS/share-control PDUs the bridge
+# injects into and parses off the wire. The browser runs the connector, so this
+# worker needs the PDU types only — not ironrdp-connector/-tokio.
 ironrdp-pdu = "0.9"
-# `reqwest` feature provides ReqwestNetworkClient (the CredSSP network client
-# connect_finalize requires; unused while enable_credssp=false but still typed).
-ironrdp-tokio = { version = "0.10", features = ["reqwest"] }
-# Extract the target's TLS server public key from its leaf cert (for CredSSP).
-x509-cert = "0.2"
 # Session-recording upload stack, ported verbatim from ssh-proxy: rusty-s3 signs
 # S3 multipart requests, reqwest (rustls-no-provider → ring installed by us) sends
 # them, sha2/hex for the recording digest, async-trait for the PartUploader seam.

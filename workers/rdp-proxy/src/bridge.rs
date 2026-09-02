@@ -488,6 +488,25 @@ where
                 continue;
             }
 
+            // Activation phase, recorder not yet spawned. The finalization control
+            // PDUs (Demand Active, finalization sequence, Font Map) are slow-path
+            // X.224 and are fine to forward raw; graphics PDUs are FastPath and only
+            // ever arrive AFTER the Font Map (which spawns the recorder — see
+            // `HeaderBuilder::observe`, where the Font Map is an X.224 share-data
+            // PDU). So a FastPath PDU while the recorder is still unspawned means the
+            // Font Map boundary was missed (e.g. a bulk-compressed or variant Font
+            // Map that never decoded): forwarding it would run the graphics stream
+            // UNRECORDED. We are past the `RecState::None` early return, so recording
+            // IS required here — fail closed WITHOUT forwarding the frame. (xrdp's
+            // slow-path Font Map ordering is unaffected: its Font Map spawns the
+            // recorder before any FastPath PDU, so this never false-trips.)
+            if matches!(info.action, Action::FastPath) {
+                tracing::warn!(
+                    "FastPath graphics PDU before recorder spawned; Font Map boundary missed, failing recording closed"
+                );
+                return BridgeOutcome::RecordingFailed;
+            }
+
             // Activation phase: forward raw, feed the header parser.
             if mesh_writer.write_all(&pdu).await.is_err() || mesh_writer.flush().await.is_err() {
                 return BridgeOutcome::Closed;
@@ -586,10 +605,20 @@ async fn read_cleanpath_request<R>(reader: &mut R) -> anyhow::Result<(RDCleanPat
 where
     R: AsyncRead + Unpin,
 {
+    // An RDCleanPath request is a small X.224 CR + a destination string + token;
+    // it is a few hundred bytes. Cap the buffer so a malicious or broken peer can't
+    // drive unbounded allocation via the DER-declared length. Mirrors Devolutions'
+    // reference cap in `read_cleanpath_pdu`.
+    const MAX_REQUEST_SIZE: usize = 512 * 1024;
     let mut buf = Vec::with_capacity(1024);
     let mut tmp = [0u8; 8192];
     loop {
         if let DetectionResult::Detected { total_length, .. } = RDCleanPathPdu::detect(&buf) {
+            if total_length > MAX_REQUEST_SIZE {
+                anyhow::bail!(
+                    "RDCleanPath request length {total_length} exceeds {MAX_REQUEST_SIZE} byte cap"
+                );
+            }
             if buf.len() >= total_length {
                 let pdu = RDCleanPathPdu::from_der(&buf[..total_length])
                     .map_err(|e| anyhow::anyhow!("decode RDCleanPath PDU: {e}"))?;
@@ -598,6 +627,9 @@ where
             }
         } else if let DetectionResult::Failed = RDCleanPathPdu::detect(&buf) {
             anyhow::bail!("RDCleanPath detection failed");
+        }
+        if buf.len() >= MAX_REQUEST_SIZE {
+            anyhow::bail!("RDCleanPath request exceeds {MAX_REQUEST_SIZE} byte cap before a full PDU");
         }
         let n = reader
             .read(&mut tmp)
@@ -1116,6 +1148,49 @@ mod tests {
         assert!(
             forwarded.is_empty(),
             "a frame that cannot be recorded must not be forwarded",
+        );
+    }
+
+    /// I1 FAIL CLOSED: when recording is required and a FastPath (graphics) PDU
+    /// arrives during activation before any Font Map spawned the recorder, the Font
+    /// Map boundary was missed — the relay must return `RecordingFailed` and NOT
+    /// forward the frame (never run the graphics stream unrecorded).
+    #[tokio::test]
+    async fn fastpath_before_recorder_fails_closed() {
+        struct NoopUploader;
+        #[async_trait::async_trait]
+        impl PartUploader for NoopUploader {
+            async fn upload_part(&self, _: i32, _: Vec<u8>) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn complete(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn abort(&self) {}
+        }
+
+        // A minimal well-formed FastPath PDU: byte 0 low bits 0x00 = FastPath
+        // action, byte 1 = length 4 (see `ironrdp_pdu::find_size`).
+        let mut target_read = std::io::Cursor::new(vec![0x00u8, 0x04, 0xaa, 0xbb]);
+        let mut forwarded: Vec<u8> = Vec::new();
+        let comp_slot = Mutex::new(None);
+        // Recording required but recorder not yet spawned (activation phase).
+        let uploader: Box<dyn PartUploader> = Box::new(NoopUploader);
+        let rec_state = Mutex::new(RecState::Pending(uploader));
+
+        let outcome = record_relay_to_browser(
+            &mut target_read,
+            &mut forwarded,
+            &comp_slot,
+            &rec_state,
+            RecorderConfig::default(),
+        )
+        .await;
+
+        assert_eq!(outcome, BridgeOutcome::RecordingFailed);
+        assert!(
+            forwarded.is_empty(),
+            "a FastPath PDU before the recorder must never be forwarded unrecorded",
         );
     }
 

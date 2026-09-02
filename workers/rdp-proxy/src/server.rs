@@ -4,8 +4,10 @@
 //! warden and runs the IronRDP [`crate::bridge`].
 //!
 //! Mirrors ssh-proxy's `server.rs` accept loop + health listener, but the only
-//! ingress is the framed RDP opcode stream (no russh SSH server): the browser
-//! never speaks a native protocol here, the gateway relays opcode frames.
+//! ingress is a transparent byte stream (no russh SSH server): the gateway
+//! blind-relays the browser's bytes, which the [`crate::bridge`] feeds to an
+//! RDCleanPath server (read the RDCleanPath request, hop to the target, then relay
+//! plaintext RDP).
 
 use std::fs;
 use std::sync::Arc;
@@ -206,7 +208,7 @@ async fn handle_conn(
         .context("read CONNECT preamble")?;
 
     // Acknowledge the CONNECT before bridging: the gateway blocks on this `200`
-    // and blind-relays the browser's opcode frames only afterwards.
+    // and blind-relays the browser's raw byte stream only afterwards.
     tls.write_all(jumpgate_mesh::connect::response_established())
         .await
         .context("write CONNECT 200 response")?;
