@@ -283,6 +283,15 @@ impl RecorderHandle {
     pub async fn fail(&self) {
         let _ = self.tx.send(RecMsg::Fail).await;
     }
+
+    /// Build a handle with a bounded channel whose receiver is returned to the
+    /// caller, so a test can drive the fail-closed path (fill/close the channel to
+    /// make `try_frame` error) without spawning a real recorder task.
+    #[cfg(test)]
+    pub(crate) fn for_test(bound: usize) -> (Self, mpsc::Receiver<RecMsg>) {
+        let (tx, rx) = mpsc::channel(bound);
+        (RecorderHandle { tx }, rx)
+    }
 }
 
 /// Internal recorder state driving the consume loop.

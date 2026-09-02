@@ -20,19 +20,48 @@
 //!    accept-any) and capture the peer certificate chain (DER).
 //! 5. Write back `RDCleanPathPdu::new_response(target_addr, x224_cc, cert_chain)`.
 //! 6. Relay plaintext RDP in two independent futures. Both directions are raw byte
-//!    copies EXCEPT a one-shot Client Info injection on the browser→target path:
-//!    the first `SendDataRequest` carrying a `ClientInfoPdu` has its credentials
-//!    replaced with the login + vault password and `AUTOLOGON` set, then that
-//!    direction switches to raw pass-through.
+//!    copies EXCEPT: (a) a one-shot Client Info injection on the browser→target
+//!    path (credentials + `AUTOLOGON`), and (b) on the target→browser path, when
+//!    warden requires a recording, the stream is framed PDU-by-PDU so the session
+//!    can be recorded as `rdp-graphics-v1` (see [`record_relay_to_browser`]).
+//!
+//! Recording (target→browser) — the worker holds no `ConnectionResult` (the
+//! browser runs the connector), so the `rdp-graphics-v1` [`Header`] is derived by
+//! PARSING the relayed target→browser handshake tail with `ironrdp-pdu` 0.9:
+//! * `io_channel_id` / `message_channel_id`: MCS Connect Response GCC server
+//!   network / message-channel data (`mcs::ConnectResponse` →
+//!   `conference_create_response.gcc_blocks().network.io_channel` /
+//!   `.message_channel`). `io_channel_id` also falls back to the channel the
+//!   Server Demand Active arrives on.
+//! * `user_channel_id`: MCS Attach User Confirm (`mcs::AttachUserConfirm.initiator_id`).
+//! * `width` / `height` / `share_id`: Server Demand Active (`decode_share_control`
+//!   → `ShareControlPdu::ServerDemandActive`; desktop size from the Bitmap
+//!   capability set, `share_id` from the share-control header).
+//! * `compression`: the browser's own choice, read off the browser→target Client
+//!   Info PDU (`ClientInfo.compression_type`, only meaningful with the
+//!   `COMPRESSION` flag) — captured on the inject path and shared across.
+//! * `enable_server_pointer` / `pointer_software_rendering`: client-only config,
+//!   absent from the server stream — defaulted to match the browser's connector.
+//!
+//! The [`Header`] is complete by the Server Demand Active; recording STARTS at the
+//! first PDU AFTER the server's Font Map (end of the connection-finalization
+//! sequence), which is exactly the post-finalize server→client stream a fresh
+//! replay `ActiveStage` consumes. Each recorded frame is fail-closed teed into the
+//! recorder BEFORE it is forwarded (a frame that cannot be recorded is never
+//! delivered).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::Context;
 use ironrdp_core::{decode, encode_vec};
-use ironrdp_pdu::mcs::SendDataRequest;
-use ironrdp_pdu::rdp::client_info::ClientInfoFlags;
+use ironrdp_pdu::mcs::{decode_send_data_indication, AttachUserConfirm, ConnectResponse, SendDataRequest};
+use ironrdp_pdu::rdp::capability_sets::CapabilitySet;
+use ironrdp_pdu::rdp::client_info::{ClientInfoFlags, CompressionType};
+use ironrdp_pdu::rdp::headers::{decode_share_control, ShareControlPdu, ShareDataPdu};
 use ironrdp_pdu::rdp::ClientInfoPdu;
-use ironrdp_pdu::x224::X224;
+use ironrdp_pdu::x224::{X224, X224Data};
+use ironrdp_pdu::Action;
 use ironrdp_rdcleanpath::{DetectionResult, RDCleanPathPdu};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -40,7 +69,10 @@ use tokio::sync::Notify;
 use tokio_rustls::client::TlsStream;
 use zeroize::Zeroizing;
 
-use crate::record::{PartUploader, RecordStatus, RecorderConfig, RecordingReport};
+use crate::record::{
+    spawn_recorder, PartUploader, RecordStatus, RecorderConfig, RecorderHandle, RecordingReport,
+};
+use crate::record_format::{self, Header};
 
 /// How a [`run`] session ended, mapped to the `SessionEnded` reason string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,8 +84,9 @@ pub enum BridgeOutcome {
     /// The target handshake failed (surfaced to the browser as an RDCleanPath
     /// error response where possible, else the stream is just closed).
     ConnectFailed,
-    /// A required recording could not keep up: fail closed. Retained for the
-    /// deferred recording tee (see TODO(5.4)); not produced today.
+    /// A required recording could not keep up (its channel overflowed/closed) or
+    /// its [`Header`] could not be assembled: fail closed — the frame is never
+    /// forwarded and the bridge tears down rather than run the session unrecorded.
     RecordingFailed,
 }
 
@@ -70,7 +103,8 @@ impl BridgeOutcome {
 
 /// A synthetic `Failed` report for a recording that was aborted before (or
 /// without) any bytes being durably written — e.g. a target-connect failure after
-/// the multipart upload was already opened caller-side.
+/// the multipart upload was already opened caller-side, or a session that ended
+/// during activation before the recorder was ever spawned.
 fn failed_report() -> RecordingReport {
     RecordingReport {
         size_bytes: 0,
@@ -88,25 +122,41 @@ fn unix_millis_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// The disposition of a finished [`run`]: the end outcome, the (deferred)
-/// recording report, and the session's start timestamp (unix ms). The caller maps
-/// this to the `SessionEnded` proto, stamping the end timestamp.
+/// The disposition of a finished [`run`]: the end outcome, the recording report
+/// (if the session was recorded), and the session's start timestamp (unix ms). The
+/// caller maps this to the `SessionEnded` proto, stamping the end timestamp.
 pub struct RunReport {
     pub outcome: BridgeOutcome,
     pub recording: Option<RecordingReport>,
     pub started_at_unix_ms: i64,
 }
 
+/// The lifecycle of a required recording as it crosses the two relay futures. The
+/// uploader is opened CALLER-side (fail-closed before dial); it is spawned into a
+/// recorder only once the [`Header`] is assembled (at the server Font Map). Held
+/// behind a mutex so the target→browser future can advance `Pending`→`Active` and
+/// [`run`] can finalize whichever state the session ended in — regardless of which
+/// direction's future won the `select!`.
+enum RecState {
+    /// Recording was not required.
+    None,
+    /// Required, but the recorder is not yet spawned (the graphics header has not
+    /// been assembled). Carries the opened uploader.
+    Pending(Box<dyn PartUploader>),
+    /// The recorder task is running; carries the handle to finalize it and the
+    /// join handle producing the authoritative [`RecordingReport`].
+    Active(RecorderHandle, tokio::task::JoinHandle<RecordingReport>),
+}
+
 /// Run the RDCleanPath bridge over an already-authenticated mesh stream (the
 /// gateway has read the CONNECT preamble, answered `200`, and now relays a raw
 /// byte stream). Does the TCP+X.224+TLS hop to `target_address`, hands the browser
 /// the target's X.224 CC + cert chain, then relays plaintext RDP with a one-shot
-/// Client Info credential injection browser→target.
+/// Client Info credential injection browser→target and — when `uploader` is
+/// `Some` — a fail-closed `rdp-graphics-v1` recording of the target→browser stream.
 ///
 /// `uploader` is opened by the CALLER before dialing (so a session that cannot be
-/// recorded is refused before the target is ever contacted). Recording itself is
-/// DEFERRED (see TODO(5.4)): the tee is not wired, so any opened upload is aborted
-/// here — only the fail-closed-before-dial gate is preserved.
+/// recorded is refused before the target is ever contacted).
 #[allow(clippy::too_many_arguments)]
 pub async fn run<S>(
     target_address: &str,
@@ -116,7 +166,7 @@ pub async fn run<S>(
     cancel: Arc<Notify>,
     stream: S,
     uploader: Option<Box<dyn PartUploader>>,
-    _rec_cfg: RecorderConfig,
+    rec_cfg: RecorderConfig,
 ) -> RunReport
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -222,32 +272,29 @@ where
     //    a blocked write in one never head-of-line-blocks the other.
     let (mut target_read, mut target_write) = tokio::io::split(tls_stream);
 
-    // target → browser: raw byte copy.
-    // TODO(5.4): re-add the rdp-graphics-v1 tee here by parsing PDUs off this path
-    // (instead of a raw copy) and feeding them to a spawned recorder before forwarding.
-    let to_browser = async {
-        let mut buf = [0u8; 32 * 1024];
-        loop {
-            match target_read.read(&mut buf).await {
-                Ok(0) | Err(_) => return BridgeOutcome::Closed,
-                Ok(n) => {
-                    if mesh_writer.write_all(&buf[..n]).await.is_err()
-                        || mesh_writer.flush().await.is_err()
-                    {
-                        return BridgeOutcome::Closed;
-                    }
-                }
-            }
-        }
-    };
+    // Recording state shared across the two futures (see [`RecState`]). The
+    // compression slot is set on the browser→target inject path (from the Client
+    // Info PDU) and read on the target→browser path when the header is assembled.
+    let rec_state = Arc::new(Mutex::new(match uploader {
+        Some(u) => RecState::Pending(u),
+        None => RecState::None,
+    }));
+    let comp_slot: Arc<Mutex<Option<u8>>> = Arc::new(Mutex::new(None));
 
-    // browser → target: one-shot Client Info injection, then raw pass-through.
+    // target → browser: raw copy when not recording; frame + fail-closed tee when
+    // recording is required.
+    let to_browser =
+        record_relay_to_browser(&mut target_read, &mut mesh_writer, &comp_slot, &rec_state, rec_cfg);
+
+    // browser → target: one-shot Client Info injection (capturing the browser's
+    // compression choice), then raw pass-through.
     let to_target = inject_then_relay(
         &mut mesh_reader,
         &mut target_write,
         login,
         password,
         leftover,
+        &comp_slot,
     );
 
     tokio::pin!(to_browser, to_target);
@@ -258,19 +305,276 @@ where
     };
     tracing::debug!(?outcome, "RDP relay finished");
 
-    // Recording is deferred: abort any opened upload (nothing was teed into it).
-    let recording = match uploader {
-        Some(u) => {
-            u.abort().await;
-            Some(failed_report())
-        }
-        None => None,
-    };
+    // Finalize the recording whatever direction ended the session: a clean end
+    // (terminated / natural close) completes the upload; a recording failure aborts
+    // it; a session that never reached the header aborts its pending upload.
+    let recording = finalize_recording(&rec_state, outcome).await;
 
     RunReport {
         outcome,
         recording,
         started_at_unix_ms,
+    }
+}
+
+/// Map an `ironrdp_pdu::Action` (the PDU framing discriminant returned by
+/// `find_size`) to the `rdp-graphics-v1` action byte.
+fn action_u8(a: Action) -> u8 {
+    match a {
+        Action::FastPath => record_format::ACTION_FASTPATH,
+        Action::X224 => record_format::ACTION_X224,
+    }
+}
+
+/// Assembles the `rdp-graphics-v1` [`Header`] by observing the relayed
+/// target→browser handshake tail one PDU at a time. Fields are captured
+/// opportunistically (each PDU shape is distinct; a failed decode simply means
+/// "not this PDU"), and the header is complete by the Server Demand Active.
+#[derive(Default)]
+struct HeaderBuilder {
+    io_channel_id: Option<u16>,
+    user_channel_id: Option<u16>,
+    message_channel_id: Option<u16>,
+    desktop: Option<(u16, u16)>,
+    share_id: Option<u32>,
+}
+
+impl HeaderBuilder {
+    /// Feed one complete server→client PDU. Returns `true` iff this PDU was the
+    /// server's Font Map (the end of connection finalization — recording begins
+    /// with the NEXT PDU).
+    fn observe(&mut self, pdu: &[u8]) -> bool {
+        // MCS Connect Response → io + message channel ids (authoritative source,
+        // matching the old ConnectionResult). Any X.224 data decodes as X224Data,
+        // so the inner ConnectResponse decode is the real guard.
+        // ponytail: the ConnectResponse arm is trusted-by-construction (mirrors
+        // ironrdp-connector's own parse); not unit-covered — a BER Connect Response
+        // is impractical to synthesize. io_channel_id is independently covered via
+        // the Demand Active fallback below; message_channel_id (Option, None for
+        // xrdp) rides this arm. Add a captured fixture to cover it if it regresses.
+        if self.io_channel_id.is_none() {
+            if let Ok(X224(x224_data)) = decode::<X224<X224Data<'_>>>(pdu) {
+                if let Ok(cr) = decode::<ConnectResponse>(&x224_data.data) {
+                    let gcc = cr.conference_create_response.gcc_blocks();
+                    self.io_channel_id = Some(gcc.network.io_channel);
+                    self.message_channel_id =
+                        gcc.message_channel.as_ref().map(|m| m.mcs_message_channel_id);
+                    return false;
+                }
+            }
+        }
+
+        // MCS Attach User Confirm → user channel id.
+        if self.user_channel_id.is_none() {
+            if let Ok(X224(auc)) = decode::<X224<AttachUserConfirm>>(pdu) {
+                self.user_channel_id = Some(auc.initiator_id);
+                return false;
+            }
+        }
+
+        // Slow-path MCS Send Data Indication: either the Server Demand Active
+        // (desktop size + share_id) or a share-data PDU (we only care about the
+        // Font Map, which ends finalization).
+        if let Ok(ctx) = decode_send_data_indication(pdu) {
+            let channel_id = ctx.channel_id;
+            if let Ok(sc) = decode_share_control(ctx) {
+                match sc.pdu {
+                    ShareControlPdu::ServerDemandActive(sda) => {
+                        self.share_id.get_or_insert(sc.share_id);
+                        // The Demand Active is sent on the I/O channel — a reliable
+                        // fallback if the Connect Response was not parsed.
+                        self.io_channel_id.get_or_insert(channel_id);
+                        if self.desktop.is_none() {
+                            self.desktop =
+                                sda.pdu.capability_sets.iter().find_map(|c| match c {
+                                    CapabilitySet::Bitmap(b) => {
+                                        Some((b.desktop_width, b.desktop_height))
+                                    }
+                                    _ => None,
+                                });
+                        }
+                    }
+                    ShareControlPdu::Data(sdh) => {
+                        if matches!(sdh.share_data_pdu, ShareDataPdu::FontMap(_)) {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
+    /// Build the seed [`Header`] once all required fields are present. `compression`
+    /// is the browser's choice, captured off the Client Info PDU.
+    fn build(&self, compression: u8) -> Option<Header> {
+        let (width, height) = self.desktop?;
+        Some(Header {
+            width,
+            height,
+            user_channel_id: self.user_channel_id?,
+            io_channel_id: self.io_channel_id?,
+            message_channel_id: self.message_channel_id,
+            share_id: self.share_id?,
+            compression,
+            // ponytail: client-only config, absent from the server stream. Defaulted
+            // to the browser connector's own values (iron-remote-desktop-rdp /
+            // IronRDP web `session.rs`: both false) so replay is seeded identically
+            // to the live session. `enable_server_pointer=false` means the pointer
+            // flags are inert for the recorded desktop bitmaps.
+            enable_server_pointer: false,
+            pointer_software_rendering: false,
+        })
+    }
+}
+
+/// Relay the target→browser direction. When recording is not required this is a
+/// plain byte copy; when it is, the stream is framed PDU-by-PDU: activation PDUs
+/// are forwarded raw while a [`HeaderBuilder`] assembles the seed header, and from
+/// the first PDU after the server Font Map each PDU is fail-closed teed into the
+/// recorder before being forwarded.
+async fn record_relay_to_browser<R, W>(
+    target_read: &mut R,
+    mesh_writer: &mut W,
+    comp_slot: &Mutex<Option<u8>>,
+    rec_state: &Mutex<RecState>,
+    rec_cfg: RecorderConfig,
+) -> BridgeOutcome
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut tmp = [0u8; 32 * 1024];
+
+    // No recording required → raw copy, exactly as before.
+    if matches!(&*rec_state.lock().unwrap(), RecState::None) {
+        return raw_copy(target_read, mesh_writer, &mut tmp).await;
+    }
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut hb = HeaderBuilder::default();
+    // The frame timer for `rdp-graphics-v1`, anchored when recording starts (at the
+    // Font Map) so the first recorded frame is ~0ms.
+    let mut start = Instant::now();
+    // `Some` once the recorder is spawned (we are in the recording phase).
+    let mut rec: Option<RecorderHandle> = None;
+
+    loop {
+        // Drain every complete PDU currently buffered.
+        loop {
+            let info = match ironrdp_pdu::find_size(&buf) {
+                Ok(Some(info)) if buf.len() >= info.length => info,
+                Ok(_) => break, // need more bytes
+                Err(e) => {
+                    // A required recording cannot frame the stream: fail closed
+                    // rather than run (or record) a corrupt session.
+                    // ponytail: not reachable on a valid post-TLS RDP stream.
+                    tracing::warn!(error = %e, "could not frame server PDU; failing recording closed");
+                    return BridgeOutcome::RecordingFailed;
+                }
+            };
+            let pdu = buf[..info.length].to_vec();
+            buf.drain(..info.length);
+
+            if let Some(handle) = rec.as_ref() {
+                // Recording phase: fail-closed tee BEFORE forwarding.
+                let millis = start.elapsed().as_millis() as u64;
+                if let Err(outcome) =
+                    record_frame(handle, mesh_writer, millis, action_u8(info.action), &pdu).await
+                {
+                    return outcome;
+                }
+                continue;
+            }
+
+            // Activation phase: forward raw, feed the header parser.
+            if mesh_writer.write_all(&pdu).await.is_err() || mesh_writer.flush().await.is_err() {
+                return BridgeOutcome::Closed;
+            }
+            if hb.observe(&pdu) {
+                // Server Font Map: finalization is done. The header is complete;
+                // spawn the recorder and switch to the recording phase.
+                let compression = comp_slot
+                    .lock()
+                    .unwrap()
+                    .unwrap_or(record_format::compression::NONE);
+                let header = match hb.build(compression) {
+                    Some(h) => h,
+                    None => {
+                        tracing::warn!("recording required but session header incomplete; failing closed");
+                        return BridgeOutcome::RecordingFailed;
+                    }
+                };
+                let mut guard = rec_state.lock().unwrap();
+                if let RecState::Pending(u) = std::mem::replace(&mut *guard, RecState::None) {
+                    let (handle, join) = spawn_recorder(u, header, rec_cfg);
+                    rec = Some(handle.clone());
+                    *guard = RecState::Active(handle, join);
+                }
+                drop(guard);
+                start = Instant::now();
+                tracing::info!("RDP graphics header assembled; recording started");
+            }
+        }
+
+        match target_read.read(&mut tmp).await {
+            Ok(0) | Err(_) => return BridgeOutcome::Closed,
+            Ok(n) => buf.extend_from_slice(&tmp[..n]),
+        }
+    }
+}
+
+/// Fail-closed tee of one server→client PDU: record it FIRST; only forward it to
+/// the browser if it was accepted. `Err(RecordingFailed)` means the recorder could
+/// not take the frame (channel full/closed) — the frame is NOT delivered.
+/// `Err(Closed)` means the browser write failed. `Ok(())` means forwarded.
+async fn record_frame<W>(
+    handle: &RecorderHandle,
+    mesh_writer: &mut W,
+    millis: u64,
+    action: u8,
+    pdu: &[u8],
+) -> Result<(), BridgeOutcome>
+where
+    W: AsyncWrite + Unpin,
+{
+    if handle.try_frame(millis, action, pdu.to_vec()).is_err() {
+        return Err(BridgeOutcome::RecordingFailed);
+    }
+    if mesh_writer.write_all(pdu).await.is_err() || mesh_writer.flush().await.is_err() {
+        return Err(BridgeOutcome::Closed);
+    }
+    Ok(())
+}
+
+/// Finalize the recording after the relay ends, from whatever [`RecState`] the
+/// session is in. A clean end (`Terminated`/`Closed`) completes the upload; a
+/// `RecordingFailed` outcome aborts it; a still-`Pending` upload (the session ended
+/// during activation, before the recorder was spawned) is aborted and reported
+/// failed. Returns `None` when recording was not required.
+async fn finalize_recording(
+    rec_state: &Mutex<RecState>,
+    outcome: BridgeOutcome,
+) -> Option<RecordingReport> {
+    let state = std::mem::replace(&mut *rec_state.lock().unwrap(), RecState::None);
+    match state {
+        RecState::None => None,
+        RecState::Pending(u) => {
+            u.abort().await;
+            Some(failed_report())
+        }
+        RecState::Active(handle, join) => {
+            if outcome == BridgeOutcome::RecordingFailed {
+                handle.fail().await;
+            } else {
+                handle.finish().await;
+            }
+            Some(join.await.unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "recorder task join failed");
+                failed_report()
+            }))
+        }
     }
 }
 
@@ -366,16 +670,18 @@ where
 }
 
 /// Locate the Client Info PDU on the browser→target byte stream, inject the vault
-/// credentials + `AUTOLOGON`, forward it, then switch to raw pass-through for the
-/// rest of the session. Everything before the Client Info PDU (the MCS connect
-/// sequence) passes through unchanged; if the stream can't be framed, it degrades
-/// to raw pass-through rather than wedging the session.
+/// credentials + `AUTOLOGON`, capture the browser's compression choice into
+/// `comp_slot`, forward it, then switch to raw pass-through for the rest of the
+/// session. Everything before the Client Info PDU (the MCS connect sequence)
+/// passes through unchanged; if the stream can't be framed, it degrades to raw
+/// pass-through rather than wedging the session.
 async fn inject_then_relay<R, W>(
     mesh_reader: &mut R,
     target_write: &mut W,
     login: &str,
     password: &str,
     mut buf: Vec<u8>,
+    comp_slot: &Mutex<Option<u8>>,
 ) -> BridgeOutcome
 where
     R: AsyncRead + Unpin,
@@ -386,9 +692,16 @@ where
         match ironrdp_pdu::find_size(&buf) {
             Ok(Some(info)) if buf.len() >= info.length => {
                 // One complete PDU is buffered.
-                if let Some(rewritten) = rewrite_client_info(&buf[..info.length], login, password) {
-                    // Found + injected the Client Info PDU. Forward it, then any
-                    // already-buffered bytes, then raw-pump the rest.
+                if let Some((rewritten, compression)) =
+                    rewrite_client_info(&buf[..info.length], login, password)
+                {
+                    // Found + injected the Client Info PDU. Record the browser's
+                    // compression choice (read later when the recording header is
+                    // assembled — the server Demand Active/Font Map that trigger it
+                    // arrive only AFTER this PDU reaches the target, so the slot is
+                    // always set in time). Then forward it, any already-buffered
+                    // bytes, and raw-pump the rest.
+                    *comp_slot.lock().unwrap() = Some(compression);
                     let rest = buf.split_off(info.length);
                     if target_write.write_all(&rewritten).await.is_err()
                         || (!rest.is_empty() && target_write.write_all(&rest).await.is_err())
@@ -430,7 +743,7 @@ where
 }
 
 /// Raw byte copy from `reader` to `writer` until EOF/error. Used for both the
-/// post-injection browser→target tail and (implicitly) the target→browser path.
+/// post-injection browser→target tail and the non-recording target→browser path.
 async fn raw_copy<R, W>(reader: &mut R, writer: &mut W, tmp: &mut [u8]) -> BridgeOutcome
 where
     R: AsyncRead + Unpin,
@@ -450,15 +763,20 @@ where
 
 /// If `pdu` is an X.224 data PDU wrapping an MCS `SendDataRequest` whose user data
 /// is a `ClientInfoPdu`, replace its credentials with `login` + `password`, set
-/// `AUTOLOGON`, and re-encode the whole X.224/MCS/ClientInfo stack. Returns `None`
-/// when `pdu` is not a Client Info PDU (any other PDU passes through untouched).
+/// `AUTOLOGON`, and re-encode the whole X.224/MCS/ClientInfo stack. Returns the
+/// re-encoded PDU together with the browser's `rdp-graphics-v1` compression
+/// discriminant (the recorded stream's compression is the browser's advertised
+/// choice). Returns `None` when `pdu` is not a Client Info PDU (any other PDU
+/// passes through untouched).
 ///
 /// Mirrors the connector's `create_client_info_pdu` wrapping (ironrdp-connector
 /// `connection.rs`): `encode_send_data_request` wraps the `ClientInfoPdu` as the
 /// user data of an MCS `SendDataRequest`, itself wrapped in `X224`.
-fn rewrite_client_info(pdu: &[u8], login: &str, password: &str) -> Option<Vec<u8>> {
+fn rewrite_client_info(pdu: &[u8], login: &str, password: &str) -> Option<(Vec<u8>, u8)> {
     let X224(mut sdr) = decode::<X224<SendDataRequest>>(pdu).ok()?;
     let mut info = decode::<ClientInfoPdu>(&sdr.user_data[..]).ok()?;
+
+    let compression = client_info_compression(&info);
 
     info.client_info.credentials.username = login.to_string();
     info.client_info.credentials.password = password.to_string();
@@ -467,7 +785,26 @@ fn rewrite_client_info(pdu: &[u8], login: &str, password: &str) -> Option<Vec<u8
 
     let new_user_data = encode_vec(&info).ok()?;
     sdr.user_data = std::borrow::Cow::Owned(new_user_data);
-    encode_vec(&X224(sdr)).ok()
+    Some((encode_vec(&X224(sdr)).ok()?, compression))
+}
+
+/// The `rdp-graphics-v1` compression discriminant the browser advertised. RDP only
+/// uses bulk compression when the Client Info `COMPRESSION` flag is set; the
+/// `compression_type` field is otherwise meaningless (defaults to `K8`), so it must
+/// be gated on the flag — matching the connector's `ConnectionResult.compression_type`
+/// (`Option`, `None` unless the flag is advertised).
+fn client_info_compression(info: &ClientInfoPdu) -> u8 {
+    use record_format::compression;
+    if info.client_info.flags.contains(ClientInfoFlags::COMPRESSION) {
+        match info.client_info.compression_type {
+            CompressionType::K8 => compression::K8,
+            CompressionType::K64 => compression::K64,
+            CompressionType::Rdp6 => compression::RDP6,
+            CompressionType::Rdp61 => compression::RDP61,
+        }
+    } else {
+        compression::NONE
+    }
 }
 
 /// Upgrade the target TCP stream to TLS and capture its certificate chain (DER).
@@ -608,11 +945,20 @@ mod danger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ironrdp_pdu::mcs::SendDataIndication;
+    use ironrdp_pdu::rdp::capability_sets::{
+        Bitmap, BitmapDrawingFlags, CapabilitySet, DemandActive, ServerDemandActive,
+        SERVER_CHANNEL_ID,
+    };
     use ironrdp_pdu::rdp::client_info::{
         AddressFamily, ClientInfo, ClientInfoFlags, CompressionType, Credentials,
         ExtendedClientInfo, ExtendedClientOptionalInfo,
     };
-    use ironrdp_pdu::rdp::headers::{BasicSecurityHeader, BasicSecurityHeaderFlags};
+    use ironrdp_pdu::rdp::finalization_messages::FontPdu;
+    use ironrdp_pdu::rdp::headers::{
+        BasicSecurityHeader, BasicSecurityHeaderFlags, CompressionFlags, ShareControlHeader,
+        ShareDataHeader, StreamPriority,
+    };
     use std::borrow::Cow;
 
     #[test]
@@ -642,10 +988,161 @@ mod tests {
         assert_eq!(BridgeOutcome::RecordingFailed.reason(), "recording_failed");
     }
 
+    /// Wrap `user_data` as an MCS Send Data Indication on `channel_id` (the shape
+    /// the server sends slow-path PDUs in), X.224-framed as it is on the wire.
+    fn server_sdi(channel_id: u16, user_data: Vec<u8>) -> Vec<u8> {
+        let sdi = SendDataIndication {
+            initiator_id: SERVER_CHANNEL_ID,
+            channel_id,
+            user_data: Cow::Owned(user_data),
+        };
+        encode_vec(&X224(sdi)).expect("encode X224<SendDataIndication>")
+    }
+
+    /// A Server Demand Active PDU (share-control), carrying the desktop size (in the
+    /// Bitmap capability set) and `share_id`, on the I/O channel.
+    fn demand_active(io_channel_id: u16, share_id: u32, width: u16, height: u16) -> Vec<u8> {
+        let sch = ShareControlHeader {
+            share_control_pdu: ShareControlPdu::ServerDemandActive(ServerDemandActive {
+                pdu: DemandActive {
+                    source_descriptor: "RDP".to_owned(),
+                    capability_sets: vec![CapabilitySet::Bitmap(Bitmap {
+                        pref_bits_per_pix: 32,
+                        desktop_width: width,
+                        desktop_height: height,
+                        desktop_resize_flag: true,
+                        drawing_flags: BitmapDrawingFlags::empty(),
+                    })],
+                },
+            }),
+            pdu_source: SERVER_CHANNEL_ID,
+            share_id,
+        };
+        server_sdi(io_channel_id, encode_vec(&sch).expect("encode demand active"))
+    }
+
+    /// A server Font Map PDU (share-data), the last PDU of connection finalization.
+    fn font_map(io_channel_id: u16, share_id: u32) -> Vec<u8> {
+        let sch = ShareControlHeader {
+            share_control_pdu: ShareControlPdu::Data(ShareDataHeader {
+                share_data_pdu: ShareDataPdu::FontMap(FontPdu::default()),
+                stream_priority: StreamPriority::Medium,
+                compression_flags: CompressionFlags::empty(),
+                compression_type: CompressionType::K8,
+            }),
+            pdu_source: SERVER_CHANNEL_ID,
+            share_id,
+        };
+        server_sdi(io_channel_id, encode_vec(&sch).expect("encode font map"))
+    }
+
+    /// An MCS Attach User Confirm (carries the user channel id), X.224-framed.
+    fn attach_user_confirm(user_channel_id: u16) -> Vec<u8> {
+        encode_vec(&X224(AttachUserConfirm {
+            result: 0,
+            initiator_id: user_channel_id,
+        }))
+        .expect("encode X224<AttachUserConfirm>")
+    }
+
+    /// HEADER PARSE: feed a constructed Attach User Confirm + Server Demand Active +
+    /// Font Map to the parser and assert every extracted field, that the Font Map is
+    /// recognized as the finalization boundary, and that the browser's compression
+    /// choice flows into the built header.
+    #[test]
+    fn header_builder_extracts_from_activation_stream() {
+        let (io, user, share_id, w, h) = (1003u16, 1007u16, 0x0102_0304u32, 1280u16, 1024u16);
+        let mut hb = HeaderBuilder::default();
+
+        assert!(!hb.observe(&attach_user_confirm(user)), "not the font map");
+        assert_eq!(hb.user_channel_id, Some(user));
+
+        assert!(!hb.observe(&demand_active(io, share_id, w, h)), "not the font map");
+        assert_eq!(hb.share_id, Some(share_id));
+        assert_eq!(hb.desktop, Some((w, h)));
+        // io_channel_id falls back to the channel the Demand Active arrived on when
+        // no Connect Response preceded it (the case exercised here).
+        assert_eq!(hb.io_channel_id, Some(io));
+
+        // The Font Map is recognized as the end of finalization.
+        assert!(hb.observe(&font_map(io, share_id)), "font map ends finalization");
+
+        // The header assembles with the browser's compression discriminant and the
+        // (client-only) pointer flags defaulted to the browser connector's values.
+        let header = hb
+            .build(record_format::compression::RDP61)
+            .expect("header complete");
+        assert_eq!((header.width, header.height), (w, h));
+        assert_eq!(header.share_id, share_id);
+        assert_eq!(header.user_channel_id, user);
+        assert_eq!(header.io_channel_id, io);
+        assert_eq!(header.message_channel_id, None);
+        assert_eq!(header.compression, record_format::compression::RDP61);
+        assert!(!header.enable_server_pointer);
+        assert!(!header.pointer_software_rendering);
+    }
+
+    /// An incomplete activation stream (never yields a Demand Active) cannot build a
+    /// header — the recorder must fail closed rather than record with junk.
+    #[test]
+    fn header_builder_incomplete_yields_none() {
+        let mut hb = HeaderBuilder::default();
+        assert!(!hb.observe(&attach_user_confirm(1007)));
+        assert!(hb.build(record_format::compression::NONE).is_none());
+    }
+
+    /// FAIL CLOSED: when the recorder rejects a frame (channel full/closed), the tee
+    /// returns `RecordingFailed` and the frame is NEVER forwarded to the browser.
+    #[tokio::test]
+    async fn tee_fails_closed_without_forwarding() {
+        // bound = 1, receiver retained → the first frame fills the single-slot
+        // buffer, the next `try_frame` overflows (fail-closed trigger).
+        let (handle, _rx) = RecorderHandle::for_test(1);
+        handle
+            .try_frame(0, record_format::ACTION_FASTPATH, b"fills-the-buffer".to_vec())
+            .expect("first frame fits");
+
+        let mut forwarded: Vec<u8> = Vec::new();
+        let outcome = record_frame(
+            &handle,
+            &mut forwarded,
+            10,
+            record_format::ACTION_FASTPATH,
+            b"this-frame-must-not-be-delivered",
+        )
+        .await;
+
+        assert_eq!(outcome, Err(BridgeOutcome::RecordingFailed));
+        assert!(
+            forwarded.is_empty(),
+            "a frame that cannot be recorded must not be forwarded",
+        );
+    }
+
+    /// HAPPY TEE: an accepting recorder both records the frame and forwards it.
+    #[tokio::test]
+    async fn tee_forwards_when_recorded() {
+        let (handle, mut rx) = RecorderHandle::for_test(4);
+        let mut forwarded: Vec<u8> = Vec::new();
+        let pdu = b"a-graphics-pdu";
+        let outcome =
+            record_frame(&handle, &mut forwarded, 5, record_format::ACTION_X224, pdu).await;
+
+        assert_eq!(outcome, Ok(()));
+        assert_eq!(forwarded, pdu, "the frame is forwarded verbatim");
+        // The frame reached the recorder channel.
+        assert!(rx.try_recv().is_ok(), "the frame was queued for recording");
+    }
+
     /// Build a wire-encoded Client Info PDU (as the browser would send it) with
     /// blank credentials, exactly as the connector wraps it: `ClientInfoPdu` →
-    /// MCS `SendDataRequest` user data → `X224`.
-    fn encode_browser_client_info() -> Vec<u8> {
+    /// MCS `SendDataRequest` user data → `X224`. `compression` toggles the bulk
+    /// compression flag so the compression-capture path can be exercised.
+    fn encode_browser_client_info(compression: bool) -> Vec<u8> {
+        let mut flags = ClientInfoFlags::UNICODE;
+        if compression {
+            flags |= ClientInfoFlags::COMPRESSION;
+        }
         let info = ClientInfoPdu {
             security_header: BasicSecurityHeader {
                 flags: BasicSecurityHeaderFlags::INFO_PKT,
@@ -657,8 +1154,8 @@ mod tests {
                     domain: None,
                 },
                 code_page: 0,
-                flags: ClientInfoFlags::UNICODE,
-                compression_type: CompressionType::K8,
+                flags,
+                compression_type: CompressionType::Rdp61,
                 alternate_shell: String::new(),
                 work_dir: String::new(),
                 extra_info: ExtendedClientInfo {
@@ -683,7 +1180,7 @@ mod tests {
     /// re-encoded bytes decode back to the injected values.
     #[test]
     fn client_info_inject_round_trip() {
-        let wire = encode_browser_client_info();
+        let wire = encode_browser_client_info(false);
 
         // Sanity: find_size frames exactly this one PDU.
         let info = ironrdp_pdu::find_size(&wire)
@@ -691,9 +1188,11 @@ mod tests {
             .expect("a full PDU");
         assert_eq!(info.length, wire.len(), "one framed PDU");
 
-        let rewritten =
+        let (rewritten, compression) =
             rewrite_client_info(&wire, "vault-user", "s3cr3t").expect("recognized as Client Info");
         assert_ne!(rewritten, wire, "bytes changed after injection");
+        // No COMPRESSION flag was set on the client info → no bulk compression.
+        assert_eq!(compression, record_format::compression::NONE);
 
         // Decode the rewritten PDU back and assert the injection took.
         let X224(sdr) = decode::<X224<SendDataRequest>>(&rewritten).expect("decode rewritten");
@@ -712,6 +1211,19 @@ mod tests {
             decoded.client_info.flags.contains(ClientInfoFlags::UNICODE),
             "pre-existing flags must be preserved",
         );
+    }
+
+    /// The compression discriminant is captured only when the browser advertised
+    /// bulk compression (the `COMPRESSION` flag), matching the connector's gating.
+    #[test]
+    fn client_info_compression_gated_on_flag() {
+        let (_, comp_off) =
+            rewrite_client_info(&encode_browser_client_info(false), "u", "p").unwrap();
+        assert_eq!(comp_off, record_format::compression::NONE);
+
+        let (_, comp_on) =
+            rewrite_client_info(&encode_browser_client_info(true), "u", "p").unwrap();
+        assert_eq!(comp_on, record_format::compression::RDP61);
     }
 
     /// A non-Client-Info PDU (a bare X.224 data PDU) is NOT recognized as a Client
