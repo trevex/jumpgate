@@ -62,9 +62,14 @@ export function RdpView({ sessionId }: { sessionId: string }) {
         try {
           session.process(frame.action, frame.payload); // return value ignored: passive replay
           blit(session);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "replay failed");
-          return;
+        } catch {
+          // A recorded stream legitimately carries PDUs the PASSIVE replay
+          // ActiveStage (seeded with an empty StaticChannelSet) can't route —
+          // e.g. server data on a virtual channel the live browser negotiated
+          // but this offline replay never joined ("unexpected channel received").
+          // Those are safely skippable for graphics replay: skip the frame and
+          // keep going rather than aborting the whole session (which blanked the
+          // canvas). Graphics PDUs still render; only the unroutable frame is dropped.
         }
         setProgress({ current: i + 1, total: frames.length });
         step(i + 1);

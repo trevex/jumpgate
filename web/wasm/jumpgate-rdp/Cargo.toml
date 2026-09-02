@@ -21,3 +21,6 @@ ironrdp-pdu = "0.9"
 ironrdp-session = "0.11"
 ironrdp-svc = "0.8.0"
 wasm-bindgen = "0.2.127"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
