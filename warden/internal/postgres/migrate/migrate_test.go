@@ -855,14 +855,14 @@ func TestTargetIdentityStatusCARequiresSpecificValidatedPath(t *testing.T) {
 			if _, err := pool.Exec(ctx, `
 				INSERT INTO target_identity_evidence
 					(observation_id, kind, algorithm, sha256_fingerprint, public_material, valid_from, valid_until)
-				VALUES ($1, 'tls_intermediate', 'ecdsa', 'SHA256:ca', 'public', $2, $3)`,
+				VALUES ($1, 'tls_intermediate', 'ecdsa', 'SHA256:presented-intermediate', 'presented-intermediate', $2, $3)`,
 				observationID, validFrom, validUntil); err != nil {
 				t.Fatalf("insert issuer evidence: %v", err)
 			}
 			if err := pool.QueryRow(ctx, `
 				INSERT INTO target_trust_anchors
 					(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source, required_dns_names)
-				VALUES ($1, 1, 'tls_ca', 'ecdsa', 'SHA256:ca', 'public', 'manual', '{target.example}')
+				VALUES ($1, 1, 'tls_ca', 'ecdsa', 'SHA256:approved-root', 'approved-root', 'manual', '{target.example}')
 				RETURNING id`, assetID).Scan(&anchorID); err != nil {
 				t.Fatalf("insert anchor: %v", err)
 			}
