@@ -6,6 +6,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -52,6 +53,7 @@ type Querier interface {
 	// A NULL parent selects the tree root (parent_id IS NULL).
 	ChildFolderIDs(ctx context.Context, parent pgtype.UUID) ([]uuid.UUID, error)
 	ClaimProbeJob(ctx context.Context, arg ClaimProbeJobParams) (ClaimProbeJobRow, error)
+	ClaimProbeJobForProtocol(ctx context.Context, arg ClaimProbeJobForProtocolParams) (ClaimProbeJobForProtocolRow, error)
 	CompleteProbeAttempt(ctx context.Context, arg CompleteProbeAttemptParams) (CompleteProbeAttemptRow, error)
 	ConsumeAgentEnrollmentToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
@@ -131,6 +133,7 @@ type Querier interface {
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	// ExplainRole.
 	ExplainRolePaths(ctx context.Context, arg ExplainRolePathsParams) ([]ExplainRolePathsRow, error)
+	FindIdentityEvidenceByFingerprint(ctx context.Context, arg FindIdentityEvidenceByFingerprintParams) (TargetIdentityEvidence, error)
 	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
 	// to the root. Used for folder-scoped role containment checks.
 	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
@@ -166,6 +169,7 @@ type Querier interface {
 	GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error)
 	GetAssetVerificationStatus(ctx context.Context, arg GetAssetVerificationStatusParams) (GetAssetVerificationStatusRow, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
+	GetCompletedAttemptOutcome(ctx context.Context, arg GetCompletedAttemptOutcomeParams) (pgtype.Text, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
@@ -173,11 +177,13 @@ type Querier interface {
 	GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFolderAndNameParams) (Group, error)
 	GetGroupByNameGlobal(ctx context.Context, name string) (Group, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
+	GetLatestTerminalProbeJob(ctx context.Context, arg GetLatestTerminalProbeJobParams) (GetLatestTerminalProbeJobRow, error)
 	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
 	GetLiveSessionParties(ctx context.Context, id uuid.UUID) (GetLiveSessionPartiesRow, error)
 	GetPolicyByNameAndAsset(ctx context.Context, arg GetPolicyByNameAndAssetParams) (RequestPolicy, error)
 	GetPolicySubject(ctx context.Context, id uuid.UUID) (RequestPolicySubject, error)
 	GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID) (PostgresAssetConfig, error)
+	GetPreviousProbeJobState(ctx context.Context, arg GetPreviousProbeJobStateParams) (string, error)
 	GetRDPAssetConfig(ctx context.Context, assetID uuid.UUID) (RdpAssetConfig, error)
 	GetRequestPolicy(ctx context.Context, id uuid.UUID) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
@@ -191,6 +197,7 @@ type Querier interface {
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error)
 	// globalHeldCapabilities.
 	GlobalHeldCapabilities(ctx context.Context, user uuid.UUID) ([]GlobalHeldCapabilitiesRow, error)
 	// AddGroupToGroup cycle check: whether making member_group_id a member of group_id
@@ -221,10 +228,13 @@ type Querier interface {
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
 	InsertIdentityEvidence(ctx context.Context, arg InsertIdentityEvidenceParams) (TargetIdentityEvidence, error)
 	InsertIdentityObservation(ctx context.Context, arg InsertIdentityObservationParams) (TargetIdentityObservation, error)
+	InsertIdentityValidationFact(ctx context.Context, arg InsertIdentityValidationFactParams) error
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error
 	// visible_tree IsMember.
 	IsMember(ctx context.Context, arg IsMemberParams) (pgtype.Bool, error)
+	IsObservationApprovedActive(ctx context.Context, arg IsObservationApprovedActiveParams) (bool, error)
+	IsObservationRejected(ctx context.Context, arg IsObservationRejectedParams) (bool, error)
 	IsUserActive(ctx context.Context, id uuid.UUID) (bool, error)
 	ListAccessRequestsByRequester(ctx context.Context, requesterUserID uuid.UUID) ([]AccessRequest, error)
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
@@ -261,6 +271,7 @@ type Querier interface {
 	// for a global/folder-less group) resolved in SQL via folder_path().
 	ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsPagedParams) ([]ListGroupsByIDsPagedRow, error)
 	ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams) ([]Group, error)
+	ListIdentityEvidence(ctx context.Context, arg ListIdentityEvidenceParams) ([]TargetIdentityEvidence, error)
 	ListLiveSessionsByAsset(ctx context.Context, assetID uuid.UUID) ([]LiveSession, error)
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
@@ -303,10 +314,15 @@ type Querier interface {
 	ListSSHAssetLogins(ctx context.Context, assetID uuid.UUID) ([]SshAssetLogin, error)
 	ListSessionRecordings(ctx context.Context, arg ListSessionRecordingsParams) ([]SessionRecording, error)
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]uuid.UUID, error)
+	ListStatusObservations(ctx context.Context, arg ListStatusObservationsParams) ([]ListStatusObservationsRow, error)
 	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
+	ListTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error)
 	ListUndrainedOutbox(ctx context.Context, limit int64) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
+	LockProbeCompletion(ctx context.Context, jobID uuid.UUID) (LockProbeCompletionRow, error)
+	LockTargetIdentityAsset(ctx context.Context, assetID uuid.UUID) (LockTargetIdentityAssetRow, error)
+	LockTargetIdentityObservation(ctx context.Context, arg LockTargetIdentityObservationParams) (string, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
 	// memberGroupIDs.
 	MemberGroupIDs(ctx context.Context, user uuid.UUID) ([]pgtype.UUID, error)
@@ -320,6 +336,7 @@ type Querier interface {
 	// Clears the requester gate on surviving policies that named the role as their
 	// requester role (the policy survives, just loses that gate). Part of DeleteRole.
 	NullRequesterRoleForRole(ctx context.Context, requesterRoleID pgtype.UUID) error
+	ObservationMatchesCurrentAnchors(ctx context.Context, arg ObservationMatchesCurrentAnchorsParams) (bool, error)
 	PoliciesScopedToFoldersOrAssets(ctx context.Context, arg PoliciesScopedToFoldersOrAssetsParams) ([]RequestPolicy, error)
 	ReactivateUser(ctx context.Context, id uuid.UUID) error
 	RemoveGroupFromGroup(ctx context.Context, arg RemoveGroupFromGroupParams) error
@@ -381,6 +398,7 @@ type Querier interface {
 	// subject of the policy — named directly or via a (nested) group — under the
 	// deactivation guard. Parameterized by kind to single-source the identical body.
 	SubjectExistsForKind(ctx context.Context, arg SubjectExistsForKindParams) (bool, error)
+	TargetIdentityDatabaseTime(ctx context.Context) (time.Time, error)
 	UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error
 	UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error
 	UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error

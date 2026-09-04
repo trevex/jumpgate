@@ -399,3 +399,239 @@ SELECT
 FROM current_asset asset
 LEFT JOIN latest_observation observation ON true
 LEFT JOIN latest_terminal_job job ON true;
+
+-- name: LockTargetIdentityAsset :one
+SELECT endpoint_revision, kind
+FROM assets
+WHERE id = sqlc.arg('asset_id')
+FOR UPDATE;
+
+-- name: GetPreviousProbeJobState :one
+SELECT state
+FROM target_probe_jobs
+WHERE id = sqlc.arg('job_id')
+  AND asset_id = sqlc.arg('asset_id')
+  AND endpoint_revision = sqlc.arg('endpoint_revision');
+
+-- name: ClaimProbeJobForProtocol :one
+WITH candidate AS MATERIALIZED (
+    SELECT job.id
+    FROM target_probe_jobs job
+    JOIN assets asset
+      ON asset.id = job.asset_id
+     AND asset.endpoint_revision = job.endpoint_revision
+     AND asset.kind = job.protocol
+    WHERE job.state = 'queued'
+      AND job.protocol = sqlc.arg('protocol')
+      AND job.next_attempt_at <= now()
+      AND job.attempt_count < job.max_attempts
+    ORDER BY job.next_attempt_at, job.created_at, job.id
+    FOR UPDATE OF job SKIP LOCKED
+    LIMIT 1
+), leased AS (
+    UPDATE target_probe_jobs job
+    SET state = 'leased',
+        attempt_count = job.attempt_count + 1,
+        lease_worker_id = sqlc.arg('worker_id'),
+        lease_token_hash = sqlc.arg('lease_token_hash'),
+        lease_expires_at = sqlc.arg('lease_expires_at'),
+        started_at = COALESCE(job.started_at, now()),
+        completed_at = NULL,
+        failure_category = NULL,
+        failure_detail = NULL
+    FROM candidate
+    WHERE job.id = candidate.id
+    RETURNING job.*
+), attempt AS (
+    INSERT INTO target_probe_attempts (job_id, attempt_number, worker_id, lease_token_hash, lease_expires_at)
+    SELECT id, attempt_count, lease_worker_id, lease_token_hash, lease_expires_at
+    FROM leased
+    RETURNING id, job_id
+)
+SELECT leased.id AS job_id,
+       attempt.id AS attempt_id,
+       leased.asset_id,
+       leased.endpoint_revision,
+       leased.protocol,
+       leased.reason,
+       leased.attempt_count,
+       leased.max_attempts,
+       leased.lease_expires_at,
+       CASE leased.protocol
+           WHEN 'ssh' THEN ssh.target_address
+           WHEN 'postgres' THEN postgres.target_address
+           WHEN 'rdp' THEN rdp.target_address
+           ELSE ''
+       END::text AS target_address
+FROM leased
+JOIN attempt ON attempt.job_id = leased.id
+LEFT JOIN ssh_asset_config ssh ON ssh.asset_id = leased.asset_id AND leased.protocol = 'ssh'
+LEFT JOIN postgres_asset_config postgres ON postgres.asset_id = leased.asset_id AND leased.protocol = 'postgres'
+LEFT JOIN rdp_asset_config rdp ON rdp.asset_id = leased.asset_id AND leased.protocol = 'rdp';
+
+-- name: LockProbeCompletion :one
+SELECT job.asset_id,
+       job.endpoint_revision AS job_endpoint_revision,
+       asset.endpoint_revision AS asset_endpoint_revision,
+       job.protocol
+FROM target_probe_jobs job
+JOIN assets asset ON asset.id = job.asset_id
+WHERE job.id = sqlc.arg('job_id')
+FOR UPDATE OF job, asset;
+
+-- name: GetCompletedAttemptOutcome :one
+SELECT outcome
+FROM target_probe_attempts
+WHERE job_id = sqlc.arg('job_id')
+  AND worker_id = sqlc.arg('worker_id')
+  AND lease_token_hash = sqlc.arg('lease_token_hash')
+  AND completed_at IS NOT NULL
+ORDER BY attempt_number DESC
+LIMIT 1;
+
+-- name: LockTargetIdentityObservation :one
+SELECT outcome
+FROM target_identity_observations
+WHERE id = sqlc.arg('observation_id')
+  AND asset_id = sqlc.arg('asset_id')
+  AND endpoint_revision = sqlc.arg('endpoint_revision')
+FOR UPDATE;
+
+-- name: TargetIdentityDatabaseTime :one
+SELECT now()::timestamptz;
+
+-- name: GetValidationEvidence :one
+SELECT kind, valid_from, valid_until
+FROM target_identity_evidence
+WHERE id = sqlc.arg('evidence_id')
+  AND observation_id = sqlc.arg('observation_id');
+
+-- name: InsertIdentityValidationFact :exec
+INSERT INTO target_identity_validation_facts (
+    observation_id, asset_id, endpoint_revision, anchor_id, evidence_id
+)
+VALUES (
+    sqlc.arg('observation_id'), sqlc.arg('asset_id'),
+    sqlc.arg('endpoint_revision'), sqlc.arg('anchor_id'), sqlc.arg('evidence_id')
+);
+
+-- name: ListTrustAnchors :many
+SELECT anchor.*
+FROM target_trust_anchors anchor
+WHERE anchor.asset_id = sqlc.arg('asset_id')
+ORDER BY anchor.approved_at, anchor.id;
+
+-- name: ListIdentityEvidence :many
+SELECT evidence.*
+FROM target_identity_evidence evidence
+JOIN target_identity_observations observation ON observation.id = evidence.observation_id
+WHERE observation.asset_id = sqlc.arg('asset_id')
+  AND observation.endpoint_revision = sqlc.arg('endpoint_revision')
+ORDER BY observation.observed_at, evidence.created_at, evidence.id;
+
+-- name: FindIdentityEvidenceByFingerprint :one
+SELECT evidence.*
+FROM target_identity_evidence evidence
+WHERE evidence.observation_id = sqlc.arg('observation_id')
+  AND evidence.sha256_fingerprint = sqlc.arg('sha256_fingerprint')
+ORDER BY evidence.id
+LIMIT 1;
+
+-- name: ListStatusObservations :many
+SELECT id, observed_at, outcome
+FROM target_identity_observations
+WHERE asset_id = sqlc.arg('asset_id')
+  AND endpoint_revision = sqlc.arg('endpoint_revision')
+ORDER BY observed_at DESC, id DESC;
+
+-- name: GetLatestTerminalProbeJob :one
+SELECT state, completed_at
+FROM target_probe_jobs
+WHERE asset_id = sqlc.arg('asset_id')
+  AND endpoint_revision = sqlc.arg('endpoint_revision')
+  AND state IN ('succeeded','failed','superseded','cancelled')
+ORDER BY completed_at DESC, id DESC
+LIMIT 1;
+
+-- name: IsObservationApprovedActive :one
+SELECT EXISTS (
+    SELECT 1
+    FROM target_trust_anchors
+    WHERE asset_id = sqlc.arg('asset_id')
+      AND endpoint_revision = sqlc.arg('endpoint_revision')
+      AND observation_id = sqlc.arg('observation_id')
+      AND revoked_at IS NULL
+      AND approved_at <= now()
+      AND (not_before IS NULL OR not_before <= now())
+      AND (expires_at IS NULL OR expires_at > now())
+);
+
+-- name: IsObservationRejected :one
+SELECT EXISTS (
+    SELECT 1 FROM audit_outbox
+    WHERE event_type = 'target_identity.observation_rejected'
+      AND subject = sqlc.arg('subject')
+      AND details->>'observation_id' = sqlc.arg('observation_id')::text
+    UNION ALL
+    SELECT 1 FROM audit_log
+    WHERE event_type = 'target_identity.observation_rejected'
+      AND subject = sqlc.arg('subject')
+      AND details->>'observation_id' = sqlc.arg('observation_id')::text
+);
+
+-- name: ObservationMatchesCurrentAnchors :one
+SELECT EXISTS (
+    SELECT 1
+    FROM target_trust_anchors anchor
+    WHERE anchor.asset_id = sqlc.arg('asset_id')
+      AND anchor.endpoint_revision = sqlc.arg('endpoint_revision')
+      AND anchor.revoked_at IS NULL
+      AND anchor.approved_at <= now()
+      AND (anchor.not_before IS NULL OR anchor.not_before <= now())
+      AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+      AND (
+          (anchor.kind = 'ssh_host_key' AND EXISTS (
+              SELECT 1 FROM target_identity_evidence evidence
+              WHERE evidence.observation_id = sqlc.arg('observation_id')
+                AND evidence.kind = 'ssh_host_key'
+                AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
+          ))
+       OR (anchor.kind = 'tls_leaf' AND EXISTS (
+              SELECT 1 FROM target_identity_evidence evidence
+              WHERE evidence.observation_id = sqlc.arg('observation_id')
+                AND evidence.kind = 'tls_leaf'
+                AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
+                AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
+          ))
+       OR (anchor.kind = 'ssh_host_ca' AND EXISTS (
+              SELECT 1
+              FROM target_identity_validation_facts validation
+              JOIN target_identity_evidence evidence
+                ON evidence.id = validation.evidence_id
+               AND evidence.observation_id = validation.observation_id
+              WHERE validation.observation_id = sqlc.arg('observation_id')
+                AND validation.anchor_id = anchor.id
+                AND evidence.kind = 'ssh_host_certificate'
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_ssh_principals) = 0 OR anchor.required_ssh_principals && evidence.ssh_principals)
+          ))
+       OR (anchor.kind = 'tls_ca' AND EXISTS (
+              SELECT 1
+              FROM target_identity_validation_facts validation
+              JOIN target_identity_evidence evidence
+                ON evidence.id = validation.evidence_id
+               AND evidence.observation_id = validation.observation_id
+              WHERE validation.observation_id = sqlc.arg('observation_id')
+                AND validation.anchor_id = anchor.id
+                AND evidence.kind = 'tls_leaf'
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
+                AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
+          ))
+      )
+);

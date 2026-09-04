@@ -217,6 +217,106 @@ func (q *Queries) ClaimProbeJob(ctx context.Context, arg ClaimProbeJobParams) (C
 	return i, err
 }
 
+const claimProbeJobForProtocol = `-- name: ClaimProbeJobForProtocol :one
+WITH candidate AS MATERIALIZED (
+    SELECT job.id
+    FROM target_probe_jobs job
+    JOIN assets asset
+      ON asset.id = job.asset_id
+     AND asset.endpoint_revision = job.endpoint_revision
+     AND asset.kind = job.protocol
+    WHERE job.state = 'queued'
+      AND job.protocol = $1
+      AND job.next_attempt_at <= now()
+      AND job.attempt_count < job.max_attempts
+    ORDER BY job.next_attempt_at, job.created_at, job.id
+    FOR UPDATE OF job SKIP LOCKED
+    LIMIT 1
+), leased AS (
+    UPDATE target_probe_jobs job
+    SET state = 'leased',
+        attempt_count = job.attempt_count + 1,
+        lease_worker_id = $2,
+        lease_token_hash = $3,
+        lease_expires_at = $4,
+        started_at = COALESCE(job.started_at, now()),
+        completed_at = NULL,
+        failure_category = NULL,
+        failure_detail = NULL
+    FROM candidate
+    WHERE job.id = candidate.id
+    RETURNING job.id, job.previous_job_id, job.asset_id, job.endpoint_revision, job.protocol, job.state, job.reason, job.requested_by, job.attempt_count, job.max_attempts, job.next_attempt_at, job.lease_worker_id, job.lease_token_hash, job.lease_expires_at, job.failure_category, job.failure_detail, job.created_at, job.started_at, job.completed_at
+), attempt AS (
+    INSERT INTO target_probe_attempts (job_id, attempt_number, worker_id, lease_token_hash, lease_expires_at)
+    SELECT id, attempt_count, lease_worker_id, lease_token_hash, lease_expires_at
+    FROM leased
+    RETURNING id, job_id
+)
+SELECT leased.id AS job_id,
+       attempt.id AS attempt_id,
+       leased.asset_id,
+       leased.endpoint_revision,
+       leased.protocol,
+       leased.reason,
+       leased.attempt_count,
+       leased.max_attempts,
+       leased.lease_expires_at,
+       CASE leased.protocol
+           WHEN 'ssh' THEN ssh.target_address
+           WHEN 'postgres' THEN postgres.target_address
+           WHEN 'rdp' THEN rdp.target_address
+           ELSE ''
+       END::text AS target_address
+FROM leased
+JOIN attempt ON attempt.job_id = leased.id
+LEFT JOIN ssh_asset_config ssh ON ssh.asset_id = leased.asset_id AND leased.protocol = 'ssh'
+LEFT JOIN postgres_asset_config postgres ON postgres.asset_id = leased.asset_id AND leased.protocol = 'postgres'
+LEFT JOIN rdp_asset_config rdp ON rdp.asset_id = leased.asset_id AND leased.protocol = 'rdp'
+`
+
+type ClaimProbeJobForProtocolParams struct {
+	Protocol       string             `json:"protocol"`
+	WorkerID       pgtype.Text        `json:"worker_id"`
+	LeaseTokenHash []byte             `json:"lease_token_hash"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+}
+
+type ClaimProbeJobForProtocolRow struct {
+	JobID            uuid.UUID          `json:"job_id"`
+	AttemptID        uuid.UUID          `json:"attempt_id"`
+	AssetID          uuid.UUID          `json:"asset_id"`
+	EndpointRevision int64              `json:"endpoint_revision"`
+	Protocol         string             `json:"protocol"`
+	Reason           string             `json:"reason"`
+	AttemptCount     int32              `json:"attempt_count"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	LeaseExpiresAt   pgtype.Timestamptz `json:"lease_expires_at"`
+	TargetAddress    string             `json:"target_address"`
+}
+
+func (q *Queries) ClaimProbeJobForProtocol(ctx context.Context, arg ClaimProbeJobForProtocolParams) (ClaimProbeJobForProtocolRow, error) {
+	row := q.db.QueryRow(ctx, claimProbeJobForProtocol,
+		arg.Protocol,
+		arg.WorkerID,
+		arg.LeaseTokenHash,
+		arg.LeaseExpiresAt,
+	)
+	var i ClaimProbeJobForProtocolRow
+	err := row.Scan(
+		&i.JobID,
+		&i.AttemptID,
+		&i.AssetID,
+		&i.EndpointRevision,
+		&i.Protocol,
+		&i.Reason,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseExpiresAt,
+		&i.TargetAddress,
+	)
+	return i, err
+}
+
 const completeProbeAttempt = `-- name: CompleteProbeAttempt :one
 WITH completed_job AS (
     UPDATE target_probe_jobs j
@@ -372,6 +472,46 @@ func (q *Queries) CreateProbeJob(ctx context.Context, arg CreateProbeJobParams) 
 		&i.CreatedAt,
 		&i.StartedAt,
 		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const findIdentityEvidenceByFingerprint = `-- name: FindIdentityEvidenceByFingerprint :one
+SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
+FROM target_identity_evidence evidence
+WHERE evidence.observation_id = $1
+  AND evidence.sha256_fingerprint = $2
+ORDER BY evidence.id
+LIMIT 1
+`
+
+type FindIdentityEvidenceByFingerprintParams struct {
+	ObservationID     uuid.UUID `json:"observation_id"`
+	Sha256Fingerprint string    `json:"sha256_fingerprint"`
+}
+
+func (q *Queries) FindIdentityEvidenceByFingerprint(ctx context.Context, arg FindIdentityEvidenceByFingerprintParams) (TargetIdentityEvidence, error) {
+	row := q.db.QueryRow(ctx, findIdentityEvidenceByFingerprint, arg.ObservationID, arg.Sha256Fingerprint)
+	var i TargetIdentityEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ObservationID,
+		&i.Kind,
+		&i.Algorithm,
+		&i.Sha256Fingerprint,
+		&i.PublicMaterial,
+		&i.CertificateSubject,
+		&i.CertificateIssuer,
+		&i.IssuerSha256Fingerprint,
+		&i.DnsNames,
+		&i.IpAddresses,
+		&i.SshPrincipals,
+		&i.SerialNumber,
+		&i.ValidFrom,
+		&i.ValidUntil,
+		&i.KeyMetadata,
+		&i.DisplayExtensions,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -538,6 +678,103 @@ func (q *Queries) GetAssetVerificationStatus(ctx context.Context, arg GetAssetVe
 		&i.LatestObservationID,
 		&i.LatestProbeJobID,
 	)
+	return i, err
+}
+
+const getCompletedAttemptOutcome = `-- name: GetCompletedAttemptOutcome :one
+SELECT outcome
+FROM target_probe_attempts
+WHERE job_id = $1
+  AND worker_id = $2
+  AND lease_token_hash = $3
+  AND completed_at IS NOT NULL
+ORDER BY attempt_number DESC
+LIMIT 1
+`
+
+type GetCompletedAttemptOutcomeParams struct {
+	JobID          uuid.UUID `json:"job_id"`
+	WorkerID       string    `json:"worker_id"`
+	LeaseTokenHash []byte    `json:"lease_token_hash"`
+}
+
+func (q *Queries) GetCompletedAttemptOutcome(ctx context.Context, arg GetCompletedAttemptOutcomeParams) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getCompletedAttemptOutcome, arg.JobID, arg.WorkerID, arg.LeaseTokenHash)
+	var outcome pgtype.Text
+	err := row.Scan(&outcome)
+	return outcome, err
+}
+
+const getLatestTerminalProbeJob = `-- name: GetLatestTerminalProbeJob :one
+SELECT state, completed_at
+FROM target_probe_jobs
+WHERE asset_id = $1
+  AND endpoint_revision = $2
+  AND state IN ('succeeded','failed','superseded','cancelled')
+ORDER BY completed_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLatestTerminalProbeJobParams struct {
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+}
+
+type GetLatestTerminalProbeJobRow struct {
+	State       string             `json:"state"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
+func (q *Queries) GetLatestTerminalProbeJob(ctx context.Context, arg GetLatestTerminalProbeJobParams) (GetLatestTerminalProbeJobRow, error) {
+	row := q.db.QueryRow(ctx, getLatestTerminalProbeJob, arg.AssetID, arg.EndpointRevision)
+	var i GetLatestTerminalProbeJobRow
+	err := row.Scan(&i.State, &i.CompletedAt)
+	return i, err
+}
+
+const getPreviousProbeJobState = `-- name: GetPreviousProbeJobState :one
+SELECT state
+FROM target_probe_jobs
+WHERE id = $1
+  AND asset_id = $2
+  AND endpoint_revision = $3
+`
+
+type GetPreviousProbeJobStateParams struct {
+	JobID            uuid.UUID `json:"job_id"`
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+}
+
+func (q *Queries) GetPreviousProbeJobState(ctx context.Context, arg GetPreviousProbeJobStateParams) (string, error) {
+	row := q.db.QueryRow(ctx, getPreviousProbeJobState, arg.JobID, arg.AssetID, arg.EndpointRevision)
+	var state string
+	err := row.Scan(&state)
+	return state, err
+}
+
+const getValidationEvidence = `-- name: GetValidationEvidence :one
+SELECT kind, valid_from, valid_until
+FROM target_identity_evidence
+WHERE id = $1
+  AND observation_id = $2
+`
+
+type GetValidationEvidenceParams struct {
+	EvidenceID    uuid.UUID `json:"evidence_id"`
+	ObservationID uuid.UUID `json:"observation_id"`
+}
+
+type GetValidationEvidenceRow struct {
+	Kind       string             `json:"kind"`
+	ValidFrom  pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil pgtype.Timestamptz `json:"valid_until"`
+}
+
+func (q *Queries) GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error) {
+	row := q.db.QueryRow(ctx, getValidationEvidence, arg.EvidenceID, arg.ObservationID)
+	var i GetValidationEvidenceRow
+	err := row.Scan(&i.Kind, &i.ValidFrom, &i.ValidUntil)
 	return i, err
 }
 
@@ -738,6 +975,88 @@ func (q *Queries) InsertIdentityObservation(ctx context.Context, arg InsertIdent
 	return i, err
 }
 
+const insertIdentityValidationFact = `-- name: InsertIdentityValidationFact :exec
+INSERT INTO target_identity_validation_facts (
+    observation_id, asset_id, endpoint_revision, anchor_id, evidence_id
+)
+VALUES (
+    $1, $2,
+    $3, $4, $5
+)
+`
+
+type InsertIdentityValidationFactParams struct {
+	ObservationID    uuid.UUID `json:"observation_id"`
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+	AnchorID         uuid.UUID `json:"anchor_id"`
+	EvidenceID       uuid.UUID `json:"evidence_id"`
+}
+
+func (q *Queries) InsertIdentityValidationFact(ctx context.Context, arg InsertIdentityValidationFactParams) error {
+	_, err := q.db.Exec(ctx, insertIdentityValidationFact,
+		arg.ObservationID,
+		arg.AssetID,
+		arg.EndpointRevision,
+		arg.AnchorID,
+		arg.EvidenceID,
+	)
+	return err
+}
+
+const isObservationApprovedActive = `-- name: IsObservationApprovedActive :one
+SELECT EXISTS (
+    SELECT 1
+    FROM target_trust_anchors
+    WHERE asset_id = $1
+      AND endpoint_revision = $2
+      AND observation_id = $3
+      AND revoked_at IS NULL
+      AND approved_at <= now()
+      AND (not_before IS NULL OR not_before <= now())
+      AND (expires_at IS NULL OR expires_at > now())
+)
+`
+
+type IsObservationApprovedActiveParams struct {
+	AssetID          uuid.UUID   `json:"asset_id"`
+	EndpointRevision int64       `json:"endpoint_revision"`
+	ObservationID    pgtype.UUID `json:"observation_id"`
+}
+
+func (q *Queries) IsObservationApprovedActive(ctx context.Context, arg IsObservationApprovedActiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isObservationApprovedActive, arg.AssetID, arg.EndpointRevision, arg.ObservationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isObservationRejected = `-- name: IsObservationRejected :one
+SELECT EXISTS (
+    SELECT 1 FROM audit_outbox
+    WHERE event_type = 'target_identity.observation_rejected'
+      AND subject = $1
+      AND details->>'observation_id' = $2::text
+    UNION ALL
+    SELECT 1 FROM audit_log
+    WHERE event_type = 'target_identity.observation_rejected'
+      AND subject = $1
+      AND details->>'observation_id' = $2::text
+)
+`
+
+type IsObservationRejectedParams struct {
+	Subject       pgtype.Text `json:"subject"`
+	ObservationID pgtype.Text `json:"observation_id"`
+}
+
+func (q *Queries) IsObservationRejected(ctx context.Context, arg IsObservationRejectedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isObservationRejected, arg.Subject, arg.ObservationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listCurrentActiveTrustAnchors = `-- name: ListCurrentActiveTrustAnchors :many
 SELECT anchor.id, anchor.asset_id, anchor.endpoint_revision, anchor.kind, anchor.algorithm, anchor.sha256_fingerprint, anchor.public_material, anchor.required_ssh_principals, anchor.required_dns_names, anchor.required_ip_addresses, anchor.source, anchor.observation_id, anchor.approved_by, anchor.approved_at, anchor.not_before, anchor.expires_at, anchor.revoked_at, anchor.revoked_by, anchor.revocation_reason
 FROM target_trust_anchors anchor
@@ -792,6 +1111,287 @@ func (q *Queries) ListCurrentActiveTrustAnchors(ctx context.Context, assetID uui
 	return items, nil
 }
 
+const listIdentityEvidence = `-- name: ListIdentityEvidence :many
+SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
+FROM target_identity_evidence evidence
+JOIN target_identity_observations observation ON observation.id = evidence.observation_id
+WHERE observation.asset_id = $1
+  AND observation.endpoint_revision = $2
+ORDER BY observation.observed_at, evidence.created_at, evidence.id
+`
+
+type ListIdentityEvidenceParams struct {
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+}
+
+func (q *Queries) ListIdentityEvidence(ctx context.Context, arg ListIdentityEvidenceParams) ([]TargetIdentityEvidence, error) {
+	rows, err := q.db.Query(ctx, listIdentityEvidence, arg.AssetID, arg.EndpointRevision)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetIdentityEvidence
+	for rows.Next() {
+		var i TargetIdentityEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ObservationID,
+			&i.Kind,
+			&i.Algorithm,
+			&i.Sha256Fingerprint,
+			&i.PublicMaterial,
+			&i.CertificateSubject,
+			&i.CertificateIssuer,
+			&i.IssuerSha256Fingerprint,
+			&i.DnsNames,
+			&i.IpAddresses,
+			&i.SshPrincipals,
+			&i.SerialNumber,
+			&i.ValidFrom,
+			&i.ValidUntil,
+			&i.KeyMetadata,
+			&i.DisplayExtensions,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusObservations = `-- name: ListStatusObservations :many
+SELECT id, observed_at, outcome
+FROM target_identity_observations
+WHERE asset_id = $1
+  AND endpoint_revision = $2
+ORDER BY observed_at DESC, id DESC
+`
+
+type ListStatusObservationsParams struct {
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+}
+
+type ListStatusObservationsRow struct {
+	ID         uuid.UUID `json:"id"`
+	ObservedAt time.Time `json:"observed_at"`
+	Outcome    string    `json:"outcome"`
+}
+
+func (q *Queries) ListStatusObservations(ctx context.Context, arg ListStatusObservationsParams) ([]ListStatusObservationsRow, error) {
+	rows, err := q.db.Query(ctx, listStatusObservations, arg.AssetID, arg.EndpointRevision)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusObservationsRow
+	for rows.Next() {
+		var i ListStatusObservationsRow
+		if err := rows.Scan(&i.ID, &i.ObservedAt, &i.Outcome); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTrustAnchors = `-- name: ListTrustAnchors :many
+SELECT anchor.id, anchor.asset_id, anchor.endpoint_revision, anchor.kind, anchor.algorithm, anchor.sha256_fingerprint, anchor.public_material, anchor.required_ssh_principals, anchor.required_dns_names, anchor.required_ip_addresses, anchor.source, anchor.observation_id, anchor.approved_by, anchor.approved_at, anchor.not_before, anchor.expires_at, anchor.revoked_at, anchor.revoked_by, anchor.revocation_reason
+FROM target_trust_anchors anchor
+WHERE anchor.asset_id = $1
+ORDER BY anchor.approved_at, anchor.id
+`
+
+func (q *Queries) ListTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error) {
+	rows, err := q.db.Query(ctx, listTrustAnchors, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetTrustAnchor
+	for rows.Next() {
+		var i TargetTrustAnchor
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.Kind,
+			&i.Algorithm,
+			&i.Sha256Fingerprint,
+			&i.PublicMaterial,
+			&i.RequiredSshPrincipals,
+			&i.RequiredDnsNames,
+			&i.RequiredIpAddresses,
+			&i.Source,
+			&i.ObservationID,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.NotBefore,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevocationReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockProbeCompletion = `-- name: LockProbeCompletion :one
+SELECT job.asset_id,
+       job.endpoint_revision AS job_endpoint_revision,
+       asset.endpoint_revision AS asset_endpoint_revision,
+       job.protocol
+FROM target_probe_jobs job
+JOIN assets asset ON asset.id = job.asset_id
+WHERE job.id = $1
+FOR UPDATE OF job, asset
+`
+
+type LockProbeCompletionRow struct {
+	AssetID               uuid.UUID `json:"asset_id"`
+	JobEndpointRevision   int64     `json:"job_endpoint_revision"`
+	AssetEndpointRevision int64     `json:"asset_endpoint_revision"`
+	Protocol              string    `json:"protocol"`
+}
+
+func (q *Queries) LockProbeCompletion(ctx context.Context, jobID uuid.UUID) (LockProbeCompletionRow, error) {
+	row := q.db.QueryRow(ctx, lockProbeCompletion, jobID)
+	var i LockProbeCompletionRow
+	err := row.Scan(
+		&i.AssetID,
+		&i.JobEndpointRevision,
+		&i.AssetEndpointRevision,
+		&i.Protocol,
+	)
+	return i, err
+}
+
+const lockTargetIdentityAsset = `-- name: LockTargetIdentityAsset :one
+SELECT endpoint_revision, kind
+FROM assets
+WHERE id = $1
+FOR UPDATE
+`
+
+type LockTargetIdentityAssetRow struct {
+	EndpointRevision int64  `json:"endpoint_revision"`
+	Kind             string `json:"kind"`
+}
+
+func (q *Queries) LockTargetIdentityAsset(ctx context.Context, assetID uuid.UUID) (LockTargetIdentityAssetRow, error) {
+	row := q.db.QueryRow(ctx, lockTargetIdentityAsset, assetID)
+	var i LockTargetIdentityAssetRow
+	err := row.Scan(&i.EndpointRevision, &i.Kind)
+	return i, err
+}
+
+const lockTargetIdentityObservation = `-- name: LockTargetIdentityObservation :one
+SELECT outcome
+FROM target_identity_observations
+WHERE id = $1
+  AND asset_id = $2
+  AND endpoint_revision = $3
+FOR UPDATE
+`
+
+type LockTargetIdentityObservationParams struct {
+	ObservationID    uuid.UUID `json:"observation_id"`
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+}
+
+func (q *Queries) LockTargetIdentityObservation(ctx context.Context, arg LockTargetIdentityObservationParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockTargetIdentityObservation, arg.ObservationID, arg.AssetID, arg.EndpointRevision)
+	var outcome string
+	err := row.Scan(&outcome)
+	return outcome, err
+}
+
+const observationMatchesCurrentAnchors = `-- name: ObservationMatchesCurrentAnchors :one
+SELECT EXISTS (
+    SELECT 1
+    FROM target_trust_anchors anchor
+    WHERE anchor.asset_id = $1
+      AND anchor.endpoint_revision = $2
+      AND anchor.revoked_at IS NULL
+      AND anchor.approved_at <= now()
+      AND (anchor.not_before IS NULL OR anchor.not_before <= now())
+      AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+      AND (
+          (anchor.kind = 'ssh_host_key' AND EXISTS (
+              SELECT 1 FROM target_identity_evidence evidence
+              WHERE evidence.observation_id = $3
+                AND evidence.kind = 'ssh_host_key'
+                AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
+          ))
+       OR (anchor.kind = 'tls_leaf' AND EXISTS (
+              SELECT 1 FROM target_identity_evidence evidence
+              WHERE evidence.observation_id = $3
+                AND evidence.kind = 'tls_leaf'
+                AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
+                AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
+          ))
+       OR (anchor.kind = 'ssh_host_ca' AND EXISTS (
+              SELECT 1
+              FROM target_identity_validation_facts validation
+              JOIN target_identity_evidence evidence
+                ON evidence.id = validation.evidence_id
+               AND evidence.observation_id = validation.observation_id
+              WHERE validation.observation_id = $3
+                AND validation.anchor_id = anchor.id
+                AND evidence.kind = 'ssh_host_certificate'
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_ssh_principals) = 0 OR anchor.required_ssh_principals && evidence.ssh_principals)
+          ))
+       OR (anchor.kind = 'tls_ca' AND EXISTS (
+              SELECT 1
+              FROM target_identity_validation_facts validation
+              JOIN target_identity_evidence evidence
+                ON evidence.id = validation.evidence_id
+               AND evidence.observation_id = validation.observation_id
+              WHERE validation.observation_id = $3
+                AND validation.anchor_id = anchor.id
+                AND evidence.kind = 'tls_leaf'
+                AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
+                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
+                AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
+          ))
+      )
+)
+`
+
+type ObservationMatchesCurrentAnchorsParams struct {
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+	ObservationID    uuid.UUID `json:"observation_id"`
+}
+
+func (q *Queries) ObservationMatchesCurrentAnchors(ctx context.Context, arg ObservationMatchesCurrentAnchorsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, observationMatchesCurrentAnchors, arg.AssetID, arg.EndpointRevision, arg.ObservationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const revokeTrustAnchor = `-- name: RevokeTrustAnchor :one
 UPDATE target_trust_anchors
 SET revoked_at = $1,
@@ -842,4 +1442,15 @@ func (q *Queries) RevokeTrustAnchor(ctx context.Context, arg RevokeTrustAnchorPa
 		&i.RevocationReason,
 	)
 	return i, err
+}
+
+const targetIdentityDatabaseTime = `-- name: TargetIdentityDatabaseTime :one
+SELECT now()::timestamptz
+`
+
+func (q *Queries) TargetIdentityDatabaseTime(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, targetIdentityDatabaseTime)
+	var column_1 time.Time
+	err := row.Scan(&column_1)
+	return column_1, err
 }
