@@ -40,6 +40,7 @@ type Querier interface {
 	// those request ids (a keyset page); a NULL array considers all pending requests.
 	// Ordered created_at DESC, id to match the paged SQL page order.
 	ApprovablePending(ctx context.Context, arg ApprovablePendingParams) ([]ApprovablePendingRow, error)
+	ApproveTrustAnchor(ctx context.Context, arg ApproveTrustAnchorParams) (TargetTrustAnchor, error)
 	AssetByFolderName(ctx context.Context, arg AssetByFolderNameParams) (Asset, error)
 	AssetIDsInFolders(ctx context.Context, dollar_1 []uuid.UUID) ([]AssetIDsInFoldersRow, error)
 	// assetLoginsFor: the SSH login names declared on each asset in `asset_ids`.
@@ -50,6 +51,8 @@ type Querier interface {
 	// childFolderIDs: the ids of folders directly under `parent`, ordered by (name, id).
 	// A NULL parent selects the tree root (parent_id IS NULL).
 	ChildFolderIDs(ctx context.Context, parent pgtype.UUID) ([]uuid.UUID, error)
+	ClaimProbeJob(ctx context.Context, arg ClaimProbeJobParams) (ClaimProbeJobRow, error)
+	CompleteProbeAttempt(ctx context.Context, arg CompleteProbeAttemptParams) (CompleteProbeAttemptRow, error)
 	ConsumeAgentEnrollmentToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
 	CountApprovals(ctx context.Context, requestID uuid.UUID) (int64, error)
 	CountAssetsInFolder(ctx context.Context, folderID uuid.UUID) (int64, error)
@@ -74,6 +77,7 @@ type Querier interface {
 	// (trg_folders_register_name), so a folder can never exist without a resolvable name.
 	CreateFolder(ctx context.Context, arg CreateFolderParams) (Folder, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
+	CreateProbeJob(ctx context.Context, arg CreateProbeJobParams) (TargetProbeJob, error)
 	CreateRequestPolicy(ctx context.Context, arg CreateRequestPolicyParams) (RequestPolicy, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateRoleBinding(ctx context.Context, arg CreateRoleBindingParams) (RoleBinding, error)
@@ -160,6 +164,7 @@ type Querier interface {
 	GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error)
 	// Loads a secret by id alone (for management scope-derivation → owning asset).
 	GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error)
+	GetAssetVerificationStatus(ctx context.Context, assetID pgtype.UUID) (GetAssetVerificationStatusRow, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
@@ -212,7 +217,10 @@ type Querier interface {
 	HoldsRole(ctx context.Context, arg HoldsRoleParams) (bool, error)
 	// RoleResolver.HoldsRoleStanding (binding satisfaction only).
 	HoldsRoleStanding(ctx context.Context, arg HoldsRoleStandingParams) (bool, error)
+	IncrementAssetEndpointRevision(ctx context.Context, assetID uuid.UUID) (int64, error)
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AuditLog, error)
+	InsertIdentityEvidence(ctx context.Context, arg InsertIdentityEvidenceParams) (TargetIdentityEvidence, error)
+	InsertIdentityObservation(ctx context.Context, arg InsertIdentityObservationParams) (TargetIdentityObservation, error)
 	InsertLiveSession(ctx context.Context, arg InsertLiveSessionParams) (LiveSession, error)
 	InsertRoleCapability(ctx context.Context, arg InsertRoleCapabilityParams) error
 	// visible_tree IsMember.
@@ -228,6 +236,7 @@ type Querier interface {
 	// path resolved in SQL via folder_path() (no per-row Go resolution).
 	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
+	ListCurrentActiveTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
@@ -343,6 +352,7 @@ type Querier interface {
 	// deactivation cascade can stamp a reason/actor on it. Authz already excludes it
 	// (expires_at > now() is false everywhere), so this is harmless.
 	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (AccessGrant, error)
+	RevokeTrustAnchor(ctx context.Context, arg RevokeTrustAnchorParams) (TargetTrustAnchor, error)
 	// Capability rows for a set of roles in one query, tagged by role_id so the caller can
 	// assemble map[role]→caps without a per-role round-trip.
 	RoleCapabilitiesByRoleIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]RoleCapability, error)

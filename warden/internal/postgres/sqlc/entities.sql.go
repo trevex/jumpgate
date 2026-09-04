@@ -119,7 +119,7 @@ func (q *Queries) CountRolesHomedInFolder(ctx context.Context, folderID pgtype.U
 }
 
 const createAsset = `-- name: CreateAsset :one
-INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING id, folder_id, name, labels, created_at, kind
+INSERT INTO assets (folder_id, name, labels, kind) VALUES ($1, $2, $3, $4) RETURNING id, folder_id, name, labels, created_at, kind, endpoint_revision
 `
 
 type CreateAssetParams struct {
@@ -146,6 +146,7 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 		&i.Labels,
 		&i.CreatedAt,
 		&i.Kind,
+		&i.EndpointRevision,
 	)
 	return i, err
 }
@@ -348,7 +349,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = $1
+SELECT id, folder_id, name, labels, created_at, kind, endpoint_revision FROM assets WHERE id = $1
 `
 
 func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
@@ -361,6 +362,7 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		&i.Labels,
 		&i.CreatedAt,
 		&i.Kind,
+		&i.EndpointRevision,
 	)
 	return i, err
 }

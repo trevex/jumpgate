@@ -14,7 +14,7 @@ import (
 )
 
 const assetByFolderName = `-- name: AssetByFolderName :one
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE folder_id = $1 AND name = $2
+SELECT id, folder_id, name, labels, created_at, kind, endpoint_revision FROM assets WHERE folder_id = $1 AND name = $2
 `
 
 type AssetByFolderNameParams struct {
@@ -32,6 +32,7 @@ func (q *Queries) AssetByFolderName(ctx context.Context, arg AssetByFolderNamePa
 		&i.Labels,
 		&i.CreatedAt,
 		&i.Kind,
+		&i.EndpointRevision,
 	)
 	return i, err
 }
@@ -436,7 +437,7 @@ func (q *Queries) GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginPara
 }
 
 const listAssetsByIDs = `-- name: ListAssetsByIDs :many
-SELECT id, folder_id, name, labels, created_at, kind FROM assets WHERE id = ANY($1::uuid[])
+SELECT id, folder_id, name, labels, created_at, kind, endpoint_revision FROM assets WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error) {
@@ -455,6 +456,7 @@ func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]
 			&i.Labels,
 			&i.CreatedAt,
 			&i.Kind,
+			&i.EndpointRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -467,7 +469,7 @@ func (q *Queries) ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]
 }
 
 const listAssetsByIDsPaged = `-- name: ListAssetsByIDsPaged :many
-SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, folder_path(assets.folder_id) AS folder_path FROM assets
+SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, assets.endpoint_revision, folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -512,6 +514,7 @@ func (q *Queries) ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsP
 			&i.Asset.Labels,
 			&i.Asset.CreatedAt,
 			&i.Asset.Kind,
+			&i.Asset.EndpointRevision,
 			&i.FolderPath,
 		); err != nil {
 			return nil, err
@@ -1060,7 +1063,7 @@ func (q *Queries) PoliciesScopedToFoldersOrAssets(ctx context.Context, arg Polic
 }
 
 const searchAssetsByIDs = `-- name: SearchAssetsByIDs :many
-SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, folder_path(assets.folder_id) AS folder_path FROM assets
+SELECT assets.id, assets.folder_id, assets.name, assets.labels, assets.created_at, assets.kind, assets.endpoint_revision, folder_path(assets.folder_id) AS folder_path FROM assets
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1093,6 +1096,7 @@ func (q *Queries) SearchAssetsByIDs(ctx context.Context, arg SearchAssetsByIDsPa
 			&i.Asset.Labels,
 			&i.Asset.CreatedAt,
 			&i.Asset.Kind,
+			&i.Asset.EndpointRevision,
 			&i.FolderPath,
 		); err != nil {
 			return nil, err

@@ -68,12 +68,13 @@ type AgentEnrollmentToken struct {
 }
 
 type Asset struct {
-	ID        uuid.UUID `json:"id"`
-	FolderID  uuid.UUID `json:"folder_id"`
-	Name      string    `json:"name"`
-	Labels    []byte    `json:"labels"`
-	CreatedAt time.Time `json:"created_at"`
-	Kind      string    `json:"kind"`
+	ID               uuid.UUID `json:"id"`
+	FolderID         uuid.UUID `json:"folder_id"`
+	Name             string    `json:"name"`
+	Labels           []byte    `json:"labels"`
+	CreatedAt        time.Time `json:"created_at"`
+	Kind             string    `json:"kind"`
+	EndpointRevision int64     `json:"endpoint_revision"`
 }
 
 type AssetSecret struct {
@@ -283,6 +284,100 @@ type SshAssetLogin struct {
 	Login    string      `json:"login"`
 	Kind     string      `json:"kind"`
 	SecretID pgtype.UUID `json:"secret_id"`
+}
+
+type TargetIdentityEvidence struct {
+	ID                      uuid.UUID          `json:"id"`
+	ObservationID           uuid.UUID          `json:"observation_id"`
+	Kind                    string             `json:"kind"`
+	Algorithm               string             `json:"algorithm"`
+	Sha256Fingerprint       string             `json:"sha256_fingerprint"`
+	PublicMaterial          string             `json:"public_material"`
+	CertificateSubject      pgtype.Text        `json:"certificate_subject"`
+	CertificateIssuer       pgtype.Text        `json:"certificate_issuer"`
+	IssuerSha256Fingerprint pgtype.Text        `json:"issuer_sha256_fingerprint"`
+	DnsNames                []string           `json:"dns_names"`
+	IpAddresses             []string           `json:"ip_addresses"`
+	SshPrincipals           []string           `json:"ssh_principals"`
+	SerialNumber            pgtype.Text        `json:"serial_number"`
+	ValidFrom               pgtype.Timestamptz `json:"valid_from"`
+	ValidUntil              pgtype.Timestamptz `json:"valid_until"`
+	KeyMetadata             []byte             `json:"key_metadata"`
+	DisplayExtensions       []byte             `json:"display_extensions"`
+	CreatedAt               time.Time          `json:"created_at"`
+}
+
+type TargetIdentityObservation struct {
+	ID                uuid.UUID   `json:"id"`
+	JobID             pgtype.UUID `json:"job_id"`
+	AssetID           uuid.UUID   `json:"asset_id"`
+	EndpointRevision  int64       `json:"endpoint_revision"`
+	WorkerID          string      `json:"worker_id"`
+	Source            string      `json:"source"`
+	ResolvedAddresses []byte      `json:"resolved_addresses"`
+	ProtocolMetadata  []byte      `json:"protocol_metadata"`
+	ObservedAt        time.Time   `json:"observed_at"`
+	Outcome           string      `json:"outcome"`
+	FailureCategory   pgtype.Text `json:"failure_category"`
+	FailureDetail     pgtype.Text `json:"failure_detail"`
+}
+
+type TargetProbeAttempt struct {
+	ID              uuid.UUID          `json:"id"`
+	JobID           uuid.UUID          `json:"job_id"`
+	AttemptNumber   int32              `json:"attempt_number"`
+	WorkerID        string             `json:"worker_id"`
+	LeaseTokenHash  []byte             `json:"lease_token_hash"`
+	LeaseExpiresAt  time.Time          `json:"lease_expires_at"`
+	StartedAt       time.Time          `json:"started_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	Outcome         pgtype.Text        `json:"outcome"`
+	FailureCategory pgtype.Text        `json:"failure_category"`
+	FailureDetail   pgtype.Text        `json:"failure_detail"`
+}
+
+type TargetProbeJob struct {
+	ID               uuid.UUID          `json:"id"`
+	PreviousJobID    pgtype.UUID        `json:"previous_job_id"`
+	AssetID          uuid.UUID          `json:"asset_id"`
+	EndpointRevision int64              `json:"endpoint_revision"`
+	Protocol         string             `json:"protocol"`
+	State            string             `json:"state"`
+	Reason           string             `json:"reason"`
+	RequestedBy      pgtype.UUID        `json:"requested_by"`
+	AttemptCount     int32              `json:"attempt_count"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	NextAttemptAt    time.Time          `json:"next_attempt_at"`
+	LeaseWorkerID    pgtype.Text        `json:"lease_worker_id"`
+	LeaseTokenHash   []byte             `json:"lease_token_hash"`
+	LeaseExpiresAt   pgtype.Timestamptz `json:"lease_expires_at"`
+	FailureCategory  pgtype.Text        `json:"failure_category"`
+	FailureDetail    pgtype.Text        `json:"failure_detail"`
+	CreatedAt        time.Time          `json:"created_at"`
+	StartedAt        pgtype.Timestamptz `json:"started_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+}
+
+type TargetTrustAnchor struct {
+	ID                    uuid.UUID          `json:"id"`
+	AssetID               uuid.UUID          `json:"asset_id"`
+	EndpointRevision      int64              `json:"endpoint_revision"`
+	Kind                  string             `json:"kind"`
+	Algorithm             string             `json:"algorithm"`
+	Sha256Fingerprint     string             `json:"sha256_fingerprint"`
+	PublicMaterial        string             `json:"public_material"`
+	RequiredSshPrincipals []string           `json:"required_ssh_principals"`
+	RequiredDnsNames      []string           `json:"required_dns_names"`
+	RequiredIpAddresses   []string           `json:"required_ip_addresses"`
+	Source                string             `json:"source"`
+	ObservationID         pgtype.UUID        `json:"observation_id"`
+	ApprovedBy            pgtype.UUID        `json:"approved_by"`
+	ApprovedAt            time.Time          `json:"approved_at"`
+	NotBefore             pgtype.Timestamptz `json:"not_before"`
+	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt             pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy             pgtype.UUID        `json:"revoked_by"`
+	RevocationReason      pgtype.Text        `json:"revocation_reason"`
 }
 
 type User struct {
