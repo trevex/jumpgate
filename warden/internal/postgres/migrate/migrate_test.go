@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -360,6 +361,22 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		VALUES ($1, 'password', 'ed25519', 'SHA256:test', 'public')`, observationID); err == nil {
 		t.Fatal("invalid evidence kind accepted")
 	}
+	var evidenceID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO target_identity_evidence
+			(observation_id, kind, algorithm, sha256_fingerprint, public_material)
+		VALUES ($1, 'ssh_host_key', 'ed25519', 'SHA256:immutable', 'public')
+		RETURNING id`, observationID).Scan(&evidenceID); err != nil {
+		t.Fatalf("insert evidence: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`UPDATE target_identity_evidence SET algorithm = 'rsa' WHERE id = $1`, evidenceID); err == nil {
+		t.Fatal("evidence update accepted")
+	}
+	if _, err := pool.Exec(ctx,
+		`DELETE FROM target_identity_evidence WHERE id = $1`, evidenceID); err == nil {
+		t.Fatal("evidence delete accepted")
+	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO target_trust_anchors
 			(asset_id, endpoint_revision, kind, sha256_fingerprint, public_material, source)
@@ -494,6 +511,174 @@ func TestTargetIdentityQueriesLeaseOnlyCurrentRevision(t *testing.T) {
 	}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("claim with only stale queued job remaining = %v; want pgx.ErrNoRows", err)
 	}
+}
+
+func TestTargetIdentityStatusDoesNotVerifyFingerprintAlone(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	queries := sqlc.New(pool)
+
+	now := time.Now().UTC()
+	tests := []struct {
+		name                string
+		anchorKind          string
+		evidenceKind        string
+		anchorFingerprint   string
+		evidenceFingerprint string
+		issuerFingerprint   string
+		requiredDNS         []string
+		requiredPrincipals  []string
+		dnsNames            []string
+		tlsLeafDNS          []string
+		sshPrincipals       []string
+		validationState     string
+		validFrom           *time.Time
+		validUntil          *time.Time
+	}{
+		{
+			name:                "SSH CA requires an approved principal",
+			anchorKind:          "ssh_host_ca",
+			evidenceKind:        "ssh_host_certificate",
+			anchorFingerprint:   "SHA256:ssh-ca",
+			evidenceFingerprint: "SHA256:ssh-cert",
+			issuerFingerprint:   "SHA256:ssh-ca",
+			requiredPrincipals:  []string{"target.example"},
+			sshPrincipals:       []string{"other.example"},
+			validationState:     "validated",
+		},
+		{
+			name:                "TLS CA requires an approved DNS name",
+			anchorKind:          "tls_ca",
+			evidenceKind:        "tls_intermediate",
+			anchorFingerprint:   "SHA256:tls-ca-name",
+			evidenceFingerprint: "SHA256:tls-ca-name",
+			requiredDNS:         []string{"target.example"},
+			dnsNames:            []string{"other.example"},
+			tlsLeafDNS:          []string{"other.example"},
+			validationState:     "validated",
+		},
+		{
+			name:                "expired SSH certificate is not verified",
+			anchorKind:          "ssh_host_ca",
+			evidenceKind:        "ssh_host_certificate",
+			anchorFingerprint:   "SHA256:ssh-ca-expired",
+			evidenceFingerprint: "SHA256:ssh-cert-expired",
+			issuerFingerprint:   "SHA256:ssh-ca-expired",
+			requiredPrincipals:  []string{"target.example"},
+			sshPrincipals:       []string{"target.example"},
+			validationState:     "validated",
+			validFrom:           ptrTime(now.Add(-2 * time.Hour)),
+			validUntil:          ptrTime(now.Add(-time.Hour)),
+		},
+		{
+			name:                "TLS CA requires durable chain validation",
+			anchorKind:          "tls_ca",
+			evidenceKind:        "tls_intermediate",
+			anchorFingerprint:   "SHA256:tls-ca-validation",
+			evidenceFingerprint: "SHA256:tls-ca-validation",
+			requiredDNS:         []string{"target.example"},
+			dnsNames:            []string{"target.example"},
+			tlsLeafDNS:          []string{"target.example"},
+			validationState:     "unvalidated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var folderID, assetID, observationID uuid.UUID
+			if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "status-"+randomName(t)).Scan(&folderID); err != nil {
+				t.Fatalf("insert folder: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO assets (folder_id, name, kind)
+				VALUES ($1, $2, 'ssh')
+				RETURNING id`, folderID, "target-"+randomName(t)).Scan(&assetID); err != nil {
+				t.Fatalf("insert asset: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO target_identity_observations
+					(asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, outcome, validation_state)
+				VALUES ($1, 1, 'worker-1', 'probe', '[]', '{}', 'succeeded', $2)
+				RETURNING id`, assetID, tt.validationState).Scan(&observationID); err != nil {
+				t.Fatalf("insert observation: %v", err)
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO target_identity_evidence
+					(observation_id, kind, algorithm, sha256_fingerprint, public_material,
+					 issuer_sha256_fingerprint, dns_names, ssh_principals, valid_from, valid_until)
+				VALUES ($1, $2, 'test', $3, 'public', $4, $5, $6, $7, $8)`,
+				observationID, tt.evidenceKind, tt.evidenceFingerprint, nullableText(tt.issuerFingerprint),
+				emptyStrings(tt.dnsNames), emptyStrings(tt.sshPrincipals), nullableTime(tt.validFrom), nullableTime(tt.validUntil)); err != nil {
+				t.Fatalf("insert evidence: %v", err)
+			}
+			if tt.anchorKind == "tls_ca" {
+				if _, err := pool.Exec(ctx, `
+					INSERT INTO target_identity_evidence
+						(observation_id, kind, algorithm, sha256_fingerprint, public_material,
+						 dns_names, valid_from, valid_until)
+					VALUES ($1, 'tls_leaf', 'test', $2, 'public', $3, $4, $5)`,
+					observationID, "SHA256:leaf-"+randomName(t), emptyStrings(tt.tlsLeafDNS),
+					now.Add(-time.Hour), now.Add(time.Hour)); err != nil {
+					t.Fatalf("insert TLS leaf: %v", err)
+				}
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO target_trust_anchors
+					(asset_id, endpoint_revision, kind, sha256_fingerprint, public_material, source,
+					 required_dns_names, required_ssh_principals)
+				VALUES ($1, 1, $2, $3, 'public', 'manual', $4, $5)`,
+				assetID, tt.anchorKind, tt.anchorFingerprint, emptyStrings(tt.requiredDNS), emptyStrings(tt.requiredPrincipals)); err != nil {
+				t.Fatalf("insert trust anchor: %v", err)
+			}
+
+			status, err := queries.GetAssetVerificationStatus(ctx, sqlc.GetAssetVerificationStatusParams{
+				AssetID: pgtype.UUID{Bytes: assetID, Valid: true},
+			})
+			if err != nil {
+				t.Fatalf("get verification status: %v", err)
+			}
+			if status.VerificationStatus != "identity_changed" {
+				t.Fatalf("verification status = %q; want identity_changed", status.VerificationStatus)
+			}
+		})
+	}
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }
+
+func nullableTime(value *time.Time) pgtype.Timestamptz {
+	if value == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *value, Valid: true}
+}
+
+func nullableText(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func emptyStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+func randomName(t *testing.T) string {
+	t.Helper()
+	return strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
 }
 
 func TestCatalogNamesEnforcesSiblingUniqueness(t *testing.T) {

@@ -164,7 +164,7 @@ type Querier interface {
 	GetAssetSecret(ctx context.Context, arg GetAssetSecretParams) (AssetSecret, error)
 	// Loads a secret by id alone (for management scope-derivation → owning asset).
 	GetAssetSecretByID(ctx context.Context, id uuid.UUID) (AssetSecret, error)
-	GetAssetVerificationStatus(ctx context.Context, assetID pgtype.UUID) (GetAssetVerificationStatusRow, error)
+	GetAssetVerificationStatus(ctx context.Context, arg GetAssetVerificationStatusParams) (GetAssetVerificationStatusRow, error)
 	GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error)
 	GetFolder(ctx context.Context, id uuid.UUID) (Folder, error)
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)

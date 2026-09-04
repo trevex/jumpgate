@@ -77,6 +77,8 @@ CREATE TABLE target_identity_observations (
     protocol_metadata jsonb NOT NULL,
     observed_at timestamptz NOT NULL DEFAULT now(),
     outcome text NOT NULL CHECK (outcome IN ('succeeded','failed','mismatch','stale')),
+    validation_state text NOT NULL DEFAULT 'unvalidated'
+        CHECK (validation_state IN ('unvalidated','validated','failed')),
     failure_category text,
     failure_detail text,
     CONSTRAINT target_identity_observations_id_asset_revision_key
@@ -227,6 +229,27 @@ CREATE TRIGGER target_identity_observations_immutable
 BEFORE UPDATE OR DELETE ON target_identity_observations
 FOR EACH ROW EXECUTE FUNCTION reject_target_identity_observation_mutation();
 
+CREATE FUNCTION reject_target_identity_evidence_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT (
+        TG_OP = 'DELETE'
+        AND pg_trigger_depth() > 1
+        AND COALESCE(current_setting('jumpgate.target_identity_asset_cleanup', true), 'off') = 'on'
+    ) THEN
+        RAISE EXCEPTION 'target identity evidence is immutable';
+    END IF;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER target_identity_evidence_immutable
+BEFORE UPDATE OR DELETE ON target_identity_evidence
+FOR EACH ROW EXECUTE FUNCTION reject_target_identity_evidence_mutation();
+
 -- +goose StatementEnd
 
 -- +goose Down
@@ -237,6 +260,7 @@ DROP TABLE IF EXISTS target_identity_evidence;
 DROP TABLE IF EXISTS target_identity_observations;
 DROP TABLE IF EXISTS target_probe_attempts;
 DROP TABLE IF EXISTS target_probe_jobs;
+DROP FUNCTION IF EXISTS reject_target_identity_evidence_mutation();
 DROP FUNCTION IF EXISTS reject_target_identity_observation_mutation();
 DROP FUNCTION IF EXISTS reject_completed_target_probe_attempt_mutation();
 DROP FUNCTION IF EXISTS cleanup_target_identity_for_asset();

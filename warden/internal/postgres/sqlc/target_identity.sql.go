@@ -380,9 +380,9 @@ const getAssetVerificationStatus = `-- name: GetAssetVerificationStatus :one
 WITH current_asset AS (
     SELECT id, endpoint_revision
     FROM assets
-    WHERE id = $1
+    WHERE id = $2
 ), latest_observation AS (
-    SELECT observation.id, observation.job_id, observation.asset_id, observation.endpoint_revision, observation.worker_id, observation.source, observation.resolved_addresses, observation.protocol_metadata, observation.observed_at, observation.outcome, observation.failure_category, observation.failure_detail
+    SELECT observation.id, observation.job_id, observation.asset_id, observation.endpoint_revision, observation.worker_id, observation.source, observation.resolved_addresses, observation.protocol_metadata, observation.observed_at, observation.outcome, observation.validation_state, observation.failure_category, observation.failure_detail
     FROM target_identity_observations observation
     JOIN current_asset asset
       ON asset.id = observation.asset_id
@@ -411,21 +411,76 @@ WITH current_asset AS (
 ), matching_identity AS (
     SELECT 1
     FROM latest_observation observation
-    JOIN target_identity_evidence evidence ON evidence.observation_id = observation.id
     JOIN active_anchor anchor
       ON (
           (anchor.kind = 'ssh_host_key'
-              AND evidence.kind = 'ssh_host_key'
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'ssh_host_key'
+                    AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
+              ))
        OR (anchor.kind = 'ssh_host_ca'
-              AND evidence.kind = 'ssh_host_certificate'
-              AND anchor.sha256_fingerprint = evidence.issuer_sha256_fingerprint)
+              AND observation.validation_state = 'validated'
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'ssh_host_certificate'
+                    AND anchor.sha256_fingerprint = evidence.issuer_sha256_fingerprint
+                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
+                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_ssh_principals) = 0
+                        OR anchor.required_ssh_principals && evidence.ssh_principals
+                    )
+              ))
        OR (anchor.kind = 'tls_leaf'
-              AND evidence.kind = 'tls_leaf'
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'tls_leaf'
+                    AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
+                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
+                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_dns_names) = 0
+                        OR anchor.required_dns_names && evidence.dns_names
+                    )
+                    AND (
+                        cardinality(anchor.required_ip_addresses) = 0
+                        OR anchor.required_ip_addresses && evidence.ip_addresses
+                    )
+              ))
        OR (anchor.kind = 'tls_ca'
-              AND evidence.kind IN ('tls_intermediate','tls_presented_root')
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND observation.validation_state = 'validated'
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence issuer
+                  WHERE issuer.observation_id = observation.id
+                    AND issuer.kind IN ('tls_intermediate','tls_presented_root')
+                    AND anchor.sha256_fingerprint = issuer.sha256_fingerprint
+                    AND (issuer.valid_from IS NULL OR issuer.valid_from <= now())
+                    AND (issuer.valid_until IS NULL OR issuer.valid_until > now())
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence leaf
+                  WHERE leaf.observation_id = observation.id
+                    AND leaf.kind = 'tls_leaf'
+                    AND (leaf.valid_from IS NULL OR leaf.valid_from <= now())
+                    AND (leaf.valid_until IS NULL OR leaf.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_dns_names) = 0
+                        OR anchor.required_dns_names && leaf.dns_names
+                    )
+                    AND (
+                        cardinality(anchor.required_ip_addresses) = 0
+                        OR anchor.required_ip_addresses && leaf.ip_addresses
+                    )
+              ))
      )
     LIMIT 1
 )
@@ -434,6 +489,11 @@ SELECT
     asset.endpoint_revision,
     CASE
         WHEN observation.outcome = 'mismatch' THEN 'identity_changed'
+        WHEN observation.outcome = 'succeeded'
+             AND EXISTS (SELECT 1 FROM matching_identity)
+             AND $1::timestamptz IS NOT NULL
+             AND observation.observed_at < $1::timestamptz
+            THEN 'verification_expired'
         WHEN observation.outcome = 'succeeded' AND EXISTS (SELECT 1 FROM matching_identity) THEN 'verified'
         WHEN observation.outcome = 'succeeded' AND EXISTS (SELECT 1 FROM active_anchor) THEN 'identity_changed'
         WHEN observation.outcome = 'succeeded' THEN 'awaiting_approval'
@@ -449,6 +509,11 @@ LEFT JOIN latest_observation observation ON true
 LEFT JOIN latest_terminal_job job ON true
 `
 
+type GetAssetVerificationStatusParams struct {
+	FreshnessCutoff pgtype.Timestamptz `json:"freshness_cutoff"`
+	AssetID         pgtype.UUID        `json:"asset_id"`
+}
+
 type GetAssetVerificationStatusRow struct {
 	AssetID             uuid.UUID   `json:"asset_id"`
 	EndpointRevision    int64       `json:"endpoint_revision"`
@@ -457,8 +522,8 @@ type GetAssetVerificationStatusRow struct {
 	LatestProbeJobID    pgtype.UUID `json:"latest_probe_job_id"`
 }
 
-func (q *Queries) GetAssetVerificationStatus(ctx context.Context, assetID pgtype.UUID) (GetAssetVerificationStatusRow, error) {
-	row := q.db.QueryRow(ctx, getAssetVerificationStatus, assetID)
+func (q *Queries) GetAssetVerificationStatus(ctx context.Context, arg GetAssetVerificationStatusParams) (GetAssetVerificationStatusRow, error) {
+	row := q.db.QueryRow(ctx, getAssetVerificationStatus, arg.FreshnessCutoff, arg.AssetID)
 	var i GetAssetVerificationStatusRow
 	err := row.Scan(
 		&i.AssetID,
@@ -597,6 +662,7 @@ INSERT INTO target_identity_observations (
     protocol_metadata,
     observed_at,
     outcome,
+    validation_state,
     failure_category,
     failure_detail
 )
@@ -610,10 +676,11 @@ VALUES (
     $7,
     $8,
     $9,
-    $10::text,
-    $11::text
+    $10,
+    $11::text,
+    $12::text
 )
-RETURNING id, job_id, asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, observed_at, outcome, failure_category, failure_detail
+RETURNING id, job_id, asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, observed_at, outcome, validation_state, failure_category, failure_detail
 `
 
 type InsertIdentityObservationParams struct {
@@ -626,6 +693,7 @@ type InsertIdentityObservationParams struct {
 	ProtocolMetadata  []byte             `json:"protocol_metadata"`
 	ObservedAt        pgtype.Timestamptz `json:"observed_at"`
 	Outcome           string             `json:"outcome"`
+	ValidationState   string             `json:"validation_state"`
 	FailureCategory   pgtype.Text        `json:"failure_category"`
 	FailureDetail     pgtype.Text        `json:"failure_detail"`
 }
@@ -641,6 +709,7 @@ func (q *Queries) InsertIdentityObservation(ctx context.Context, arg InsertIdent
 		arg.ProtocolMetadata,
 		arg.ObservedAt,
 		arg.Outcome,
+		arg.ValidationState,
 		arg.FailureCategory,
 		arg.FailureDetail,
 	)
@@ -656,6 +725,7 @@ func (q *Queries) InsertIdentityObservation(ctx context.Context, arg InsertIdent
 		&i.ProtocolMetadata,
 		&i.ObservedAt,
 		&i.Outcome,
+		&i.ValidationState,
 		&i.FailureCategory,
 		&i.FailureDetail,
 	)

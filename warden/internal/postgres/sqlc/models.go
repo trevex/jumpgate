@@ -318,6 +318,7 @@ type TargetIdentityObservation struct {
 	ProtocolMetadata  []byte      `json:"protocol_metadata"`
 	ObservedAt        time.Time   `json:"observed_at"`
 	Outcome           string      `json:"outcome"`
+	ValidationState   string      `json:"validation_state"`
 	FailureCategory   pgtype.Text `json:"failure_category"`
 	FailureDetail     pgtype.Text `json:"failure_detail"`
 }

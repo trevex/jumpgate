@@ -137,6 +137,7 @@ INSERT INTO target_identity_observations (
     protocol_metadata,
     observed_at,
     outcome,
+    validation_state,
     failure_category,
     failure_detail
 )
@@ -150,6 +151,7 @@ VALUES (
     sqlc.arg('protocol_metadata'),
     sqlc.arg('observed_at'),
     sqlc.arg('outcome'),
+    sqlc.arg('validation_state'),
     sqlc.narg('failure_category')::text,
     sqlc.narg('failure_detail')::text
 )
@@ -295,21 +297,76 @@ WITH current_asset AS (
 ), matching_identity AS (
     SELECT 1
     FROM latest_observation observation
-    JOIN target_identity_evidence evidence ON evidence.observation_id = observation.id
     JOIN active_anchor anchor
       ON (
           (anchor.kind = 'ssh_host_key'
-              AND evidence.kind = 'ssh_host_key'
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'ssh_host_key'
+                    AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
+              ))
        OR (anchor.kind = 'ssh_host_ca'
-              AND evidence.kind = 'ssh_host_certificate'
-              AND anchor.sha256_fingerprint = evidence.issuer_sha256_fingerprint)
+              AND observation.validation_state = 'validated'
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'ssh_host_certificate'
+                    AND anchor.sha256_fingerprint = evidence.issuer_sha256_fingerprint
+                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
+                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_ssh_principals) = 0
+                        OR anchor.required_ssh_principals && evidence.ssh_principals
+                    )
+              ))
        OR (anchor.kind = 'tls_leaf'
-              AND evidence.kind = 'tls_leaf'
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence evidence
+                  WHERE evidence.observation_id = observation.id
+                    AND evidence.kind = 'tls_leaf'
+                    AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
+                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
+                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_dns_names) = 0
+                        OR anchor.required_dns_names && evidence.dns_names
+                    )
+                    AND (
+                        cardinality(anchor.required_ip_addresses) = 0
+                        OR anchor.required_ip_addresses && evidence.ip_addresses
+                    )
+              ))
        OR (anchor.kind = 'tls_ca'
-              AND evidence.kind IN ('tls_intermediate','tls_presented_root')
-              AND anchor.sha256_fingerprint = evidence.sha256_fingerprint)
+              AND observation.validation_state = 'validated'
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence issuer
+                  WHERE issuer.observation_id = observation.id
+                    AND issuer.kind IN ('tls_intermediate','tls_presented_root')
+                    AND anchor.sha256_fingerprint = issuer.sha256_fingerprint
+                    AND (issuer.valid_from IS NULL OR issuer.valid_from <= now())
+                    AND (issuer.valid_until IS NULL OR issuer.valid_until > now())
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_identity_evidence leaf
+                  WHERE leaf.observation_id = observation.id
+                    AND leaf.kind = 'tls_leaf'
+                    AND (leaf.valid_from IS NULL OR leaf.valid_from <= now())
+                    AND (leaf.valid_until IS NULL OR leaf.valid_until > now())
+                    AND (
+                        cardinality(anchor.required_dns_names) = 0
+                        OR anchor.required_dns_names && leaf.dns_names
+                    )
+                    AND (
+                        cardinality(anchor.required_ip_addresses) = 0
+                        OR anchor.required_ip_addresses && leaf.ip_addresses
+                    )
+              ))
      )
     LIMIT 1
 )
@@ -318,6 +375,11 @@ SELECT
     asset.endpoint_revision,
     CASE
         WHEN observation.outcome = 'mismatch' THEN 'identity_changed'
+        WHEN observation.outcome = 'succeeded'
+             AND EXISTS (SELECT 1 FROM matching_identity)
+             AND sqlc.narg('freshness_cutoff')::timestamptz IS NOT NULL
+             AND observation.observed_at < sqlc.narg('freshness_cutoff')::timestamptz
+            THEN 'verification_expired'
         WHEN observation.outcome = 'succeeded' AND EXISTS (SELECT 1 FROM matching_identity) THEN 'verified'
         WHEN observation.outcome = 'succeeded' AND EXISTS (SELECT 1 FROM active_anchor) THEN 'identity_changed'
         WHEN observation.outcome = 'succeeded' THEN 'awaiting_approval'
