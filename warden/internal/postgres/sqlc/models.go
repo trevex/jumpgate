@@ -323,6 +323,15 @@ type TargetIdentityObservation struct {
 	FailureDetail     pgtype.Text `json:"failure_detail"`
 }
 
+type TargetIdentityValidationFact struct {
+	ObservationID    uuid.UUID `json:"observation_id"`
+	AssetID          uuid.UUID `json:"asset_id"`
+	EndpointRevision int64     `json:"endpoint_revision"`
+	AnchorID         uuid.UUID `json:"anchor_id"`
+	EvidenceID       uuid.UUID `json:"evidence_id"`
+	ValidatedAt      time.Time `json:"validated_at"`
+}
+
 type TargetProbeAttempt struct {
 	ID              uuid.UUID          `json:"id"`
 	JobID           uuid.UUID          `json:"job_id"`

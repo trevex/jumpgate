@@ -308,15 +308,21 @@ WITH current_asset AS (
                     AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
               ))
        OR (anchor.kind = 'ssh_host_ca'
-              AND observation.validation_state = 'validated'
               AND EXISTS (
                   SELECT 1
-                  FROM target_identity_evidence evidence
-                  WHERE evidence.observation_id = observation.id
+                  FROM target_identity_validation_facts validation
+                  JOIN target_identity_evidence evidence
+                    ON evidence.id = validation.evidence_id
+                   AND evidence.observation_id = validation.observation_id
+                  WHERE validation.observation_id = observation.id
+                    AND validation.asset_id = observation.asset_id
+                    AND validation.endpoint_revision = observation.endpoint_revision
+                    AND validation.anchor_id = anchor.id
                     AND evidence.kind = 'ssh_host_certificate'
-                    AND anchor.sha256_fingerprint = evidence.issuer_sha256_fingerprint
-                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
-                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND evidence.valid_from IS NOT NULL
+                    AND evidence.valid_until IS NOT NULL
+                    AND evidence.valid_from <= now()
+                    AND evidence.valid_until > now()
                     AND (
                         cardinality(anchor.required_ssh_principals) = 0
                         OR anchor.required_ssh_principals && evidence.ssh_principals
@@ -329,8 +335,10 @@ WITH current_asset AS (
                   WHERE evidence.observation_id = observation.id
                     AND evidence.kind = 'tls_leaf'
                     AND anchor.sha256_fingerprint = evidence.sha256_fingerprint
-                    AND (evidence.valid_from IS NULL OR evidence.valid_from <= now())
-                    AND (evidence.valid_until IS NULL OR evidence.valid_until > now())
+                    AND evidence.valid_from IS NOT NULL
+                    AND evidence.valid_until IS NOT NULL
+                    AND evidence.valid_from <= now()
+                    AND evidence.valid_until > now()
                     AND (
                         cardinality(anchor.required_dns_names) = 0
                         OR anchor.required_dns_names && evidence.dns_names
@@ -341,23 +349,21 @@ WITH current_asset AS (
                     )
               ))
        OR (anchor.kind = 'tls_ca'
-              AND observation.validation_state = 'validated'
               AND EXISTS (
                   SELECT 1
-                  FROM target_identity_evidence issuer
-                  WHERE issuer.observation_id = observation.id
-                    AND issuer.kind IN ('tls_intermediate','tls_presented_root')
-                    AND anchor.sha256_fingerprint = issuer.sha256_fingerprint
-                    AND (issuer.valid_from IS NULL OR issuer.valid_from <= now())
-                    AND (issuer.valid_until IS NULL OR issuer.valid_until > now())
-              )
-              AND EXISTS (
-                  SELECT 1
-                  FROM target_identity_evidence leaf
-                  WHERE leaf.observation_id = observation.id
+                  FROM target_identity_validation_facts validation
+                  JOIN target_identity_evidence leaf
+                    ON leaf.id = validation.evidence_id
+                   AND leaf.observation_id = validation.observation_id
+                  WHERE validation.observation_id = observation.id
+                    AND validation.asset_id = observation.asset_id
+                    AND validation.endpoint_revision = observation.endpoint_revision
+                    AND validation.anchor_id = anchor.id
                     AND leaf.kind = 'tls_leaf'
-                    AND (leaf.valid_from IS NULL OR leaf.valid_from <= now())
-                    AND (leaf.valid_until IS NULL OR leaf.valid_until > now())
+                    AND leaf.valid_from IS NOT NULL
+                    AND leaf.valid_until IS NOT NULL
+                    AND leaf.valid_from <= now()
+                    AND leaf.valid_until > now()
                     AND (
                         cardinality(anchor.required_dns_names) = 0
                         OR anchor.required_dns_names && leaf.dns_names

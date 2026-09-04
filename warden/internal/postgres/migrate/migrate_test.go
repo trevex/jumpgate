@@ -249,6 +249,7 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		"target_probe_attempts",
 		"target_identity_observations",
 		"target_identity_evidence",
+		"target_identity_validation_facts",
 		"target_trust_anchors",
 	} {
 		var exists bool
@@ -383,6 +384,28 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		VALUES ($1, 1, 'password', 'SHA256:test', 'public', 'manual')`, assetID); err == nil {
 		t.Fatal("invalid trust-anchor kind accepted")
 	}
+	var anchorID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO target_trust_anchors
+			(asset_id, endpoint_revision, kind, sha256_fingerprint, public_material, source)
+		VALUES ($1, 1, 'ssh_host_key', 'SHA256:immutable', 'public', 'manual')
+		RETURNING id`, assetID).Scan(&anchorID); err != nil {
+		t.Fatalf("insert trust anchor: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_identity_validation_facts
+			(observation_id, asset_id, endpoint_revision, anchor_id, evidence_id)
+		VALUES ($1, $2, 1, $3, $4)`, observationID, assetID, anchorID, evidenceID); err != nil {
+		t.Fatalf("insert validation fact: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`UPDATE target_identity_validation_facts SET validated_at = now() WHERE anchor_id = $1`, anchorID); err == nil {
+		t.Fatal("validation fact update accepted")
+	}
+	if _, err := pool.Exec(ctx,
+		`DELETE FROM target_identity_validation_facts WHERE anchor_id = $1`, anchorID); err == nil {
+		t.Fatal("validation fact delete accepted")
+	}
 
 	if _, err := pool.Exec(ctx, `DELETE FROM assets WHERE id = $1`, assetID); err != nil {
 		t.Fatalf("asset cascade delete: %v", err)
@@ -392,6 +415,7 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		"target_probe_attempts",
 		"target_identity_observations",
 		"target_identity_evidence",
+		"target_identity_validation_facts",
 		"target_trust_anchors",
 	} {
 		var count int
@@ -648,6 +672,217 @@ func TestTargetIdentityStatusDoesNotVerifyFingerprintAlone(t *testing.T) {
 			}
 			if status.VerificationStatus != "identity_changed" {
 				t.Fatalf("verification status = %q; want identity_changed", status.VerificationStatus)
+			}
+		})
+	}
+}
+
+func TestTargetIdentityStatusPositivePinAndFreshness(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	queries := sqlc.New(pool)
+
+	var folderID, assetID, observationID uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "positive-"+randomName(t)).Scan(&folderID); err != nil {
+		t.Fatalf("insert folder: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO assets (folder_id, name, kind)
+		VALUES ($1, $2, 'ssh')
+		RETURNING id`, folderID, "target-"+randomName(t)).Scan(&assetID); err != nil {
+		t.Fatalf("insert asset: %v", err)
+	}
+	observedAt := time.Now().UTC().Add(-2 * time.Hour)
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO target_identity_observations
+			(asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, observed_at, outcome)
+		VALUES ($1, 1, 'worker-1', 'probe', '[]', '{}', $2, 'succeeded')
+		RETURNING id`, assetID, observedAt).Scan(&observationID); err != nil {
+		t.Fatalf("insert observation: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_identity_evidence
+			(observation_id, kind, algorithm, sha256_fingerprint, public_material)
+		VALUES ($1, 'ssh_host_key', 'ed25519', 'SHA256:exact-pin', 'public')`, observationID); err != nil {
+		t.Fatalf("insert evidence: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_trust_anchors
+			(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source)
+		VALUES ($1, 1, 'ssh_host_key', 'ed25519', 'SHA256:exact-pin', 'public', 'manual')`, assetID); err != nil {
+		t.Fatalf("insert anchor: %v", err)
+	}
+
+	status, err := queries.GetAssetVerificationStatus(ctx, sqlc.GetAssetVerificationStatusParams{
+		AssetID: pgtype.UUID{Bytes: assetID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("get verified status: %v", err)
+	}
+	if status.VerificationStatus != "verified" {
+		t.Fatalf("verification status = %q; want verified", status.VerificationStatus)
+	}
+
+	status, err = queries.GetAssetVerificationStatus(ctx, sqlc.GetAssetVerificationStatusParams{
+		AssetID:         pgtype.UUID{Bytes: assetID, Valid: true},
+		FreshnessCutoff: pgtype.Timestamptz{Time: time.Now().UTC().Add(-time.Hour), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("get expired status: %v", err)
+	}
+	if status.VerificationStatus != "verification_expired" {
+		t.Fatalf("verification status = %q; want verification_expired", status.VerificationStatus)
+	}
+}
+
+func TestTargetIdentityStatusTLSLeafPinRequiresValidity(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	queries := sqlc.New(pool)
+
+	var folderID, assetID, observationID uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "leaf-"+randomName(t)).Scan(&folderID); err != nil {
+		t.Fatalf("insert folder: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO assets (folder_id, name, kind)
+		VALUES ($1, $2, 'ssh')
+		RETURNING id`, folderID, "target-"+randomName(t)).Scan(&assetID); err != nil {
+		t.Fatalf("insert asset: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO target_identity_observations
+			(asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, outcome)
+		VALUES ($1, 1, 'worker-1', 'probe', '[]', '{}', 'succeeded')
+		RETURNING id`, assetID).Scan(&observationID); err != nil {
+		t.Fatalf("insert observation: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_identity_evidence
+			(observation_id, kind, algorithm, sha256_fingerprint, public_material, dns_names)
+		VALUES ($1, 'tls_leaf', 'ecdsa', 'SHA256:leaf-no-validity', 'public', '{target.example}')`, observationID); err != nil {
+		t.Fatalf("insert evidence: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_trust_anchors
+			(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source, required_dns_names)
+		VALUES ($1, 1, 'tls_leaf', 'ecdsa', 'SHA256:leaf-no-validity', 'public', 'manual', '{target.example}')`, assetID); err != nil {
+		t.Fatalf("insert anchor: %v", err)
+	}
+
+	status, err := queries.GetAssetVerificationStatus(ctx, sqlc.GetAssetVerificationStatusParams{
+		AssetID: pgtype.UUID{Bytes: assetID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("get verification status: %v", err)
+	}
+	if status.VerificationStatus != "identity_changed" {
+		t.Fatalf("verification status = %q; want identity_changed", status.VerificationStatus)
+	}
+}
+
+func TestTargetIdentityStatusCARequiresSpecificValidatedPath(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	queries := sqlc.New(pool)
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name            string
+		withProof       bool
+		missingValidity bool
+		wantStatus      string
+	}{
+		{name: "matching presented issuer without proof", wantStatus: "identity_changed"},
+		{name: "validated leaf path with absent root", withProof: true, wantStatus: "verified"},
+		{name: "leaf certificate missing validity", withProof: true, missingValidity: true, wantStatus: "identity_changed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var folderID, assetID, observationID, anchorID, leafEvidenceID uuid.UUID
+			if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "ca-"+randomName(t)).Scan(&folderID); err != nil {
+				t.Fatalf("insert folder: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO assets (folder_id, name, kind)
+				VALUES ($1, $2, 'ssh')
+				RETURNING id`, folderID, "target-"+randomName(t)).Scan(&assetID); err != nil {
+				t.Fatalf("insert asset: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO target_identity_observations
+					(asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, outcome, validation_state)
+				VALUES ($1, 1, 'worker-1', 'probe', '[]', '{}', 'succeeded', 'validated')
+				RETURNING id`, assetID).Scan(&observationID); err != nil {
+				t.Fatalf("insert observation: %v", err)
+			}
+
+			validFrom, validUntil := nullableTime(ptrTime(now.Add(-time.Hour))), nullableTime(ptrTime(now.Add(time.Hour)))
+			if tt.missingValidity {
+				validFrom, validUntil = pgtype.Timestamptz{}, pgtype.Timestamptz{}
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO target_identity_evidence
+					(observation_id, kind, algorithm, sha256_fingerprint, public_material, dns_names, valid_from, valid_until)
+				VALUES ($1, 'tls_leaf', 'ecdsa', 'SHA256:leaf', 'public', '{target.example}', $2, $3)
+				RETURNING id`, observationID, validFrom, validUntil).Scan(&leafEvidenceID); err != nil {
+				t.Fatalf("insert leaf evidence: %v", err)
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO target_identity_evidence
+					(observation_id, kind, algorithm, sha256_fingerprint, public_material, valid_from, valid_until)
+				VALUES ($1, 'tls_intermediate', 'ecdsa', 'SHA256:ca', 'public', $2, $3)`,
+				observationID, validFrom, validUntil); err != nil {
+				t.Fatalf("insert issuer evidence: %v", err)
+			}
+			if err := pool.QueryRow(ctx, `
+				INSERT INTO target_trust_anchors
+					(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source, required_dns_names)
+				VALUES ($1, 1, 'tls_ca', 'ecdsa', 'SHA256:ca', 'public', 'manual', '{target.example}')
+				RETURNING id`, assetID).Scan(&anchorID); err != nil {
+				t.Fatalf("insert anchor: %v", err)
+			}
+			if tt.withProof {
+				if _, err := pool.Exec(ctx, `
+					INSERT INTO target_identity_validation_facts
+						(observation_id, asset_id, endpoint_revision, anchor_id, evidence_id)
+					VALUES ($1, $2, 1, $3, $4)`, observationID, assetID, anchorID, leafEvidenceID); err != nil {
+					t.Fatalf("insert validation fact: %v", err)
+				}
+			}
+
+			status, err := queries.GetAssetVerificationStatus(ctx, sqlc.GetAssetVerificationStatusParams{
+				AssetID: pgtype.UUID{Bytes: assetID, Valid: true},
+			})
+			if err != nil {
+				t.Fatalf("get verification status: %v", err)
+			}
+			if status.VerificationStatus != tt.wantStatus {
+				t.Fatalf("verification status = %q; want %s", status.VerificationStatus, tt.wantStatus)
 			}
 		})
 	}

@@ -114,6 +114,8 @@ CREATE TABLE target_identity_evidence (
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT target_identity_evidence_observation_kind_fingerprint_key
         UNIQUE (observation_id, kind, sha256_fingerprint),
+    CONSTRAINT target_identity_evidence_id_observation_key
+        UNIQUE (id, observation_id),
     CONSTRAINT target_identity_evidence_validity CHECK (
         valid_from IS NULL OR valid_until IS NULL OR valid_until > valid_from
     ),
@@ -147,6 +149,8 @@ CREATE TABLE target_trust_anchors (
     CONSTRAINT target_trust_anchors_observation_fkey
         FOREIGN KEY (observation_id, asset_id, endpoint_revision)
         REFERENCES target_identity_observations(id, asset_id, endpoint_revision) ON DELETE SET NULL (observation_id),
+    CONSTRAINT target_trust_anchors_id_asset_revision_key
+        UNIQUE (id, asset_id, endpoint_revision),
     CONSTRAINT target_trust_anchors_validity CHECK (
         not_before IS NULL OR expires_at IS NULL OR expires_at > not_before
     ),
@@ -155,6 +159,32 @@ CREATE TABLE target_trust_anchors (
         OR revoked_at IS NOT NULL
     )
 );
+
+-- A validation fact is the durable proof that this exact observed leaf was
+-- validated to this exact approved anchor. A TLS root need not be presented:
+-- the approved anchor is the trust root, and its absence from evidence is
+-- represented by the lack of a root evidence row rather than a failed proof.
+CREATE TABLE target_identity_validation_facts (
+    observation_id uuid NOT NULL,
+    asset_id uuid NOT NULL,
+    endpoint_revision bigint NOT NULL CHECK (endpoint_revision > 0),
+    anchor_id uuid NOT NULL,
+    evidence_id uuid NOT NULL,
+    validated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (observation_id, anchor_id, evidence_id),
+    CONSTRAINT target_identity_validation_observation_fkey
+        FOREIGN KEY (observation_id, asset_id, endpoint_revision)
+        REFERENCES target_identity_observations(id, asset_id, endpoint_revision) ON DELETE CASCADE,
+    CONSTRAINT target_identity_validation_anchor_fkey
+        FOREIGN KEY (anchor_id, asset_id, endpoint_revision)
+        REFERENCES target_trust_anchors(id, asset_id, endpoint_revision) ON DELETE CASCADE,
+    CONSTRAINT target_identity_validation_evidence_fkey
+        FOREIGN KEY (evidence_id, observation_id)
+        REFERENCES target_identity_evidence(id, observation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX target_identity_validation_facts_lookup
+    ON target_identity_validation_facts (observation_id, anchor_id, evidence_id);
 
 CREATE INDEX target_trust_anchors_active
     ON target_trust_anchors (asset_id, endpoint_revision, kind, approved_at DESC)
@@ -250,17 +280,37 @@ CREATE TRIGGER target_identity_evidence_immutable
 BEFORE UPDATE OR DELETE ON target_identity_evidence
 FOR EACH ROW EXECUTE FUNCTION reject_target_identity_evidence_mutation();
 
+CREATE FUNCTION reject_target_identity_validation_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT (
+        TG_OP = 'DELETE'
+        AND pg_trigger_depth() > 1
+        AND COALESCE(current_setting('jumpgate.target_identity_asset_cleanup', true), 'off') = 'on'
+    ) THEN
+        RAISE EXCEPTION 'target identity validation facts are immutable';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER target_identity_validation_facts_immutable
+BEFORE UPDATE OR DELETE ON target_identity_validation_facts
+FOR EACH ROW EXECUTE FUNCTION reject_target_identity_validation_mutation();
+
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS assets_cleanup_target_identity ON assets;
+DROP TABLE IF EXISTS target_identity_validation_facts;
 DROP TABLE IF EXISTS target_trust_anchors;
 DROP TABLE IF EXISTS target_identity_evidence;
 DROP TABLE IF EXISTS target_identity_observations;
 DROP TABLE IF EXISTS target_probe_attempts;
 DROP TABLE IF EXISTS target_probe_jobs;
 DROP FUNCTION IF EXISTS reject_target_identity_evidence_mutation();
+DROP FUNCTION IF EXISTS reject_target_identity_validation_mutation();
 DROP FUNCTION IF EXISTS reject_target_identity_observation_mutation();
 DROP FUNCTION IF EXISTS reject_completed_target_probe_attempt_mutation();
 DROP FUNCTION IF EXISTS cleanup_target_identity_for_asset();
