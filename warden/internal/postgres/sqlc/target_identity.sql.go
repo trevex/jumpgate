@@ -476,46 +476,6 @@ func (q *Queries) CreateProbeJob(ctx context.Context, arg CreateProbeJobParams) 
 	return i, err
 }
 
-const findIdentityEvidenceByFingerprint = `-- name: FindIdentityEvidenceByFingerprint :one
-SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
-FROM target_identity_evidence evidence
-WHERE evidence.observation_id = $1
-  AND evidence.sha256_fingerprint = $2
-ORDER BY evidence.id
-LIMIT 1
-`
-
-type FindIdentityEvidenceByFingerprintParams struct {
-	ObservationID     uuid.UUID `json:"observation_id"`
-	Sha256Fingerprint string    `json:"sha256_fingerprint"`
-}
-
-func (q *Queries) FindIdentityEvidenceByFingerprint(ctx context.Context, arg FindIdentityEvidenceByFingerprintParams) (TargetIdentityEvidence, error) {
-	row := q.db.QueryRow(ctx, findIdentityEvidenceByFingerprint, arg.ObservationID, arg.Sha256Fingerprint)
-	var i TargetIdentityEvidence
-	err := row.Scan(
-		&i.ID,
-		&i.ObservationID,
-		&i.Kind,
-		&i.Algorithm,
-		&i.Sha256Fingerprint,
-		&i.PublicMaterial,
-		&i.CertificateSubject,
-		&i.CertificateIssuer,
-		&i.IssuerSha256Fingerprint,
-		&i.DnsNames,
-		&i.IpAddresses,
-		&i.SshPrincipals,
-		&i.SerialNumber,
-		&i.ValidFrom,
-		&i.ValidUntil,
-		&i.KeyMetadata,
-		&i.DisplayExtensions,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getAssetVerificationStatus = `-- name: GetAssetVerificationStatus :one
 WITH current_asset AS (
     SELECT id, endpoint_revision
@@ -703,6 +663,44 @@ func (q *Queries) GetCompletedAttemptOutcome(ctx context.Context, arg GetComplet
 	var outcome pgtype.Text
 	err := row.Scan(&outcome)
 	return outcome, err
+}
+
+const getIdentityEvidenceForApproval = `-- name: GetIdentityEvidenceForApproval :one
+SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
+FROM target_identity_evidence evidence
+WHERE evidence.id = $1
+  AND evidence.observation_id = $2
+`
+
+type GetIdentityEvidenceForApprovalParams struct {
+	EvidenceID    uuid.UUID `json:"evidence_id"`
+	ObservationID uuid.UUID `json:"observation_id"`
+}
+
+func (q *Queries) GetIdentityEvidenceForApproval(ctx context.Context, arg GetIdentityEvidenceForApprovalParams) (TargetIdentityEvidence, error) {
+	row := q.db.QueryRow(ctx, getIdentityEvidenceForApproval, arg.EvidenceID, arg.ObservationID)
+	var i TargetIdentityEvidence
+	err := row.Scan(
+		&i.ID,
+		&i.ObservationID,
+		&i.Kind,
+		&i.Algorithm,
+		&i.Sha256Fingerprint,
+		&i.PublicMaterial,
+		&i.CertificateSubject,
+		&i.CertificateIssuer,
+		&i.IssuerSha256Fingerprint,
+		&i.DnsNames,
+		&i.IpAddresses,
+		&i.SshPrincipals,
+		&i.SerialNumber,
+		&i.ValidFrom,
+		&i.ValidUntil,
+		&i.KeyMetadata,
+		&i.DisplayExtensions,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getLatestTerminalProbeJob = `-- name: GetLatestTerminalProbeJob :one
@@ -1012,9 +1010,9 @@ SELECT EXISTS (
       AND endpoint_revision = $2
       AND observation_id = $3
       AND revoked_at IS NULL
-      AND approved_at <= now()
-      AND (not_before IS NULL OR not_before <= now())
-      AND (expires_at IS NULL OR expires_at > now())
+      AND approved_at <= $4::timestamptz
+      AND (not_before IS NULL OR not_before <= $4::timestamptz)
+      AND (expires_at IS NULL OR expires_at > $4::timestamptz)
 )
 `
 
@@ -1022,10 +1020,16 @@ type IsObservationApprovedActiveParams struct {
 	AssetID          uuid.UUID   `json:"asset_id"`
 	EndpointRevision int64       `json:"endpoint_revision"`
 	ObservationID    pgtype.UUID `json:"observation_id"`
+	AtTime           time.Time   `json:"at_time"`
 }
 
 func (q *Queries) IsObservationApprovedActive(ctx context.Context, arg IsObservationApprovedActiveParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isObservationApprovedActive, arg.AssetID, arg.EndpointRevision, arg.ObservationID)
+	row := q.db.QueryRow(ctx, isObservationApprovedActive,
+		arg.AssetID,
+		arg.EndpointRevision,
+		arg.ObservationID,
+		arg.AtTime,
+	)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -1065,14 +1069,19 @@ JOIN assets asset
  AND asset.endpoint_revision = anchor.endpoint_revision
 WHERE anchor.asset_id = $1
   AND anchor.revoked_at IS NULL
-  AND anchor.approved_at <= now()
-  AND (anchor.not_before IS NULL OR anchor.not_before <= now())
-  AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+  AND anchor.approved_at <= $2::timestamptz
+  AND (anchor.not_before IS NULL OR anchor.not_before <= $2::timestamptz)
+  AND (anchor.expires_at IS NULL OR anchor.expires_at > $2::timestamptz)
 ORDER BY anchor.approved_at, anchor.id
 `
 
-func (q *Queries) ListCurrentActiveTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error) {
-	rows, err := q.db.Query(ctx, listCurrentActiveTrustAnchors, assetID)
+type ListCurrentActiveTrustAnchorsParams struct {
+	AssetID uuid.UUID `json:"asset_id"`
+	AtTime  time.Time `json:"at_time"`
+}
+
+func (q *Queries) ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error) {
+	rows, err := q.db.Query(ctx, listCurrentActiveTrustAnchors, arg.AssetID, arg.AtTime)
 	if err != nil {
 		return nil, err
 	}
@@ -1328,23 +1337,24 @@ SELECT EXISTS (
     WHERE anchor.asset_id = $1
       AND anchor.endpoint_revision = $2
       AND anchor.revoked_at IS NULL
-      AND anchor.approved_at <= now()
-      AND (anchor.not_before IS NULL OR anchor.not_before <= now())
-      AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+      AND anchor.approved_at <= $3::timestamptz
+      AND (anchor.not_before IS NULL OR anchor.not_before <= $3::timestamptz)
+      AND (anchor.expires_at IS NULL OR anchor.expires_at > $3::timestamptz)
       AND (
           (anchor.kind = 'ssh_host_key' AND EXISTS (
               SELECT 1 FROM target_identity_evidence evidence
-              WHERE evidence.observation_id = $3
+              WHERE evidence.observation_id = $4
                 AND evidence.kind = 'ssh_host_key'
                 AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
           ))
        OR (anchor.kind = 'tls_leaf' AND EXISTS (
               SELECT 1 FROM target_identity_evidence evidence
-              WHERE evidence.observation_id = $3
+              WHERE evidence.observation_id = $4
                 AND evidence.kind = 'tls_leaf'
                 AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= $3::timestamptz
+                AND evidence.valid_until > $3::timestamptz
                 AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
                 AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
           ))
@@ -1354,11 +1364,12 @@ SELECT EXISTS (
               JOIN target_identity_evidence evidence
                 ON evidence.id = validation.evidence_id
                AND evidence.observation_id = validation.observation_id
-              WHERE validation.observation_id = $3
+              WHERE validation.observation_id = $4
                 AND validation.anchor_id = anchor.id
                 AND evidence.kind = 'ssh_host_certificate'
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= $3::timestamptz
+                AND evidence.valid_until > $3::timestamptz
                 AND (cardinality(anchor.required_ssh_principals) = 0 OR anchor.required_ssh_principals && evidence.ssh_principals)
           ))
        OR (anchor.kind = 'tls_ca' AND EXISTS (
@@ -1367,11 +1378,12 @@ SELECT EXISTS (
               JOIN target_identity_evidence evidence
                 ON evidence.id = validation.evidence_id
                AND evidence.observation_id = validation.observation_id
-              WHERE validation.observation_id = $3
+              WHERE validation.observation_id = $4
                 AND validation.anchor_id = anchor.id
                 AND evidence.kind = 'tls_leaf'
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= $3::timestamptz
+                AND evidence.valid_until > $3::timestamptz
                 AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
                 AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
           ))
@@ -1382,11 +1394,17 @@ SELECT EXISTS (
 type ObservationMatchesCurrentAnchorsParams struct {
 	AssetID          uuid.UUID `json:"asset_id"`
 	EndpointRevision int64     `json:"endpoint_revision"`
+	AtTime           time.Time `json:"at_time"`
 	ObservationID    uuid.UUID `json:"observation_id"`
 }
 
 func (q *Queries) ObservationMatchesCurrentAnchors(ctx context.Context, arg ObservationMatchesCurrentAnchorsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, observationMatchesCurrentAnchors, arg.AssetID, arg.EndpointRevision, arg.ObservationID)
+	row := q.db.QueryRow(ctx, observationMatchesCurrentAnchors,
+		arg.AssetID,
+		arg.EndpointRevision,
+		arg.AtTime,
+		arg.ObservationID,
+	)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err

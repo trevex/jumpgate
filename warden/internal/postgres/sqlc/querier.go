@@ -133,7 +133,6 @@ type Querier interface {
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	// ExplainRole.
 	ExplainRolePaths(ctx context.Context, arg ExplainRolePathsParams) ([]ExplainRolePathsRow, error)
-	FindIdentityEvidenceByFingerprint(ctx context.Context, arg FindIdentityEvidenceByFingerprintParams) (TargetIdentityEvidence, error)
 	// Every ancestor-or-self folder id of $1 (the target), walking parent links up
 	// to the root. Used for folder-scoped role containment checks.
 	FolderAncestorsAndSelf(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error)
@@ -176,6 +175,7 @@ type Querier interface {
 	GetGroup(ctx context.Context, id uuid.UUID) (Group, error)
 	GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFolderAndNameParams) (Group, error)
 	GetGroupByNameGlobal(ctx context.Context, name string) (Group, error)
+	GetIdentityEvidenceForApproval(ctx context.Context, arg GetIdentityEvidenceForApprovalParams) (TargetIdentityEvidence, error)
 	GetLastAuditEntry(ctx context.Context) (AuditLog, error)
 	GetLatestTerminalProbeJob(ctx context.Context, arg GetLatestTerminalProbeJobParams) (GetLatestTerminalProbeJobRow, error)
 	GetLiveSession(ctx context.Context, id uuid.UUID) (LiveSession, error)
@@ -246,7 +246,7 @@ type Querier interface {
 	// path resolved in SQL via folder_path() (no per-row Go resolution).
 	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
-	ListCurrentActiveTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error)
+	ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)

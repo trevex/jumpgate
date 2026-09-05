@@ -204,9 +204,9 @@ JOIN assets asset
  AND asset.endpoint_revision = anchor.endpoint_revision
 WHERE anchor.asset_id = sqlc.arg('asset_id')
   AND anchor.revoked_at IS NULL
-  AND anchor.approved_at <= now()
-  AND (anchor.not_before IS NULL OR anchor.not_before <= now())
-  AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+  AND anchor.approved_at <= sqlc.arg('at_time')::timestamptz
+  AND (anchor.not_before IS NULL OR anchor.not_before <= sqlc.arg('at_time')::timestamptz)
+  AND (anchor.expires_at IS NULL OR anchor.expires_at > sqlc.arg('at_time')::timestamptz)
 ORDER BY anchor.approved_at, anchor.id;
 
 -- name: ApproveTrustAnchor :one
@@ -529,13 +529,11 @@ WHERE observation.asset_id = sqlc.arg('asset_id')
   AND observation.endpoint_revision = sqlc.arg('endpoint_revision')
 ORDER BY observation.observed_at, evidence.created_at, evidence.id;
 
--- name: FindIdentityEvidenceByFingerprint :one
+-- name: GetIdentityEvidenceForApproval :one
 SELECT evidence.*
 FROM target_identity_evidence evidence
-WHERE evidence.observation_id = sqlc.arg('observation_id')
-  AND evidence.sha256_fingerprint = sqlc.arg('sha256_fingerprint')
-ORDER BY evidence.id
-LIMIT 1;
+WHERE evidence.id = sqlc.arg('evidence_id')
+  AND evidence.observation_id = sqlc.arg('observation_id');
 
 -- name: ListStatusObservations :many
 SELECT id, observed_at, outcome
@@ -561,9 +559,9 @@ SELECT EXISTS (
       AND endpoint_revision = sqlc.arg('endpoint_revision')
       AND observation_id = sqlc.arg('observation_id')
       AND revoked_at IS NULL
-      AND approved_at <= now()
-      AND (not_before IS NULL OR not_before <= now())
-      AND (expires_at IS NULL OR expires_at > now())
+      AND approved_at <= sqlc.arg('at_time')::timestamptz
+      AND (not_before IS NULL OR not_before <= sqlc.arg('at_time')::timestamptz)
+      AND (expires_at IS NULL OR expires_at > sqlc.arg('at_time')::timestamptz)
 );
 
 -- name: IsObservationRejected :one
@@ -586,9 +584,9 @@ SELECT EXISTS (
     WHERE anchor.asset_id = sqlc.arg('asset_id')
       AND anchor.endpoint_revision = sqlc.arg('endpoint_revision')
       AND anchor.revoked_at IS NULL
-      AND anchor.approved_at <= now()
-      AND (anchor.not_before IS NULL OR anchor.not_before <= now())
-      AND (anchor.expires_at IS NULL OR anchor.expires_at > now())
+      AND anchor.approved_at <= sqlc.arg('at_time')::timestamptz
+      AND (anchor.not_before IS NULL OR anchor.not_before <= sqlc.arg('at_time')::timestamptz)
+      AND (anchor.expires_at IS NULL OR anchor.expires_at > sqlc.arg('at_time')::timestamptz)
       AND (
           (anchor.kind = 'ssh_host_key' AND EXISTS (
               SELECT 1 FROM target_identity_evidence evidence
@@ -602,7 +600,8 @@ SELECT EXISTS (
                 AND evidence.kind = 'tls_leaf'
                 AND evidence.sha256_fingerprint = anchor.sha256_fingerprint
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= sqlc.arg('at_time')::timestamptz
+                AND evidence.valid_until > sqlc.arg('at_time')::timestamptz
                 AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
                 AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
           ))
@@ -616,7 +615,8 @@ SELECT EXISTS (
                 AND validation.anchor_id = anchor.id
                 AND evidence.kind = 'ssh_host_certificate'
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= sqlc.arg('at_time')::timestamptz
+                AND evidence.valid_until > sqlc.arg('at_time')::timestamptz
                 AND (cardinality(anchor.required_ssh_principals) = 0 OR anchor.required_ssh_principals && evidence.ssh_principals)
           ))
        OR (anchor.kind = 'tls_ca' AND EXISTS (
@@ -629,7 +629,8 @@ SELECT EXISTS (
                 AND validation.anchor_id = anchor.id
                 AND evidence.kind = 'tls_leaf'
                 AND evidence.valid_from IS NOT NULL AND evidence.valid_until IS NOT NULL
-                AND evidence.valid_from <= now() AND evidence.valid_until > now()
+                AND evidence.valid_from <= sqlc.arg('at_time')::timestamptz
+                AND evidence.valid_until > sqlc.arg('at_time')::timestamptz
                 AND (cardinality(anchor.required_dns_names) = 0 OR anchor.required_dns_names && evidence.dns_names)
                 AND (cardinality(anchor.required_ip_addresses) = 0 OR anchor.required_ip_addresses && evidence.ip_addresses)
           ))

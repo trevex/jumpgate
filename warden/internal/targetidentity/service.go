@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -19,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -187,10 +190,11 @@ func (s *Service) Claim(ctx context.Context, req ClaimRequest) (ProbeLease, erro
 
 // Complete atomically finishes a lease, persists evidence, and derives status.
 func (s *Service) Complete(ctx context.Context, req CompleteRequest) (VerificationStatus, error) {
+	now := s.now()
 	if req.JobID == uuid.Nil || req.WorkerID == "" || len(req.LeaseToken) != LeaseTokenBytes {
 		return "", ErrInvalidRequest
 	}
-	if err := validateResult(req.Result, s.now()); err != nil {
+	if err := validateResult(req.Result, now); err != nil {
 		return "", err
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -210,15 +214,18 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 	if locked.JobEndpointRevision != locked.AssetEndpointRevision {
 		return "", ErrStaleRevision
 	}
+	if err := validateProtocolResult(Protocol(locked.Protocol), req.Result); err != nil {
+		return "", err
+	}
 	assetID := locked.AssetID
 	jobRevision := locked.JobEndpointRevision
-	anchors, err := q.ListCurrentActiveTrustAnchors(ctx, assetID)
+	anchors, err := q.ListCurrentActiveTrustAnchors(ctx, sqlc.ListCurrentActiveTrustAnchorsParams{AssetID: assetID, AtTime: now})
 	if err != nil {
 		return "", fmt.Errorf("list anchors for completion: %w", err)
 	}
 	observationOutcome := string(req.Result.Outcome)
 	failureCategory := req.Result.FailureCategory
-	if req.Result.Outcome == ProbeSucceeded && len(anchors) > 0 && !resultMatchesAnchors(req.Result, anchors, s.now()) {
+	if req.Result.Outcome == ProbeSucceeded && len(anchors) > 0 && !resultMatchesAnchors(req.Result, anchors, now) {
 		observationOutcome = "mismatch"
 		failureCategory = FailureTargetIdentityChanged
 	}
@@ -233,7 +240,7 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 		if dupErr == nil && completedOutcome.Valid && completedOutcome.String == string(req.Result.Outcome) {
 			// The immutable completed attempt plus the single-use token is the
 			// natural idempotency key. No row or audit event is written twice.
-			return s.status(ctx, tx, StatusRequest{AssetID: assetID})
+			return s.statusAt(ctx, tx, StatusRequest{AssetID: assetID}, now)
 		}
 		return "", ErrInvalidLease
 	}
@@ -243,9 +250,9 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 
 	observedAt := req.Result.ObservedAt
 	if observedAt.IsZero() {
-		observedAt = s.now()
+		observedAt = now
 	}
-	observationID, evidenceByFingerprint, err := s.insertObservation(ctx, tx, observationInsert{
+	observationID, err := s.insertObservation(ctx, tx, observationInsert{
 		JobID: nullableUUID(req.JobID), AssetID: assetID, EndpointRevision: jobRevision,
 		WorkerID: req.WorkerID, Source: ObservationProbe, Outcome: observationOutcome,
 		ObservedAt: observedAt, ResolvedAddresses: req.Result.ResolvedAddresses,
@@ -256,7 +263,6 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 	if err != nil {
 		return "", err
 	}
-	_ = evidenceByFingerprint
 	event := eventProbeSucceeded
 	if req.Result.Outcome == ProbeFailed {
 		event = eventProbeFailed
@@ -279,7 +285,7 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 			return "", err
 		}
 	}
-	status, err := s.status(ctx, tx, StatusRequest{AssetID: assetID})
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: assetID}, now)
 	if err != nil {
 		return "", err
 	}
@@ -291,10 +297,12 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 
 // Approve additively trusts exact evidence or supplied CA material.
 func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor, VerificationStatus, error) {
-	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.ObservationID == uuid.Nil || !validFingerprint(req.SelectedFingerprint) || !validTrustSource(req.Source) || !validNames(req.RequiredSSHPrincipals) || !validNames(req.RequiredDNSNames) || !validIPNames(req.RequiredIPAddresses) {
+	now := s.now()
+	supplied := req.SuppliedPublicMaterial != "" || req.SuppliedAlgorithm != ""
+	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.ObservationID == uuid.Nil || (!supplied && (!validFingerprint(req.SelectedFingerprint) || req.EvidenceID == uuid.Nil)) || !validTrustSource(req.Source) || !validNames(req.RequiredSSHPrincipals) || !validNames(req.RequiredDNSNames) || !validIPNames(req.RequiredIPAddresses) {
 		return TrustAnchor{}, "", ErrInvalidRequest
 	}
-	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(s.now()) {
+	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(now) {
 		return TrustAnchor{}, "", ErrInvalidRequest
 	}
 	if !req.NotBefore.IsZero() && !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(req.NotBefore) {
@@ -309,6 +317,10 @@ func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor,
 	if err := lockExpectedRevision(ctx, q, req.AssetID, req.ExpectedRevision); err != nil {
 		return TrustAnchor{}, "", err
 	}
+	asset, err := q.GetAsset(ctx, req.AssetID)
+	if err != nil {
+		return TrustAnchor{}, "", fmt.Errorf("read locked asset: %w", err)
+	}
 	observationOutcome, err := q.LockTargetIdentityObservation(ctx, sqlc.LockTargetIdentityObservationParams{ObservationID: req.ObservationID, AssetID: req.AssetID, EndpointRevision: req.ExpectedRevision})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -316,56 +328,68 @@ func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor,
 		}
 		return TrustAnchor{}, "", fmt.Errorf("lock observation: %w", err)
 	}
+	if observationOutcome != "succeeded" && observationOutcome != "mismatch" {
+		return TrustAnchor{}, "", ErrInvalidRequest
+	}
 	var (
-		anchorKind      TrustAnchorKind
-		anchorAlgorithm string
-		anchorMaterial  string
+		anchorKind        TrustAnchorKind
+		anchorAlgorithm   string
+		anchorMaterial    string
+		anchorFingerprint string
 	)
-	if req.SuppliedPublicMaterial != "" || req.SuppliedAlgorithm != "" {
-		if (req.AnchorKind != AnchorTLSCA && req.AnchorKind != AnchorSSHHostCA) || req.SuppliedAlgorithm == "" || len(req.SuppliedAlgorithm) > MaxNameBytes || len(req.SuppliedPublicMaterial) == 0 || len(req.SuppliedPublicMaterial) > MaxPublicMaterialBytes || !utf8.ValidString(req.SuppliedAlgorithm+req.SuppliedPublicMaterial) {
+	if supplied {
+		if (req.AnchorKind != AnchorTLSCA && req.AnchorKind != AnchorSSHHostCA) || len(req.SuppliedPublicMaterial) == 0 || len(req.SuppliedPublicMaterial) > MaxPublicMaterialBytes || !utf8.ValidString(req.SuppliedPublicMaterial) {
 			return TrustAnchor{}, "", ErrInvalidRequest
 		}
-		anchorKind, anchorAlgorithm, anchorMaterial = req.AnchorKind, req.SuppliedAlgorithm, req.SuppliedPublicMaterial
+		anchorKind = req.AnchorKind
+		anchorAlgorithm, anchorFingerprint, anchorMaterial, err = normalizeSuppliedCA(anchorKind, req.SuppliedPublicMaterial)
+		if err != nil || (req.SuppliedAlgorithm != "" && req.SuppliedAlgorithm != anchorAlgorithm) {
+			return TrustAnchor{}, "", ErrInvalidRequest
+		}
 	} else {
-		evidence, err := findEvidence(ctx, tx, req.ObservationID, req.SelectedFingerprint)
+		evidence, err := getEvidenceForApproval(ctx, tx, req.ObservationID, req.EvidenceID)
 		if err != nil {
 			return TrustAnchor{}, "", err
+		}
+		if evidence.Fingerprint != req.SelectedFingerprint {
+			return TrustAnchor{}, "", ErrEvidenceNotFound
 		}
 		anchorKind, err = approvalKind(evidence.Kind, req.AnchorKind)
 		if err != nil {
 			return TrustAnchor{}, "", err
 		}
-		if (anchorKind == AnchorTLSLeaf || anchorKind == AnchorTLSCA || anchorKind == AnchorSSHHostCA) && !certificateCurrent(evidence, s.now()) {
+		if (anchorKind == AnchorTLSLeaf || anchorKind == AnchorTLSCA || anchorKind == AnchorSSHHostCA) && !certificateCurrent(evidence, now) {
 			return TrustAnchor{}, "", ErrUnsupportedEvidence
 		}
-		anchorAlgorithm, anchorMaterial = evidence.Algorithm, evidence.PublicMaterial
+		anchorAlgorithm, anchorFingerprint, anchorMaterial = evidence.Algorithm, evidence.Fingerprint, evidence.PublicMaterial
+	}
+	if !anchorCompatibleWithProtocol(Protocol(asset.Kind), anchorKind) {
+		return TrustAnchor{}, "", ErrUnsupportedEvidence
 	}
 	if (anchorKind == AnchorTLSCA || anchorKind == AnchorSSHHostCA) && req.ValidatedEvidenceID == uuid.Nil {
 		return TrustAnchor{}, "", ErrValidationFactNeeded
 	}
-	approvedAt, err := q.TargetIdentityDatabaseTime(ctx)
-	if err != nil {
-		return TrustAnchor{}, "", fmt.Errorf("read approval transaction time: %w", err)
-	}
 	row, err := q.ApproveTrustAnchor(ctx, sqlc.ApproveTrustAnchorParams{
 		AssetID: req.AssetID, EndpointRevision: req.ExpectedRevision, Kind: string(anchorKind),
-		Algorithm: anchorAlgorithm, Sha256Fingerprint: req.SelectedFingerprint, PublicMaterial: anchorMaterial,
+		Algorithm: anchorAlgorithm, Sha256Fingerprint: anchorFingerprint, PublicMaterial: anchorMaterial,
 		RequiredSshPrincipals: cloneStrings(req.RequiredSSHPrincipals), RequiredDnsNames: cloneStrings(req.RequiredDNSNames), RequiredIpAddresses: cloneStrings(req.RequiredIPAddresses),
 		Source: string(req.Source), ObservationID: nullableUUID(req.ObservationID), ApprovedBy: nullableUUID(req.ActorID),
-		ApprovedAt: pgtype.Timestamptz{Time: approvedAt, Valid: true}, NotBefore: nullableTime(req.NotBefore), ExpiresAt: nullableTime(req.ExpiresAt),
+		ApprovedAt: pgtype.Timestamptz{Time: now, Valid: true}, NotBefore: nullableTime(req.NotBefore), ExpiresAt: nullableTime(req.ExpiresAt),
 	})
 	if err != nil {
 		return TrustAnchor{}, "", fmt.Errorf("approve trust anchor: %w", err)
 	}
 	if anchorKind == AnchorTLSCA || anchorKind == AnchorSSHHostCA {
 		leaf, err := q.GetValidationEvidence(ctx, sqlc.GetValidationEvidenceParams{EvidenceID: req.ValidatedEvidenceID, ObservationID: req.ObservationID})
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TrustAnchor{}, "", ErrValidationFactNeeded
+		}
+		if err != nil {
+			return TrustAnchor{}, "", fmt.Errorf("read approval validation evidence: %w", err)
 		}
 		if (anchorKind == AnchorTLSCA && leaf.Kind != string(EvidenceTLSLeaf)) || (anchorKind == AnchorSSHHostCA && leaf.Kind != string(EvidenceSSHHostCertificate)) {
 			return TrustAnchor{}, "", ErrValidationFactNeeded
 		}
-		now := s.now()
 		if !leaf.ValidFrom.Valid || !leaf.ValidUntil.Valid || leaf.ValidFrom.Time.After(now) || !leaf.ValidUntil.Time.After(now) {
 			return TrustAnchor{}, "", ErrValidationFactNeeded
 		}
@@ -374,12 +398,12 @@ func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor,
 		}
 	}
 	if err := s.enqueue(ctx, q, eventAnchorApproved, req.ActorID, req.AssetID, map[string]any{
-		"anchor_id": row.ID.String(), "observation_id": req.ObservationID.String(), "fingerprint": req.SelectedFingerprint,
+		"anchor_id": row.ID.String(), "observation_id": req.ObservationID.String(), "fingerprint": anchorFingerprint,
 		"kind": anchorKind, "source": req.Source, "resolved_identity_change": observationOutcome == "mismatch",
 	}); err != nil {
 		return TrustAnchor{}, "", err
 	}
-	status, err := s.status(ctx, tx, StatusRequest{AssetID: req.AssetID})
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, now)
 	if err != nil {
 		return TrustAnchor{}, "", err
 	}
@@ -418,7 +442,7 @@ func (s *Service) RejectObservation(ctx context.Context, req RejectObservationRe
 	}); err != nil {
 		return "", err
 	}
-	status, err := s.status(ctx, tx, StatusRequest{AssetID: req.AssetID})
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, s.now())
 	if err != nil {
 		return "", err
 	}
@@ -460,7 +484,7 @@ func (s *Service) RevokeAnchor(ctx context.Context, req RevokeAnchorRequest) (Ve
 	}); err != nil {
 		return "", err
 	}
-	status, err := s.status(ctx, tx, StatusRequest{AssetID: req.AssetID})
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, s.now())
 	if err != nil {
 		return "", err
 	}
@@ -492,7 +516,7 @@ func (s *Service) RecordSessionMismatch(ctx context.Context, req SessionMismatch
 	if observedAt.IsZero() {
 		observedAt = s.now()
 	}
-	observationID, _, err := s.insertObservation(ctx, tx, observationInsert{
+	observationID, err := s.insertObservation(ctx, tx, observationInsert{
 		AssetID: req.AssetID, EndpointRevision: req.EndpointRevision, WorkerID: req.WorkerID,
 		Source: ObservationSessionMismatch, Outcome: "mismatch", ObservedAt: observedAt,
 		ResolvedAddresses: req.ResolvedAddresses, SSH: req.SSH, TLS: req.TLS, Kubernetes: req.Kubernetes,
@@ -506,7 +530,7 @@ func (s *Service) RecordSessionMismatch(ctx context.Context, req SessionMismatch
 	}); err != nil {
 		return "", err
 	}
-	status, err := s.status(ctx, tx, StatusRequest{AssetID: req.AssetID})
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, s.now())
 	if err != nil {
 		return "", err
 	}
@@ -564,14 +588,14 @@ type protocolMetadata struct {
 	Kubernetes *KubernetesMetadata `json:"kubernetes,omitempty"`
 }
 
-func (s *Service) insertObservation(ctx context.Context, tx pgx.Tx, in observationInsert) (uuid.UUID, map[string]uuid.UUID, error) {
+func (s *Service) insertObservation(ctx context.Context, tx pgx.Tx, in observationInsert) (uuid.UUID, error) {
 	addresses, err := json.Marshal(cloneStrings(in.ResolvedAddresses))
 	if err != nil {
-		return uuid.Nil, nil, ErrInvalidResult
+		return uuid.Nil, ErrInvalidResult
 	}
 	metadata, err := json.Marshal(protocolMetadata{SSH: in.SSH, TLS: in.TLS, Kubernetes: in.Kubernetes})
 	if err != nil {
-		return uuid.Nil, nil, ErrInvalidResult
+		return uuid.Nil, ErrInvalidResult
 	}
 	validationState := "unvalidated"
 	if len(in.ValidationFacts) > 0 {
@@ -585,9 +609,13 @@ func (s *Service) insertObservation(ctx context.Context, tx pgx.Tx, in observati
 		FailureCategory: nullableText(string(in.FailureCategory)), FailureDetail: nullableText(in.FailureDetail),
 	})
 	if err != nil {
-		return uuid.Nil, nil, fmt.Errorf("insert identity observation: %w", err)
+		return uuid.Nil, fmt.Errorf("insert identity observation: %w", err)
 	}
-	evidenceByFingerprint := make(map[string]uuid.UUID, len(in.Evidence))
+	type evidenceKey struct {
+		kind        EvidenceKind
+		fingerprint string
+	}
+	evidenceByKey := make(map[evidenceKey]uuid.UUID, len(in.Evidence))
 	for _, item := range in.Evidence {
 		keyMetadata, _ := json.Marshal(item.Key)
 		extensions := make(map[string]string, len(item.DisplayExtensions))
@@ -605,20 +633,20 @@ func (s *Service) insertObservation(ctx context.Context, tx pgx.Tx, in observati
 			KeyMetadata: keyMetadata, DisplayExtensions: displayExtensions,
 		})
 		if err != nil {
-			return uuid.Nil, nil, fmt.Errorf("insert identity evidence: %w", err)
+			return uuid.Nil, fmt.Errorf("insert identity evidence: %w", err)
 		}
-		evidenceByFingerprint[item.Fingerprint] = row.ID
+		evidenceByKey[evidenceKey{kind: item.Kind, fingerprint: item.Fingerprint}] = row.ID
 	}
 	for _, fact := range in.ValidationFacts {
-		evidenceID, ok := evidenceByFingerprint[fact.EvidenceFingerprint]
+		evidenceID, ok := evidenceByKey[evidenceKey{kind: fact.EvidenceKind, fingerprint: fact.EvidenceFingerprint}]
 		if !ok {
-			return uuid.Nil, nil, ErrInvalidResult
+			return uuid.Nil, ErrInvalidResult
 		}
 		if err := q.InsertIdentityValidationFact(ctx, sqlc.InsertIdentityValidationFactParams{ObservationID: observation.ID, AssetID: in.AssetID, EndpointRevision: in.EndpointRevision, AnchorID: fact.AnchorID, EvidenceID: evidenceID}); err != nil {
-			return uuid.Nil, nil, fmt.Errorf("insert identity validation fact: %w", err)
+			return uuid.Nil, fmt.Errorf("insert identity validation fact: %w", err)
 		}
 	}
-	return observation.ID, evidenceByFingerprint, nil
+	return observation.ID, nil
 }
 
 func listEvidence(ctx context.Context, db sqlc.DBTX, assetID uuid.UUID, revision int64) ([]Evidence, error) {
@@ -633,13 +661,13 @@ func listEvidence(ctx context.Context, db sqlc.DBTX, assetID uuid.UUID, revision
 	return out, nil
 }
 
-func findEvidence(ctx context.Context, db sqlc.DBTX, observationID uuid.UUID, fingerprint string) (Evidence, error) {
-	row, err := sqlc.New(db).FindIdentityEvidenceByFingerprint(ctx, sqlc.FindIdentityEvidenceByFingerprintParams{ObservationID: observationID, Sha256Fingerprint: fingerprint})
+func getEvidenceForApproval(ctx context.Context, db sqlc.DBTX, observationID, evidenceID uuid.UUID) (Evidence, error) {
+	row, err := sqlc.New(db).GetIdentityEvidenceForApproval(ctx, sqlc.GetIdentityEvidenceForApprovalParams{ObservationID: observationID, EvidenceID: evidenceID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Evidence{}, ErrEvidenceNotFound
 	}
 	if err != nil {
-		return Evidence{}, fmt.Errorf("select evidence: %w", err)
+		return Evidence{}, fmt.Errorf("select approval evidence: %w", err)
 	}
 	return evidenceFromRow(row), nil
 }
@@ -680,7 +708,7 @@ func validateResult(result ProbeResult, now time.Time) error {
 		return ErrInvalidResult
 	}
 	for _, fact := range result.ValidationFacts {
-		if fact.AnchorID == uuid.Nil || !validFingerprint(fact.EvidenceFingerprint) {
+		if fact.AnchorID == uuid.Nil || !validEvidenceKind(fact.EvidenceKind) || !validFingerprint(fact.EvidenceFingerprint) {
 			return ErrInvalidResult
 		}
 	}
@@ -692,6 +720,9 @@ func validEvidence(item Evidence, _ time.Time) bool {
 		return false
 	}
 	if !validNames(item.DNSNames) || !validIPNames(item.IPAddresses) || !validNames(item.SSHPrincipals) || len(item.DisplayExtensions) > MaxExtensions {
+		return false
+	}
+	if len(item.CertificateSubject) > MaxCertificateNameBytes || len(item.CertificateIssuer) > MaxCertificateNameBytes || len(item.SerialNumber) > MaxSerialNumberBytes || len(item.Key.Curve) > MaxKeyCurveBytes || item.Key.Bits < 0 || item.Key.Bits > MaxKeyBits || !utf8.ValidString(item.CertificateSubject+item.CertificateIssuer+item.SerialNumber+item.Key.Curve) || (item.IssuerFingerprint != "" && !validFingerprint(item.IssuerFingerprint)) {
 		return false
 	}
 	for _, extension := range item.DisplayExtensions {
@@ -712,6 +743,62 @@ func validEvidence(item Evidence, _ time.Time) bool {
 		}
 	}
 	return true
+}
+
+func validateProtocolResult(protocol Protocol, result ProbeResult) error {
+	if result.Outcome != ProbeSucceeded {
+		return nil
+	}
+	for _, evidence := range result.Evidence {
+		switch protocol {
+		case ProtocolSSH:
+			if result.TLS != nil || result.Kubernetes != nil || (evidence.Kind != EvidenceSSHHostKey && evidence.Kind != EvidenceSSHHostCertificate) {
+				return ErrInvalidResult
+			}
+		case ProtocolPostgres, ProtocolRDP, ProtocolKubernetes:
+			if result.SSH != nil || result.Kubernetes != nil || (evidence.Kind != EvidenceTLSLeaf && evidence.Kind != EvidenceTLSIntermediate && evidence.Kind != EvidenceTLSPresentedRoot) {
+				return ErrInvalidResult
+			}
+		default:
+			return ErrInvalidResult
+		}
+	}
+	return nil
+}
+
+func anchorCompatibleWithProtocol(protocol Protocol, kind TrustAnchorKind) bool {
+	switch protocol {
+	case ProtocolSSH:
+		return kind == AnchorSSHHostKey || kind == AnchorSSHHostCA
+	case ProtocolPostgres, ProtocolRDP, ProtocolKubernetes:
+		return kind == AnchorTLSLeaf || kind == AnchorTLSCA
+	default:
+		return false
+	}
+}
+
+func normalizeSuppliedCA(kind TrustAnchorKind, material string) (string, string, string, error) {
+	switch kind {
+	case AnchorTLSCA:
+		block, rest := pem.Decode([]byte(material))
+		if block == nil || len(rest) != 0 || block.Type != "CERTIFICATE" {
+			return "", "", "", ErrInvalidRequest
+		}
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil || !certificate.IsCA {
+			return "", "", "", ErrInvalidRequest
+		}
+		sum := sha256.Sum256(block.Bytes)
+		return "x509", "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), material, nil
+	case AnchorSSHHostCA:
+		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(material))
+		if err != nil {
+			return "", "", "", ErrInvalidRequest
+		}
+		return key.Type(), ssh.FingerprintSHA256(key), material, nil
+	default:
+		return "", "", "", ErrInvalidRequest
+	}
 }
 
 func validMetadata(result ProbeResult) bool {

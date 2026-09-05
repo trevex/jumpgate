@@ -61,6 +61,7 @@ func TestApproveRejectsStaleRevisionAndFingerprint(t *testing.T) {
 
 	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 		AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID,
+		EvidenceID:          evidence.ID,
 		SelectedFingerprint: fingerprint("not-observed"), Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 	}); !errors.Is(err, targetidentity.ErrEvidenceNotFound) {
 		t.Fatalf("wrong fingerprint error = %v; want ErrEvidenceNotFound", err)
@@ -70,6 +71,7 @@ func TestApproveRejectsStaleRevisionAndFingerprint(t *testing.T) {
 	}
 	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 		AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID,
+		EvidenceID:          evidence.ID,
 		SelectedFingerprint: evidence.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 	}); !errors.Is(err, targetidentity.ErrStaleRevision) {
 		t.Fatalf("stale approval error = %v; want ErrStaleRevision", err)
@@ -192,6 +194,7 @@ func TestExplicitApprovalOfChangedIdentityResolvesAfterOldAnchorRevocation(t *te
 	}
 	_, status, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 		AssetID: env.asset, ExpectedRevision: 1, ObservationID: changed.ObservationID,
+		EvidenceID:          changed.ID,
 		SelectedFingerprint: changed.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 	})
 	if err != nil {
@@ -325,11 +328,11 @@ func TestCAApprovalUsesExplicitLeafValidationFactWithoutPresentedRoot(t *testing
 		t.Fatalf("complete postgres probe: %v", err)
 	}
 	persistedLeaf := env.evidence(t)[0]
-	rootFingerprint := fingerprint("operator-root")
+	rootMaterial, rootFingerprint := testCAPEM(t, "operator-root")
 	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 		AssetID: env.asset, ExpectedRevision: 1, ObservationID: persistedLeaf.ObservationID,
 		SelectedFingerprint: rootFingerprint, AnchorKind: targetidentity.AnchorTLSCA,
-		SuppliedAlgorithm: "x509", SuppliedPublicMaterial: "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----",
+		SuppliedAlgorithm: "x509", SuppliedPublicMaterial: rootMaterial,
 		RequiredDNSNames: []string{"db.test"}, Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 	}); !errors.Is(err, targetidentity.ErrValidationFactNeeded) {
 		t.Fatalf("CA approval without fact error = %v; want ErrValidationFactNeeded", err)
@@ -337,7 +340,7 @@ func TestCAApprovalUsesExplicitLeafValidationFactWithoutPresentedRoot(t *testing
 	anchor, status, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 		AssetID: env.asset, ExpectedRevision: 1, ObservationID: persistedLeaf.ObservationID,
 		SelectedFingerprint: rootFingerprint, AnchorKind: targetidentity.AnchorTLSCA,
-		SuppliedAlgorithm: "x509", SuppliedPublicMaterial: "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----",
+		SuppliedAlgorithm: "x509", SuppliedPublicMaterial: rootMaterial,
 		ValidatedEvidenceID: persistedLeaf.ID, RequiredDNSNames: []string{"db.test"},
 		Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 	})
@@ -352,6 +355,169 @@ func TestCAApprovalUsesExplicitLeafValidationFactWithoutPresentedRoot(t *testing
 	}
 	if got := len(env.evidence(t)); got != 1 {
 		t.Fatalf("evidence count = %d; want only the presented leaf", got)
+	}
+}
+
+func TestApprovalSelectsEvidenceByStableID(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	now := time.Now()
+	sharedFingerprint := fingerprint("ambiguous")
+	leaf := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: sharedFingerprint, PublicMaterial: "leaf", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	intermediate := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSIntermediate, Algorithm: "x509", Fingerprint: sharedFingerprint, PublicMaterial: "intermediate", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{ServerName: "db.test"}, Evidence: []targetidentity.Evidence{leaf, intermediate}}}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	var persistedLeaf targetidentity.Evidence
+	for _, item := range env.evidence(t) {
+		if item.Kind == targetidentity.EvidenceTLSLeaf {
+			persistedLeaf = item
+		}
+	}
+	anchor, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
+		AssetID: env.asset, ExpectedRevision: 1, ObservationID: persistedLeaf.ObservationID,
+		EvidenceID: persistedLeaf.ID, SelectedFingerprint: sharedFingerprint, AnchorKind: targetidentity.AnchorTLSLeaf,
+		Source: targetidentity.TrustSourceManual, ActorID: env.actor,
+	})
+	if err != nil {
+		t.Fatalf("approve exact evidence ID: %v", err)
+	}
+	if anchor.PublicMaterial != "leaf" || anchor.Kind != targetidentity.AnchorTLSLeaf {
+		t.Fatalf("approved anchor = %#v; want selected TLS leaf", anchor)
+	}
+}
+
+func TestValidationFactBindsKindAndFingerprint(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	now := time.Now()
+	firstLeaf := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: fingerprint("first-leaf"), PublicMaterial: "first", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	if _, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{firstLeaf}}}); err != nil {
+		t.Fatalf("complete first: %v", err)
+	}
+	persistedLeaf := env.evidence(t)[0]
+	rootMaterial, rootFingerprint := testCAPEM(t, "validation-root")
+	anchor, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: persistedLeaf.ObservationID, SelectedFingerprint: rootFingerprint, AnchorKind: targetidentity.AnchorTLSCA, SuppliedPublicMaterial: rootMaterial, ValidatedEvidenceID: persistedLeaf.ID, Source: targetidentity.TrustSourceManual, ActorID: env.actor})
+	if err != nil {
+		t.Fatalf("approve CA: %v", err)
+	}
+	sharedFingerprint := fingerprint("second-leaf")
+	secondLeaf := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: sharedFingerprint, PublicMaterial: "second", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	intermediate := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSIntermediate, Algorithm: "x509", Fingerprint: sharedFingerprint, PublicMaterial: "intermediate", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	env.queue(t, targetidentity.ProbeReasonManual, uuid.Nil)
+	lease, err = env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim second: %v", err)
+	}
+	status, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{secondLeaf, intermediate}, ValidationFacts: []targetidentity.ValidationFact{{AnchorID: anchor.ID, EvidenceKind: targetidentity.EvidenceTLSLeaf, EvidenceFingerprint: sharedFingerprint}}}})
+	if err != nil {
+		t.Fatalf("complete validated probe: %v", err)
+	}
+	if status != targetidentity.StatusVerified {
+		t.Fatalf("status = %q; want verified", status)
+	}
+}
+
+func TestCompleteRejectsProtocolIncompatibleSuccessfulResult(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolSSH})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	_, err = env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: fingerprint("wrong-protocol"), PublicMaterial: "cert", ValidFrom: time.Now().Add(-time.Hour), ValidUntil: time.Now().Add(time.Hour)}}}})
+	if !errors.Is(err, targetidentity.ErrInvalidResult) {
+		t.Fatalf("error = %v; want ErrInvalidResult", err)
+	}
+}
+
+func TestStatusUsesOneInjectedTimeForAnchorAndCertificateValidity(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	env.complete(t, sshEvidence("future-anchor"))
+	evidence := env.evidence(t)[0]
+	activation := time.Now().Add(time.Hour)
+	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID, EvidenceID: evidence.ID, SelectedFingerprint: evidence.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor, NotBefore: activation}); err != nil {
+		t.Fatalf("approve future anchor: %v", err)
+	}
+	checkAt := activation.Add(time.Minute)
+	env.svc = targetidentity.NewService(testPool, audit.New(testPool), targetidentity.WithClock(func() time.Time { return checkAt }))
+	if got := env.status(t); got != targetidentity.StatusVerified {
+		t.Fatalf("status at injected activation time = %q; want verified", got)
+	}
+}
+
+func TestApproveRejectsIneligibleObservationAndCrossProtocolAnchor(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	job := env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	_ = job
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolSSH})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	failedEvidence := sshEvidence("failed")
+	if _, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeFailed, FailureCategory: targetidentity.FailureProtocolMismatch, SSH: &targetidentity.SSHMetadata{}, Evidence: []targetidentity.Evidence{failedEvidence}}}); err != nil {
+		t.Fatalf("complete failed probe: %v", err)
+	}
+	evidence := env.evidence(t)[0]
+	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID, EvidenceID: evidence.ID, SelectedFingerprint: evidence.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor}); !errors.Is(err, targetidentity.ErrInvalidRequest) {
+		t.Fatalf("failed-observation approval error = %v; want ErrInvalidRequest", err)
+	}
+	env.queue(t, targetidentity.ProbeReasonManual, uuid.Nil)
+	env.claimAndComplete(t, targetidentity.ProbeSucceeded, "", sshEvidence("eligible"))
+	for _, item := range env.evidence(t) {
+		if item.Fingerprint == fingerprint("eligible") {
+			evidence = item
+			break
+		}
+	}
+	caMaterial, caFingerprint := testCAPEM(t, "wrong-kind")
+	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID, SelectedFingerprint: caFingerprint, AnchorKind: targetidentity.AnchorTLSCA, SuppliedPublicMaterial: caMaterial, ValidatedEvidenceID: evidence.ID, Source: targetidentity.TrustSourceManual, ActorID: env.actor}); !errors.Is(err, targetidentity.ErrUnsupportedEvidence) {
+		t.Fatalf("cross-protocol approval error = %v; want ErrUnsupportedEvidence", err)
+	}
+}
+
+func TestEvidenceRejectsUnboundedCertificateFields(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	bad := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: fingerprint("bad-fields"), PublicMaterial: "cert", CertificateSubject: string(make([]byte, targetidentity.MaxCertificateNameBytes+1)), ValidFrom: time.Now().Add(-time.Hour), ValidUntil: time.Now().Add(time.Hour)}
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	_, err = env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{bad}}})
+	if !errors.Is(err, targetidentity.ErrInvalidResult) {
+		t.Fatalf("error = %v; want ErrInvalidResult", err)
+	}
+}
+
+func TestSuppliedCAFingerprintIsDerivedFromMaterial(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	now := time.Now()
+	leaf := targetidentity.Evidence{Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509", Fingerprint: fingerprint("derive-leaf"), PublicMaterial: "leaf", ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour)}
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{leaf}}}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	persisted := env.evidence(t)[0]
+	material, derived := testCAPEM(t, "derived")
+	anchor, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: persisted.ObservationID, SelectedFingerprint: fingerprint("caller-lie"), AnchorKind: targetidentity.AnchorTLSCA, SuppliedPublicMaterial: material, ValidatedEvidenceID: persisted.ID, Source: targetidentity.TrustSourceManual, ActorID: env.actor})
+	if err != nil {
+		t.Fatalf("approve supplied CA: %v", err)
+	}
+	if anchor.Fingerprint != derived {
+		t.Fatalf("fingerprint = %q; want derived %q", anchor.Fingerprint, derived)
 	}
 }
 
@@ -440,6 +606,7 @@ func TestAuditFailureRollsBackEachDistinctMutationTransaction(t *testing.T) {
 		env.svc = targetidentity.NewService(testPool, failingEnqueuer{})
 		if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{
 			AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID,
+			EvidenceID:          evidence.ID,
 			SelectedFingerprint: evidence.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor,
 		}); !errors.Is(err, errAuditRejected) {
 			t.Fatalf("approve error = %v; want audit rejection", err)

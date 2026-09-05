@@ -2,10 +2,16 @@ package targetidentity_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -119,6 +125,26 @@ func fingerprint(label string) string {
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
+func testCAPEM(t *testing.T, label string) (string, string) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	now := time.Now()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: label},
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, publicKey, privateKey)
+	if err != nil {
+		t.Fatalf("create CA certificate: %v", err)
+	}
+	sum := sha256.Sum256(der)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
+}
+
 func sshEvidence(label string) targetidentity.Evidence {
 	return targetidentity.Evidence{
 		Kind:           targetidentity.EvidenceSSHHostKey,
@@ -176,10 +202,21 @@ func (e *targetIdentityEnv) claimAndComplete(t *testing.T, outcome targetidentit
 
 func (e *targetIdentityEnv) approve(t *testing.T, observationID uuid.UUID, fp string, expiresAt time.Time) targetidentity.TrustAnchor {
 	t.Helper()
+	var evidenceID uuid.UUID
+	for _, evidence := range e.evidence(t) {
+		if evidence.ObservationID == observationID && evidence.Fingerprint == fp {
+			evidenceID = evidence.ID
+			break
+		}
+	}
+	if evidenceID == uuid.Nil {
+		t.Fatalf("evidence %q for observation %s not found", fp, observationID)
+	}
 	anchor, _, err := e.svc.Approve(e.ctx, targetidentity.ApproveRequest{
 		AssetID:             e.asset,
 		ExpectedRevision:    1,
 		ObservationID:       observationID,
+		EvidenceID:          evidenceID,
 		SelectedFingerprint: fp,
 		Source:              targetidentity.TrustSourceManual,
 		ActorID:             e.actor,

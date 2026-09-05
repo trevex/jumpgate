@@ -15,15 +15,19 @@ import (
 
 // Public resource bounds applied before any probe result is persisted.
 const (
-	MaxEvidenceCount       = 16
-	MaxPublicMaterialBytes = 64 << 10
-	MaxResolvedAddresses   = 16
-	MaxNames               = 64
-	MaxNameBytes           = 255
-	MaxFailureDetailBytes  = 4096
-	MaxMetadataTextBytes   = 4096
-	MaxExtensions          = 32
-	LeaseTokenBytes        = 32
+	MaxEvidenceCount        = 16
+	MaxPublicMaterialBytes  = 64 << 10
+	MaxResolvedAddresses    = 16
+	MaxNames                = 64
+	MaxNameBytes            = 255
+	MaxFailureDetailBytes   = 4096
+	MaxMetadataTextBytes    = 4096
+	MaxCertificateNameBytes = 4096
+	MaxSerialNumberBytes    = 256
+	MaxKeyCurveBytes        = 64
+	MaxKeyBits              = 16384
+	MaxExtensions           = 32
+	LeaseTokenBytes         = 32
 )
 
 // Stable domain errors allow transport adapters to map failures without
@@ -264,6 +268,7 @@ type Evidence struct {
 // ValidationFact binds an observed leaf fingerprint to an approved CA anchor.
 type ValidationFact struct {
 	AnchorID            uuid.UUID
+	EvidenceKind        EvidenceKind
 	EvidenceFingerprint string
 }
 
@@ -334,6 +339,7 @@ type ApproveRequest struct {
 	AssetID                uuid.UUID
 	ExpectedRevision       int64
 	ObservationID          uuid.UUID
+	EvidenceID             uuid.UUID
 	SelectedFingerprint    string
 	AnchorKind             TrustAnchorKind
 	SuppliedAlgorithm      string

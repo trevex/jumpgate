@@ -31,10 +31,10 @@ func (s *Service) Status(ctx context.Context, req StatusRequest) (VerificationSt
 	if req.AssetID == uuid.Nil || req.Freshness < 0 {
 		return "", ErrInvalidRequest
 	}
-	return s.status(ctx, s.pool, req)
+	return s.statusAt(ctx, s.pool, req, s.now())
 }
 
-func (s *Service) status(ctx context.Context, db sqlc.DBTX, req StatusRequest) (VerificationStatus, error) {
+func (s *Service) statusAt(ctx context.Context, db sqlc.DBTX, req StatusRequest, now time.Time) (VerificationStatus, error) {
 	q := sqlc.New(db)
 	asset, err := q.GetAsset(ctx, req.AssetID)
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *Service) status(ctx context.Context, db sqlc.DBTX, req StatusRequest) (
 		if observation.outcome != "mismatch" {
 			continue
 		}
-		resolution, err := observationResolutionState(ctx, db, req.AssetID, revision, observation.id)
+		resolution, err := observationResolutionState(ctx, db, req.AssetID, revision, observation.id, now)
 		if err != nil {
 			return "", err
 		}
@@ -83,17 +83,17 @@ func (s *Service) status(ctx context.Context, db sqlc.DBTX, req StatusRequest) (
 		}
 	}
 
-	anchors, err := q.ListCurrentActiveTrustAnchors(ctx, req.AssetID)
+	anchors, err := q.ListCurrentActiveTrustAnchors(ctx, sqlc.ListCurrentActiveTrustAnchorsParams{AssetID: req.AssetID, AtTime: now})
 	if err != nil {
 		return "", fmt.Errorf("list active anchors for status: %w", err)
 	}
 	if latestSuccess != nil {
-		matched, err := q.ObservationMatchesCurrentAnchors(ctx, sqlc.ObservationMatchesCurrentAnchorsParams{AssetID: req.AssetID, EndpointRevision: revision, ObservationID: latestSuccess.id})
+		matched, err := q.ObservationMatchesCurrentAnchors(ctx, sqlc.ObservationMatchesCurrentAnchorsParams{AssetID: req.AssetID, EndpointRevision: revision, ObservationID: latestSuccess.id, AtTime: now})
 		if err != nil {
 			return "", err
 		}
 		if matched {
-			if req.Freshness > 0 && latestSuccess.observedAt.Before(s.now().Add(-req.Freshness)) {
+			if req.Freshness > 0 && latestSuccess.observedAt.Before(now.Add(-req.Freshness)) {
 				return StatusVerificationExpired, nil
 			}
 			return StatusVerified, nil
@@ -114,9 +114,9 @@ func (s *Service) status(ctx context.Context, db sqlc.DBTX, req StatusRequest) (
 	return StatusPendingVerification, nil
 }
 
-func observationResolutionState(ctx context.Context, db sqlc.DBTX, assetID uuid.UUID, revision int64, observationID uuid.UUID) (mismatchResolution, error) {
+func observationResolutionState(ctx context.Context, db sqlc.DBTX, assetID uuid.UUID, revision int64, observationID uuid.UUID, now time.Time) (mismatchResolution, error) {
 	q := sqlc.New(db)
-	approved, err := q.IsObservationApprovedActive(ctx, sqlc.IsObservationApprovedActiveParams{AssetID: assetID, EndpointRevision: revision, ObservationID: nullableUUID(observationID)})
+	approved, err := q.IsObservationApprovedActive(ctx, sqlc.IsObservationApprovedActiveParams{AssetID: assetID, EndpointRevision: revision, ObservationID: nullableUUID(observationID), AtTime: now})
 	if err != nil {
 		return mismatchUnresolved, fmt.Errorf("check mismatch approval: %w", err)
 	}
@@ -135,12 +135,16 @@ func observationResolutionState(ctx context.Context, db sqlc.DBTX, assetID uuid.
 }
 
 func resultMatchesAnchors(result ProbeResult, anchors []sqlc.TargetTrustAnchor, now time.Time) bool {
-	validated := make(map[uuid.UUID]map[string]struct{}, len(result.ValidationFacts))
+	type evidenceKey struct {
+		kind        EvidenceKind
+		fingerprint string
+	}
+	validated := make(map[uuid.UUID]map[evidenceKey]struct{}, len(result.ValidationFacts))
 	for _, fact := range result.ValidationFacts {
 		if validated[fact.AnchorID] == nil {
-			validated[fact.AnchorID] = make(map[string]struct{})
+			validated[fact.AnchorID] = make(map[evidenceKey]struct{})
 		}
-		validated[fact.AnchorID][fact.EvidenceFingerprint] = struct{}{}
+		validated[fact.AnchorID][evidenceKey{kind: fact.EvidenceKind, fingerprint: fact.EvidenceFingerprint}] = struct{}{}
 	}
 	for _, anchor := range anchors {
 		for _, evidence := range result.Evidence {
@@ -154,12 +158,12 @@ func resultMatchesAnchors(result ProbeResult, anchors []sqlc.TargetTrustAnchor, 
 					return true
 				}
 			case AnchorSSHHostCA:
-				_, proved := validated[anchor.ID][evidence.Fingerprint]
+				_, proved := validated[anchor.ID][evidenceKey{kind: evidence.Kind, fingerprint: evidence.Fingerprint}]
 				if proved && evidence.Kind == EvidenceSSHHostCertificate && certificateCurrent(evidence, now) && namesMatch(anchor.RequiredSshPrincipals, evidence.SSHPrincipals) {
 					return true
 				}
 			case AnchorTLSCA:
-				_, proved := validated[anchor.ID][evidence.Fingerprint]
+				_, proved := validated[anchor.ID][evidenceKey{kind: evidence.Kind, fingerprint: evidence.Fingerprint}]
 				if proved && evidence.Kind == EvidenceTLSLeaf && certificateCurrent(evidence, now) && namesMatch(anchor.RequiredDnsNames, evidence.DNSNames) && namesMatch(anchor.RequiredIpAddresses, evidence.IPAddresses) {
 					return true
 				}
