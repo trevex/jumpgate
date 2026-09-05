@@ -195,6 +195,7 @@ type Querier interface {
 	GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error)
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
+	GetTargetProbeJob(ctx context.Context, arg GetTargetProbeJobParams) (TargetProbeJob, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error)
@@ -240,6 +241,7 @@ type Querier interface {
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
 	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
 	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
+	ListAssetIdentityEvidence(ctx context.Context, assetID uuid.UUID) ([]TargetIdentityEvidence, error)
 	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
 	// Assets by id, keyset-paged, each with its containing folder's leaf->root dotted
@@ -316,6 +318,8 @@ type Querier interface {
 	ListStaleWorkerSessions(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]uuid.UUID, error)
 	ListStatusObservations(ctx context.Context, arg ListStatusObservationsParams) ([]ListStatusObservationsRow, error)
 	ListStuckTerminatingSessions(ctx context.Context, terminateRequestedAt pgtype.Timestamptz) ([]uuid.UUID, error)
+	ListTargetIdentityObservations(ctx context.Context, assetID uuid.UUID) ([]TargetIdentityObservation, error)
+	ListTargetProbeJobs(ctx context.Context, assetID uuid.UUID) ([]TargetProbeJob, error)
 	ListTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error)
 	ListUndrainedOutbox(ctx context.Context, limit int64) ([]ListUndrainedOutboxRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)

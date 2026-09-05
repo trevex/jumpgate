@@ -26,6 +26,8 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
+	targetidentityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1/targetidentityv1connect"
 	vaultv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -39,6 +41,7 @@ type guardClients struct {
 	areq     accessrequestv1connect.AccessRequestServiceClient
 	vault    vaultv1connect.VaultServiceClient
 	rec      recordingv1connect.RecordingServiceClient
+	targetID targetidentityv1connect.TargetIdentityServiceClient
 	session  sessionv1connect.SessionServiceClient
 }
 
@@ -51,6 +54,7 @@ func newGuardClients(url string) guardClients {
 		areq:     accessrequestv1connect.NewAccessRequestServiceClient(h, url),
 		vault:    vaultv1connect.NewVaultServiceClient(h, url),
 		rec:      recordingv1connect.NewRecordingServiceClient(h, url),
+		targetID: targetidentityv1connect.NewTargetIdentityServiceClient(h, url),
 		session:  sessionv1connect.NewSessionServiceClient(h, url),
 	}
 }
@@ -549,6 +553,63 @@ func TestAuthzGuardMatrix(t *testing.T) {
 		}},
 		{"Recording.GetRecordingDownload", PD, func() error {
 			_, err := cl.rec.GetRecordingDownload(ctx, withToken(connect.NewRequest(&recordingv1.GetRecordingRequest{SessionId: f.recSession}), tok))
+			return err
+		}},
+
+		// ---- TargetIdentityService ----
+		// This user cannot resolve the asset, so every operation hides existence
+		// before evaluating its exact asset-scoped capability.
+		{"TargetIdentity.StartProbe", NF, func() error {
+			_, err := cl.targetID.StartProbe(ctx, withToken(connect.NewRequest(&targetidentityv1.StartProbeRequest{
+				RequestId: uuid.NewString(), AssetId: f.assetID, ExpectedEndpointRevision: 1,
+			}), tok))
+			return err
+		}},
+		{"TargetIdentity.GetProbe", NF, func() error {
+			_, err := cl.targetID.GetProbe(ctx, withToken(connect.NewRequest(&targetidentityv1.GetProbeRequest{AssetId: f.assetID, ProbeId: uuid.NewString()}), tok))
+			return err
+		}},
+		{"TargetIdentity.ListProbes", NF, func() error {
+			_, err := cl.targetID.ListProbes(ctx, withToken(connect.NewRequest(&targetidentityv1.ListProbesRequest{AssetId: f.assetID, PageSize: 10}), tok))
+			return err
+		}},
+		{"TargetIdentity.ListObservations", NF, func() error {
+			_, err := cl.targetID.ListObservations(ctx, withToken(connect.NewRequest(&targetidentityv1.ListObservationsRequest{AssetId: f.assetID, PageSize: 10}), tok))
+			return err
+		}},
+		{"TargetIdentity.ApproveEvidence", NF, func() error {
+			_, err := cl.targetID.ApproveEvidence(ctx, withToken(connect.NewRequest(&targetidentityv1.ApproveEvidenceRequest{
+				RequestId: uuid.NewString(), AssetId: f.assetID, ExpectedEndpointRevision: 1,
+				ObservationId: uuid.NewString(), EvidenceIds: []string{uuid.NewString()}, Source: targetidentityv1.TrustSource_TRUST_SOURCE_MANUAL,
+			}), tok))
+			return err
+		}},
+		{"TargetIdentity.ApproveCA", NF, func() error {
+			_, err := cl.targetID.ApproveCA(ctx, withToken(connect.NewRequest(&targetidentityv1.ApproveCARequest{
+				RequestId: uuid.NewString(), AssetId: f.assetID, ExpectedEndpointRevision: 1,
+				ObservationId: uuid.NewString(), ValidatedEvidenceId: uuid.NewString(), Kind: targetidentityv1.TrustAnchorKind_TRUST_ANCHOR_KIND_TLS_CA,
+				PublicMaterial: "public-ca", Source: targetidentityv1.TrustSource_TRUST_SOURCE_MANUAL,
+			}), tok))
+			return err
+		}},
+		{"TargetIdentity.RejectObservation", NF, func() error {
+			_, err := cl.targetID.RejectObservation(ctx, withToken(connect.NewRequest(&targetidentityv1.RejectObservationRequest{
+				RequestId: uuid.NewString(), AssetId: f.assetID, ExpectedEndpointRevision: 1, ObservationId: uuid.NewString(),
+			}), tok))
+			return err
+		}},
+		{"TargetIdentity.ListTrustAnchors", NF, func() error {
+			_, err := cl.targetID.ListTrustAnchors(ctx, withToken(connect.NewRequest(&targetidentityv1.ListTrustAnchorsRequest{AssetId: f.assetID, PageSize: 10}), tok))
+			return err
+		}},
+		{"TargetIdentity.RevokeTrustAnchor", NF, func() error {
+			_, err := cl.targetID.RevokeTrustAnchor(ctx, withToken(connect.NewRequest(&targetidentityv1.RevokeTrustAnchorRequest{
+				RequestId: uuid.NewString(), AssetId: f.assetID, ExpectedEndpointRevision: 1, TrustAnchorId: uuid.NewString(),
+			}), tok))
+			return err
+		}},
+		{"TargetIdentity.GetVerificationStatus", NF, func() error {
+			_, err := cl.targetID.GetVerificationStatus(ctx, withToken(connect.NewRequest(&targetidentityv1.GetVerificationStatusRequest{AssetId: f.assetID}), tok))
 			return err
 		}},
 

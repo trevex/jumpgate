@@ -138,3 +138,20 @@ func TestConnectCapabilitiesKeepsScopedDoubleStar(t *testing.T) {
 		t.Fatal("ssh:** must confer login entitlement")
 	}
 }
+
+// TestTargetIdentityCapabilitiesConferNoVaultAccess catches any accidental
+// broadening of the identity-management vocabulary into the secret namespace.
+func TestTargetIdentityCapabilitiesConferNoVaultAccess(t *testing.T) {
+	for _, capability := range []string{
+		authz.AssetProbeCap,
+		authz.AssetIdentityReadCap,
+		authz.AssetIdentityApproveCap,
+	} {
+		t.Run(capability, func(t *testing.T) {
+			caps := authz.Capabilities{capability}
+			if caps.Allows("vault:secret:read") || caps.Allows("vault:secret:write") {
+				t.Fatalf("%q must not confer vault secret access", capability)
+			}
+		})
+	}
+}

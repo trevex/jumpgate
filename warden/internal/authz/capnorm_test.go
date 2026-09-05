@@ -11,6 +11,7 @@ func TestNormalizeCap(t *testing.T) {
 		{"ssh:*", "ssh", "*", ""},
 		{"recording:read", "recording", "read", ""},
 		{"catalog:asset:read", "catalog", "asset", "read"},
+		{"catalog:asset:identity:read", "catalog", "asset", "identity:read"},
 		{"ssh:connect", "ssh", "connect", ""},
 		{"k8s:group:system:masters", "k8s", "group", "system:masters"},
 		{"k8s:group:developers", "k8s", "group", "developers"},
@@ -31,6 +32,7 @@ func TestReconstructCanonical(t *testing.T) {
 		{"ssh", "*", "", "ssh:*"},
 		{"recording", "read", "", "recording:read"},
 		{"catalog", "asset", "read", "catalog:asset:read"},
+		{"catalog", "asset", "identity:read", "catalog:asset:identity:read"},
 	}
 	for _, c := range cases {
 		if got := ReconstructCap(c.s, c.a, c.q); got != c.out {

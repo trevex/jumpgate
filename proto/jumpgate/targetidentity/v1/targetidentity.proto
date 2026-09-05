@@ -1,0 +1,352 @@
+syntax = "proto3";
+
+package jumpgate.targetidentity.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1;targetidentityv1";
+
+// TargetIdentityService exposes credential-free probing and explicit trust
+// management. Every operation is asset-scoped and existence-hidden.
+service TargetIdentityService {
+  rpc StartProbe(StartProbeRequest) returns (StartProbeResponse) {}
+  rpc GetProbe(GetProbeRequest) returns (GetProbeResponse) {}
+  rpc ListProbes(ListProbesRequest) returns (ListProbesResponse) {}
+  rpc ListObservations(ListObservationsRequest) returns (ListObservationsResponse) {}
+  rpc ApproveEvidence(ApproveEvidenceRequest) returns (ApproveEvidenceResponse) {}
+  rpc ApproveCA(ApproveCARequest) returns (ApproveCAResponse) {}
+  rpc RejectObservation(RejectObservationRequest) returns (RejectObservationResponse) {}
+  rpc ListTrustAnchors(ListTrustAnchorsRequest) returns (ListTrustAnchorsResponse) {}
+  rpc RevokeTrustAnchor(RevokeTrustAnchorRequest) returns (RevokeTrustAnchorResponse) {}
+  rpc GetVerificationStatus(GetVerificationStatusRequest) returns (GetVerificationStatusResponse) {}
+}
+
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_SSH = 1;
+  PROTOCOL_POSTGRES = 2;
+  PROTOCOL_RDP = 3;
+  PROTOCOL_KUBERNETES = 4;
+}
+
+enum ProbeReason {
+  PROBE_REASON_UNSPECIFIED = 0;
+  PROBE_REASON_ONBOARDING = 1;
+  PROBE_REASON_MANUAL = 2;
+  PROBE_REASON_PERIODIC = 3;
+  PROBE_REASON_ENDPOINT_CHANGED = 4;
+  PROBE_REASON_SESSION_MISMATCH = 5;
+}
+
+enum ProbeState {
+  PROBE_STATE_UNSPECIFIED = 0;
+  PROBE_STATE_QUEUED = 1;
+  PROBE_STATE_LEASED = 2;
+  PROBE_STATE_SUCCEEDED = 3;
+  PROBE_STATE_FAILED = 4;
+  PROBE_STATE_SUPERSEDED = 5;
+  PROBE_STATE_CANCELLED = 6;
+}
+
+enum ObservationSource {
+  OBSERVATION_SOURCE_UNSPECIFIED = 0;
+  OBSERVATION_SOURCE_PROBE = 1;
+  OBSERVATION_SOURCE_SESSION_MISMATCH = 2;
+}
+
+enum ObservationOutcome {
+  OBSERVATION_OUTCOME_UNSPECIFIED = 0;
+  OBSERVATION_OUTCOME_SUCCEEDED = 1;
+  OBSERVATION_OUTCOME_FAILED = 2;
+  OBSERVATION_OUTCOME_MISMATCH = 3;
+  OBSERVATION_OUTCOME_STALE = 4;
+}
+
+enum ValidationState {
+  VALIDATION_STATE_UNSPECIFIED = 0;
+  VALIDATION_STATE_UNVALIDATED = 1;
+  VALIDATION_STATE_VALIDATED = 2;
+  VALIDATION_STATE_FAILED = 3;
+}
+
+enum EvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0;
+  EVIDENCE_KIND_SSH_HOST_KEY = 1;
+  EVIDENCE_KIND_SSH_HOST_CERTIFICATE = 2;
+  EVIDENCE_KIND_TLS_LEAF = 3;
+  EVIDENCE_KIND_TLS_INTERMEDIATE = 4;
+  EVIDENCE_KIND_TLS_PRESENTED_ROOT = 5;
+}
+
+enum TrustAnchorKind {
+  TRUST_ANCHOR_KIND_UNSPECIFIED = 0;
+  TRUST_ANCHOR_KIND_SSH_HOST_KEY = 1;
+  TRUST_ANCHOR_KIND_SSH_HOST_CA = 2;
+  TRUST_ANCHOR_KIND_TLS_CA = 3;
+  TRUST_ANCHOR_KIND_TLS_LEAF = 4;
+}
+
+enum TrustSource {
+  TRUST_SOURCE_UNSPECIFIED = 0;
+  TRUST_SOURCE_MANUAL = 1;
+  TRUST_SOURCE_EXPECTED = 2;
+  TRUST_SOURCE_TOFU = 3;
+  TRUST_SOURCE_MIGRATION = 4;
+}
+
+enum FailureCategory {
+  FAILURE_CATEGORY_UNSPECIFIED = 0;
+  FAILURE_CATEGORY_NO_COMPATIBLE_WORKER = 1;
+  FAILURE_CATEGORY_DNS_RESOLUTION_FAILED = 2;
+  FAILURE_CATEGORY_CONNECTION_REFUSED = 3;
+  FAILURE_CATEGORY_CONNECTION_TIMEOUT = 4;
+  FAILURE_CATEGORY_PROTOCOL_MISMATCH = 5;
+  FAILURE_CATEGORY_INSECURE_DOWNGRADE = 6;
+  FAILURE_CATEGORY_UNSUPPORTED_IDENTITY_ALGORITHM = 7;
+  FAILURE_CATEGORY_MALFORMED_IDENTITY = 8;
+  FAILURE_CATEGORY_IDENTITY_TOO_LARGE = 9;
+  FAILURE_CATEGORY_CERTIFICATE_EXPIRED = 10;
+  FAILURE_CATEGORY_CERTIFICATE_NOT_YET_VALID = 11;
+  FAILURE_CATEGORY_NAME_MISMATCH = 12;
+  FAILURE_CATEGORY_EXPECTATION_MISMATCH = 13;
+  FAILURE_CATEGORY_WORKER_LOST = 14;
+  FAILURE_CATEGORY_LEASE_EXPIRED = 15;
+  FAILURE_CATEGORY_TARGET_IDENTITY_CHANGED = 16;
+}
+
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  VERIFICATION_STATUS_PENDING_VERIFICATION = 1;
+  VERIFICATION_STATUS_PROBE_FAILED = 2;
+  VERIFICATION_STATUS_AWAITING_APPROVAL = 3;
+  VERIFICATION_STATUS_VERIFIED = 4;
+  VERIFICATION_STATUS_IDENTITY_CHANGED = 5;
+  VERIFICATION_STATUS_VERIFICATION_EXPIRED = 6;
+}
+
+message ProbeJob {
+  string id = 1;
+  string previous_probe_id = 2;
+  string asset_id = 3;
+  int64 endpoint_revision = 4;
+  Protocol protocol = 5;
+  ProbeState state = 6;
+  ProbeReason reason = 7;
+  int32 attempt_count = 8;
+  int32 max_attempts = 9;
+  int64 next_attempt_at_unix_ms = 10;
+  int64 created_at_unix_ms = 11;
+  FailureCategory failure_category = 12;
+  string failure_detail = 13;
+  int64 started_at_unix_ms = 14;
+  int64 completed_at_unix_ms = 15;
+}
+
+message Evidence {
+  string id = 1;
+  string observation_id = 2;
+  EvidenceKind kind = 3;
+  string algorithm = 4;
+  string sha256_fingerprint = 5;
+  string public_material = 6;
+  string certificate_subject = 7;
+  string certificate_issuer = 8;
+  string issuer_sha256_fingerprint = 9;
+  repeated string dns_names = 10;
+  repeated string ip_addresses = 11;
+  repeated string ssh_principals = 12;
+  string serial_number = 13;
+  int64 valid_from_unix_ms = 14;
+  int64 valid_until_unix_ms = 15;
+  int32 key_bits = 16;
+  string key_curve = 17;
+  repeated DisplayExtension display_extensions = 18;
+  int64 created_at_unix_ms = 19;
+}
+
+message DisplayExtension {
+  string name = 1;
+  string value = 2;
+}
+
+message SSHMetadata {
+  string banner = 1;
+  repeated string host_key_algorithms = 2;
+}
+
+message TLSMetadata {
+  string version = 1;
+  string cipher_suite = 2;
+  string server_name = 3;
+  string alpn = 4;
+}
+
+message KubernetesMetadata {
+  string api_server_name = 1;
+}
+
+message Observation {
+  string id = 1;
+  string probe_id = 2;
+  string asset_id = 3;
+  int64 endpoint_revision = 4;
+  ObservationSource source = 5;
+  repeated string resolved_addresses = 6;
+  int64 observed_at_unix_ms = 7;
+  ObservationOutcome outcome = 8;
+  ValidationState validation_state = 9;
+  FailureCategory failure_category = 10;
+  repeated Evidence evidence = 11;
+  string failure_detail = 12;
+  oneof protocol_metadata {
+    SSHMetadata ssh = 13;
+    TLSMetadata tls = 14;
+    KubernetesMetadata kubernetes = 15;
+  }
+}
+
+message TrustAnchor {
+  string id = 1;
+  string asset_id = 2;
+  int64 endpoint_revision = 3;
+  TrustAnchorKind kind = 4;
+  string algorithm = 5;
+  string sha256_fingerprint = 6;
+  string public_material = 7;
+  repeated string required_ssh_principals = 8;
+  repeated string required_dns_names = 9;
+  repeated string required_ip_addresses = 10;
+  TrustSource source = 11;
+  string observation_id = 12;
+  string approved_by = 13;
+  int64 approved_at_unix_ms = 14;
+  int64 not_before_unix_ms = 15;
+  int64 expires_at_unix_ms = 16;
+  int64 revoked_at_unix_ms = 17;
+  string revoked_by = 18;
+  string revocation_reason = 19;
+}
+
+message StartProbeRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 expected_endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  string previous_probe_id = 4;
+}
+
+message StartProbeResponse {
+  ProbeJob probe = 1;
+}
+
+message GetProbeRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  string probe_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message GetProbeResponse {
+  ProbeJob probe = 1;
+}
+
+message ListProbesRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+
+message ListProbesResponse {
+  repeated ProbeJob probes = 1;
+  string next_page_token = 2;
+}
+
+message ListObservationsRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+
+message ListObservationsResponse {
+  repeated Observation observations = 1;
+  string next_page_token = 2;
+}
+
+message ApproveEvidenceRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 expected_endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  string observation_id = 4 [(buf.validate.field).string.uuid = true];
+  repeated string evidence_ids = 5 [(buf.validate.field).repeated = {min_items: 1, max_items: 16}];
+  TrustSource source = 6;
+  int64 not_before_unix_ms = 7;
+  int64 expires_at_unix_ms = 8;
+}
+
+message ApproveEvidenceResponse {
+  repeated TrustAnchor trust_anchors = 1;
+  VerificationStatus status = 2;
+}
+
+message ApproveCARequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 expected_endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  string observation_id = 4 [(buf.validate.field).string.uuid = true];
+  string validated_evidence_id = 5 [(buf.validate.field).string.uuid = true];
+  TrustAnchorKind kind = 6;
+  string algorithm = 7 [(buf.validate.field).string.max_len = 255];
+  string public_material = 8 [(buf.validate.field).string = {min_len: 1, max_bytes: 65536}];
+  TrustSource source = 9;
+  repeated string required_ssh_principals = 10 [(buf.validate.field).repeated = {max_items: 16, items: {string: {max_len: 255}}}];
+  repeated string required_dns_names = 11 [(buf.validate.field).repeated = {max_items: 16, items: {string: {max_len: 255}}}];
+  repeated string required_ip_addresses = 12 [(buf.validate.field).repeated = {max_items: 16, items: {string: {max_len: 255}}}];
+  int64 not_before_unix_ms = 13;
+  int64 expires_at_unix_ms = 14;
+}
+
+message ApproveCAResponse {
+  TrustAnchor trust_anchor = 1;
+  VerificationStatus status = 2;
+}
+
+message RejectObservationRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 expected_endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  string observation_id = 4 [(buf.validate.field).string.uuid = true];
+  string reason = 5 [(buf.validate.field).string.max_len = 500];
+}
+
+message RejectObservationResponse {
+  VerificationStatus status = 1;
+}
+
+message ListTrustAnchorsRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  string page_token = 3;
+}
+
+message ListTrustAnchorsResponse {
+  repeated TrustAnchor trust_anchors = 1;
+  string next_page_token = 2;
+}
+
+message RevokeTrustAnchorRequest {
+  string request_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 expected_endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  string trust_anchor_id = 4 [(buf.validate.field).string.uuid = true];
+  string reason = 5 [(buf.validate.field).string.max_len = 500];
+}
+
+message RevokeTrustAnchorResponse {
+  VerificationStatus status = 1;
+}
+
+message GetVerificationStatusRequest {
+  string asset_id = 1 [(buf.validate.field).string.uuid = true];
+  int64 freshness_seconds = 2 [(buf.validate.field).int64.gte = 0];
+}
+
+message GetVerificationStatusResponse {
+  VerificationStatus status = 1;
+}

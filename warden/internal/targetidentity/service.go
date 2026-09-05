@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -553,6 +554,76 @@ func (s *Service) ListAnchors(ctx context.Context, assetID uuid.UUID) ([]TrustAn
 	out := make([]TrustAnchor, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, trustAnchorFromRow(row))
+	}
+	return out, nil
+}
+
+// GetProbe returns one job only when it belongs to assetID.
+func (s *Service) GetProbe(ctx context.Context, assetID, probeID uuid.UUID) (ProbeJob, error) {
+	if assetID == uuid.Nil || probeID == uuid.Nil {
+		return ProbeJob{}, ErrInvalidRequest
+	}
+	row, err := sqlc.New(s.pool).GetTargetProbeJob(ctx, sqlc.GetTargetProbeJobParams{ProbeID: probeID, AssetID: assetID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProbeJob{}, ErrAssetNotFound
+	}
+	if err != nil {
+		return ProbeJob{}, fmt.Errorf("get probe job: %w", err)
+	}
+	return probeJobFromRow(row), nil
+}
+
+// ListProbes returns the immutable job history newest first.
+func (s *Service) ListProbes(ctx context.Context, assetID uuid.UUID) ([]ProbeJob, error) {
+	if assetID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	rows, err := sqlc.New(s.pool).ListTargetProbeJobs(ctx, assetID)
+	if err != nil {
+		return nil, fmt.Errorf("list probe jobs: %w", err)
+	}
+	out := make([]ProbeJob, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, probeJobFromRow(row))
+	}
+	return out, nil
+}
+
+// ListObservations returns display-safe observations and their public evidence.
+func (s *Service) ListObservations(ctx context.Context, assetID uuid.UUID) ([]Observation, error) {
+	if assetID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	q := sqlc.New(s.pool)
+	rows, err := q.ListTargetIdentityObservations(ctx, assetID)
+	if err != nil {
+		return nil, fmt.Errorf("list identity observations: %w", err)
+	}
+	evidenceRows, err := q.ListAssetIdentityEvidence(ctx, assetID)
+	if err != nil {
+		return nil, fmt.Errorf("list asset identity evidence: %w", err)
+	}
+	evidenceByObservation := make(map[uuid.UUID][]Evidence)
+	for _, row := range evidenceRows {
+		evidenceByObservation[row.ObservationID] = append(evidenceByObservation[row.ObservationID], evidenceFromRow(row))
+	}
+	out := make([]Observation, 0, len(rows))
+	for _, row := range rows {
+		var addresses []string
+		if err := json.Unmarshal(row.ResolvedAddresses, &addresses); err != nil {
+			return nil, fmt.Errorf("decode observation addresses: %w", err)
+		}
+		var metadata protocolMetadata
+		if err := json.Unmarshal(row.ProtocolMetadata, &metadata); err != nil {
+			return nil, fmt.Errorf("decode observation protocol metadata: %w", err)
+		}
+		out = append(out, Observation{
+			ID: row.ID, JobID: uuidFromPG(row.JobID), AssetID: row.AssetID, EndpointRevision: row.EndpointRevision,
+			Source: ObservationSource(row.Source), ResolvedAddresses: addresses, ObservedAt: row.ObservedAt,
+			Outcome: row.Outcome, ValidationState: row.ValidationState, FailureCategory: FailureCategory(textFromPG(row.FailureCategory)),
+			FailureDetail: textFromPG(row.FailureDetail), Evidence: evidenceByObservation[row.ID],
+			SSH: metadata.SSH, TLS: metadata.TLS, Kubernetes: metadata.Kubernetes,
+		})
 	}
 	return out, nil
 }

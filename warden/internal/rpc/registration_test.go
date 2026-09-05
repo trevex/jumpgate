@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/rpc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
@@ -35,14 +36,15 @@ func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *
 	resolver := approvals.New(pool)
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	services := rpc.UserServices{
-		Lookup:        lookup,
-		Auth:          auth.NewHandler(q, tokens, authorizer, cookieSecure),
-		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
-		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
-		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
-		AccessRequest: accessrequest.NewHandler(resolver, arSvc, authorizer, q),
-		Vault:         vault.NewHandler(q, sealer, authorizer),
-		Recording:     recording.NewHandler(q, auditLog, presigner, recordingURLTTL, authorizer, arSvc),
+		Lookup:         lookup,
+		Auth:           auth.NewHandler(q, tokens, authorizer, cookieSecure),
+		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
+		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
+		Access:         access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
+		AccessRequest:  accessrequest.NewHandler(resolver, arSvc, authorizer, q),
+		Vault:          vault.NewHandler(q, sealer, authorizer),
+		Recording:      recording.NewHandler(q, auditLog, presigner, recordingURLTTL, authorizer, arSvc),
+		TargetIdentity: targetidentity.NewHandler(targetidentity.NewService(pool, auditLog), apiguard.New(authorizer, q)),
 	}
 	if sessionSvc != nil {
 		services.Session = session.NewHandler(sessionSvc)

@@ -14,9 +14,12 @@ const (
 	GroupReadCap = "identity:group:read"
 
 	// catalog:asset authoring.
-	AssetCreateCap = "catalog:asset:create"
-	AssetUpdateCap = "catalog:asset:update"
-	AssetDeleteCap = "catalog:asset:delete"
+	AssetCreateCap          = "catalog:asset:create"
+	AssetUpdateCap          = "catalog:asset:update"
+	AssetDeleteCap          = "catalog:asset:delete"
+	AssetProbeCap           = "catalog:asset:probe"
+	AssetIdentityReadCap    = "catalog:asset:identity:read"
+	AssetIdentityApproveCap = "catalog:asset:identity:approve"
 
 	// catalog:folder authoring/read.
 	FolderCreateCap = "catalog:folder:create"

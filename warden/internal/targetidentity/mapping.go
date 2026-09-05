@@ -34,7 +34,8 @@ func probeJobFromRow(row sqlc.TargetProbeJob) ProbeJob {
 	return ProbeJob{ID: row.ID, PreviousJobID: uuidFromPG(row.PreviousJobID), AssetID: row.AssetID,
 		EndpointRevision: row.EndpointRevision, Protocol: Protocol(row.Protocol), State: ProbeState(row.State),
 		Reason: ProbeReason(row.Reason), AttemptCount: int(row.AttemptCount), MaxAttempts: int(row.MaxAttempts),
-		NextAttemptAt: row.NextAttemptAt, CreatedAt: row.CreatedAt}
+		NextAttemptAt: row.NextAttemptAt, CreatedAt: row.CreatedAt, StartedAt: timeFromPG(row.StartedAt), CompletedAt: timeFromPG(row.CompletedAt),
+		FailureCategory: FailureCategory(textFromPG(row.FailureCategory)), FailureDetail: textFromPG(row.FailureDetail)}
 }
 
 func evidenceFromRow(row sqlc.TargetIdentityEvidence) Evidence {

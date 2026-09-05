@@ -751,6 +751,45 @@ func (q *Queries) GetPreviousProbeJobState(ctx context.Context, arg GetPreviousP
 	return state, err
 }
 
+const getTargetProbeJob = `-- name: GetTargetProbeJob :one
+SELECT id, previous_job_id, asset_id, endpoint_revision, protocol, state, reason, requested_by, attempt_count, max_attempts, next_attempt_at, lease_worker_id, lease_token_hash, lease_expires_at, failure_category, failure_detail, created_at, started_at, completed_at
+FROM target_probe_jobs
+WHERE id = $1
+  AND asset_id = $2
+`
+
+type GetTargetProbeJobParams struct {
+	ProbeID uuid.UUID `json:"probe_id"`
+	AssetID uuid.UUID `json:"asset_id"`
+}
+
+func (q *Queries) GetTargetProbeJob(ctx context.Context, arg GetTargetProbeJobParams) (TargetProbeJob, error) {
+	row := q.db.QueryRow(ctx, getTargetProbeJob, arg.ProbeID, arg.AssetID)
+	var i TargetProbeJob
+	err := row.Scan(
+		&i.ID,
+		&i.PreviousJobID,
+		&i.AssetID,
+		&i.EndpointRevision,
+		&i.Protocol,
+		&i.State,
+		&i.Reason,
+		&i.RequestedBy,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.NextAttemptAt,
+		&i.LeaseWorkerID,
+		&i.LeaseTokenHash,
+		&i.LeaseExpiresAt,
+		&i.FailureCategory,
+		&i.FailureDetail,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const getValidationEvidence = `-- name: GetValidationEvidence :one
 SELECT kind, valid_from, valid_until
 FROM target_identity_evidence
@@ -1061,6 +1100,53 @@ func (q *Queries) IsObservationRejected(ctx context.Context, arg IsObservationRe
 	return exists, err
 }
 
+const listAssetIdentityEvidence = `-- name: ListAssetIdentityEvidence :many
+SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
+FROM target_identity_evidence evidence
+JOIN target_identity_observations observation ON observation.id = evidence.observation_id
+WHERE observation.asset_id = $1
+ORDER BY evidence.observation_id, evidence.created_at, evidence.id
+`
+
+func (q *Queries) ListAssetIdentityEvidence(ctx context.Context, assetID uuid.UUID) ([]TargetIdentityEvidence, error) {
+	rows, err := q.db.Query(ctx, listAssetIdentityEvidence, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetIdentityEvidence
+	for rows.Next() {
+		var i TargetIdentityEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ObservationID,
+			&i.Kind,
+			&i.Algorithm,
+			&i.Sha256Fingerprint,
+			&i.PublicMaterial,
+			&i.CertificateSubject,
+			&i.CertificateIssuer,
+			&i.IssuerSha256Fingerprint,
+			&i.DnsNames,
+			&i.IpAddresses,
+			&i.SshPrincipals,
+			&i.SerialNumber,
+			&i.ValidFrom,
+			&i.ValidUntil,
+			&i.KeyMetadata,
+			&i.DisplayExtensions,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCurrentActiveTrustAnchors = `-- name: ListCurrentActiveTrustAnchors :many
 SELECT anchor.id, anchor.asset_id, anchor.endpoint_revision, anchor.kind, anchor.algorithm, anchor.sha256_fingerprint, anchor.public_material, anchor.required_ssh_principals, anchor.required_dns_names, anchor.required_ip_addresses, anchor.source, anchor.observation_id, anchor.approved_by, anchor.approved_at, anchor.not_before, anchor.expires_at, anchor.revoked_at, anchor.revoked_by, anchor.revocation_reason
 FROM target_trust_anchors anchor
@@ -1202,6 +1288,94 @@ func (q *Queries) ListStatusObservations(ctx context.Context, arg ListStatusObse
 	for rows.Next() {
 		var i ListStatusObservationsRow
 		if err := rows.Scan(&i.ID, &i.ObservedAt, &i.Outcome); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTargetIdentityObservations = `-- name: ListTargetIdentityObservations :many
+SELECT id, job_id, asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, observed_at, outcome, validation_state, failure_category, failure_detail
+FROM target_identity_observations
+WHERE asset_id = $1
+ORDER BY observed_at DESC, id DESC
+`
+
+func (q *Queries) ListTargetIdentityObservations(ctx context.Context, assetID uuid.UUID) ([]TargetIdentityObservation, error) {
+	rows, err := q.db.Query(ctx, listTargetIdentityObservations, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetIdentityObservation
+	for rows.Next() {
+		var i TargetIdentityObservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.JobID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.WorkerID,
+			&i.Source,
+			&i.ResolvedAddresses,
+			&i.ProtocolMetadata,
+			&i.ObservedAt,
+			&i.Outcome,
+			&i.ValidationState,
+			&i.FailureCategory,
+			&i.FailureDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTargetProbeJobs = `-- name: ListTargetProbeJobs :many
+SELECT id, previous_job_id, asset_id, endpoint_revision, protocol, state, reason, requested_by, attempt_count, max_attempts, next_attempt_at, lease_worker_id, lease_token_hash, lease_expires_at, failure_category, failure_detail, created_at, started_at, completed_at
+FROM target_probe_jobs
+WHERE asset_id = $1
+ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListTargetProbeJobs(ctx context.Context, assetID uuid.UUID) ([]TargetProbeJob, error) {
+	rows, err := q.db.Query(ctx, listTargetProbeJobs, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetProbeJob
+	for rows.Next() {
+		var i TargetProbeJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.PreviousJobID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.Protocol,
+			&i.State,
+			&i.Reason,
+			&i.RequestedBy,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.NextAttemptAt,
+			&i.LeaseWorkerID,
+			&i.LeaseTokenHash,
+			&i.LeaseExpiresAt,
+			&i.FailureCategory,
+			&i.FailureDetail,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

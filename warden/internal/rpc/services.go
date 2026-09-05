@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/identity/v1/identityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1/targetidentityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 	"github.com/trevex/jumpgate/warden/internal/access"
 	"github.com/trevex/jumpgate/warden/internal/accessrequest"
@@ -32,6 +33,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/recording"
 	"github.com/trevex/jumpgate/warden/internal/session"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
@@ -39,16 +41,17 @@ import (
 // adapters. Application wiring belongs to internal/app; registration only mounts
 // handlers and transport interceptors.
 type UserServices struct {
-	Lookup        auth.Lookup
-	Auth          *auth.Handler
-	Identity      *identity.Handler
-	Catalog       *catalog.Handler
-	Access        *access.Handler
-	AccessRequest *accessrequest.Handler
-	Vault         *vault.Handler
-	Enrollment    *enrollment.Handler
-	Recording     *recording.Handler
-	Session       *session.Handler // optional when session admission is disabled
+	Lookup         auth.Lookup
+	Auth           *auth.Handler
+	Identity       *identity.Handler
+	Catalog        *catalog.Handler
+	Access         *access.Handler
+	AccessRequest  *accessrequest.Handler
+	Vault          *vault.Handler
+	Enrollment     *enrollment.Handler
+	Recording      *recording.Handler
+	Session        *session.Handler // optional when session admission is disabled
+	TargetIdentity *targetidentity.Handler
 }
 
 // RegisterUserServices mounts the bearer-authenticated user services.
@@ -86,6 +89,11 @@ func RegisterUserServices(mux *http.ServeMux, services UserServices) {
 	if services.Session != nil {
 		sPath, sHandler := sessionv1connect.NewSessionServiceHandler(services.Session, opts)
 		mux.Handle(sPath, sHandler)
+	}
+
+	if services.TargetIdentity != nil {
+		tiPath, tiHandler := targetidentityv1connect.NewTargetIdentityServiceHandler(services.TargetIdentity, opts)
+		mux.Handle(tiPath, tiHandler)
 	}
 
 }

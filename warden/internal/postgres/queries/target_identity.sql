@@ -23,6 +23,31 @@ VALUES (
 )
 RETURNING *;
 
+-- name: GetTargetProbeJob :one
+SELECT *
+FROM target_probe_jobs
+WHERE id = sqlc.arg('probe_id')
+  AND asset_id = sqlc.arg('asset_id');
+
+-- name: ListTargetProbeJobs :many
+SELECT *
+FROM target_probe_jobs
+WHERE asset_id = sqlc.arg('asset_id')
+ORDER BY created_at DESC, id DESC;
+
+-- name: ListTargetIdentityObservations :many
+SELECT *
+FROM target_identity_observations
+WHERE asset_id = sqlc.arg('asset_id')
+ORDER BY observed_at DESC, id DESC;
+
+-- name: ListAssetIdentityEvidence :many
+SELECT evidence.*
+FROM target_identity_evidence evidence
+JOIN target_identity_observations observation ON observation.id = evidence.observation_id
+WHERE observation.asset_id = sqlc.arg('asset_id')
+ORDER BY evidence.observation_id, evidence.created_at, evidence.id;
+
 -- name: ClaimProbeJob :one
 WITH candidate AS MATERIALIZED (
     SELECT j.id

@@ -6,7 +6,8 @@ import "strings"
 // columns. `**` fills its position and all trailing columns with `*`; a single
 // `*` stays `*` with trailing columns `”`; concrete segments map directly with
 // trailing columns `”`. Only the first three segments are represented (the whole
-// real vocabulary is ≤3 segments).
+// first two segments are represented directly; the qualifier column carries the
+// remaining tail verbatim, allowing exact capabilities with deeper namespaces.
 func NormalizeCap(pattern string) (scope, action, qualifier string) {
 	segs := strings.SplitN(pattern, ":", 3)
 	col := [3]string{"", "", ""}

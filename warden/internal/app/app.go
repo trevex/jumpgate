@@ -37,6 +37,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 	"github.com/trevex/jumpgate/warden/internal/webcors"
 	"github.com/trevex/jumpgate/warden/internal/webui"
@@ -225,15 +226,16 @@ func Run(ctx context.Context, cfg config.Config) error {
 	apiTokens := auth.NewTokenService(apiQ)
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
 	userServices := rpc.UserServices{
-		Lookup:        apiLookup,
-		Auth:          auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
-		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
-		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
-		Access:        access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
-		AccessRequest: accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
-		Vault:         vault.NewHandler(apiQ, sealer, authorizer),
-		Enrollment:    enrollment.NewHandler(enrollment.NewService(pool, sealer), apiguard.New(authorizer, apiQ)),
-		Recording:     recording.NewHandler(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
+		Lookup:         apiLookup,
+		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
+		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
+		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
+		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
+		AccessRequest:  accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
+		Vault:          vault.NewHandler(apiQ, sealer, authorizer),
+		Enrollment:     enrollment.NewHandler(enrollment.NewService(pool, sealer), apiguard.New(authorizer, apiQ)),
+		Recording:      recording.NewHandler(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
+		TargetIdentity: targetidentity.NewHandler(targetidentity.NewService(pool, auditLog), apiguard.New(authorizer, apiQ)),
 	}
 	if sessionSvc != nil {
 		userServices.Session = session.NewHandler(sessionSvc)

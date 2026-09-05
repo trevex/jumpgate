@@ -197,6 +197,10 @@ type ProbeJob struct {
 	MaxAttempts      int
 	NextAttemptAt    time.Time
 	CreatedAt        time.Time
+	StartedAt        time.Time
+	CompletedAt      time.Time
+	FailureCategory  FailureCategory
+	FailureDetail    string
 }
 
 // ProbeLease grants one worker a short-lived attempt against an endpoint.
@@ -284,6 +288,26 @@ type ProbeResult struct {
 	ValidationFacts   []ValidationFact
 	FailureCategory   FailureCategory
 	FailureDetail     string
+}
+
+// Observation is the display-safe immutable identity record exposed to the
+// management transport. Worker identity and failure detail remain internal.
+type Observation struct {
+	ID                uuid.UUID
+	JobID             uuid.UUID
+	AssetID           uuid.UUID
+	EndpointRevision  int64
+	Source            ObservationSource
+	ResolvedAddresses []string
+	ObservedAt        time.Time
+	Outcome           string
+	ValidationState   string
+	FailureCategory   FailureCategory
+	FailureDetail     string
+	Evidence          []Evidence
+	SSH               *SSHMetadata
+	TLS               *TLSMetadata
+	Kubernetes        *KubernetesMetadata
 }
 
 // TrustAnchor is an additive, explicitly approved identity constraint.
