@@ -1,7 +1,9 @@
 package targetidentity_test
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -439,18 +441,133 @@ func TestCompleteRejectsProtocolIncompatibleSuccessfulResult(t *testing.T) {
 	}
 }
 
-func TestStatusUsesOneInjectedTimeForAnchorAndCertificateValidity(t *testing.T) {
+func TestCompleteRejectsProtocolIncompatibleFailedResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result targetidentity.ProbeResult
+	}{
+		{
+			name: "metadata",
+			result: targetidentity.ProbeResult{
+				Outcome:         targetidentity.ProbeFailed,
+				FailureCategory: targetidentity.FailureProtocolMismatch,
+				TLS:             &targetidentity.TLSMetadata{},
+			},
+		},
+		{
+			name: "evidence",
+			result: targetidentity.ProbeResult{
+				Outcome:         targetidentity.ProbeFailed,
+				FailureCategory: targetidentity.FailureProtocolMismatch,
+				Evidence: []targetidentity.Evidence{{
+					Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509",
+					Fingerprint: fingerprint("failed-wrong-protocol"), PublicMaterial: "cert",
+					ValidFrom: time.Now().Add(-time.Hour), ValidUntil: time.Now().Add(time.Hour),
+				}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTargetIdentityEnv(t)
+			env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+			lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolSSH})
+			if err != nil {
+				t.Fatalf("claim: %v", err)
+			}
+			_, err = env.svc.Complete(env.ctx, targetidentity.CompleteRequest{
+				JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token, Result: tt.result,
+			})
+			if !errors.Is(err, targetidentity.ErrInvalidResult) {
+				t.Fatalf("error = %v; want ErrInvalidResult", err)
+			}
+		})
+	}
+}
+
+func TestCompleteAcceptsKubernetesMetadataAndTLSEvidence(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolKubernetes)
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolKubernetes})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	now := time.Now()
+	status, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{
+		JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token,
+		Result: targetidentity.ProbeResult{
+			Outcome:    targetidentity.ProbeSucceeded,
+			Kubernetes: &targetidentity.KubernetesMetadata{APIServerName: "kubernetes.default.svc"},
+			Evidence: []targetidentity.Evidence{{
+				Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509",
+				Fingerprint: fingerprint("kubernetes-api"), PublicMaterial: "cert",
+				DNSNames: []string{"kubernetes.default.svc"}, ValidFrom: now.Add(-time.Hour), ValidUntil: now.Add(time.Hour),
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete Kubernetes probe: %v", err)
+	}
+	if status != targetidentity.StatusAwaitingApproval {
+		t.Fatalf("status = %q; want awaiting_approval", status)
+	}
+}
+
+func TestQueueProbeWrapsPreviousJobLookupFailure(t *testing.T) {
 	env := newTargetIdentityEnv(t)
-	env.complete(t, sshEvidence("future-anchor"))
+	if _, err := testPool.Exec(env.ctx, `ALTER TABLE target_probe_jobs RENAME TO target_probe_jobs_unavailable`); err != nil {
+		t.Fatalf("hide probe jobs table: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := testPool.Exec(context.Background(), `ALTER TABLE target_probe_jobs_unavailable RENAME TO target_probe_jobs`); err != nil {
+			t.Errorf("restore probe jobs table: %v", err)
+		}
+	})
+	_, err := env.svc.QueueProbe(env.ctx, targetidentity.QueueProbeRequest{
+		AssetID: env.asset, EndpointRevision: 1, Reason: targetidentity.ProbeReasonManual,
+		RequestedBy: env.actor, PreviousJobID: uuid.New(), MaxAttempts: 3,
+	})
+	if err == nil || errors.Is(err, targetidentity.ErrInvalidRequest) {
+		t.Fatalf("error = %v; want wrapped operational error", err)
+	}
+	if !strings.Contains(err.Error(), "get previous probe job state") {
+		t.Fatalf("error = %v; want previous-job lookup context", err)
+	}
+}
+
+func TestStatusUsesOneInjectedTimeForAnchorAndCertificateValidity(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	base := time.Now().UTC()
+	env.svc = targetidentity.NewService(testPool, audit.New(testPool), targetidentity.WithClock(func() time.Time { return base }))
+	leaf := targetidentity.Evidence{
+		Kind: targetidentity.EvidenceTLSLeaf, Algorithm: "x509",
+		Fingerprint: fingerprint("future-anchor"), PublicMaterial: "leaf",
+		ValidFrom: base.Add(-time.Hour), ValidUntil: base.Add(2 * time.Hour),
+	}
+	env.queue(t, targetidentity.ProbeReasonOnboarding, uuid.Nil)
+	lease, err := env.svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolPostgres})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := env.svc.Complete(env.ctx, targetidentity.CompleteRequest{
+		JobID: lease.JobID, WorkerID: env.worker, LeaseToken: lease.Token,
+		Result: targetidentity.ProbeResult{Outcome: targetidentity.ProbeSucceeded, TLS: &targetidentity.TLSMetadata{}, Evidence: []targetidentity.Evidence{leaf}},
+	}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
 	evidence := env.evidence(t)[0]
-	activation := time.Now().Add(time.Hour)
-	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID, EvidenceID: evidence.ID, SelectedFingerprint: evidence.Fingerprint, Source: targetidentity.TrustSourceManual, ActorID: env.actor, NotBefore: activation}); err != nil {
+	activation := base.Add(time.Hour)
+	if _, _, err := env.svc.Approve(env.ctx, targetidentity.ApproveRequest{AssetID: env.asset, ExpectedRevision: 1, ObservationID: evidence.ObservationID, EvidenceID: evidence.ID, SelectedFingerprint: evidence.Fingerprint, AnchorKind: targetidentity.AnchorTLSLeaf, Source: targetidentity.TrustSourceManual, ActorID: env.actor, NotBefore: activation}); err != nil {
 		t.Fatalf("approve future anchor: %v", err)
 	}
 	checkAt := activation.Add(time.Minute)
 	env.svc = targetidentity.NewService(testPool, audit.New(testPool), targetidentity.WithClock(func() time.Time { return checkAt }))
 	if got := env.status(t); got != targetidentity.StatusVerified {
 		t.Fatalf("status at injected activation time = %q; want verified", got)
+	}
+	checkAt = leaf.ValidUntil.Add(time.Minute)
+	if got := env.status(t); got != targetidentity.StatusIdentityChanged {
+		t.Fatalf("status after certificate expiry = %q; want identity_changed", got)
 	}
 }
 
