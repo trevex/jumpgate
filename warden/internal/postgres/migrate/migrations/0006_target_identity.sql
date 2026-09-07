@@ -96,6 +96,9 @@ CREATE TABLE target_identity_observations (
 CREATE INDEX target_identity_observations_asset_revision
     ON target_identity_observations (asset_id, endpoint_revision, observed_at DESC, id DESC);
 
+CREATE INDEX target_identity_observations_asset_history
+    ON target_identity_observations (asset_id, observed_at DESC, id DESC);
+
 CREATE TABLE target_identity_evidence (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     observation_id uuid NOT NULL REFERENCES target_identity_observations(id) ON DELETE CASCADE,

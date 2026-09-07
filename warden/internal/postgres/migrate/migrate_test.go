@@ -244,6 +244,19 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 	}
 	defer pool.Close()
 
+	var observationHistoryIndex string
+	if err := pool.QueryRow(ctx, `
+		SELECT indexdef
+		FROM pg_indexes
+		WHERE schemaname = 'public'
+		  AND tablename = 'target_identity_observations'
+		  AND indexname = 'target_identity_observations_asset_history'`).Scan(&observationHistoryIndex); err != nil {
+		t.Fatalf("read observation history index: %v", err)
+	}
+	if !strings.Contains(observationHistoryIndex, "(asset_id, observed_at DESC, id DESC)") {
+		t.Fatalf("observation history index = %q; want asset/time/id keyset order", observationHistoryIndex)
+	}
+
 	for _, table := range []string{
 		"target_probe_jobs",
 		"target_probe_attempts",
@@ -251,6 +264,7 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		"target_identity_evidence",
 		"target_identity_validation_facts",
 		"target_trust_anchors",
+		"target_identity_mutation_requests",
 	} {
 		var exists bool
 		if err := pool.QueryRow(ctx,
@@ -406,6 +420,12 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		`DELETE FROM target_identity_validation_facts WHERE anchor_id = $1`, anchorID); err == nil {
 		t.Fatal("validation fact delete accepted")
 	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO target_identity_mutation_requests
+			(request_id, operation, asset_id, request_hash, response)
+		VALUES (gen_random_uuid(), 'test', $1, decode(repeat('ab', 32), 'hex'), '{}')`, assetID); err != nil {
+		t.Fatalf("insert mutation request: %v", err)
+	}
 
 	if _, err := pool.Exec(ctx, `DELETE FROM assets WHERE id = $1`, assetID); err != nil {
 		t.Fatalf("asset cascade delete: %v", err)
@@ -417,6 +437,7 @@ func TestMigration0006TargetIdentity(t *testing.T) {
 		"target_identity_evidence",
 		"target_identity_validation_facts",
 		"target_trust_anchors",
+		"target_identity_mutation_requests",
 	} {
 		var count int
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {

@@ -38,6 +38,138 @@ func TestQueueProbeRequestIDReplayAndConflict(t *testing.T) {
 	env.claimAndComplete(t, targetidentity.ProbeFailed, targetidentity.FailureConnectionRefused)
 }
 
+func TestConcurrentIdenticalRequestIDCommitsExactlyOneMutation(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	requestID := uuid.New()
+	req := targetidentity.QueueProbeRequest{
+		RequestID: requestID, AssetID: env.asset, EndpointRevision: 1,
+		Reason: targetidentity.ProbeReasonManual, RequestedBy: env.actor,
+	}
+	beforeAudit, err := env.q.CountOutbox(env.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		job targetidentity.ProbeJob
+		err error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			job, err := env.svc.QueueProbe(env.ctx, req)
+			results <- result{job: job, err: err}
+		}()
+	}
+	close(start)
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("concurrent calls = %v/%v", first.err, second.err)
+	}
+	if first.job.ID != second.job.ID {
+		t.Fatalf("concurrent replay IDs = %s/%s, want identical", first.job.ID, second.job.ID)
+	}
+	var jobs, keys int
+	if err := testPool.QueryRow(env.ctx, `SELECT count(*) FROM target_probe_jobs WHERE asset_id = $1`, env.asset).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(env.ctx, `SELECT count(*) FROM target_identity_mutation_requests WHERE request_id = $1`, requestID).Scan(&keys); err != nil {
+		t.Fatal(err)
+	}
+	afterAudit, err := env.q.CountOutbox(env.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 1 || keys != 1 || afterAudit-beforeAudit != 1 {
+		t.Fatalf("concurrent mutation counts jobs/keys/audit = %d/%d/%d, want 1/1/1", jobs, keys, afterAudit-beforeAudit)
+	}
+	env.claimAndComplete(t, targetidentity.ProbeFailed, targetidentity.FailureConnectionRefused)
+}
+
+func TestRequestIDBindsActorAssetAndOperation(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	other := newTargetIdentityEnv(t)
+	requestID := uuid.New()
+	seed := targetidentity.QueueProbeRequest{
+		RequestID: requestID, AssetID: env.asset, EndpointRevision: 1,
+		Reason: targetidentity.ProbeReasonManual, RequestedBy: env.actor,
+	}
+	if _, err := env.svc.QueueProbe(env.ctx, seed); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "actor",
+			call: func() error {
+				conflict := seed
+				conflict.RequestedBy = other.actor
+				_, err := env.svc.QueueProbe(env.ctx, conflict)
+				return err
+			},
+		},
+		{
+			name: "asset",
+			call: func() error {
+				conflict := seed
+				conflict.AssetID = other.asset
+				_, err := env.svc.QueueProbe(env.ctx, conflict)
+				return err
+			},
+		},
+		{
+			name: "operation",
+			call: func() error {
+				_, err := env.svc.RevokeAnchor(env.ctx, targetidentity.RevokeAnchorRequest{
+					RequestID: requestID, AssetID: env.asset, ExpectedRevision: 1,
+					AnchorID: uuid.New(), ActorID: env.actor, Reason: "operation binding",
+				})
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, targetidentity.ErrIdempotencyConflict) {
+				t.Fatalf("conflict error = %v, want ErrIdempotencyConflict", err)
+			}
+		})
+	}
+	env.claimAndComplete(t, targetidentity.ProbeFailed, targetidentity.FailureConnectionRefused)
+}
+
+func TestQueueProbeAuditFailureRollsBackRequestIDClaim(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	requestID := uuid.New()
+	req := targetidentity.QueueProbeRequest{
+		RequestID: requestID, AssetID: env.asset, EndpointRevision: 1,
+		Reason: targetidentity.ProbeReasonManual, RequestedBy: env.actor,
+	}
+	env.svc = targetidentity.NewService(testPool, failingEnqueuer{})
+	if _, err := env.svc.QueueProbe(env.ctx, req); !errors.Is(err, errAuditRejected) {
+		t.Fatalf("queue audit failure = %v, want errAuditRejected", err)
+	}
+	var jobs, keys int
+	if err := testPool.QueryRow(env.ctx, `SELECT count(*) FROM target_probe_jobs WHERE asset_id = $1`, env.asset).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(env.ctx, `SELECT count(*) FROM target_identity_mutation_requests WHERE request_id = $1`, requestID).Scan(&keys); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 0 || keys != 0 {
+		t.Fatalf("rolled-back queue jobs/keys = %d/%d, want 0/0", jobs, keys)
+	}
+	env.svc = targetidentity.NewService(testPool, audit.New(testPool))
+	if _, err := env.svc.QueueProbe(env.ctx, req); err != nil {
+		t.Fatalf("retry rolled-back queue request: %v", err)
+	}
+	env.claimAndComplete(t, targetidentity.ProbeFailed, targetidentity.FailureConnectionRefused)
+}
+
 func TestApproveEvidenceBatchIsAtomicAndIdempotent(t *testing.T) {
 	t.Run("failure rolls back every anchor", func(t *testing.T) {
 		env := newTargetIdentityEnv(t)
