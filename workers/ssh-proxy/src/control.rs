@@ -26,8 +26,8 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
-    ProbeAssignment, ProbeFailureCategory, ProbeOutcome, ProbeResult, RecordingInfo, Register,
-    ServerMessage, SessionEnded, WorkerMessage,
+    ProbeAssignment, ProbeFailureCategory, ProbeOutcome, ProbeProtocol, ProbeResult, RecordingInfo,
+    Register, ServerMessage, SessionEnded, WorkerMessage,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
 
@@ -175,14 +175,43 @@ async fn connect_and_run(
                         tracing::info!("register acknowledged by warden");
                     }
                     Some(ServerMessage { msg: Some(server_message::Msg::ProbeAssignment(pa)) }) => {
-                        // ssh-proxy has no identity-probe support yet: reply
-                        // unsupported so the warden lease resolves instead of hanging.
-                        // The control stream stays open.
-                        let frame = WorkerMessage {
-                            msg: Some(worker_message::Msg::ProbeResult(unsupported_probe_result(&pa))),
-                        };
-                        if tx.send(frame).await.is_err() {
-                            return Ok(());
+                        if pa.protocol == ProbeProtocol::Ssh as i32 {
+                            // Run the SSH host-identity probe off the select loop so a
+                            // real connect/handshake never stalls heartbeats or teardown.
+                            // The spawned task honors the assignment's deadlines and sends
+                            // exactly one terminal ProbeResult. If the control stream is
+                            // gone by the time it finishes, the send no-ops and warden
+                            // recovers the lease (we do not recover it worker-side).
+                            let probe_tx = tx.clone();
+                            tokio::spawn(async move {
+                                let result = crate::probe::run_to_result(pa).await;
+                                let job_id = result.job_id.clone();
+                                let outcome = result.outcome;
+                                if probe_tx
+                                    .send(WorkerMessage {
+                                        msg: Some(worker_message::Msg::ProbeResult(result)),
+                                    })
+                                    .await
+                                    .is_err()
+                                {
+                                    tracing::warn!(
+                                        %job_id,
+                                        "control stream closed before ssh probe result could be sent; warden recovers the lease",
+                                    );
+                                } else {
+                                    tracing::debug!(%job_id, outcome, "ssh probe result sent to warden");
+                                }
+                            });
+                        } else {
+                            // Non-SSH protocols: reply unsupported so the warden lease
+                            // resolves instead of hanging. This is instant, so it stays
+                            // inline. The control stream stays open.
+                            let frame = WorkerMessage {
+                                msg: Some(worker_message::Msg::ProbeResult(unsupported_probe_result(&pa))),
+                            };
+                            if tx.send(frame).await.is_err() {
+                                return Ok(());
+                            }
                         }
                     }
                     Some(ServerMessage { msg: None }) => {

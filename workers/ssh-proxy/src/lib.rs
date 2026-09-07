@@ -9,6 +9,7 @@
 pub mod asciicast;
 pub mod config;
 pub mod control;
+pub mod probe;
 pub mod proxy;
 pub mod record;
 pub mod server;
