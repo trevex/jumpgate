@@ -23,6 +23,24 @@ VALUES (
 )
 RETURNING *;
 
+-- name: ClaimTargetIdentityMutation :one
+INSERT INTO target_identity_mutation_requests (
+    request_id, operation, asset_id, actor_id, request_hash
+) VALUES (
+    sqlc.arg('request_id'), sqlc.arg('operation'), sqlc.arg('asset_id'),
+    sqlc.narg('actor_id')::uuid, sqlc.arg('request_hash')
+)
+ON CONFLICT (request_id) DO UPDATE
+SET request_id = target_identity_mutation_requests.request_id
+RETURNING *;
+
+-- name: CompleteTargetIdentityMutation :one
+UPDATE target_identity_mutation_requests
+SET response = sqlc.arg('response')::jsonb
+WHERE request_id = sqlc.arg('request_id')
+  AND response IS NULL
+RETURNING *;
+
 -- name: GetTargetProbeJob :one
 SELECT *
 FROM target_probe_jobs
@@ -35,17 +53,45 @@ FROM target_probe_jobs
 WHERE asset_id = sqlc.arg('asset_id')
 ORDER BY created_at DESC, id DESC;
 
+-- name: ListTargetProbeJobPage :many
+SELECT *
+FROM target_probe_jobs
+WHERE asset_id = sqlc.arg('asset_id')
+  AND (
+      sqlc.narg('after_time')::timestamptz IS NULL
+      OR (created_at, id) < (sqlc.narg('after_time')::timestamptz, sqlc.arg('after_id')::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('page_limit');
+
 -- name: ListTargetIdentityObservations :many
 SELECT *
 FROM target_identity_observations
 WHERE asset_id = sqlc.arg('asset_id')
 ORDER BY observed_at DESC, id DESC;
 
+-- name: ListTargetIdentityObservationPage :many
+SELECT *
+FROM target_identity_observations
+WHERE asset_id = sqlc.arg('asset_id')
+  AND (
+      sqlc.narg('after_time')::timestamptz IS NULL
+      OR (observed_at, id) < (sqlc.narg('after_time')::timestamptz, sqlc.arg('after_id')::uuid)
+  )
+ORDER BY observed_at DESC, id DESC
+LIMIT sqlc.arg('page_limit');
+
 -- name: ListAssetIdentityEvidence :many
 SELECT evidence.*
 FROM target_identity_evidence evidence
 JOIN target_identity_observations observation ON observation.id = evidence.observation_id
 WHERE observation.asset_id = sqlc.arg('asset_id')
+ORDER BY evidence.observation_id, evidence.created_at, evidence.id;
+
+-- name: ListObservationPageEvidence :many
+SELECT evidence.*
+FROM target_identity_evidence evidence
+WHERE evidence.observation_id = ANY(sqlc.arg('observation_ids')::uuid[])
 ORDER BY evidence.observation_id, evidence.created_at, evidence.id;
 
 -- name: ClaimProbeJob :one
@@ -545,6 +591,17 @@ SELECT anchor.*
 FROM target_trust_anchors anchor
 WHERE anchor.asset_id = sqlc.arg('asset_id')
 ORDER BY anchor.approved_at, anchor.id;
+
+-- name: ListTrustAnchorPage :many
+SELECT anchor.*
+FROM target_trust_anchors anchor
+WHERE anchor.asset_id = sqlc.arg('asset_id')
+  AND (
+      sqlc.narg('after_time')::timestamptz IS NULL
+      OR (anchor.approved_at, anchor.id) < (sqlc.narg('after_time')::timestamptz, sqlc.arg('after_id')::uuid)
+  )
+ORDER BY anchor.approved_at DESC, anchor.id DESC
+LIMIT sqlc.arg('page_limit');
 
 -- name: ListIdentityEvidence :many
 SELECT evidence.*

@@ -317,6 +317,47 @@ func (q *Queries) ClaimProbeJobForProtocol(ctx context.Context, arg ClaimProbeJo
 	return i, err
 }
 
+const claimTargetIdentityMutation = `-- name: ClaimTargetIdentityMutation :one
+INSERT INTO target_identity_mutation_requests (
+    request_id, operation, asset_id, actor_id, request_hash
+) VALUES (
+    $1, $2, $3,
+    $4::uuid, $5
+)
+ON CONFLICT (request_id) DO UPDATE
+SET request_id = target_identity_mutation_requests.request_id
+RETURNING request_id, operation, asset_id, actor_id, request_hash, response, created_at
+`
+
+type ClaimTargetIdentityMutationParams struct {
+	RequestID   uuid.UUID   `json:"request_id"`
+	Operation   string      `json:"operation"`
+	AssetID     uuid.UUID   `json:"asset_id"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+	RequestHash []byte      `json:"request_hash"`
+}
+
+func (q *Queries) ClaimTargetIdentityMutation(ctx context.Context, arg ClaimTargetIdentityMutationParams) (TargetIdentityMutationRequest, error) {
+	row := q.db.QueryRow(ctx, claimTargetIdentityMutation,
+		arg.RequestID,
+		arg.Operation,
+		arg.AssetID,
+		arg.ActorID,
+		arg.RequestHash,
+	)
+	var i TargetIdentityMutationRequest
+	err := row.Scan(
+		&i.RequestID,
+		&i.Operation,
+		&i.AssetID,
+		&i.ActorID,
+		&i.RequestHash,
+		&i.Response,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const completeProbeAttempt = `-- name: CompleteProbeAttempt :one
 WITH completed_job AS (
     UPDATE target_probe_jobs j
@@ -399,6 +440,34 @@ func (q *Queries) CompleteProbeAttempt(ctx context.Context, arg CompleteProbeAtt
 		&i.Outcome,
 		&i.FailureCategory,
 		&i.FailureDetail,
+	)
+	return i, err
+}
+
+const completeTargetIdentityMutation = `-- name: CompleteTargetIdentityMutation :one
+UPDATE target_identity_mutation_requests
+SET response = $1::jsonb
+WHERE request_id = $2
+  AND response IS NULL
+RETURNING request_id, operation, asset_id, actor_id, request_hash, response, created_at
+`
+
+type CompleteTargetIdentityMutationParams struct {
+	Response  []byte    `json:"response"`
+	RequestID uuid.UUID `json:"request_id"`
+}
+
+func (q *Queries) CompleteTargetIdentityMutation(ctx context.Context, arg CompleteTargetIdentityMutationParams) (TargetIdentityMutationRequest, error) {
+	row := q.db.QueryRow(ctx, completeTargetIdentityMutation, arg.Response, arg.RequestID)
+	var i TargetIdentityMutationRequest
+	err := row.Scan(
+		&i.RequestID,
+		&i.Operation,
+		&i.AssetID,
+		&i.ActorID,
+		&i.RequestHash,
+		&i.Response,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1259,6 +1328,52 @@ func (q *Queries) ListIdentityEvidence(ctx context.Context, arg ListIdentityEvid
 	return items, nil
 }
 
+const listObservationPageEvidence = `-- name: ListObservationPageEvidence :many
+SELECT evidence.id, evidence.observation_id, evidence.kind, evidence.algorithm, evidence.sha256_fingerprint, evidence.public_material, evidence.certificate_subject, evidence.certificate_issuer, evidence.issuer_sha256_fingerprint, evidence.dns_names, evidence.ip_addresses, evidence.ssh_principals, evidence.serial_number, evidence.valid_from, evidence.valid_until, evidence.key_metadata, evidence.display_extensions, evidence.created_at
+FROM target_identity_evidence evidence
+WHERE evidence.observation_id = ANY($1::uuid[])
+ORDER BY evidence.observation_id, evidence.created_at, evidence.id
+`
+
+func (q *Queries) ListObservationPageEvidence(ctx context.Context, observationIds []uuid.UUID) ([]TargetIdentityEvidence, error) {
+	rows, err := q.db.Query(ctx, listObservationPageEvidence, observationIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetIdentityEvidence
+	for rows.Next() {
+		var i TargetIdentityEvidence
+		if err := rows.Scan(
+			&i.ID,
+			&i.ObservationID,
+			&i.Kind,
+			&i.Algorithm,
+			&i.Sha256Fingerprint,
+			&i.PublicMaterial,
+			&i.CertificateSubject,
+			&i.CertificateIssuer,
+			&i.IssuerSha256Fingerprint,
+			&i.DnsNames,
+			&i.IpAddresses,
+			&i.SshPrincipals,
+			&i.SerialNumber,
+			&i.ValidFrom,
+			&i.ValidUntil,
+			&i.KeyMetadata,
+			&i.DisplayExtensions,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatusObservations = `-- name: ListStatusObservations :many
 SELECT id, observed_at, outcome
 FROM target_identity_observations
@@ -1288,6 +1403,64 @@ func (q *Queries) ListStatusObservations(ctx context.Context, arg ListStatusObse
 	for rows.Next() {
 		var i ListStatusObservationsRow
 		if err := rows.Scan(&i.ID, &i.ObservedAt, &i.Outcome); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTargetIdentityObservationPage = `-- name: ListTargetIdentityObservationPage :many
+SELECT id, job_id, asset_id, endpoint_revision, worker_id, source, resolved_addresses, protocol_metadata, observed_at, outcome, validation_state, failure_category, failure_detail
+FROM target_identity_observations
+WHERE asset_id = $1
+  AND (
+      $2::timestamptz IS NULL
+      OR (observed_at, id) < ($2::timestamptz, $3::uuid)
+  )
+ORDER BY observed_at DESC, id DESC
+LIMIT $4
+`
+
+type ListTargetIdentityObservationPageParams struct {
+	AssetID   uuid.UUID          `json:"asset_id"`
+	AfterTime pgtype.Timestamptz `json:"after_time"`
+	AfterID   uuid.UUID          `json:"after_id"`
+	PageLimit int64              `json:"page_limit"`
+}
+
+func (q *Queries) ListTargetIdentityObservationPage(ctx context.Context, arg ListTargetIdentityObservationPageParams) ([]TargetIdentityObservation, error) {
+	rows, err := q.db.Query(ctx, listTargetIdentityObservationPage,
+		arg.AssetID,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetIdentityObservation
+	for rows.Next() {
+		var i TargetIdentityObservation
+		if err := rows.Scan(
+			&i.ID,
+			&i.JobID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.WorkerID,
+			&i.Source,
+			&i.ResolvedAddresses,
+			&i.ProtocolMetadata,
+			&i.ObservedAt,
+			&i.Outcome,
+			&i.ValidationState,
+			&i.FailureCategory,
+			&i.FailureDetail,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1339,6 +1512,70 @@ func (q *Queries) ListTargetIdentityObservations(ctx context.Context, assetID uu
 	return items, nil
 }
 
+const listTargetProbeJobPage = `-- name: ListTargetProbeJobPage :many
+SELECT id, previous_job_id, asset_id, endpoint_revision, protocol, state, reason, requested_by, attempt_count, max_attempts, next_attempt_at, lease_worker_id, lease_token_hash, lease_expires_at, failure_category, failure_detail, created_at, started_at, completed_at
+FROM target_probe_jobs
+WHERE asset_id = $1
+  AND (
+      $2::timestamptz IS NULL
+      OR (created_at, id) < ($2::timestamptz, $3::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $4
+`
+
+type ListTargetProbeJobPageParams struct {
+	AssetID   uuid.UUID          `json:"asset_id"`
+	AfterTime pgtype.Timestamptz `json:"after_time"`
+	AfterID   uuid.UUID          `json:"after_id"`
+	PageLimit int64              `json:"page_limit"`
+}
+
+func (q *Queries) ListTargetProbeJobPage(ctx context.Context, arg ListTargetProbeJobPageParams) ([]TargetProbeJob, error) {
+	rows, err := q.db.Query(ctx, listTargetProbeJobPage,
+		arg.AssetID,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetProbeJob
+	for rows.Next() {
+		var i TargetProbeJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.PreviousJobID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.Protocol,
+			&i.State,
+			&i.Reason,
+			&i.RequestedBy,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.NextAttemptAt,
+			&i.LeaseWorkerID,
+			&i.LeaseTokenHash,
+			&i.LeaseExpiresAt,
+			&i.FailureCategory,
+			&i.FailureDetail,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTargetProbeJobs = `-- name: ListTargetProbeJobs :many
 SELECT id, previous_job_id, asset_id, endpoint_revision, protocol, state, reason, requested_by, attempt_count, max_attempts, next_attempt_at, lease_worker_id, lease_token_hash, lease_expires_at, failure_category, failure_detail, created_at, started_at, completed_at
 FROM target_probe_jobs
@@ -1375,6 +1612,70 @@ func (q *Queries) ListTargetProbeJobs(ctx context.Context, assetID uuid.UUID) ([
 			&i.CreatedAt,
 			&i.StartedAt,
 			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTrustAnchorPage = `-- name: ListTrustAnchorPage :many
+SELECT anchor.id, anchor.asset_id, anchor.endpoint_revision, anchor.kind, anchor.algorithm, anchor.sha256_fingerprint, anchor.public_material, anchor.required_ssh_principals, anchor.required_dns_names, anchor.required_ip_addresses, anchor.source, anchor.observation_id, anchor.approved_by, anchor.approved_at, anchor.not_before, anchor.expires_at, anchor.revoked_at, anchor.revoked_by, anchor.revocation_reason
+FROM target_trust_anchors anchor
+WHERE anchor.asset_id = $1
+  AND (
+      $2::timestamptz IS NULL
+      OR (anchor.approved_at, anchor.id) < ($2::timestamptz, $3::uuid)
+  )
+ORDER BY anchor.approved_at DESC, anchor.id DESC
+LIMIT $4
+`
+
+type ListTrustAnchorPageParams struct {
+	AssetID   uuid.UUID          `json:"asset_id"`
+	AfterTime pgtype.Timestamptz `json:"after_time"`
+	AfterID   uuid.UUID          `json:"after_id"`
+	PageLimit int64              `json:"page_limit"`
+}
+
+func (q *Queries) ListTrustAnchorPage(ctx context.Context, arg ListTrustAnchorPageParams) ([]TargetTrustAnchor, error) {
+	rows, err := q.db.Query(ctx, listTrustAnchorPage,
+		arg.AssetID,
+		arg.AfterTime,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TargetTrustAnchor
+	for rows.Next() {
+		var i TargetTrustAnchor
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetID,
+			&i.EndpointRevision,
+			&i.Kind,
+			&i.Algorithm,
+			&i.Sha256Fingerprint,
+			&i.PublicMaterial,
+			&i.RequiredSshPrincipals,
+			&i.RequiredDnsNames,
+			&i.RequiredIpAddresses,
+			&i.Source,
+			&i.ObservationID,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.NotBefore,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+			&i.RevocationReason,
 		); err != nil {
 			return nil, err
 		}

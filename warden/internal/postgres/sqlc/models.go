@@ -307,6 +307,16 @@ type TargetIdentityEvidence struct {
 	CreatedAt               time.Time          `json:"created_at"`
 }
 
+type TargetIdentityMutationRequest struct {
+	RequestID   uuid.UUID   `json:"request_id"`
+	Operation   string      `json:"operation"`
+	AssetID     uuid.UUID   `json:"asset_id"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+	RequestHash []byte      `json:"request_hash"`
+	Response    []byte      `json:"response"`
+	CreatedAt   time.Time   `json:"created_at"`
+}
+
 type TargetIdentityObservation struct {
 	ID                uuid.UUID   `json:"id"`
 	JobID             pgtype.UUID `json:"job_id"`

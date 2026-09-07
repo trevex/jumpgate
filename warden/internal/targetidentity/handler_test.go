@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"google.golang.org/protobuf/proto"
 
 	targetidentityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
@@ -188,14 +189,27 @@ func TestHandlerListsAndApprovesObservedEvidence(t *testing.T) {
 		t.Fatalf("SSH banner = %q, want SSH-2.0-test", observation.GetSsh().GetBanner())
 	}
 
-	approved, err := h.ApproveEvidence(ctx, connect.NewRequest(&targetidentityv1.ApproveEvidenceRequest{
+	approvalRequest := &targetidentityv1.ApproveEvidenceRequest{
 		RequestId: uuid.NewString(), AssetId: env.asset.String(), ExpectedEndpointRevision: 1,
 		ObservationId: observation.Id, EvidenceIds: []string{observation.Evidence[0].Id}, Source: targetidentityv1.TrustSource_TRUST_SOURCE_MANUAL,
-	}))
+	}
+	approved, err := h.ApproveEvidence(ctx, connect.NewRequest(approvalRequest))
 	if err != nil {
 		t.Fatalf("approve evidence: %v", err)
 	}
 	if len(approved.Msg.TrustAnchors) != 1 || approved.Msg.Status != targetidentityv1.VerificationStatus_VERIFICATION_STATUS_VERIFIED {
 		t.Fatalf("approval = anchors:%d status:%v, want 1/verified", len(approved.Msg.TrustAnchors), approved.Msg.Status)
+	}
+	replayed, err := h.ApproveEvidence(ctx, connect.NewRequest(approvalRequest))
+	if err != nil {
+		t.Fatalf("replay approval: %v", err)
+	}
+	if len(replayed.Msg.TrustAnchors) != 1 || replayed.Msg.TrustAnchors[0].Id != approved.Msg.TrustAnchors[0].Id {
+		t.Fatalf("replayed anchor = %v, want original %s", replayed.Msg.TrustAnchors, approved.Msg.TrustAnchors[0].Id)
+	}
+	conflict := proto.Clone(approvalRequest).(*targetidentityv1.ApproveEvidenceRequest)
+	conflict.Source = targetidentityv1.TrustSource_TRUST_SOURCE_TOFU
+	if _, err := h.ApproveEvidence(ctx, connect.NewRequest(conflict)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("conflicting request_id code = %v, want failed_precondition", connect.CodeOf(err))
 	}
 }

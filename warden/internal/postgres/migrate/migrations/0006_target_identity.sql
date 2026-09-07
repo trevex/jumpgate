@@ -46,6 +46,9 @@ CREATE INDEX target_probe_jobs_claim_order
     ON target_probe_jobs (next_attempt_at, created_at, id)
     WHERE state = 'queued';
 
+CREATE INDEX target_probe_jobs_asset_history
+    ON target_probe_jobs (asset_id, created_at DESC, id DESC);
+
 CREATE TABLE target_probe_attempts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id uuid NOT NULL REFERENCES target_probe_jobs(id) ON DELETE CASCADE,
@@ -193,6 +196,25 @@ CREATE INDEX target_trust_anchors_active
 CREATE INDEX target_trust_anchors_fingerprint
     ON target_trust_anchors (kind, sha256_fingerprint);
 
+CREATE INDEX target_trust_anchors_asset_history
+    ON target_trust_anchors (asset_id, approved_at DESC, id DESC);
+
+-- Public mutation request IDs are durable idempotency keys. The request hash
+-- binds one UUID to one operation, actor, asset, and canonical payload; response
+-- stores the original logical result for exact replay.
+CREATE TABLE target_identity_mutation_requests (
+    request_id uuid PRIMARY KEY,
+    operation text NOT NULL,
+    asset_id uuid NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    actor_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    request_hash bytea NOT NULL CHECK (octet_length(request_hash) = 32),
+    response jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT target_identity_mutation_response_object CHECK (
+        response IS NULL OR jsonb_typeof(response) = 'object'
+    )
+);
+
 CREATE FUNCTION cleanup_target_identity_for_asset() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -303,6 +325,7 @@ FOR EACH ROW EXECUTE FUNCTION reject_target_identity_validation_mutation();
 -- +goose Down
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS assets_cleanup_target_identity ON assets;
+DROP TABLE IF EXISTS target_identity_mutation_requests;
 DROP TABLE IF EXISTS target_identity_validation_facts;
 DROP TABLE IF EXISTS target_trust_anchors;
 DROP TABLE IF EXISTS target_identity_evidence;

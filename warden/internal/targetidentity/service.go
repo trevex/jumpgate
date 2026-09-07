@@ -69,6 +69,8 @@ func NewService(pool *pgxpool.Pool, auditLog Enqueuer, options ...Option) *Servi
 
 // QueueProbe persists a credential-free job for the current endpoint revision.
 func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJob, error) {
+	idempotencyPayload := req
+	idempotencyPayload.RequestID = uuid.Nil
 	if req.AssetID == uuid.Nil || req.EndpointRevision <= 0 || !validProbeReason(req.Reason) {
 		return ProbeJob{}, ErrInvalidRequest
 	}
@@ -87,6 +89,14 @@ func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJ
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := sqlc.New(tx)
+	var replay ProbeJob
+	replayed, err := claimMutation(ctx, q, req.RequestID, "start_probe", req.AssetID, req.RequestedBy, idempotencyPayload, &replay)
+	if err != nil {
+		return ProbeJob{}, err
+	}
+	if replayed {
+		return replay, nil
+	}
 	asset, err := q.LockTargetIdentityAsset(ctx, req.AssetID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -133,10 +143,14 @@ func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJ
 	}); err != nil {
 		return ProbeJob{}, err
 	}
+	result := probeJobFromRow(row)
+	if err := completeMutation(ctx, q, req.RequestID, result); err != nil {
+		return ProbeJob{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return ProbeJob{}, fmt.Errorf("commit queue probe: %w", err)
 	}
-	return probeJobFromRow(row), nil
+	return result, nil
 }
 
 // Claim leases the next compatible job to a protocol worker.
@@ -291,15 +305,11 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (Verificati
 
 // Approve additively trusts exact evidence or supplied CA material.
 func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor, VerificationStatus, error) {
+	idempotencyPayload := req
+	idempotencyPayload.RequestID = uuid.Nil
 	now := s.now()
 	supplied := req.SuppliedPublicMaterial != "" || req.SuppliedAlgorithm != ""
 	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.ObservationID == uuid.Nil || (!supplied && (!validFingerprint(req.SelectedFingerprint) || req.EvidenceID == uuid.Nil)) || !validTrustSource(req.Source) || !validNames(req.RequiredSSHPrincipals) || !validNames(req.RequiredDNSNames) || !validIPNames(req.RequiredIPAddresses) {
-		return TrustAnchor{}, "", ErrInvalidRequest
-	}
-	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(now) {
-		return TrustAnchor{}, "", ErrInvalidRequest
-	}
-	if !req.NotBefore.IsZero() && !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(req.NotBefore) {
 		return TrustAnchor{}, "", ErrInvalidRequest
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -308,6 +318,20 @@ func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := sqlc.New(tx)
+	var replay approvalMutationResponse
+	replayed, err := claimMutation(ctx, q, req.RequestID, "approve_ca", req.AssetID, req.ActorID, idempotencyPayload, &replay)
+	if err != nil {
+		return TrustAnchor{}, "", err
+	}
+	if replayed {
+		return replay.Anchor, replay.Status, nil
+	}
+	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(now) {
+		return TrustAnchor{}, "", ErrInvalidRequest
+	}
+	if !req.NotBefore.IsZero() && !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(req.NotBefore) {
+		return TrustAnchor{}, "", ErrInvalidRequest
+	}
 	if err := lockExpectedRevision(ctx, q, req.AssetID, req.ExpectedRevision); err != nil {
 		return TrustAnchor{}, "", err
 	}
@@ -401,14 +425,140 @@ func (s *Service) Approve(ctx context.Context, req ApproveRequest) (TrustAnchor,
 	if err != nil {
 		return TrustAnchor{}, "", err
 	}
+	result := trustAnchorFromRow(row)
+	if err := completeMutation(ctx, q, req.RequestID, approvalMutationResponse{Anchor: result, Status: status}); err != nil {
+		return TrustAnchor{}, "", err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return TrustAnchor{}, "", fmt.Errorf("commit approval: %w", err)
 	}
-	return trustAnchorFromRow(row), status, nil
+	return result, status, nil
+}
+
+// ApproveEvidenceBatch atomically approves exact evidence from one observation.
+// Validation of every selected item precedes inserts; one audit event records the
+// complete logical outcome.
+func (s *Service) ApproveEvidenceBatch(ctx context.Context, req ApproveEvidenceBatchRequest) ([]TrustAnchor, VerificationStatus, error) {
+	now := s.now()
+	idempotencyPayload := req
+	idempotencyPayload.RequestID = uuid.Nil
+	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.ObservationID == uuid.Nil || len(req.EvidenceIDs) < 1 || len(req.EvidenceIDs) > MaxEvidenceCount || !validTrustSource(req.Source) {
+		return nil, "", ErrInvalidRequest
+	}
+	seen := make(map[uuid.UUID]struct{}, len(req.EvidenceIDs))
+	for _, id := range req.EvidenceIDs {
+		if id == uuid.Nil {
+			return nil, "", ErrInvalidRequest
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return nil, "", ErrInvalidRequest
+		}
+		seen[id] = struct{}{}
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("begin evidence approval: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := sqlc.New(tx)
+	var replay batchApprovalMutationResponse
+	replayed, err := claimMutation(ctx, q, req.RequestID, "approve_evidence", req.AssetID, req.ActorID, idempotencyPayload, &replay)
+	if err != nil {
+		return nil, "", err
+	}
+	if replayed {
+		return replay.Anchors, replay.Status, nil
+	}
+	if !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(now) {
+		return nil, "", ErrInvalidRequest
+	}
+	if !req.NotBefore.IsZero() && !req.ExpiresAt.IsZero() && !req.ExpiresAt.After(req.NotBefore) {
+		return nil, "", ErrInvalidRequest
+	}
+	if err := lockExpectedRevision(ctx, q, req.AssetID, req.ExpectedRevision); err != nil {
+		return nil, "", err
+	}
+	asset, err := q.GetAsset(ctx, req.AssetID)
+	if err != nil {
+		return nil, "", fmt.Errorf("read locked asset: %w", err)
+	}
+	observationOutcome, err := q.LockTargetIdentityObservation(ctx, sqlc.LockTargetIdentityObservationParams{ObservationID: req.ObservationID, AssetID: req.AssetID, EndpointRevision: req.ExpectedRevision})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", ErrObservationNotFound
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("lock observation for evidence approval: %w", err)
+	}
+	if observationOutcome != "succeeded" && observationOutcome != "mismatch" {
+		return nil, "", ErrInvalidRequest
+	}
+	type candidate struct {
+		evidence Evidence
+		kind     TrustAnchorKind
+	}
+	candidates := make([]candidate, 0, len(req.EvidenceIDs))
+	for _, id := range req.EvidenceIDs {
+		evidence, err := getEvidenceForApproval(ctx, tx, req.ObservationID, id)
+		if err != nil {
+			return nil, "", err
+		}
+		kind, err := approvalKind(evidence.Kind, "")
+		if err != nil {
+			return nil, "", err
+		}
+		if kind == AnchorTLSCA || kind == AnchorSSHHostCA {
+			return nil, "", ErrUnsupportedEvidence
+		}
+		if kind == AnchorTLSLeaf && !certificateCurrent(evidence, now) {
+			return nil, "", ErrUnsupportedEvidence
+		}
+		if !anchorCompatibleWithProtocol(Protocol(asset.Kind), kind) {
+			return nil, "", ErrUnsupportedEvidence
+		}
+		candidates = append(candidates, candidate{evidence: evidence, kind: kind})
+	}
+	anchors := make([]TrustAnchor, 0, len(candidates))
+	anchorIDs := make([]string, 0, len(candidates))
+	evidenceIDs := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		row, err := q.ApproveTrustAnchor(ctx, sqlc.ApproveTrustAnchorParams{
+			AssetID: req.AssetID, EndpointRevision: req.ExpectedRevision, Kind: string(candidate.kind),
+			Algorithm: candidate.evidence.Algorithm, Sha256Fingerprint: candidate.evidence.Fingerprint, PublicMaterial: candidate.evidence.PublicMaterial,
+			RequiredSshPrincipals: []string{}, RequiredDnsNames: []string{}, RequiredIpAddresses: []string{},
+			Source: string(req.Source), ObservationID: nullableUUID(req.ObservationID), ApprovedBy: nullableUUID(req.ActorID),
+			ApprovedAt: pgtype.Timestamptz{Time: now, Valid: true}, NotBefore: nullableTime(req.NotBefore), ExpiresAt: nullableTime(req.ExpiresAt),
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("approve evidence trust anchor: %w", err)
+		}
+		anchor := trustAnchorFromRow(row)
+		anchors = append(anchors, anchor)
+		anchorIDs = append(anchorIDs, anchor.ID.String())
+		evidenceIDs = append(evidenceIDs, candidate.evidence.ID.String())
+	}
+	if err := s.enqueue(ctx, q, eventAnchorApproved, req.ActorID, req.AssetID, map[string]any{
+		"anchor_ids": anchorIDs, "evidence_ids": evidenceIDs, "observation_id": req.ObservationID.String(),
+		"source": req.Source, "resolved_identity_change": observationOutcome == "mismatch",
+	}); err != nil {
+		return nil, "", err
+	}
+	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, now)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := completeMutation(ctx, q, req.RequestID, batchApprovalMutationResponse{Anchors: anchors, Status: status}); err != nil {
+		return nil, "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, "", fmt.Errorf("commit evidence approval: %w", err)
+	}
+	return anchors, status, nil
 }
 
 // RejectObservation explicitly resolves one current-revision mismatch.
 func (s *Service) RejectObservation(ctx context.Context, req RejectObservationRequest) (VerificationStatus, error) {
+	idempotencyPayload := req
+	idempotencyPayload.RequestID = uuid.Nil
 	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.ObservationID == uuid.Nil || len(req.Reason) > 500 || !utf8.ValidString(req.Reason) {
 		return "", ErrInvalidRequest
 	}
@@ -418,6 +568,14 @@ func (s *Service) RejectObservation(ctx context.Context, req RejectObservationRe
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := sqlc.New(tx)
+	var replay statusMutationResponse
+	replayed, err := claimMutation(ctx, q, req.RequestID, "reject_observation", req.AssetID, req.ActorID, idempotencyPayload, &replay)
+	if err != nil {
+		return "", err
+	}
+	if replayed {
+		return replay.Status, nil
+	}
 	if err := lockExpectedRevision(ctx, q, req.AssetID, req.ExpectedRevision); err != nil {
 		return "", err
 	}
@@ -440,6 +598,9 @@ func (s *Service) RejectObservation(ctx context.Context, req RejectObservationRe
 	if err != nil {
 		return "", err
 	}
+	if err := completeMutation(ctx, q, req.RequestID, statusMutationResponse{Status: status}); err != nil {
+		return "", err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("commit observation rejection: %w", err)
 	}
@@ -448,6 +609,8 @@ func (s *Service) RejectObservation(ctx context.Context, req RejectObservationRe
 
 // RevokeAnchor revokes one anchor without modifying overlapping anchors.
 func (s *Service) RevokeAnchor(ctx context.Context, req RevokeAnchorRequest) (VerificationStatus, error) {
+	idempotencyPayload := req
+	idempotencyPayload.RequestID = uuid.Nil
 	if req.AssetID == uuid.Nil || req.ExpectedRevision <= 0 || req.AnchorID == uuid.Nil || len(req.Reason) > 500 || !utf8.ValidString(req.Reason) {
 		return "", ErrInvalidRequest
 	}
@@ -457,6 +620,14 @@ func (s *Service) RevokeAnchor(ctx context.Context, req RevokeAnchorRequest) (Ve
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := sqlc.New(tx)
+	var replay statusMutationResponse
+	replayed, err := claimMutation(ctx, q, req.RequestID, "revoke_trust_anchor", req.AssetID, req.ActorID, idempotencyPayload, &replay)
+	if err != nil {
+		return "", err
+	}
+	if replayed {
+		return replay.Status, nil
+	}
 	if err := lockExpectedRevision(ctx, q, req.AssetID, req.ExpectedRevision); err != nil {
 		return "", err
 	}
@@ -480,6 +651,9 @@ func (s *Service) RevokeAnchor(ctx context.Context, req RevokeAnchorRequest) (Ve
 	}
 	status, err := s.statusAt(ctx, tx, StatusRequest{AssetID: req.AssetID}, s.now())
 	if err != nil {
+		return "", err
+	}
+	if err := completeMutation(ctx, q, req.RequestID, statusMutationResponse{Status: status}); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -558,6 +732,28 @@ func (s *Service) ListAnchors(ctx context.Context, assetID uuid.UUID) ([]TrustAn
 	return out, nil
 }
 
+// ListAnchorsPage returns one database-keyset page of anchor history newest first.
+func (s *Service) ListAnchorsPage(ctx context.Context, assetID uuid.UUID, page PageRequest) ([]TrustAnchor, bool, error) {
+	if assetID == uuid.Nil || !validPageRequest(page) {
+		return nil, false, ErrInvalidRequest
+	}
+	rows, err := sqlc.New(s.pool).ListTrustAnchorPage(ctx, sqlc.ListTrustAnchorPageParams{
+		AssetID: assetID, AfterTime: nullableTime(page.AfterTime), AfterID: page.AfterID, PageLimit: int64(page.Limit + 1),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list trust anchor page: %w", err)
+	}
+	hasMore := len(rows) > page.Limit
+	if hasMore {
+		rows = rows[:page.Limit]
+	}
+	out := make([]TrustAnchor, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, trustAnchorFromRow(row))
+	}
+	return out, hasMore, nil
+}
+
 // GetProbe returns one job only when it belongs to assetID.
 func (s *Service) GetProbe(ctx context.Context, assetID, probeID uuid.UUID) (ProbeJob, error) {
 	if assetID == uuid.Nil || probeID == uuid.Nil {
@@ -589,6 +785,28 @@ func (s *Service) ListProbes(ctx context.Context, assetID uuid.UUID) ([]ProbeJob
 	return out, nil
 }
 
+// ListProbesPage returns one database-keyset page of probe history newest first.
+func (s *Service) ListProbesPage(ctx context.Context, assetID uuid.UUID, page PageRequest) ([]ProbeJob, bool, error) {
+	if assetID == uuid.Nil || !validPageRequest(page) {
+		return nil, false, ErrInvalidRequest
+	}
+	rows, err := sqlc.New(s.pool).ListTargetProbeJobPage(ctx, sqlc.ListTargetProbeJobPageParams{
+		AssetID: assetID, AfterTime: nullableTime(page.AfterTime), AfterID: page.AfterID, PageLimit: int64(page.Limit + 1),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list probe job page: %w", err)
+	}
+	hasMore := len(rows) > page.Limit
+	if hasMore {
+		rows = rows[:page.Limit]
+	}
+	out := make([]ProbeJob, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, probeJobFromRow(row))
+	}
+	return out, hasMore, nil
+}
+
 // ListObservations returns display-safe observations and their public evidence.
 func (s *Service) ListObservations(ctx context.Context, assetID uuid.UUID) ([]Observation, error) {
 	if assetID == uuid.Nil {
@@ -607,6 +825,73 @@ func (s *Service) ListObservations(ctx context.Context, assetID uuid.UUID) ([]Ob
 	for _, row := range evidenceRows {
 		evidenceByObservation[row.ObservationID] = append(evidenceByObservation[row.ObservationID], evidenceFromRow(row))
 	}
+	out := make([]Observation, 0, len(rows))
+	for _, row := range rows {
+		var addresses []string
+		if err := json.Unmarshal(row.ResolvedAddresses, &addresses); err != nil {
+			return nil, fmt.Errorf("decode observation addresses: %w", err)
+		}
+		var metadata protocolMetadata
+		if err := json.Unmarshal(row.ProtocolMetadata, &metadata); err != nil {
+			return nil, fmt.Errorf("decode observation protocol metadata: %w", err)
+		}
+		out = append(out, Observation{
+			ID: row.ID, JobID: uuidFromPG(row.JobID), AssetID: row.AssetID, EndpointRevision: row.EndpointRevision,
+			Source: ObservationSource(row.Source), ResolvedAddresses: addresses, ObservedAt: row.ObservedAt,
+			Outcome: row.Outcome, ValidationState: row.ValidationState, FailureCategory: FailureCategory(textFromPG(row.FailureCategory)),
+			FailureDetail: textFromPG(row.FailureDetail), Evidence: evidenceByObservation[row.ID],
+			SSH: metadata.SSH, TLS: metadata.TLS, Kubernetes: metadata.Kubernetes,
+		})
+	}
+	return out, nil
+}
+
+// ListObservationsPage returns one database-keyset page and loads evidence only
+// for the observations retained in that page.
+func (s *Service) ListObservationsPage(ctx context.Context, assetID uuid.UUID, page PageRequest) ([]Observation, bool, error) {
+	if assetID == uuid.Nil || !validPageRequest(page) {
+		return nil, false, ErrInvalidRequest
+	}
+	q := sqlc.New(s.pool)
+	rows, err := q.ListTargetIdentityObservationPage(ctx, sqlc.ListTargetIdentityObservationPageParams{
+		AssetID: assetID, AfterTime: nullableTime(page.AfterTime), AfterID: page.AfterID, PageLimit: int64(page.Limit + 1),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list identity observation page: %w", err)
+	}
+	hasMore := len(rows) > page.Limit
+	if hasMore {
+		rows = rows[:page.Limit]
+	}
+	observationIDs := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		observationIDs = append(observationIDs, row.ID)
+	}
+	evidenceByObservation := make(map[uuid.UUID][]Evidence, len(rows))
+	if len(observationIDs) > 0 {
+		evidenceRows, err := q.ListObservationPageEvidence(ctx, observationIDs)
+		if err != nil {
+			return nil, false, fmt.Errorf("list observation page evidence: %w", err)
+		}
+		for _, row := range evidenceRows {
+			evidenceByObservation[row.ObservationID] = append(evidenceByObservation[row.ObservationID], evidenceFromRow(row))
+		}
+	}
+	out, err := observationsFromRows(rows, evidenceByObservation)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, hasMore, nil
+}
+
+func validPageRequest(page PageRequest) bool {
+	if page.Limit < 1 || page.Limit > 100 {
+		return false
+	}
+	return page.AfterTime.IsZero() == (page.AfterID == uuid.Nil)
+}
+
+func observationsFromRows(rows []sqlc.TargetIdentityObservation, evidenceByObservation map[uuid.UUID][]Evidence) ([]Observation, error) {
 	out := make([]Observation, 0, len(rows))
 	for _, row := range rows {
 		var addresses []string

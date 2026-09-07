@@ -47,6 +47,7 @@ var (
 	ErrAuditUnavailable     = errors.New("transactional audit unavailable")
 	ErrUnsupportedEvidence  = errors.New("evidence cannot be approved as requested")
 	ErrValidationFactNeeded = errors.New("CA approval requires an explicit validation fact")
+	ErrIdempotencyConflict  = errors.New("request_id is already bound to a different mutation")
 )
 
 // Protocol identifies the target protocol a probe worker serves.
@@ -335,6 +336,7 @@ type TrustAnchor struct {
 
 // QueueProbeRequest creates a durable probe for an existing endpoint revision.
 type QueueProbeRequest struct {
+	RequestID        uuid.UUID
 	AssetID          uuid.UUID
 	EndpointRevision int64
 	Reason           ProbeReason
@@ -360,6 +362,7 @@ type CompleteRequest struct {
 
 // ApproveRequest selects exact observed or supplied public material to trust.
 type ApproveRequest struct {
+	RequestID              uuid.UUID
 	AssetID                uuid.UUID
 	ExpectedRevision       int64
 	ObservationID          uuid.UUID
@@ -381,8 +384,23 @@ type ApproveRequest struct {
 	ValidatedEvidenceID uuid.UUID
 }
 
+// ApproveEvidenceBatchRequest atomically approves exact evidence selected from
+// one observation and records one idempotent audit outcome.
+type ApproveEvidenceBatchRequest struct {
+	RequestID        uuid.UUID
+	AssetID          uuid.UUID
+	ExpectedRevision int64
+	ObservationID    uuid.UUID
+	EvidenceIDs      []uuid.UUID
+	Source           TrustSource
+	ActorID          uuid.UUID
+	NotBefore        time.Time
+	ExpiresAt        time.Time
+}
+
 // RejectObservationRequest explicitly resolves a mismatch as rejected evidence.
 type RejectObservationRequest struct {
+	RequestID        uuid.UUID
 	AssetID          uuid.UUID
 	ExpectedRevision int64
 	ObservationID    uuid.UUID
@@ -392,11 +410,20 @@ type RejectObservationRequest struct {
 
 // RevokeAnchorRequest explicitly ends trust in one additive anchor.
 type RevokeAnchorRequest struct {
+	RequestID        uuid.UUID
 	AssetID          uuid.UUID
 	ExpectedRevision int64
 	AnchorID         uuid.UUID
 	ActorID          uuid.UUID
 	Reason           string
+}
+
+// PageRequest is a descending timestamp/UUID keyset cursor. Limit is the
+// client-visible bound; service queries fetch one additional row for has-more.
+type PageRequest struct {
+	Limit     int
+	AfterTime time.Time
+	AfterID   uuid.UUID
 }
 
 // StatusRequest controls status derivation and optional freshness policy.

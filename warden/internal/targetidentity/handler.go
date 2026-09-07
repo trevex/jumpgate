@@ -81,7 +81,7 @@ func domainError(err error) error {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid target identity request"))
 	case errors.Is(err, ErrStaleRevision):
 		return connect.NewError(connect.CodeAborted, errors.New("stale endpoint revision"))
-	case errors.Is(err, ErrExpectationMismatch), errors.Is(err, ErrUnsupportedEvidence), errors.Is(err, ErrValidationFactNeeded), errors.Is(err, ErrProbeAlreadyQueued):
+	case errors.Is(err, ErrExpectationMismatch), errors.Is(err, ErrUnsupportedEvidence), errors.Is(err, ErrValidationFactNeeded), errors.Is(err, ErrProbeAlreadyQueued), errors.Is(err, ErrIdempotencyConflict):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, ErrAssetNotFound), errors.Is(err, ErrObservationNotFound), errors.Is(err, ErrEvidenceNotFound), errors.Is(err, ErrAnchorNotFound):
 		return connect.NewError(connect.CodeNotFound, errors.New("target identity resource not found"))
@@ -188,6 +188,10 @@ func (h *Handler) StartProbe(ctx context.Context, req *connect.Request[targetide
 	if err != nil {
 		return nil, err
 	}
+	requestID, err := parseUUID(req.Msg.GetRequestId(), "request_id")
+	if err != nil {
+		return nil, err
+	}
 	previousID := uuid.Nil
 	if req.Msg.GetPreviousProbeId() != "" {
 		previousID, err = parseUUID(req.Msg.GetPreviousProbeId(), "previous_probe_id")
@@ -195,7 +199,7 @@ func (h *Handler) StartProbe(ctx context.Context, req *connect.Request[targetide
 			return nil, err
 		}
 	}
-	job, err := h.svc.QueueProbe(ctx, QueueProbeRequest{AssetID: assetID, EndpointRevision: req.Msg.GetExpectedEndpointRevision(), Reason: ProbeReasonManual, RequestedBy: actorID, PreviousJobID: previousID})
+	job, err := h.svc.QueueProbe(ctx, QueueProbeRequest{RequestID: requestID, AssetID: assetID, EndpointRevision: req.Msg.GetExpectedEndpointRevision(), Reason: ProbeReasonManual, RequestedBy: actorID, PreviousJobID: previousID})
 	if err != nil {
 		return nil, domainError(err)
 	}
@@ -231,20 +235,20 @@ func (h *Handler) ListProbes(ctx context.Context, req *connect.Request[targetide
 	if _, err := h.authorizeAsset(ctx, assetID, authz.AssetIdentityReadCap); err != nil {
 		return nil, err
 	}
-	rows, err := h.svc.ListProbes(ctx, assetID)
-	if err != nil {
-		return nil, domainError(err)
-	}
-	start, limit, err := pageWindow(req.Msg.GetPageSize(), req.Msg.GetPageToken(), len(rows), func(i int) (uuid.UUID, time.Time) { return rows[i].ID, rows[i].CreatedAt })
+	page, err := pageRequest(req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
+	rows, hasMore, err := h.svc.ListProbesPage(ctx, assetID, page)
+	if err != nil {
+		return nil, domainError(err)
+	}
 	out := &targetidentityv1.ListProbesResponse{}
-	for _, row := range rows[start:limit] {
+	for _, row := range rows {
 		out.Probes = append(out.Probes, probeMsg(row))
 	}
-	if limit < len(rows) {
-		last := rows[limit-1]
+	if hasMore {
+		last := rows[len(rows)-1]
 		out.NextPageToken = apipage.EncodeTimeToken(last.CreatedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
@@ -259,20 +263,20 @@ func (h *Handler) ListObservations(ctx context.Context, req *connect.Request[tar
 	if _, err := h.authorizeAsset(ctx, assetID, authz.AssetIdentityReadCap); err != nil {
 		return nil, err
 	}
-	rows, err := h.svc.ListObservations(ctx, assetID)
-	if err != nil {
-		return nil, domainError(err)
-	}
-	start, limit, err := pageWindow(req.Msg.GetPageSize(), req.Msg.GetPageToken(), len(rows), func(i int) (uuid.UUID, time.Time) { return rows[i].ID, rows[i].ObservedAt })
+	page, err := pageRequest(req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
+	rows, hasMore, err := h.svc.ListObservationsPage(ctx, assetID, page)
+	if err != nil {
+		return nil, domainError(err)
+	}
 	out := &targetidentityv1.ListObservationsResponse{}
-	for _, row := range rows[start:limit] {
+	for _, row := range rows {
 		out.Observations = append(out.Observations, observationMsg(row))
 	}
-	if limit < len(rows) {
-		last := rows[limit-1]
+	if hasMore {
+		last := rows[len(rows)-1]
 		out.NextPageToken = apipage.EncodeTimeToken(last.ObservedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
@@ -292,34 +296,29 @@ func (h *Handler) ApproveEvidence(ctx context.Context, req *connect.Request[targ
 	if err != nil {
 		return nil, err
 	}
-	evidence, err := h.svc.ListEvidence(ctx, assetID, req.Msg.GetExpectedEndpointRevision())
+	requestID, err := parseUUID(req.Msg.GetRequestId(), "request_id")
+	if err != nil {
+		return nil, err
+	}
+	evidenceIDs := make([]uuid.UUID, 0, len(req.Msg.GetEvidenceIds()))
+	for _, rawID := range req.Msg.GetEvidenceIds() {
+		id, err := parseUUID(rawID, "evidence_id")
+		if err != nil {
+			return nil, err
+		}
+		evidenceIDs = append(evidenceIDs, id)
+	}
+	anchors, status, err := h.svc.ApproveEvidenceBatch(ctx, ApproveEvidenceBatchRequest{
+		RequestID: requestID, AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID,
+		EvidenceIDs: evidenceIDs, Source: trustSource(req.Msg.GetSource()), ActorID: actorID,
+		NotBefore: timeFromUnixMillis(req.Msg.GetNotBeforeUnixMs()), ExpiresAt: timeFromUnixMillis(req.Msg.GetExpiresAtUnixMs()),
+	})
 	if err != nil {
 		return nil, domainError(err)
 	}
-	byID := make(map[uuid.UUID]Evidence, len(evidence))
-	for _, item := range evidence {
-		byID[item.ID] = item
-	}
-	out := &targetidentityv1.ApproveEvidenceResponse{}
-	for _, rawID := range req.Msg.GetEvidenceIds() {
-		id, parseErr := parseUUID(rawID, "evidence_id")
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		item, ok := byID[id]
-		if !ok || item.ObservationID != observationID {
-			return nil, domainError(ErrEvidenceNotFound)
-		}
-		anchor, status, approveErr := h.svc.Approve(ctx, ApproveRequest{
-			AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID,
-			EvidenceID: id, SelectedFingerprint: item.Fingerprint, Source: trustSource(req.Msg.GetSource()), ActorID: actorID,
-			NotBefore: timeFromUnixMillis(req.Msg.GetNotBeforeUnixMs()), ExpiresAt: timeFromUnixMillis(req.Msg.GetExpiresAtUnixMs()),
-		})
-		if approveErr != nil {
-			return nil, domainError(approveErr)
-		}
+	out := &targetidentityv1.ApproveEvidenceResponse{Status: verificationStatusMsg(status)}
+	for _, anchor := range anchors {
 		out.TrustAnchors = append(out.TrustAnchors, anchorMsg(anchor))
-		out.Status = verificationStatusMsg(status)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -342,8 +341,12 @@ func (h *Handler) ApproveCA(ctx context.Context, req *connect.Request[targetiden
 	if err != nil {
 		return nil, err
 	}
+	requestID, err := parseUUID(req.Msg.GetRequestId(), "request_id")
+	if err != nil {
+		return nil, err
+	}
 	anchor, status, err := h.svc.Approve(ctx, ApproveRequest{
-		AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID,
+		RequestID: requestID, AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID,
 		AnchorKind: anchorKind(req.Msg.GetKind()), SuppliedAlgorithm: req.Msg.GetAlgorithm(), SuppliedPublicMaterial: req.Msg.GetPublicMaterial(),
 		Source: trustSource(req.Msg.GetSource()), ActorID: actorID, RequiredSSHPrincipals: req.Msg.GetRequiredSshPrincipals(),
 		RequiredDNSNames: req.Msg.GetRequiredDnsNames(), RequiredIPAddresses: req.Msg.GetRequiredIpAddresses(), ValidatedEvidenceID: validatedEvidenceID,
@@ -369,7 +372,11 @@ func (h *Handler) RejectObservation(ctx context.Context, req *connect.Request[ta
 	if err != nil {
 		return nil, err
 	}
-	status, err := h.svc.RejectObservation(ctx, RejectObservationRequest{AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID, ActorID: actorID, Reason: req.Msg.GetReason()})
+	requestID, err := parseUUID(req.Msg.GetRequestId(), "request_id")
+	if err != nil {
+		return nil, err
+	}
+	status, err := h.svc.RejectObservation(ctx, RejectObservationRequest{RequestID: requestID, AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), ObservationID: observationID, ActorID: actorID, Reason: req.Msg.GetReason()})
 	if err != nil {
 		return nil, domainError(err)
 	}
@@ -385,20 +392,20 @@ func (h *Handler) ListTrustAnchors(ctx context.Context, req *connect.Request[tar
 	if _, err := h.authorizeAsset(ctx, assetID, authz.AssetIdentityReadCap); err != nil {
 		return nil, err
 	}
-	rows, err := h.svc.ListAnchors(ctx, assetID)
-	if err != nil {
-		return nil, domainError(err)
-	}
-	start, limit, err := pageWindow(req.Msg.GetPageSize(), req.Msg.GetPageToken(), len(rows), func(i int) (uuid.UUID, time.Time) { return rows[i].ID, rows[i].ApprovedAt })
+	page, err := pageRequest(req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
+	rows, hasMore, err := h.svc.ListAnchorsPage(ctx, assetID, page)
+	if err != nil {
+		return nil, domainError(err)
+	}
 	out := &targetidentityv1.ListTrustAnchorsResponse{}
-	for _, row := range rows[start:limit] {
+	for _, row := range rows {
 		out.TrustAnchors = append(out.TrustAnchors, anchorMsg(row))
 	}
-	if limit < len(rows) {
-		last := rows[limit-1]
+	if hasMore {
+		last := rows[len(rows)-1]
 		out.NextPageToken = apipage.EncodeTimeToken(last.ApprovedAt, last.ID)
 	}
 	return connect.NewResponse(out), nil
@@ -418,7 +425,11 @@ func (h *Handler) RevokeTrustAnchor(ctx context.Context, req *connect.Request[ta
 	if err != nil {
 		return nil, err
 	}
-	status, err := h.svc.RevokeAnchor(ctx, RevokeAnchorRequest{AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), AnchorID: anchorID, ActorID: actorID, Reason: req.Msg.GetReason()})
+	requestID, err := parseUUID(req.Msg.GetRequestId(), "request_id")
+	if err != nil {
+		return nil, err
+	}
+	status, err := h.svc.RevokeAnchor(ctx, RevokeAnchorRequest{RequestID: requestID, AssetID: assetID, ExpectedRevision: req.Msg.GetExpectedEndpointRevision(), AnchorID: anchorID, ActorID: actorID, Reason: req.Msg.GetReason()})
 	if err != nil {
 		return nil, domainError(err)
 	}
@@ -441,30 +452,20 @@ func (h *Handler) GetVerificationStatus(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&targetidentityv1.GetVerificationStatusResponse{Status: verificationStatusMsg(status)}), nil
 }
 
-func pageWindow(pageSize int32, token string, length int, key func(int) (uuid.UUID, time.Time)) (int, int, error) {
+func pageRequest(pageSize int32, token string) (PageRequest, error) {
 	decoded, err := apipage.DecodePageToken(token)
 	if err != nil {
-		return 0, 0, err
+		return PageRequest{}, err
 	}
-	start := 0
+	page := PageRequest{Limit: int(apipage.ClampPageSize(pageSize))}
 	if decoded != nil {
-		start = -1
-		for i := 0; i < length; i++ {
-			id, at := key(i)
-			if id == decoded.ID && decoded.Time != nil && at.Equal(*decoded.Time) {
-				start = i + 1
-				break
-			}
+		if decoded.Time == nil || decoded.Name != "" {
+			return PageRequest{}, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
 		}
-		if start < 0 {
-			return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("bad page_token"))
-		}
+		page.AfterTime = *decoded.Time
+		page.AfterID = decoded.ID
 	}
-	limit := start + int(apipage.ClampPageSize(pageSize))
-	if limit > length {
-		limit = length
-	}
-	return start, limit, nil
+	return page, nil
 }
 
 func protocolMsg(v Protocol) targetidentityv1.Protocol {
