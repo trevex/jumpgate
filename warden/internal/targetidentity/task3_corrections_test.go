@@ -1,15 +1,50 @@
 package targetidentity_test
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/trevex/jumpgate/warden/internal/audit"
+	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
+
+const idempotencyTestTimeout = 5 * time.Second
+
+type heldAuditEnqueuer struct {
+	delegate targetidentity.Enqueuer
+	reached  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (e *heldAuditEnqueuer) Enqueue(ctx context.Context, q *sqlc.Queries, event audit.Event) error {
+	hold := false
+	e.once.Do(func() {
+		hold = true
+		close(e.reached)
+	})
+	if hold {
+		select {
+		case <-e.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(idempotencyTestTimeout):
+			return errors.New("timed out waiting to release audit enqueue")
+		}
+	}
+	return e.delegate.Enqueue(ctx, q, event)
+}
+
+type queueProbeResult struct {
+	job targetidentity.ProbeJob
+	err error
+}
 
 func TestQueueProbeRequestIDReplayAndConflict(t *testing.T) {
 	env := newTargetIdentityEnv(t)
@@ -40,6 +75,15 @@ func TestQueueProbeRequestIDReplayAndConflict(t *testing.T) {
 
 func TestConcurrentIdenticalRequestIDCommitsExactlyOneMutation(t *testing.T) {
 	env := newTargetIdentityEnv(t)
+	heldAudit := &heldAuditEnqueuer{
+		delegate: audit.New(testPool),
+		reached:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(heldAudit.release) }) }
+	t.Cleanup(release)
+	env.svc = targetidentity.NewService(testPool, heldAudit)
 	requestID := uuid.New()
 	req := targetidentity.QueueProbeRequest{
 		RequestID: requestID, AssetID: env.asset, EndpointRevision: 1,
@@ -49,22 +93,48 @@ func TestConcurrentIdenticalRequestIDCommitsExactlyOneMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	type result struct {
-		job targetidentity.ProbeJob
-		err error
+	firstResult := make(chan queueProbeResult, 1)
+	go func() {
+		job, err := env.svc.QueueProbe(env.ctx, req)
+		firstResult <- queueProbeResult{job: job, err: err}
+	}()
+	select {
+	case <-heldAudit.reached:
+	case <-time.After(idempotencyTestTimeout):
+		t.Fatal("first request did not reach held audit enqueue")
 	}
-	start := make(chan struct{})
-	results := make(chan result, 2)
-	for i := 0; i < 2; i++ {
-		go func() {
-			<-start
-			job, err := env.svc.QueueProbe(env.ctx, req)
-			results <- result{job: job, err: err}
-		}()
+
+	secondStarted := make(chan struct{})
+	secondResult := make(chan queueProbeResult, 1)
+	go func() {
+		close(secondStarted)
+		job, err := env.svc.QueueProbe(env.ctx, req)
+		secondResult <- queueProbeResult{job: job, err: err}
+	}()
+	select {
+	case <-secondStarted:
+	case <-time.After(idempotencyTestTimeout):
+		t.Fatal("second request did not start")
 	}
-	close(start)
-	first := <-results
-	second := <-results
+	select {
+	case result := <-secondResult:
+		t.Fatalf("second request returned before first committed: %v", result.err)
+	case <-time.After(100 * time.Millisecond):
+		// The idempotency-row conflict must wait for the first transaction.
+	}
+	release()
+
+	var first, second queueProbeResult
+	select {
+	case first = <-firstResult:
+	case <-time.After(idempotencyTestTimeout):
+		t.Fatal("first request did not finish after audit release")
+	}
+	select {
+	case second = <-secondResult:
+	case <-time.After(idempotencyTestTimeout):
+		t.Fatal("second request did not replay after first commit")
+	}
 	if first.err != nil || second.err != nil {
 		t.Fatalf("concurrent calls = %v/%v", first.err, second.err)
 	}
