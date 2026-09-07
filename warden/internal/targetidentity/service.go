@@ -38,10 +38,11 @@ const (
 
 // Service owns target probe leases, immutable evidence, trust, and status.
 type Service struct {
-	pool          *pgxpool.Pool
-	audit         Enqueuer
-	leaseDuration time.Duration
-	now           func() time.Time
+	pool               *pgxpool.Pool
+	audit              Enqueuer
+	leaseDuration      time.Duration
+	defaultMaxAttempts int
+	now                func() time.Time
 }
 
 // Option configures a Service dependency used by deterministic domain logic.
@@ -56,9 +57,29 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+// WithLeaseDuration sets how long a claimed probe lease is owned before it may be
+// re-claimed. Non-positive input is ignored (keeps the default).
+func WithLeaseDuration(d time.Duration) Option {
+	return func(service *Service) {
+		if d > 0 {
+			service.leaseDuration = d
+		}
+	}
+}
+
+// WithDefaultMaxAttempts sets the attempt cap applied to queued probes that do not
+// request their own. Out-of-range input is ignored (keeps the default).
+func WithDefaultMaxAttempts(n int) Option {
+	return func(service *Service) {
+		if n >= 1 && n <= maxProbeAttempts {
+			service.defaultMaxAttempts = n
+		}
+	}
+}
+
 // NewService constructs a target-identity domain service.
 func NewService(pool *pgxpool.Pool, auditLog Enqueuer, options ...Option) *Service {
-	service := &Service{pool: pool, audit: auditLog, leaseDuration: defaultLeaseDuration, now: time.Now}
+	service := &Service{pool: pool, audit: auditLog, leaseDuration: defaultLeaseDuration, defaultMaxAttempts: defaultMaxAttempts, now: time.Now}
 	for _, option := range options {
 		if option != nil {
 			option(service)
@@ -75,7 +96,7 @@ func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJ
 		return ProbeJob{}, ErrInvalidRequest
 	}
 	if req.MaxAttempts == 0 {
-		req.MaxAttempts = defaultMaxAttempts
+		req.MaxAttempts = s.defaultMaxAttempts
 	}
 	if req.MaxAttempts < 1 || req.MaxAttempts > maxProbeAttempts {
 		return ProbeJob{}, ErrInvalidRequest

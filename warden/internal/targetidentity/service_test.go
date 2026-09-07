@@ -775,3 +775,34 @@ func TestAuditFailureRollsBackEachDistinctMutationTransaction(t *testing.T) {
 		}
 	})
 }
+
+// TestServiceProbeConfigOptions proves WithLeaseDuration and WithDefaultMaxAttempts
+// reach their authoritative consumers: the claimed lease's expiry and the fallback
+// attempt cap on a QueueProbe that requests none.
+func TestServiceProbeConfigOptions(t *testing.T) {
+	env := newTargetIdentityEnv(t)
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	svc := targetidentity.NewService(testPool, audit.New(testPool),
+		targetidentity.WithClock(func() time.Time { return clock }),
+		targetidentity.WithLeaseDuration(90*time.Second),
+		targetidentity.WithDefaultMaxAttempts(5))
+
+	job, err := svc.QueueProbe(env.ctx, targetidentity.QueueProbeRequest{
+		AssetID: env.asset, EndpointRevision: 1, Reason: targetidentity.ProbeReasonOnboarding, RequestedBy: env.actor,
+		// MaxAttempts omitted (0) → must fall back to the configured default (5), not the package const (3).
+	})
+	if err != nil {
+		t.Fatalf("queue probe: %v", err)
+	}
+	if job.MaxAttempts != 5 {
+		t.Fatalf("MaxAttempts = %d, want 5 (WithDefaultMaxAttempts)", job.MaxAttempts)
+	}
+
+	lease, err := svc.Claim(env.ctx, targetidentity.ClaimRequest{WorkerID: env.worker, Protocol: targetidentity.ProtocolSSH})
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if diff := lease.ExpiresAt.Sub(clock); diff < 89*time.Second || diff > 91*time.Second {
+		t.Fatalf("lease expiry = clock+%v, want ~90s (WithLeaseDuration, not the 30s default)", diff)
+	}
+}

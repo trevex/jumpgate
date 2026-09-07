@@ -46,11 +46,13 @@ type Handler struct {
 	registry   *Registry
 	pool       *pgxpool.Pool
 	terminator *Terminator
+	probes     *ProbeDispatcher // nil when identity probing is not wired
 }
 
-// NewHandler constructs the data-plane RPC implementation.
-func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, terminator *Terminator) *Handler {
-	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator}
+// NewHandler constructs the data-plane RPC implementation. probes may be nil, in
+// which case the worker stream carries no probe assignments (probing disabled).
+func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, terminator *Terminator, probes *ProbeDispatcher) *Handler {
+	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator, probes: probes}
 }
 
 // SetupSession redeems a session token: it re-checks authorization, records the
@@ -141,12 +143,23 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 	// pod (same stable worker id) supersedes the old stream: the departing old
 	// stream's ReleaseWorker sees a newer gen and leaves the live entry intact.
 	gen := s.registry.ClaimWorker(workerID)
+	protocol := firstProtocolOr(reg.Protocols, "ssh")
 	s.registry.SetWorkerMeta(workerID, WorkerMeta{
-		Protocol: firstProtocolOr(reg.Protocols, "ssh"),
+		Protocol: protocol,
 		Address:  reg.DataplaneAddress,
 		Capacity: reg.Capacity,
 	})
 	defer s.registry.ReleaseWorker(workerID, gen)
+
+	// Enroll a probe sink so the dispatcher can lease identity probes to this
+	// worker. A nil dispatcher or an unprobeable protocol yields a nil channel: the
+	// probe-assignment select arm below then never fires.
+	var probeSink <-chan *dataplanev1.ProbeAssignment
+	if s.probes != nil {
+		var releaseProbe func()
+		probeSink, releaseProbe = s.probes.Register(workerID, protocol)
+		defer releaseProbe()
+	}
 
 	if err := sqlc.New(s.pool).UpsertWorkerPresence(ctx, workerID); err != nil {
 		slog.Error("worker presence upsert failed", "worker_id", workerID, "err", err)
@@ -190,6 +203,9 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 			if adv := msg.GetAdvertiseTunnels(); adv != nil {
 				s.registry.SetTunnels(workerID, adv.GetAssetIds())
 			}
+			if pr := msg.GetProbeResult(); pr != nil && s.probes != nil {
+				s.probes.HandleResult(ctx, workerID, pr)
+			}
 			// Register(after first): no-op.
 		}
 	}()
@@ -206,6 +222,12 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 		case sig := <-sink:
 			if err := stream.Send(&dataplanev1.ServerMessage{Msg: &dataplanev1.ServerMessage_Teardown{
 				Teardown: &dataplanev1.Teardown{SessionId: sig.SessionID, Reason: sig.Reason},
+			}}); err != nil {
+				return err
+			}
+		case assignment := <-probeSink:
+			if err := stream.Send(&dataplanev1.ServerMessage{Msg: &dataplanev1.ServerMessage_ProbeAssignment{
+				ProbeAssignment: assignment,
 			}}); err != nil {
 				return err
 			}

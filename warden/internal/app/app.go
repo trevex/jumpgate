@@ -170,6 +170,23 @@ func Run(ctx context.Context, cfg config.Config) error {
 	spawn(func(ctx context.Context) {
 		sweeper.RunGC(ctx, cfg.OrphanGCInterval, cfg.OrphanGrace, cfg.TeardownGrace)
 	})
+
+	// Target-identity domain service, shared by the user-facing RPC handler and the
+	// data-plane probe dispatcher. The dispatcher leases durable identity probes to
+	// connected workers (bounded per worker) and routes results back to Complete; it
+	// runs regardless of the vault (only the worker stream that carries assignments
+	// requires setupSvc, below).
+	targetIdentitySvc := targetidentity.NewService(pool, auditLog,
+		targetidentity.WithLeaseDuration(cfg.ProbeLeaseDuration),
+		targetidentity.WithDefaultMaxAttempts(cfg.ProbeMaxAttempts))
+	probeDispatcher := dataplane.NewProbeDispatcher(targetIdentitySvc, dataplane.ProbeConfig{
+		DNSTimeout:       cfg.ProbeDNSTimeout,
+		ConnectTimeout:   cfg.ProbeConnectTimeout,
+		HandshakeTimeout: cfg.ProbeHandshakeTimeout,
+		TotalTimeout:     cfg.ProbeTotalTimeout,
+		MaxPerWorker:     cfg.ProbeMaxPerWorker,
+	})
+	spawn(probeDispatcher.Run)
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
 	var sessionPubKey ed25519.PublicKey
@@ -235,7 +252,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Vault:          vault.NewHandler(apiQ, sealer, authorizer),
 		Enrollment:     enrollment.NewHandler(enrollment.NewService(pool, sealer), apiguard.New(authorizer, apiQ)),
 		Recording:      recording.NewHandler(apiQ, auditLog, recordingPresign, cfg.RecordingURLTTL, authorizer, arSvc),
-		TargetIdentity: targetidentity.NewHandler(targetidentity.NewService(pool, auditLog), apiguard.New(authorizer, apiQ)),
+		TargetIdentity: targetidentity.NewHandler(targetIdentitySvc, apiguard.New(authorizer, apiQ)),
 	}
 	if sessionSvc != nil {
 		userServices.Session = session.NewHandler(sessionSvc)
@@ -265,7 +282,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Peer identity is the mTLS client cert URI SAN (mesh.Middleware). Degraded boot:
 	// if MESH_LISTEN_ADDR is unset or the cert files are missing/unreadable, warden
 	// logs a warning and serves only the user API (workers/gateway cannot connect).
-	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator)
+	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator, probeDispatcher)
 
 	// Buffered for both producers (user + mesh listener) so a failing server never
 	// blocks its goroutine on send after we've stopped selecting.
@@ -321,7 +338,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 // buildMeshServer constructs warden's mTLS mesh HTTP server (Dataplane + Gateway
 // behind mesh.Middleware), or returns nil for a degraded boot when the mesh
 // listener is disabled (MESH_LISTEN_ADDR unset) or its cert files cannot be loaded.
-func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey, terminator *dataplane.Terminator) *http.Server {
+func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey, terminator *dataplane.Terminator, probes *dataplane.ProbeDispatcher) *http.Server {
 	if cfg.MeshListenAddr == "" {
 		slog.Warn("mesh listener disabled: MESH_LISTEN_ADDR unset (workers/gateway cannot connect)")
 		return nil
@@ -342,7 +359,7 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.
 	meshMux := http.NewServeMux()
 	meshServices := rpc.MeshServices{Gateway: gateway.NewHandler(registry, sessionPubKey)}
 	if setupSvc != nil {
-		meshServices.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator)
+		meshServices.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, probes)
 	}
 	rpc.RegisterMeshServices(meshMux, meshServices)
 	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /

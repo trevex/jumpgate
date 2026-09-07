@@ -100,7 +100,7 @@ func registerMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audi
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	services := rpc.MeshServices{Gateway: gateway.NewHandler(registry, pubKey)}
 	if setupSvc != nil {
-		services.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator)
+		services.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, nil)
 	}
 	rpc.RegisterMeshServices(mux, services)
 	return nil

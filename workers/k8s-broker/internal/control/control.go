@@ -54,11 +54,25 @@ func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServi
 	}
 
 	recvErr := make(chan error, 1)
+	// Comfortably above warden's per-worker probe ceiling (MaxPerWorker, default 2),
+	// so the non-blocking-send drop path below is effectively unreachable; 8 is a
+	// headroom constant, not a tuned value.
+	probeResults := make(chan *dataplanev1.ProbeResult, 8)
 	go func() {
 		for {
-			if _, err := stream.Receive(); err != nil { // drain acks/teardowns; broker has no per-session teardown yet
+			msg, err := stream.Receive() // drain acks/teardowns; broker has no per-session teardown yet
+			if err != nil {
 				recvErr <- err
 				return
+			}
+			if pa := msg.GetProbeAssignment(); pa != nil {
+				// The k8s-broker has no identity-probe support yet: reply unsupported so
+				// the warden lease resolves instead of hanging. Non-blocking.
+				select {
+				case probeResults <- unsupportedProbeResult(pa):
+				default:
+					slog.Warn("probe result buffer full; dropping unsupported reply", "job_id", pa.GetJobId())
+				}
 			}
 		}
 	}()
@@ -102,7 +116,29 @@ func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServi
 			}); err != nil {
 				return err
 			}
+		case pr := <-probeResults:
+			if err := stream.Send(&dataplanev1.WorkerMessage{
+				Msg: &dataplanev1.WorkerMessage_ProbeResult{ProbeResult: pr},
+			}); err != nil {
+				return err
+			}
 		}
+	}
+}
+
+// unsupportedProbeResult echoes a probe assignment as a failed, unsupported-protocol
+// result, keeping the warden lease resolving until the broker implements probing.
+func unsupportedProbeResult(pa *dataplanev1.ProbeAssignment) *dataplanev1.ProbeResult {
+	return &dataplanev1.ProbeResult{
+		JobId:            pa.GetJobId(),
+		AssetId:          pa.GetAssetId(),
+		EndpointRevision: pa.GetEndpointRevision(),
+		LeaseToken:       pa.GetLeaseToken(),
+		Protocol:         pa.GetProtocol(),
+		Outcome:          dataplanev1.ProbeOutcome_PROBE_OUTCOME_FAILED,
+		ObservedAtUnixMs: time.Now().UnixMilli(),
+		FailureCategory:  dataplanev1.ProbeFailureCategory_PROBE_FAILURE_CATEGORY_UNSUPPORTED_PROTOCOL,
+		FailureDetail:    "k8s-broker does not implement identity probing",
 	}
 }
 

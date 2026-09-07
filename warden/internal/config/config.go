@@ -80,6 +80,17 @@ type Config struct {
 	// not be short — it just caps a session that outlives all warden signals.
 	SSHCertMaxTTL time.Duration `env:"SSH_CERT_MAX_TTL" envDefault:"8h"`
 
+	// Probe execution bounds are sent to workers with credential-free assignments.
+	// Lease duration bounds worker ownership; capacity prevents probes from
+	// consuming an unbounded share of any worker.
+	ProbeDNSTimeout       time.Duration `env:"PROBE_DNS_TIMEOUT" envDefault:"10s"`
+	ProbeConnectTimeout   time.Duration `env:"PROBE_CONNECT_TIMEOUT" envDefault:"10s"`
+	ProbeHandshakeTimeout time.Duration `env:"PROBE_HANDSHAKE_TIMEOUT" envDefault:"15s"`
+	ProbeTotalTimeout     time.Duration `env:"PROBE_TOTAL_TIMEOUT" envDefault:"30s"`
+	ProbeLeaseDuration    time.Duration `env:"PROBE_LEASE_DURATION" envDefault:"30s"`
+	ProbeMaxAttempts      int           `env:"PROBE_MAX_ATTEMPTS" envDefault:"3"`
+	ProbeMaxPerWorker     int           `env:"PROBE_MAX_PER_WORKER" envDefault:"2"`
+
 	// MeshListenAddr is the address of warden's second, mTLS "mesh" listener that
 	// serves the worker/gateway-facing services (Dataplane + Gateway). Empty means
 	// the mesh listener is disabled (workers/gateway cannot connect — a degraded but
@@ -159,10 +170,24 @@ func (c Config) Validate() error {
 		{"SESSION_TOKEN_TTL", c.SessionTokenTTL},
 		{"SSH_CERT_MAX_TTL", c.SSHCertMaxTTL},
 		{"RECORDING_URL_TTL", c.RecordingURLTTL},
+		{"PROBE_DNS_TIMEOUT", c.ProbeDNSTimeout},
+		{"PROBE_CONNECT_TIMEOUT", c.ProbeConnectTimeout},
+		{"PROBE_HANDSHAKE_TIMEOUT", c.ProbeHandshakeTimeout},
+		{"PROBE_TOTAL_TIMEOUT", c.ProbeTotalTimeout},
+		{"PROBE_LEASE_DURATION", c.ProbeLeaseDuration},
 	} {
 		if d.val <= 0 {
 			return fmt.Errorf("%s must be a positive duration, got %s", d.name, d.val)
 		}
+	}
+	if c.ProbeTotalTimeout < c.ProbeDNSTimeout || c.ProbeTotalTimeout < c.ProbeConnectTimeout || c.ProbeTotalTimeout < c.ProbeHandshakeTimeout {
+		return fmt.Errorf("PROBE_TOTAL_TIMEOUT must not be shorter than any probe stage")
+	}
+	if c.ProbeMaxAttempts < 1 || c.ProbeMaxAttempts > 10 {
+		return fmt.Errorf("PROBE_MAX_ATTEMPTS must be between 1 and 10, got %d", c.ProbeMaxAttempts)
+	}
+	if c.ProbeMaxPerWorker < 1 {
+		return fmt.Errorf("PROBE_MAX_PER_WORKER must be positive, got %d", c.ProbeMaxPerWorker)
 	}
 	return nil
 }

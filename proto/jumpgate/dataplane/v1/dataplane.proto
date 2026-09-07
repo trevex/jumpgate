@@ -22,6 +22,7 @@ message WorkerMessage {
     Heartbeat heartbeat = 2;
     SessionEnded session_ended = 3;
     AdvertiseTunnels advertise_tunnels = 4;
+    ProbeResult probe_result = 5;
   }
 }
 // AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
@@ -64,12 +65,170 @@ message ServerMessage {
   oneof msg {
     RegisterAck ack = 1;
     Teardown teardown = 2;
+    ProbeAssignment probe_assignment = 3;
   }
 }
 message RegisterAck {}
 message Teardown {
   string session_id = 1;
   string reason = 2;
+}
+
+// ProbeProtocol is deliberately independent from user-facing API enums: this is
+// the authenticated worker control contract.
+enum ProbeProtocol {
+  PROBE_PROTOCOL_UNSPECIFIED = 0;
+  PROBE_PROTOCOL_SSH = 1;
+  PROBE_PROTOCOL_POSTGRES = 2;
+  PROBE_PROTOCOL_RDP = 3;
+  PROBE_PROTOCOL_KUBERNETES = 4;
+}
+
+enum ProbeOutcome {
+  PROBE_OUTCOME_UNSPECIFIED = 0;
+  PROBE_OUTCOME_SUCCEEDED = 1;
+  PROBE_OUTCOME_FAILED = 2;
+}
+
+enum ProbeFailureCategory {
+  PROBE_FAILURE_CATEGORY_UNSPECIFIED = 0;
+  PROBE_FAILURE_CATEGORY_UNSUPPORTED_PROTOCOL = 1;
+  PROBE_FAILURE_CATEGORY_NO_COMPATIBLE_WORKER = 2;
+  PROBE_FAILURE_CATEGORY_DNS_RESOLUTION_FAILED = 3;
+  PROBE_FAILURE_CATEGORY_CONNECTION_REFUSED = 4;
+  PROBE_FAILURE_CATEGORY_CONNECTION_TIMEOUT = 5;
+  PROBE_FAILURE_CATEGORY_PROTOCOL_MISMATCH = 6;
+  PROBE_FAILURE_CATEGORY_INSECURE_DOWNGRADE = 7;
+  PROBE_FAILURE_CATEGORY_UNSUPPORTED_IDENTITY_ALGORITHM = 8;
+  PROBE_FAILURE_CATEGORY_MALFORMED_IDENTITY = 9;
+  PROBE_FAILURE_CATEGORY_IDENTITY_TOO_LARGE = 10;
+  PROBE_FAILURE_CATEGORY_CERTIFICATE_EXPIRED = 11;
+  PROBE_FAILURE_CATEGORY_CERTIFICATE_NOT_YET_VALID = 12;
+  PROBE_FAILURE_CATEGORY_NAME_MISMATCH = 13;
+  PROBE_FAILURE_CATEGORY_EXPECTATION_MISMATCH = 14;
+  PROBE_FAILURE_CATEGORY_WORKER_LOST = 15;
+  PROBE_FAILURE_CATEGORY_LEASE_EXPIRED = 16;
+  PROBE_FAILURE_CATEGORY_TARGET_IDENTITY_CHANGED = 17;
+}
+
+enum ProbeEvidenceKind {
+  PROBE_EVIDENCE_KIND_UNSPECIFIED = 0;
+  PROBE_EVIDENCE_KIND_SSH_HOST_KEY = 1;
+  PROBE_EVIDENCE_KIND_SSH_HOST_CERTIFICATE = 2;
+  PROBE_EVIDENCE_KIND_TLS_LEAF = 3;
+  PROBE_EVIDENCE_KIND_TLS_INTERMEDIATE = 4;
+  PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT = 5;
+}
+
+message ProbeLimits {
+  int64 dns_timeout_ms = 1 [(buf.validate.field).int64.gt = 0];
+  int64 connect_timeout_ms = 2 [(buf.validate.field).int64.gt = 0];
+  int64 handshake_timeout_ms = 3 [(buf.validate.field).int64.gt = 0];
+  int64 total_timeout_ms = 4 [(buf.validate.field).int64.gt = 0];
+  int32 max_banner_bytes = 5 [(buf.validate.field).int32 = {gt: 0, lte: 65536}];
+  int32 max_frame_bytes = 6 [(buf.validate.field).int32 = {gt: 0, lte: 1048576}];
+  int32 max_chain_certificates = 7 [(buf.validate.field).int32 = {gt: 0, lte: 16}];
+  int32 max_certificate_bytes = 8 [(buf.validate.field).int32 = {gt: 0, lte: 65536}];
+  int32 max_result_bytes = 9 [(buf.validate.field).int32 = {gt: 0, lte: 1048576}];
+}
+
+message SSHProbeEndpoint {
+  string host = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  uint32 port = 2 [(buf.validate.field).uint32 = {gt: 0, lte: 65535}];
+}
+
+message PostgresProbeEndpoint {
+  string host = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  uint32 port = 2 [(buf.validate.field).uint32 = {gt: 0, lte: 65535}];
+  string server_name = 3 [(buf.validate.field).string.max_len = 255];
+}
+
+message RDPProbeEndpoint {
+  string host = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  uint32 port = 2 [(buf.validate.field).uint32 = {gt: 0, lte: 65535}];
+  string server_name = 3 [(buf.validate.field).string.max_len = 255];
+}
+
+message KubernetesProbeEndpoint {
+  string api_server_name = 1 [(buf.validate.field).string.max_len = 255];
+}
+
+// ProbeAssignment is public-target-only data. It intentionally has no secret,
+// credential, admission-token, login, or user identity field.
+message ProbeAssignment {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  bytes lease_token = 4 [(buf.validate.field).bytes = {min_len: 32, max_len: 32}];
+  ProbeProtocol protocol = 5;
+  int64 lease_expires_at_unix_ms = 6 [(buf.validate.field).int64.gt = 0];
+  ProbeLimits limits = 7 [(buf.validate.field).required = true];
+  oneof endpoint {
+    option (buf.validate.oneof).required = true;
+    SSHProbeEndpoint ssh = 8;
+    PostgresProbeEndpoint postgres = 9;
+    RDPProbeEndpoint rdp = 10;
+    KubernetesProbeEndpoint kubernetes = 11;
+  }
+}
+
+message ProbeDisplayExtension {
+  string name = 1 [(buf.validate.field).string.max_len = 255];
+  string value = 2 [(buf.validate.field).string.max_bytes = 4096];
+}
+
+message ProbeEvidence {
+  ProbeEvidenceKind kind = 1;
+  string algorithm = 2 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string sha256_fingerprint = 3 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string public_material = 4 [(buf.validate.field).string = {min_len: 1, max_bytes: 65536}];
+  string certificate_subject = 5 [(buf.validate.field).string.max_bytes = 4096];
+  string certificate_issuer = 6 [(buf.validate.field).string.max_bytes = 4096];
+  string issuer_sha256_fingerprint = 7 [(buf.validate.field).string.max_len = 255];
+  repeated string dns_names = 8 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 255}}}];
+  repeated string ip_addresses = 9 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 255}}}];
+  repeated string ssh_principals = 10 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 255}}}];
+  string serial_number = 11 [(buf.validate.field).string.max_len = 256];
+  int64 valid_from_unix_ms = 12;
+  int64 valid_until_unix_ms = 13;
+  int32 key_bits = 14 [(buf.validate.field).int32 = {gte: 0, lte: 16384}];
+  string key_curve = 15 [(buf.validate.field).string.max_len = 64];
+  repeated ProbeDisplayExtension display_extensions = 16 [(buf.validate.field).repeated.max_items = 32];
+}
+
+message ProbeSSHMetadata {
+  string banner = 1 [(buf.validate.field).string.max_bytes = 4096];
+  repeated string host_key_algorithms = 2 [(buf.validate.field).repeated = {max_items: 64, items: {string: {max_len: 255}}}];
+}
+
+message ProbeTLSMetadata {
+  string version = 1 [(buf.validate.field).string.max_len = 255];
+  string cipher_suite = 2 [(buf.validate.field).string.max_len = 255];
+  string server_name = 3 [(buf.validate.field).string.max_len = 255];
+  string alpn = 4 [(buf.validate.field).string.max_len = 255];
+}
+
+message ProbeKubernetesMetadata {
+  string api_server_name = 1 [(buf.validate.field).string.max_len = 255];
+}
+
+message ProbeResult {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  string asset_id = 2 [(buf.validate.field).string.uuid = true];
+  int64 endpoint_revision = 3 [(buf.validate.field).int64.gt = 0];
+  bytes lease_token = 4 [(buf.validate.field).bytes = {min_len: 32, max_len: 32}];
+  ProbeProtocol protocol = 5;
+  ProbeOutcome outcome = 6;
+  int64 observed_at_unix_ms = 7 [(buf.validate.field).int64.gt = 0];
+  repeated string resolved_addresses = 8 [(buf.validate.field).repeated = {max_items: 16, items: {string: {max_len: 255}}}];
+  repeated ProbeEvidence evidence = 9 [(buf.validate.field).repeated.max_items = 16];
+  ProbeFailureCategory failure_category = 10;
+  string failure_detail = 11 [(buf.validate.field).string.max_bytes = 4096];
+  oneof protocol_metadata {
+    ProbeSSHMetadata ssh = 12;
+    ProbeTLSMetadata tls = 13;
+    ProbeKubernetesMetadata kubernetes = 14;
+  }
 }
 
 message SetupSessionRequest {

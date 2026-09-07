@@ -26,7 +26,8 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use jumpgate_mesh::pb::jumpgate::dataplane::v1::{
     dataplane_service_client::DataplaneServiceClient, server_message, worker_message, Heartbeat,
-    RecordingInfo, Register, ServerMessage, SessionEnded, WorkerMessage,
+    ProbeAssignment, ProbeFailureCategory, ProbeOutcome, ProbeResult, RecordingInfo, Register,
+    ServerMessage, SessionEnded, WorkerMessage,
 };
 use jumpgate_mesh::tls::MeshClientCerts;
 
@@ -173,6 +174,17 @@ async fn connect_and_run(
                     Some(ServerMessage { msg: Some(server_message::Msg::Ack(_)) }) => {
                         tracing::info!("register acknowledged by warden");
                     }
+                    Some(ServerMessage { msg: Some(server_message::Msg::ProbeAssignment(pa)) }) => {
+                        // ssh-proxy has no identity-probe support yet: reply
+                        // unsupported so the warden lease resolves instead of hanging.
+                        // The control stream stays open.
+                        let frame = WorkerMessage {
+                            msg: Some(worker_message::Msg::ProbeResult(unsupported_probe_result(&pa))),
+                        };
+                        if tx.send(frame).await.is_err() {
+                            return Ok(());
+                        }
+                    }
                     Some(ServerMessage { msg: None }) => {
                         tracing::warn!("empty ServerMessage; ignoring");
                     }
@@ -231,6 +243,30 @@ async fn connect_and_run(
                 }
             }
         }
+    }
+}
+
+/// Echoes a probe assignment as a failed, unsupported-protocol result. Keeps the
+/// warden lease resolving until ssh-proxy implements real identity probing. Carries
+/// only the assignment's public identifiers back — no secret ever enters a probe.
+fn unsupported_probe_result(pa: &ProbeAssignment) -> ProbeResult {
+    let observed_at_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    ProbeResult {
+        job_id: pa.job_id.clone(),
+        asset_id: pa.asset_id.clone(),
+        endpoint_revision: pa.endpoint_revision,
+        lease_token: pa.lease_token.clone(),
+        protocol: pa.protocol,
+        outcome: ProbeOutcome::Failed as i32,
+        observed_at_unix_ms,
+        resolved_addresses: Vec::new(),
+        evidence: Vec::new(),
+        failure_category: ProbeFailureCategory::UnsupportedProtocol as i32,
+        failure_detail: "ssh-proxy does not implement identity probing".to_string(),
+        protocol_metadata: None,
     }
 }
 

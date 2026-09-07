@@ -2,8 +2,8 @@
 // @generated from file jumpgate/dataplane/v1/dataplane.proto (package jumpgate.dataplane.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/dataplane/v1/dataplane.proto.
  */
 export const file_jumpgate_dataplane_v1_dataplane: GenFile = /*@__PURE__*/
-  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEihgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8i6QEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkSDwoHdXNlcl9pZBgIIAEoCRIQCghhc3NldF9pZBgJIAEoCRIRCgl3b3JrZXJfaWQYCiABKAkSEgoKc2Vzc2lvbl9pZBgLIAEoCSJ+Cg1TZXJ2ZXJNZXNzYWdlEjEKA2FjaxgBIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZWdpc3RlckFja0gAEjMKCHRlYXJkb3duGAIgASgLMh8uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlRlYXJkb3duSABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIqMBChNTZXR1cFNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIZChF0YXJnZXRfcHVibGljX2tleRgEIAEoDBIWCgVsb2dpbhgGIAEoCUIHukgEcgIQASKLAwoUU2V0dXBTZXNzaW9uUmVzcG9uc2USFgoOdGFyZ2V0X2FkZHJlc3MYASABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAggASgJEhAKCGdyYW50X2lkGAkgASgJEhgKEHRhcmdldF9zZXJ2ZXJfY2EYCiABKAkSGAoQZGVmYXVsdF9kYXRhYmFzZRgLIAEoCRIYChB4NTA5X3ByaXZhdGVfa2V5GA0gASgMEg0KBWxvZ2luGA8gASgJEhkKD3NzaF9jZXJ0aWZpY2F0ZRgCIAEoDEgAEhIKCHBhc3N3b3JkGAYgASgJSAASFQoLcHJpdmF0ZV9rZXkYByABKAxIABIaChB4NTA5X2NlcnRpZmljYXRlGAwgASgMSAASFQoLcGdfcGFzc3dvcmQYDiABKAlIAEIMCgpjcmVkZW50aWFsMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSAASOgoMcHJvYmVfcmVzdWx0GAUgASgLMiIuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUmVzdWx0SABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8i6QEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkSDwoHdXNlcl9pZBgIIAEoCRIQCghhc3NldF9pZBgJIAEoCRIRCgl3b3JrZXJfaWQYCiABKAkSEgoKc2Vzc2lvbl9pZBgLIAEoCSLCAQoNU2VydmVyTWVzc2FnZRIxCgNhY2sYASABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJBY2tIABIzCgh0ZWFyZG93bhgCIAEoCzIfLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5UZWFyZG93bkgAEkIKEHByb2JlX2Fzc2lnbm1lbnQYAyABKAsyJi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVBc3NpZ25tZW50SABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIugCCgtQcm9iZUxpbWl0cxIfCg5kbnNfdGltZW91dF9tcxgBIAEoA0IHukgEIgIgABIjChJjb25uZWN0X3RpbWVvdXRfbXMYAiABKANCB7pIBCICIAASJQoUaGFuZHNoYWtlX3RpbWVvdXRfbXMYAyABKANCB7pIBCICIAASIQoQdG90YWxfdGltZW91dF9tcxgEIAEoA0IHukgEIgIgABIlChBtYXhfYmFubmVyX2J5dGVzGAUgASgFQgu6SAgaBhiAgAQgABIkCg9tYXhfZnJhbWVfYnl0ZXMYBiABKAVCC7pICBoGGICAQCAAEikKFm1heF9jaGFpbl9jZXJ0aWZpY2F0ZXMYByABKAVCCbpIBhoEGBAgABIqChVtYXhfY2VydGlmaWNhdGVfYnl0ZXMYCCABKAVCC7pICBoGGICABCAAEiUKEG1heF9yZXN1bHRfYnl0ZXMYCSABKAVCC7pICBoGGICAQCAAIkcKEFNTSFByb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgACJrChVQb3N0Z3Jlc1Byb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgABIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wEiZgoQUkRQUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ASI8ChdLdWJlcm5ldGVzUHJvYmVFbmRwb2ludBIhCg9hcGlfc2VydmVyX25hbWUYASABKAlCCLpIBXIDGP8BIrUECg9Qcm9iZUFzc2lnbm1lbnQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEikKGGxlYXNlX2V4cGlyZXNfYXRfdW5peF9tcxgGIAEoA0IHukgEIgIgABI6CgZsaW1pdHMYByABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVMaW1pdHNCBrpIA8gBARI2CgNzc2gYCCABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU1NIUHJvYmVFbmRwb2ludEgAEkAKCHBvc3RncmVzGAkgASgLMiwuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlBvc3RncmVzUHJvYmVFbmRwb2ludEgAEjYKA3JkcBgKIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SRFBQcm9iZUVuZHBvaW50SAASRAoKa3ViZXJuZXRlcxgLIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5LdWJlcm5ldGVzUHJvYmVFbmRwb2ludEgAQhEKCGVuZHBvaW50EgW6SAIIASJIChVQcm9iZURpc3BsYXlFeHRlbnNpb24SFgoEbmFtZRgBIAEoCUIIukgFcgMY/wESFwoFdmFsdWUYAiABKAlCCLpIBXIDKIAgIosFCg1Qcm9iZUV2aWRlbmNlEjYKBGtpbmQYASABKA4yKC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUtpbmQSHQoJYWxnb3JpdGhtGAIgASgJQgq6SAdyBRABGP8BEiYKEnNoYTI1Nl9maW5nZXJwcmludBgDIAEoCUIKukgHcgUQARj/ARIkCg9wdWJsaWNfbWF0ZXJpYWwYBCABKAlCC7pICHIGEAEogIAEEiUKE2NlcnRpZmljYXRlX3N1YmplY3QYBSABKAlCCLpIBXIDKIAgEiQKEmNlcnRpZmljYXRlX2lzc3VlchgGIAEoCUIIukgFcgMogCASKwoZaXNzdWVyX3NoYTI1Nl9maW5nZXJwcmludBgHIAEoCUIIukgFcgMY/wESIgoJZG5zX25hbWVzGAggAygJQg+6SAySAQkQQCIFcgMY/wESJQoMaXBfYWRkcmVzc2VzGAkgAygJQg+6SAySAQkQQCIFcgMY/wESJwoOc3NoX3ByaW5jaXBhbHMYCiADKAlCD7pIDJIBCRBAIgVyAxj/ARIfCg1zZXJpYWxfbnVtYmVyGAsgASgJQgi6SAVyAxiAAhIaChJ2YWxpZF9mcm9tX3VuaXhfbXMYDCABKAMSGwoTdmFsaWRfdW50aWxfdW5peF9tcxgNIAEoAxIdCghrZXlfYml0cxgOIAEoBUILukgIGgYYgIABKAASGgoJa2V5X2N1cnZlGA8gASgJQge6SARyAhhAElIKEmRpc3BsYXlfZXh0ZW5zaW9ucxgQIAMoCzIsLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZURpc3BsYXlFeHRlbnNpb25CCLpIBZIBAhAgIloKEFByb2JlU1NITWV0YWRhdGESGAoGYmFubmVyGAEgASgJQgi6SAVyAyiAIBIsChNob3N0X2tleV9hbGdvcml0aG1zGAIgAygJQg+6SAySAQkQQCIFcgMY/wEihAEKEFByb2JlVExTTWV0YWRhdGESGQoHdmVyc2lvbhgBIAEoCUIIukgFcgMY/wESHgoMY2lwaGVyX3N1aXRlGAIgASgJQgi6SAVyAxj/ARIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wESFgoEYWxwbhgEIAEoCUIIukgFcgMY/wEiPAoXUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGESIQoPYXBpX3NlcnZlcl9uYW1lGAEgASgJQgi6SAVyAxj/ASK+BQoLUHJvYmVSZXN1bHQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEjQKB291dGNvbWUYBiABKA4yIy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVPdXRjb21lEiQKE29ic2VydmVkX2F0X3VuaXhfbXMYByABKANCB7pIBCICIAASKwoScmVzb2x2ZWRfYWRkcmVzc2VzGAggAygJQg+6SAySAQkQECIFcgMY/wESQAoIZXZpZGVuY2UYCSADKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUIIukgFkgECEBASRQoQZmFpbHVyZV9jYXRlZ29yeRgKIAEoDjIrLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUZhaWx1cmVDYXRlZ29yeRIgCg5mYWlsdXJlX2RldGFpbBgLIAEoCUIIukgFcgMogCASNgoDc3NoGAwgASgLMicuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlU1NITWV0YWRhdGFIABI2CgN0bHMYDSABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVUTFNNZXRhZGF0YUgAEkQKCmt1YmVybmV0ZXMYDiABKAsyLi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGFIAEITChFwcm90b2NvbF9tZXRhZGF0YSKjAQoTU2V0dXBTZXNzaW9uUmVxdWVzdBIeCg1zZXNzaW9uX3Rva2VuGAEgASgJQge6SARyAhABEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIdChVjbGllbnRfc3NoX3B1YmxpY19rZXkYAyABKAwSGQoRdGFyZ2V0X3B1YmxpY19rZXkYBCABKAwSFgoFbG9naW4YBiABKAlCB7pIBHICEAEiiwMKFFNldHVwU2Vzc2lvblJlc3BvbnNlEhYKDnRhcmdldF9hZGRyZXNzGAEgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAogASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCyABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgNIAEoDBINCgVsb2dpbhgPIAEoCRIZCg9zc2hfY2VydGlmaWNhdGUYAiABKAxIABISCghwYXNzd29yZBgGIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAcgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgMIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGA4gASgJSABCDAoKY3JlZGVudGlhbCqbAQoNUHJvYmVQcm90b2NvbBIeChpQUk9CRV9QUk9UT0NPTF9VTlNQRUNJRklFRBAAEhYKElBST0JFX1BST1RPQ09MX1NTSBABEhsKF1BST0JFX1BST1RPQ09MX1BPU1RHUkVTEAISFgoSUFJPQkVfUFJPVE9DT0xfUkRQEAMSHQoZUFJPQkVfUFJPVE9DT0xfS1VCRVJORVRFUxAEKmQKDFByb2JlT3V0Y29tZRIdChlQUk9CRV9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGwoXUFJPQkVfT1VUQ09NRV9TVUNDRUVERUQQARIYChRQUk9CRV9PVVRDT01FX0ZBSUxFRBACKu0GChRQcm9iZUZhaWx1cmVDYXRlZ29yeRImCiJQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1BFQ0lGSUVEEAASLworUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNVUFBPUlRFRF9QUk9UT0NPTBABEi8KK1BST0JFX0ZBSUxVUkVfQ0FURUdPUllfTk9fQ09NUEFUSUJMRV9XT1JLRVIQAhIwCixQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0ROU19SRVNPTFVUSU9OX0ZBSUxFRBADEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfQ09OTkVDVElPTl9SRUZVU0VEEAQSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DT05ORUNUSU9OX1RJTUVPVVQQBRIsCihQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1BST1RPQ09MX01JU01BVENIEAYSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JTlNFQ1VSRV9ET1dOR1JBREUQBxI5CjVQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1VQUE9SVEVEX0lERU5USVRZX0FMR09SSVRITRAIEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTUFMRk9STUVEX0lERU5USVRZEAkSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JREVOVElUWV9UT09fTEFSR0UQChIuCipQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX0VYUElSRUQQCxI0CjBQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX05PVF9ZRVRfVkFMSUQQDBIoCiRQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX05BTUVfTUlTTUFUQ0gQDRIvCitQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0VYUEVDVEFUSU9OX01JU01BVENIEA4SJgoiUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9XT1JLRVJfTE9TVBAPEigKJFBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTEVBU0VfRVhQSVJFRBAQEjIKLlBST0JFX0ZBSUxVUkVfQ0FURUdPUllfVEFSR0VUX0lERU5USVRZX0NIQU5HRUQQESqEAgoRUHJvYmVFdmlkZW5jZUtpbmQSIwofUFJPQkVfRVZJREVOQ0VfS0lORF9VTlNQRUNJRklFRBAAEiQKIFBST0JFX0VWSURFTkNFX0tJTkRfU1NIX0hPU1RfS0VZEAESLAooUFJPQkVfRVZJREVOQ0VfS0lORF9TU0hfSE9TVF9DRVJUSUZJQ0FURRACEiAKHFBST0JFX0VWSURFTkNFX0tJTkRfVExTX0xFQUYQAxIoCiRQUk9CRV9FVklERU5DRV9LSU5EX1RMU19JTlRFUk1FRElBVEUQBBIqCiZQUk9CRV9FVklERU5DRV9LSU5EX1RMU19QUkVTRU5URURfUk9PVBAFMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.dataplane.v1.WorkerMessage
@@ -44,6 +44,12 @@ export type WorkerMessage = Message<"jumpgate.dataplane.v1.WorkerMessage"> & {
      */
     value: AdvertiseTunnels;
     case: "advertiseTunnels";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ProbeResult probe_result = 5;
+     */
+    value: ProbeResult;
+    case: "probeResult";
   } | { case: undefined; value?: undefined };
 };
 
@@ -261,6 +267,12 @@ export type ServerMessage = Message<"jumpgate.dataplane.v1.ServerMessage"> & {
      */
     value: Teardown;
     case: "teardown";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ProbeAssignment probe_assignment = 3;
+     */
+    value: ProbeAssignment;
+    case: "probeAssignment";
   } | { case: undefined; value?: undefined };
 };
 
@@ -307,6 +319,510 @@ export const TeardownSchema: GenMessage<Teardown> = /*@__PURE__*/
   messageDesc(file_jumpgate_dataplane_v1_dataplane, 8);
 
 /**
+ * @generated from message jumpgate.dataplane.v1.ProbeLimits
+ */
+export type ProbeLimits = Message<"jumpgate.dataplane.v1.ProbeLimits"> & {
+  /**
+   * @generated from field: int64 dns_timeout_ms = 1;
+   */
+  dnsTimeoutMs: bigint;
+
+  /**
+   * @generated from field: int64 connect_timeout_ms = 2;
+   */
+  connectTimeoutMs: bigint;
+
+  /**
+   * @generated from field: int64 handshake_timeout_ms = 3;
+   */
+  handshakeTimeoutMs: bigint;
+
+  /**
+   * @generated from field: int64 total_timeout_ms = 4;
+   */
+  totalTimeoutMs: bigint;
+
+  /**
+   * @generated from field: int32 max_banner_bytes = 5;
+   */
+  maxBannerBytes: number;
+
+  /**
+   * @generated from field: int32 max_frame_bytes = 6;
+   */
+  maxFrameBytes: number;
+
+  /**
+   * @generated from field: int32 max_chain_certificates = 7;
+   */
+  maxChainCertificates: number;
+
+  /**
+   * @generated from field: int32 max_certificate_bytes = 8;
+   */
+  maxCertificateBytes: number;
+
+  /**
+   * @generated from field: int32 max_result_bytes = 9;
+   */
+  maxResultBytes: number;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeLimits.
+ * Use `create(ProbeLimitsSchema)` to create a new message.
+ */
+export const ProbeLimitsSchema: GenMessage<ProbeLimits> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.SSHProbeEndpoint
+ */
+export type SSHProbeEndpoint = Message<"jumpgate.dataplane.v1.SSHProbeEndpoint"> & {
+  /**
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * @generated from field: uint32 port = 2;
+   */
+  port: number;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.SSHProbeEndpoint.
+ * Use `create(SSHProbeEndpointSchema)` to create a new message.
+ */
+export const SSHProbeEndpointSchema: GenMessage<SSHProbeEndpoint> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 10);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.PostgresProbeEndpoint
+ */
+export type PostgresProbeEndpoint = Message<"jumpgate.dataplane.v1.PostgresProbeEndpoint"> & {
+  /**
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * @generated from field: uint32 port = 2;
+   */
+  port: number;
+
+  /**
+   * @generated from field: string server_name = 3;
+   */
+  serverName: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.PostgresProbeEndpoint.
+ * Use `create(PostgresProbeEndpointSchema)` to create a new message.
+ */
+export const PostgresProbeEndpointSchema: GenMessage<PostgresProbeEndpoint> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 11);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.RDPProbeEndpoint
+ */
+export type RDPProbeEndpoint = Message<"jumpgate.dataplane.v1.RDPProbeEndpoint"> & {
+  /**
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * @generated from field: uint32 port = 2;
+   */
+  port: number;
+
+  /**
+   * @generated from field: string server_name = 3;
+   */
+  serverName: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.RDPProbeEndpoint.
+ * Use `create(RDPProbeEndpointSchema)` to create a new message.
+ */
+export const RDPProbeEndpointSchema: GenMessage<RDPProbeEndpoint> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 12);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.KubernetesProbeEndpoint
+ */
+export type KubernetesProbeEndpoint = Message<"jumpgate.dataplane.v1.KubernetesProbeEndpoint"> & {
+  /**
+   * @generated from field: string api_server_name = 1;
+   */
+  apiServerName: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.KubernetesProbeEndpoint.
+ * Use `create(KubernetesProbeEndpointSchema)` to create a new message.
+ */
+export const KubernetesProbeEndpointSchema: GenMessage<KubernetesProbeEndpoint> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 13);
+
+/**
+ * ProbeAssignment is public-target-only data. It intentionally has no secret,
+ * credential, admission-token, login, or user identity field.
+ *
+ * @generated from message jumpgate.dataplane.v1.ProbeAssignment
+ */
+export type ProbeAssignment = Message<"jumpgate.dataplane.v1.ProbeAssignment"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * @generated from field: string asset_id = 2;
+   */
+  assetId: string;
+
+  /**
+   * @generated from field: int64 endpoint_revision = 3;
+   */
+  endpointRevision: bigint;
+
+  /**
+   * @generated from field: bytes lease_token = 4;
+   */
+  leaseToken: Uint8Array;
+
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeProtocol protocol = 5;
+   */
+  protocol: ProbeProtocol;
+
+  /**
+   * @generated from field: int64 lease_expires_at_unix_ms = 6;
+   */
+  leaseExpiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeLimits limits = 7;
+   */
+  limits?: ProbeLimits | undefined;
+
+  /**
+   * @generated from oneof jumpgate.dataplane.v1.ProbeAssignment.endpoint
+   */
+  endpoint: {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.SSHProbeEndpoint ssh = 8;
+     */
+    value: SSHProbeEndpoint;
+    case: "ssh";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.PostgresProbeEndpoint postgres = 9;
+     */
+    value: PostgresProbeEndpoint;
+    case: "postgres";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.RDPProbeEndpoint rdp = 10;
+     */
+    value: RDPProbeEndpoint;
+    case: "rdp";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.KubernetesProbeEndpoint kubernetes = 11;
+     */
+    value: KubernetesProbeEndpoint;
+    case: "kubernetes";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeAssignment.
+ * Use `create(ProbeAssignmentSchema)` to create a new message.
+ */
+export const ProbeAssignmentSchema: GenMessage<ProbeAssignment> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 14);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeDisplayExtension
+ */
+export type ProbeDisplayExtension = Message<"jumpgate.dataplane.v1.ProbeDisplayExtension"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string value = 2;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeDisplayExtension.
+ * Use `create(ProbeDisplayExtensionSchema)` to create a new message.
+ */
+export const ProbeDisplayExtensionSchema: GenMessage<ProbeDisplayExtension> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 15);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeEvidence
+ */
+export type ProbeEvidence = Message<"jumpgate.dataplane.v1.ProbeEvidence"> & {
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeEvidenceKind kind = 1;
+   */
+  kind: ProbeEvidenceKind;
+
+  /**
+   * @generated from field: string algorithm = 2;
+   */
+  algorithm: string;
+
+  /**
+   * @generated from field: string sha256_fingerprint = 3;
+   */
+  sha256Fingerprint: string;
+
+  /**
+   * @generated from field: string public_material = 4;
+   */
+  publicMaterial: string;
+
+  /**
+   * @generated from field: string certificate_subject = 5;
+   */
+  certificateSubject: string;
+
+  /**
+   * @generated from field: string certificate_issuer = 6;
+   */
+  certificateIssuer: string;
+
+  /**
+   * @generated from field: string issuer_sha256_fingerprint = 7;
+   */
+  issuerSha256Fingerprint: string;
+
+  /**
+   * @generated from field: repeated string dns_names = 8;
+   */
+  dnsNames: string[];
+
+  /**
+   * @generated from field: repeated string ip_addresses = 9;
+   */
+  ipAddresses: string[];
+
+  /**
+   * @generated from field: repeated string ssh_principals = 10;
+   */
+  sshPrincipals: string[];
+
+  /**
+   * @generated from field: string serial_number = 11;
+   */
+  serialNumber: string;
+
+  /**
+   * @generated from field: int64 valid_from_unix_ms = 12;
+   */
+  validFromUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 valid_until_unix_ms = 13;
+   */
+  validUntilUnixMs: bigint;
+
+  /**
+   * @generated from field: int32 key_bits = 14;
+   */
+  keyBits: number;
+
+  /**
+   * @generated from field: string key_curve = 15;
+   */
+  keyCurve: string;
+
+  /**
+   * @generated from field: repeated jumpgate.dataplane.v1.ProbeDisplayExtension display_extensions = 16;
+   */
+  displayExtensions: ProbeDisplayExtension[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeEvidence.
+ * Use `create(ProbeEvidenceSchema)` to create a new message.
+ */
+export const ProbeEvidenceSchema: GenMessage<ProbeEvidence> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 16);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeSSHMetadata
+ */
+export type ProbeSSHMetadata = Message<"jumpgate.dataplane.v1.ProbeSSHMetadata"> & {
+  /**
+   * @generated from field: string banner = 1;
+   */
+  banner: string;
+
+  /**
+   * @generated from field: repeated string host_key_algorithms = 2;
+   */
+  hostKeyAlgorithms: string[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeSSHMetadata.
+ * Use `create(ProbeSSHMetadataSchema)` to create a new message.
+ */
+export const ProbeSSHMetadataSchema: GenMessage<ProbeSSHMetadata> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 17);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeTLSMetadata
+ */
+export type ProbeTLSMetadata = Message<"jumpgate.dataplane.v1.ProbeTLSMetadata"> & {
+  /**
+   * @generated from field: string version = 1;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string cipher_suite = 2;
+   */
+  cipherSuite: string;
+
+  /**
+   * @generated from field: string server_name = 3;
+   */
+  serverName: string;
+
+  /**
+   * @generated from field: string alpn = 4;
+   */
+  alpn: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeTLSMetadata.
+ * Use `create(ProbeTLSMetadataSchema)` to create a new message.
+ */
+export const ProbeTLSMetadataSchema: GenMessage<ProbeTLSMetadata> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 18);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeKubernetesMetadata
+ */
+export type ProbeKubernetesMetadata = Message<"jumpgate.dataplane.v1.ProbeKubernetesMetadata"> & {
+  /**
+   * @generated from field: string api_server_name = 1;
+   */
+  apiServerName: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeKubernetesMetadata.
+ * Use `create(ProbeKubernetesMetadataSchema)` to create a new message.
+ */
+export const ProbeKubernetesMetadataSchema: GenMessage<ProbeKubernetesMetadata> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 19);
+
+/**
+ * @generated from message jumpgate.dataplane.v1.ProbeResult
+ */
+export type ProbeResult = Message<"jumpgate.dataplane.v1.ProbeResult"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * @generated from field: string asset_id = 2;
+   */
+  assetId: string;
+
+  /**
+   * @generated from field: int64 endpoint_revision = 3;
+   */
+  endpointRevision: bigint;
+
+  /**
+   * @generated from field: bytes lease_token = 4;
+   */
+  leaseToken: Uint8Array;
+
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeProtocol protocol = 5;
+   */
+  protocol: ProbeProtocol;
+
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeOutcome outcome = 6;
+   */
+  outcome: ProbeOutcome;
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 7;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: repeated string resolved_addresses = 8;
+   */
+  resolvedAddresses: string[];
+
+  /**
+   * @generated from field: repeated jumpgate.dataplane.v1.ProbeEvidence evidence = 9;
+   */
+  evidence: ProbeEvidence[];
+
+  /**
+   * @generated from field: jumpgate.dataplane.v1.ProbeFailureCategory failure_category = 10;
+   */
+  failureCategory: ProbeFailureCategory;
+
+  /**
+   * @generated from field: string failure_detail = 11;
+   */
+  failureDetail: string;
+
+  /**
+   * @generated from oneof jumpgate.dataplane.v1.ProbeResult.protocol_metadata
+   */
+  protocolMetadata: {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ProbeSSHMetadata ssh = 12;
+     */
+    value: ProbeSSHMetadata;
+    case: "ssh";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ProbeTLSMetadata tls = 13;
+     */
+    value: ProbeTLSMetadata;
+    case: "tls";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ProbeKubernetesMetadata kubernetes = 14;
+     */
+    value: ProbeKubernetesMetadata;
+    case: "kubernetes";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ProbeResult.
+ * Use `create(ProbeResultSchema)` to create a new message.
+ */
+export const ProbeResultSchema: GenMessage<ProbeResult> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 20);
+
+/**
  * @generated from message jumpgate.dataplane.v1.SetupSessionRequest
  */
 export type SetupSessionRequest = Message<"jumpgate.dataplane.v1.SetupSessionRequest"> & {
@@ -347,7 +863,7 @@ export type SetupSessionRequest = Message<"jumpgate.dataplane.v1.SetupSessionReq
  * Use `create(SetupSessionRequestSchema)` to create a new message.
  */
 export const SetupSessionRequestSchema: GenMessage<SetupSessionRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 21);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SetupSessionResponse
@@ -477,7 +993,214 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
  * Use `create(SetupSessionResponseSchema)` to create a new message.
  */
 export const SetupSessionResponseSchema: GenMessage<SetupSessionResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 10);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 22);
+
+/**
+ * ProbeProtocol is deliberately independent from user-facing API enums: this is
+ * the authenticated worker control contract.
+ *
+ * @generated from enum jumpgate.dataplane.v1.ProbeProtocol
+ */
+export enum ProbeProtocol {
+  /**
+   * @generated from enum value: PROBE_PROTOCOL_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PROBE_PROTOCOL_SSH = 1;
+   */
+  SSH = 1,
+
+  /**
+   * @generated from enum value: PROBE_PROTOCOL_POSTGRES = 2;
+   */
+  POSTGRES = 2,
+
+  /**
+   * @generated from enum value: PROBE_PROTOCOL_RDP = 3;
+   */
+  RDP = 3,
+
+  /**
+   * @generated from enum value: PROBE_PROTOCOL_KUBERNETES = 4;
+   */
+  KUBERNETES = 4,
+}
+
+/**
+ * Describes the enum jumpgate.dataplane.v1.ProbeProtocol.
+ */
+export const ProbeProtocolSchema: GenEnum<ProbeProtocol> = /*@__PURE__*/
+  enumDesc(file_jumpgate_dataplane_v1_dataplane, 0);
+
+/**
+ * @generated from enum jumpgate.dataplane.v1.ProbeOutcome
+ */
+export enum ProbeOutcome {
+  /**
+   * @generated from enum value: PROBE_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PROBE_OUTCOME_SUCCEEDED = 1;
+   */
+  SUCCEEDED = 1,
+
+  /**
+   * @generated from enum value: PROBE_OUTCOME_FAILED = 2;
+   */
+  FAILED = 2,
+}
+
+/**
+ * Describes the enum jumpgate.dataplane.v1.ProbeOutcome.
+ */
+export const ProbeOutcomeSchema: GenEnum<ProbeOutcome> = /*@__PURE__*/
+  enumDesc(file_jumpgate_dataplane_v1_dataplane, 1);
+
+/**
+ * @generated from enum jumpgate.dataplane.v1.ProbeFailureCategory
+ */
+export enum ProbeFailureCategory {
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_UNSUPPORTED_PROTOCOL = 1;
+   */
+  UNSUPPORTED_PROTOCOL = 1,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_NO_COMPATIBLE_WORKER = 2;
+   */
+  NO_COMPATIBLE_WORKER = 2,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_DNS_RESOLUTION_FAILED = 3;
+   */
+  DNS_RESOLUTION_FAILED = 3,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_CONNECTION_REFUSED = 4;
+   */
+  CONNECTION_REFUSED = 4,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_CONNECTION_TIMEOUT = 5;
+   */
+  CONNECTION_TIMEOUT = 5,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_PROTOCOL_MISMATCH = 6;
+   */
+  PROTOCOL_MISMATCH = 6,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_INSECURE_DOWNGRADE = 7;
+   */
+  INSECURE_DOWNGRADE = 7,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_UNSUPPORTED_IDENTITY_ALGORITHM = 8;
+   */
+  UNSUPPORTED_IDENTITY_ALGORITHM = 8,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_MALFORMED_IDENTITY = 9;
+   */
+  MALFORMED_IDENTITY = 9,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_IDENTITY_TOO_LARGE = 10;
+   */
+  IDENTITY_TOO_LARGE = 10,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_CERTIFICATE_EXPIRED = 11;
+   */
+  CERTIFICATE_EXPIRED = 11,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_CERTIFICATE_NOT_YET_VALID = 12;
+   */
+  CERTIFICATE_NOT_YET_VALID = 12,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_NAME_MISMATCH = 13;
+   */
+  NAME_MISMATCH = 13,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_EXPECTATION_MISMATCH = 14;
+   */
+  EXPECTATION_MISMATCH = 14,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_WORKER_LOST = 15;
+   */
+  WORKER_LOST = 15,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_LEASE_EXPIRED = 16;
+   */
+  LEASE_EXPIRED = 16,
+
+  /**
+   * @generated from enum value: PROBE_FAILURE_CATEGORY_TARGET_IDENTITY_CHANGED = 17;
+   */
+  TARGET_IDENTITY_CHANGED = 17,
+}
+
+/**
+ * Describes the enum jumpgate.dataplane.v1.ProbeFailureCategory.
+ */
+export const ProbeFailureCategorySchema: GenEnum<ProbeFailureCategory> = /*@__PURE__*/
+  enumDesc(file_jumpgate_dataplane_v1_dataplane, 2);
+
+/**
+ * @generated from enum jumpgate.dataplane.v1.ProbeEvidenceKind
+ */
+export enum ProbeEvidenceKind {
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_SSH_HOST_KEY = 1;
+   */
+  SSH_HOST_KEY = 1,
+
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_SSH_HOST_CERTIFICATE = 2;
+   */
+  SSH_HOST_CERTIFICATE = 2,
+
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_TLS_LEAF = 3;
+   */
+  TLS_LEAF = 3,
+
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_TLS_INTERMEDIATE = 4;
+   */
+  TLS_INTERMEDIATE = 4,
+
+  /**
+   * @generated from enum value: PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT = 5;
+   */
+  TLS_PRESENTED_ROOT = 5,
+}
+
+/**
+ * Describes the enum jumpgate.dataplane.v1.ProbeEvidenceKind.
+ */
+export const ProbeEvidenceKindSchema: GenEnum<ProbeEvidenceKind> = /*@__PURE__*/
+  enumDesc(file_jumpgate_dataplane_v1_dataplane, 3);
 
 /**
  * DataplaneService is the worker↔warden control contract. It is worker-facing and
