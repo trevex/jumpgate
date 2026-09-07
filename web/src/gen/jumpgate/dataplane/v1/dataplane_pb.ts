@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/dataplane/v1/dataplane.proto.
  */
 export const file_jumpgate_dataplane_v1_dataplane: GenFile = /*@__PURE__*/
-  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSAASOgoMcHJvYmVfcmVzdWx0GAUgASgLMiIuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUmVzdWx0SABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8i6QEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkSDwoHdXNlcl9pZBgIIAEoCRIQCghhc3NldF9pZBgJIAEoCRIRCgl3b3JrZXJfaWQYCiABKAkSEgoKc2Vzc2lvbl9pZBgLIAEoCSLCAQoNU2VydmVyTWVzc2FnZRIxCgNhY2sYASABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJBY2tIABIzCgh0ZWFyZG93bhgCIAEoCzIfLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5UZWFyZG93bkgAEkIKEHByb2JlX2Fzc2lnbm1lbnQYAyABKAsyJi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVBc3NpZ25tZW50SABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIugCCgtQcm9iZUxpbWl0cxIfCg5kbnNfdGltZW91dF9tcxgBIAEoA0IHukgEIgIgABIjChJjb25uZWN0X3RpbWVvdXRfbXMYAiABKANCB7pIBCICIAASJQoUaGFuZHNoYWtlX3RpbWVvdXRfbXMYAyABKANCB7pIBCICIAASIQoQdG90YWxfdGltZW91dF9tcxgEIAEoA0IHukgEIgIgABIlChBtYXhfYmFubmVyX2J5dGVzGAUgASgFQgu6SAgaBhiAgAQgABIkCg9tYXhfZnJhbWVfYnl0ZXMYBiABKAVCC7pICBoGGICAQCAAEikKFm1heF9jaGFpbl9jZXJ0aWZpY2F0ZXMYByABKAVCCbpIBhoEGBAgABIqChVtYXhfY2VydGlmaWNhdGVfYnl0ZXMYCCABKAVCC7pICBoGGICABCAAEiUKEG1heF9yZXN1bHRfYnl0ZXMYCSABKAVCC7pICBoGGICAQCAAIkcKEFNTSFByb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgACJrChVQb3N0Z3Jlc1Byb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgABIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wEiZgoQUkRQUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ASI8ChdLdWJlcm5ldGVzUHJvYmVFbmRwb2ludBIhCg9hcGlfc2VydmVyX25hbWUYASABKAlCCLpIBXIDGP8BIrUECg9Qcm9iZUFzc2lnbm1lbnQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEikKGGxlYXNlX2V4cGlyZXNfYXRfdW5peF9tcxgGIAEoA0IHukgEIgIgABI6CgZsaW1pdHMYByABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVMaW1pdHNCBrpIA8gBARI2CgNzc2gYCCABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU1NIUHJvYmVFbmRwb2ludEgAEkAKCHBvc3RncmVzGAkgASgLMiwuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlBvc3RncmVzUHJvYmVFbmRwb2ludEgAEjYKA3JkcBgKIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SRFBQcm9iZUVuZHBvaW50SAASRAoKa3ViZXJuZXRlcxgLIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5LdWJlcm5ldGVzUHJvYmVFbmRwb2ludEgAQhEKCGVuZHBvaW50EgW6SAIIASJIChVQcm9iZURpc3BsYXlFeHRlbnNpb24SFgoEbmFtZRgBIAEoCUIIukgFcgMY/wESFwoFdmFsdWUYAiABKAlCCLpIBXIDKIAgIosFCg1Qcm9iZUV2aWRlbmNlEjYKBGtpbmQYASABKA4yKC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUtpbmQSHQoJYWxnb3JpdGhtGAIgASgJQgq6SAdyBRABGP8BEiYKEnNoYTI1Nl9maW5nZXJwcmludBgDIAEoCUIKukgHcgUQARj/ARIkCg9wdWJsaWNfbWF0ZXJpYWwYBCABKAlCC7pICHIGEAEogIAEEiUKE2NlcnRpZmljYXRlX3N1YmplY3QYBSABKAlCCLpIBXIDKIAgEiQKEmNlcnRpZmljYXRlX2lzc3VlchgGIAEoCUIIukgFcgMogCASKwoZaXNzdWVyX3NoYTI1Nl9maW5nZXJwcmludBgHIAEoCUIIukgFcgMY/wESIgoJZG5zX25hbWVzGAggAygJQg+6SAySAQkQQCIFcgMY/wESJQoMaXBfYWRkcmVzc2VzGAkgAygJQg+6SAySAQkQQCIFcgMY/wESJwoOc3NoX3ByaW5jaXBhbHMYCiADKAlCD7pIDJIBCRBAIgVyAxj/ARIfCg1zZXJpYWxfbnVtYmVyGAsgASgJQgi6SAVyAxiAAhIaChJ2YWxpZF9mcm9tX3VuaXhfbXMYDCABKAMSGwoTdmFsaWRfdW50aWxfdW5peF9tcxgNIAEoAxIdCghrZXlfYml0cxgOIAEoBUILukgIGgYYgIABKAASGgoJa2V5X2N1cnZlGA8gASgJQge6SARyAhhAElIKEmRpc3BsYXlfZXh0ZW5zaW9ucxgQIAMoCzIsLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZURpc3BsYXlFeHRlbnNpb25CCLpIBZIBAhAgIloKEFByb2JlU1NITWV0YWRhdGESGAoGYmFubmVyGAEgASgJQgi6SAVyAyiAIBIsChNob3N0X2tleV9hbGdvcml0aG1zGAIgAygJQg+6SAySAQkQQCIFcgMY/wEihAEKEFByb2JlVExTTWV0YWRhdGESGQoHdmVyc2lvbhgBIAEoCUIIukgFcgMY/wESHgoMY2lwaGVyX3N1aXRlGAIgASgJQgi6SAVyAxj/ARIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wESFgoEYWxwbhgEIAEoCUIIukgFcgMY/wEiPAoXUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGESIQoPYXBpX3NlcnZlcl9uYW1lGAEgASgJQgi6SAVyAxj/ASK+BQoLUHJvYmVSZXN1bHQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEjQKB291dGNvbWUYBiABKA4yIy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVPdXRjb21lEiQKE29ic2VydmVkX2F0X3VuaXhfbXMYByABKANCB7pIBCICIAASKwoScmVzb2x2ZWRfYWRkcmVzc2VzGAggAygJQg+6SAySAQkQECIFcgMY/wESQAoIZXZpZGVuY2UYCSADKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUIIukgFkgECEBASRQoQZmFpbHVyZV9jYXRlZ29yeRgKIAEoDjIrLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUZhaWx1cmVDYXRlZ29yeRIgCg5mYWlsdXJlX2RldGFpbBgLIAEoCUIIukgFcgMogCASNgoDc3NoGAwgASgLMicuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlU1NITWV0YWRhdGFIABI2CgN0bHMYDSABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVUTFNNZXRhZGF0YUgAEkQKCmt1YmVybmV0ZXMYDiABKAsyLi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGFIAEITChFwcm90b2NvbF9tZXRhZGF0YSKjAQoTU2V0dXBTZXNzaW9uUmVxdWVzdBIeCg1zZXNzaW9uX3Rva2VuGAEgASgJQge6SARyAhABEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIdChVjbGllbnRfc3NoX3B1YmxpY19rZXkYAyABKAwSGQoRdGFyZ2V0X3B1YmxpY19rZXkYBCABKAwSFgoFbG9naW4YBiABKAlCB7pIBHICEAEiiwMKFFNldHVwU2Vzc2lvblJlc3BvbnNlEhYKDnRhcmdldF9hZGRyZXNzGAEgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAogASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCyABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgNIAEoDBINCgVsb2dpbhgPIAEoCRIZCg9zc2hfY2VydGlmaWNhdGUYAiABKAxIABISCghwYXNzd29yZBgGIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAcgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgMIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGA4gASgJSABCDAoKY3JlZGVudGlhbCqbAQoNUHJvYmVQcm90b2NvbBIeChpQUk9CRV9QUk9UT0NPTF9VTlNQRUNJRklFRBAAEhYKElBST0JFX1BST1RPQ09MX1NTSBABEhsKF1BST0JFX1BST1RPQ09MX1BPU1RHUkVTEAISFgoSUFJPQkVfUFJPVE9DT0xfUkRQEAMSHQoZUFJPQkVfUFJPVE9DT0xfS1VCRVJORVRFUxAEKmQKDFByb2JlT3V0Y29tZRIdChlQUk9CRV9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGwoXUFJPQkVfT1VUQ09NRV9TVUNDRUVERUQQARIYChRQUk9CRV9PVVRDT01FX0ZBSUxFRBACKu0GChRQcm9iZUZhaWx1cmVDYXRlZ29yeRImCiJQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1BFQ0lGSUVEEAASLworUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNVUFBPUlRFRF9QUk9UT0NPTBABEi8KK1BST0JFX0ZBSUxVUkVfQ0FURUdPUllfTk9fQ09NUEFUSUJMRV9XT1JLRVIQAhIwCixQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0ROU19SRVNPTFVUSU9OX0ZBSUxFRBADEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfQ09OTkVDVElPTl9SRUZVU0VEEAQSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DT05ORUNUSU9OX1RJTUVPVVQQBRIsCihQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1BST1RPQ09MX01JU01BVENIEAYSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JTlNFQ1VSRV9ET1dOR1JBREUQBxI5CjVQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1VQUE9SVEVEX0lERU5USVRZX0FMR09SSVRITRAIEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTUFMRk9STUVEX0lERU5USVRZEAkSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JREVOVElUWV9UT09fTEFSR0UQChIuCipQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX0VYUElSRUQQCxI0CjBQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX05PVF9ZRVRfVkFMSUQQDBIoCiRQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX05BTUVfTUlTTUFUQ0gQDRIvCitQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0VYUEVDVEFUSU9OX01JU01BVENIEA4SJgoiUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9XT1JLRVJfTE9TVBAPEigKJFBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTEVBU0VfRVhQSVJFRBAQEjIKLlBST0JFX0ZBSUxVUkVfQ0FURUdPUllfVEFSR0VUX0lERU5USVRZX0NIQU5HRUQQESqEAgoRUHJvYmVFdmlkZW5jZUtpbmQSIwofUFJPQkVfRVZJREVOQ0VfS0lORF9VTlNQRUNJRklFRBAAEiQKIFBST0JFX0VWSURFTkNFX0tJTkRfU1NIX0hPU1RfS0VZEAESLAooUFJPQkVfRVZJREVOQ0VfS0lORF9TU0hfSE9TVF9DRVJUSUZJQ0FURRACEiAKHFBST0JFX0VWSURFTkNFX0tJTkRfVExTX0xFQUYQAxIoCiRQUk9CRV9FVklERU5DRV9LSU5EX1RMU19JTlRFUk1FRElBVEUQBBIqCiZQUk9CRV9FVklERU5DRV9LSU5EX1RMU19QUkVTRU5URURfUk9PVBAFMt8BChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSAASOgoMcHJvYmVfcmVzdWx0GAUgASgLMiIuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUmVzdWx0SABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8i6QEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkSDwoHdXNlcl9pZBgIIAEoCRIQCghhc3NldF9pZBgJIAEoCRIRCgl3b3JrZXJfaWQYCiABKAkSEgoKc2Vzc2lvbl9pZBgLIAEoCSLCAQoNU2VydmVyTWVzc2FnZRIxCgNhY2sYASABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJBY2tIABIzCgh0ZWFyZG93bhgCIAEoCzIfLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5UZWFyZG93bkgAEkIKEHByb2JlX2Fzc2lnbm1lbnQYAyABKAsyJi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVBc3NpZ25tZW50SABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIugCCgtQcm9iZUxpbWl0cxIfCg5kbnNfdGltZW91dF9tcxgBIAEoA0IHukgEIgIgABIjChJjb25uZWN0X3RpbWVvdXRfbXMYAiABKANCB7pIBCICIAASJQoUaGFuZHNoYWtlX3RpbWVvdXRfbXMYAyABKANCB7pIBCICIAASIQoQdG90YWxfdGltZW91dF9tcxgEIAEoA0IHukgEIgIgABIlChBtYXhfYmFubmVyX2J5dGVzGAUgASgFQgu6SAgaBhiAgAQgABIkCg9tYXhfZnJhbWVfYnl0ZXMYBiABKAVCC7pICBoGGICAQCAAEikKFm1heF9jaGFpbl9jZXJ0aWZpY2F0ZXMYByABKAVCCbpIBhoEGBAgABIqChVtYXhfY2VydGlmaWNhdGVfYnl0ZXMYCCABKAVCC7pICBoGGICABCAAEiUKEG1heF9yZXN1bHRfYnl0ZXMYCSABKAVCC7pICBoGGICAQCAAIkcKEFNTSFByb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgACJrChVQb3N0Z3Jlc1Byb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgABIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wEiZgoQUkRQUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ASI8ChdLdWJlcm5ldGVzUHJvYmVFbmRwb2ludBIhCg9hcGlfc2VydmVyX25hbWUYASABKAlCCLpIBXIDGP8BIrUECg9Qcm9iZUFzc2lnbm1lbnQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEikKGGxlYXNlX2V4cGlyZXNfYXRfdW5peF9tcxgGIAEoA0IHukgEIgIgABI6CgZsaW1pdHMYByABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVMaW1pdHNCBrpIA8gBARI2CgNzc2gYCCABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU1NIUHJvYmVFbmRwb2ludEgAEkAKCHBvc3RncmVzGAkgASgLMiwuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlBvc3RncmVzUHJvYmVFbmRwb2ludEgAEjYKA3JkcBgKIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SRFBQcm9iZUVuZHBvaW50SAASRAoKa3ViZXJuZXRlcxgLIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5LdWJlcm5ldGVzUHJvYmVFbmRwb2ludEgAQhEKCGVuZHBvaW50EgW6SAIIASJIChVQcm9iZURpc3BsYXlFeHRlbnNpb24SFgoEbmFtZRgBIAEoCUIIukgFcgMY/wESFwoFdmFsdWUYAiABKAlCCLpIBXIDKIAgIosFCg1Qcm9iZUV2aWRlbmNlEjYKBGtpbmQYASABKA4yKC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUtpbmQSHQoJYWxnb3JpdGhtGAIgASgJQgq6SAdyBRABGP8BEiYKEnNoYTI1Nl9maW5nZXJwcmludBgDIAEoCUIKukgHcgUQARj/ARIkCg9wdWJsaWNfbWF0ZXJpYWwYBCABKAlCC7pICHIGEAEogIAEEiUKE2NlcnRpZmljYXRlX3N1YmplY3QYBSABKAlCCLpIBXIDKIAgEiQKEmNlcnRpZmljYXRlX2lzc3VlchgGIAEoCUIIukgFcgMogCASKwoZaXNzdWVyX3NoYTI1Nl9maW5nZXJwcmludBgHIAEoCUIIukgFcgMY/wESIgoJZG5zX25hbWVzGAggAygJQg+6SAySAQkQQCIFcgMY/wESJQoMaXBfYWRkcmVzc2VzGAkgAygJQg+6SAySAQkQQCIFcgMY/wESJwoOc3NoX3ByaW5jaXBhbHMYCiADKAlCD7pIDJIBCRBAIgVyAxj/ARIfCg1zZXJpYWxfbnVtYmVyGAsgASgJQgi6SAVyAxiAAhIaChJ2YWxpZF9mcm9tX3VuaXhfbXMYDCABKAMSGwoTdmFsaWRfdW50aWxfdW5peF9tcxgNIAEoAxIdCghrZXlfYml0cxgOIAEoBUILukgIGgYYgIABKAASGgoJa2V5X2N1cnZlGA8gASgJQge6SARyAhhAElIKEmRpc3BsYXlfZXh0ZW5zaW9ucxgQIAMoCzIsLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZURpc3BsYXlFeHRlbnNpb25CCLpIBZIBAhAgIloKEFByb2JlU1NITWV0YWRhdGESGAoGYmFubmVyGAEgASgJQgi6SAVyAyiAIBIsChNob3N0X2tleV9hbGdvcml0aG1zGAIgAygJQg+6SAySAQkQQCIFcgMY/wEihAEKEFByb2JlVExTTWV0YWRhdGESGQoHdmVyc2lvbhgBIAEoCUIIukgFcgMY/wESHgoMY2lwaGVyX3N1aXRlGAIgASgJQgi6SAVyAxj/ARIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wESFgoEYWxwbhgEIAEoCUIIukgFcgMY/wEiPAoXUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGESIQoPYXBpX3NlcnZlcl9uYW1lGAEgASgJQgi6SAVyAxj/ASK+BQoLUHJvYmVSZXN1bHQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEjQKB291dGNvbWUYBiABKA4yIy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVPdXRjb21lEiQKE29ic2VydmVkX2F0X3VuaXhfbXMYByABKANCB7pIBCICIAASKwoScmVzb2x2ZWRfYWRkcmVzc2VzGAggAygJQg+6SAySAQkQECIFcgMY/wESQAoIZXZpZGVuY2UYCSADKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUIIukgFkgECEBASRQoQZmFpbHVyZV9jYXRlZ29yeRgKIAEoDjIrLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUZhaWx1cmVDYXRlZ29yeRIgCg5mYWlsdXJlX2RldGFpbBgLIAEoCUIIukgFcgMogCASNgoDc3NoGAwgASgLMicuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlU1NITWV0YWRhdGFIABI2CgN0bHMYDSABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVUTFNNZXRhZGF0YUgAEkQKCmt1YmVybmV0ZXMYDiABKAsyLi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGFIAEITChFwcm90b2NvbF9tZXRhZGF0YSKjAQoTU2V0dXBTZXNzaW9uUmVxdWVzdBIeCg1zZXNzaW9uX3Rva2VuGAEgASgJQge6SARyAhABEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIdChVjbGllbnRfc3NoX3B1YmxpY19rZXkYAyABKAwSGQoRdGFyZ2V0X3B1YmxpY19rZXkYBCABKAwSFgoFbG9naW4YBiABKAlCB7pIBHICEAEiiwMKFFNldHVwU2Vzc2lvblJlc3BvbnNlEhYKDnRhcmdldF9hZGRyZXNzGAEgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAogASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCyABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgNIAEoDBINCgVsb2dpbhgPIAEoCRIZCg9zc2hfY2VydGlmaWNhdGUYAiABKAxIABISCghwYXNzd29yZBgGIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAcgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgMIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGA4gASgJSABCDAoKY3JlZGVudGlhbCKKAQoVUHJlcGFyZVNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIWCgVsb2dpbhgEIAEoCUIHukgEcgIQASK5AQoSU2Vzc2lvblRydXN0QW5jaG9yEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSEQoJYWxnb3JpdGhtGAMgASgJEhoKEnNoYTI1Nl9maW5nZXJwcmludBgEIAEoCRIfChdyZXF1aXJlZF9zc2hfcHJpbmNpcGFscxgFIAMoCRIaChJyZXF1aXJlZF9kbnNfbmFtZXMYBiADKAkSHQoVcmVxdWlyZWRfaXBfYWRkcmVzc2VzGAcgAygJIskCChZQcmVwYXJlU2Vzc2lvblJlc3BvbnNlEhIKCnNlc3Npb25faWQYASABKAkSGQoRZW5kcG9pbnRfcmV2aXNpb24YAiABKAMSFgoOdGFyZ2V0X2FkZHJlc3MYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgGIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAcgASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCCABKAkSEAoIZ3JhbnRfaWQYCSABKAkSDQoFbG9naW4YCiABKAkSQAoNdHJ1c3RfYW5jaG9ycxgLIAMoCzIpLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uVHJ1c3RBbmNob3Ii5AEKHUlzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXF1ZXN0EhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIiChFlbmRwb2ludF9yZXZpc2lvbhgDIAEoA0IHukgEIgIgABIjChFtYXRjaGVkX2FuY2hvcl9pZBgEIAEoCUIIukgFcgOwAQESJQoUb2JzZXJ2ZWRfZmluZ2VycHJpbnQYBSABKAlCB7pIBHICEAESGQoRdGFyZ2V0X3B1YmxpY19rZXkYBiABKAwi5AEKHklzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXNwb25zZRISCgpzZXNzaW9uX2lkGAEgASgJEg0KBWxvZ2luGAIgASgJEhgKEHg1MDlfcHJpdmF0ZV9rZXkYAyABKAwSGQoPc3NoX2NlcnRpZmljYXRlGAQgASgMSAASEgoIcGFzc3dvcmQYBSABKAlIABIVCgtwcml2YXRlX2tleRgGIAEoDEgAEhoKEHg1MDlfY2VydGlmaWNhdGUYByABKAxIABIVCgtwZ19wYXNzd29yZBgIIAEoCUgAQgwKCmNyZWRlbnRpYWwqmwEKDVByb2JlUHJvdG9jb2wSHgoaUFJPQkVfUFJPVE9DT0xfVU5TUEVDSUZJRUQQABIWChJQUk9CRV9QUk9UT0NPTF9TU0gQARIbChdQUk9CRV9QUk9UT0NPTF9QT1NUR1JFUxACEhYKElBST0JFX1BST1RPQ09MX1JEUBADEh0KGVBST0JFX1BST1RPQ09MX0tVQkVSTkVURVMQBCpkCgxQcm9iZU91dGNvbWUSHQoZUFJPQkVfT1VUQ09NRV9VTlNQRUNJRklFRBAAEhsKF1BST0JFX09VVENPTUVfU1VDQ0VFREVEEAESGAoUUFJPQkVfT1VUQ09NRV9GQUlMRUQQAirtBgoUUHJvYmVGYWlsdXJlQ2F0ZWdvcnkSJgoiUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNQRUNJRklFRBAAEi8KK1BST0JFX0ZBSUxVUkVfQ0FURUdPUllfVU5TVVBQT1JURURfUFJPVE9DT0wQARIvCitQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX05PX0NPTVBBVElCTEVfV09SS0VSEAISMAosUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9ETlNfUkVTT0xVVElPTl9GQUlMRUQQAxItCilQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NPTk5FQ1RJT05fUkVGVVNFRBAEEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfQ09OTkVDVElPTl9USU1FT1VUEAUSLAooUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9QUk9UT0NPTF9NSVNNQVRDSBAGEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfSU5TRUNVUkVfRE9XTkdSQURFEAcSOQo1UFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNVUFBPUlRFRF9JREVOVElUWV9BTEdPUklUSE0QCBItCilQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX01BTEZPUk1FRF9JREVOVElUWRAJEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfSURFTlRJVFlfVE9PX0xBUkdFEAoSLgoqUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DRVJUSUZJQ0FURV9FWFBJUkVEEAsSNAowUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DRVJUSUZJQ0FURV9OT1RfWUVUX1ZBTElEEAwSKAokUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9OQU1FX01JU01BVENIEA0SLworUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9FWFBFQ1RBVElPTl9NSVNNQVRDSBAOEiYKIlBST0JFX0ZBSUxVUkVfQ0FURUdPUllfV09SS0VSX0xPU1QQDxIoCiRQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0xFQVNFX0VYUElSRUQQEBIyCi5QUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1RBUkdFVF9JREVOVElUWV9DSEFOR0VEEBEqhAIKEVByb2JlRXZpZGVuY2VLaW5kEiMKH1BST0JFX0VWSURFTkNFX0tJTkRfVU5TUEVDSUZJRUQQABIkCiBQUk9CRV9FVklERU5DRV9LSU5EX1NTSF9IT1NUX0tFWRABEiwKKFBST0JFX0VWSURFTkNFX0tJTkRfU1NIX0hPU1RfQ0VSVElGSUNBVEUQAhIgChxQUk9CRV9FVklERU5DRV9LSU5EX1RMU19MRUFGEAMSKAokUFJPQkVfRVZJREVOQ0VfS0lORF9UTFNfSU5URVJNRURJQVRFEAQSKgomUFJPQkVfRVZJREVOQ0VfS0lORF9UTFNfUFJFU0VOVEVEX1JPT1QQBTLaAwoQRGF0YXBsYW5lU2VydmljZRJgCgxXb3JrZXJTdHJlYW0SJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuV29ya2VyTWVzc2FnZRokLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXJ2ZXJNZXNzYWdlIgAoATABEmkKDFNldHVwU2Vzc2lvbhIqLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXR1cFNlc3Npb25SZXF1ZXN0GisuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlc3BvbnNlIgASbwoOUHJlcGFyZVNlc3Npb24SLC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJlcGFyZVNlc3Npb25SZXF1ZXN0Gi0uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByZXBhcmVTZXNzaW9uUmVzcG9uc2UiABKHAQoWSXNzdWVTZXNzaW9uQ3JlZGVudGlhbBI0Lmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Jc3N1ZVNlc3Npb25DcmVkZW50aWFsUmVxdWVzdBo1Lmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Jc3N1ZVNlc3Npb25DcmVkZW50aWFsUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.dataplane.v1.WorkerMessage
@@ -996,6 +996,315 @@ export const SetupSessionResponseSchema: GenMessage<SetupSessionResponse> = /*@_
   messageDesc(file_jumpgate_dataplane_v1_dataplane, 22);
 
 /**
+ * PrepareSessionRequest opens the credential-free first phase of a session. It
+ * carries the same admission inputs as SetupSession minus the target key (Kw),
+ * which is only needed at credential-issue time.
+ *
+ * @generated from message jumpgate.dataplane.v1.PrepareSessionRequest
+ */
+export type PrepareSessionRequest = Message<"jumpgate.dataplane.v1.PrepareSessionRequest"> & {
+  /**
+   * @generated from field: string session_token = 1;
+   */
+  sessionToken: string;
+
+  /**
+   * @generated from field: string worker_id = 2;
+   */
+  workerId: string;
+
+  /**
+   * Kc — cnf-bound for SSH CLI; empty for mode=web browser terminals
+   *
+   * @generated from field: bytes client_ssh_public_key = 3;
+   */
+  clientSshPublicKey: Uint8Array;
+
+  /**
+   * requested target login
+   *
+   * @generated from field: string login = 4;
+   */
+  login: string;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.PrepareSessionRequest.
+ * Use `create(PrepareSessionRequestSchema)` to create a new message.
+ */
+export const PrepareSessionRequestSchema: GenMessage<PrepareSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 23);
+
+/**
+ * SessionTrustAnchor is one current active trust anchor exposed to the worker so
+ * it can authenticate the target itself. Public constraint material only — no
+ * secrets, no credentials.
+ *
+ * @generated from message jumpgate.dataplane.v1.SessionTrustAnchor
+ */
+export type SessionTrustAnchor = Message<"jumpgate.dataplane.v1.SessionTrustAnchor"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * ssh_host_key | ssh_host_ca | tls_leaf | tls_ca
+   *
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string algorithm = 3;
+   */
+  algorithm: string;
+
+  /**
+   * @generated from field: string sha256_fingerprint = 4;
+   */
+  sha256Fingerprint: string;
+
+  /**
+   * @generated from field: repeated string required_ssh_principals = 5;
+   */
+  requiredSshPrincipals: string[];
+
+  /**
+   * @generated from field: repeated string required_dns_names = 6;
+   */
+  requiredDnsNames: string[];
+
+  /**
+   * @generated from field: repeated string required_ip_addresses = 7;
+   */
+  requiredIpAddresses: string[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.SessionTrustAnchor.
+ * Use `create(SessionTrustAnchorSchema)` to create a new message.
+ */
+export const SessionTrustAnchorSchema: GenMessage<SessionTrustAnchor> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 24);
+
+/**
+ * PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
+ * worker must match — but NEVER a credential.
+ *
+ * @generated from message jumpgate.dataplane.v1.PrepareSessionResponse
+ */
+export type PrepareSessionResponse = Message<"jumpgate.dataplane.v1.PrepareSessionResponse"> & {
+  /**
+   * token jti / live_sessions PK
+   *
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * the asset's current endpoint revision at prepare time
+   *
+   * @generated from field: int64 endpoint_revision = 2;
+   */
+  endpointRevision: bigint;
+
+  /**
+   * @generated from field: string target_address = 3;
+   */
+  targetAddress: string;
+
+  /**
+   * @generated from field: bool recording_required = 4;
+   */
+  recordingRequired: boolean;
+
+  /**
+   * @generated from field: string recording_object_key = 5;
+   */
+  recordingObjectKey: string;
+
+  /**
+   * ssh: configured host-key pin (may be empty)
+   *
+   * @generated from field: string target_host_key = 6;
+   */
+  targetHostKey: string;
+
+  /**
+   * postgres: target server CA PEM (may be empty)
+   *
+   * @generated from field: string target_server_ca = 7;
+   */
+  targetServerCa: string;
+
+  /**
+   * postgres: default DB
+   *
+   * @generated from field: string default_database = 8;
+   */
+  defaultDatabase: string;
+
+  /**
+   * authorizing JIT grant; empty = standing/unattributed
+   *
+   * @generated from field: string grant_id = 9;
+   */
+  grantId: string;
+
+  /**
+   * the login/role warden authorized
+   *
+   * @generated from field: string login = 10;
+   */
+  login: string;
+
+  /**
+   * current active anchors to match
+   *
+   * @generated from field: repeated jumpgate.dataplane.v1.SessionTrustAnchor trust_anchors = 11;
+   */
+  trustAnchors: SessionTrustAnchor[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.PrepareSessionResponse.
+ * Use `create(PrepareSessionResponseSchema)` to create a new message.
+ */
+export const PrepareSessionResponseSchema: GenMessage<PrepareSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 25);
+
+/**
+ * IssueSessionCredentialRequest releases the target credential for a prepared
+ * session after the worker has matched the target's identity against one anchor.
+ *
+ * @generated from message jumpgate.dataplane.v1.IssueSessionCredentialRequest
+ */
+export type IssueSessionCredentialRequest = Message<"jumpgate.dataplane.v1.IssueSessionCredentialRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string worker_id = 2;
+   */
+  workerId: string;
+
+  /**
+   * revision the worker prepared against
+   *
+   * @generated from field: int64 endpoint_revision = 3;
+   */
+  endpointRevision: bigint;
+
+  /**
+   * the anchor the worker matched
+   *
+   * @generated from field: string matched_anchor_id = 4;
+   */
+  matchedAnchorId: string;
+
+  /**
+   * the target's observed identity fingerprint
+   *
+   * @generated from field: string observed_fingerprint = 5;
+   */
+  observedFingerprint: string;
+
+  /**
+   * Kw — certified for the target (SSH ca path); empty for others
+   *
+   * @generated from field: bytes target_public_key = 6;
+   */
+  targetPublicKey: Uint8Array;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.IssueSessionCredentialRequest.
+ * Use `create(IssueSessionCredentialRequestSchema)` to create a new message.
+ */
+export const IssueSessionCredentialRequestSchema: GenMessage<IssueSessionCredentialRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 26);
+
+/**
+ * IssueSessionCredentialResponse carries the credential oneof released only after
+ * a successful identity match — the same shapes SetupSessionResponse returns.
+ *
+ * @generated from message jumpgate.dataplane.v1.IssueSessionCredentialResponse
+ */
+export type IssueSessionCredentialResponse = Message<"jumpgate.dataplane.v1.IssueSessionCredentialResponse"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string login = 2;
+   */
+  login: string;
+
+  /**
+   * postgres mtls: client private key PEM (paired with x509_certificate)
+   *
+   * @generated from field: bytes x509_private_key = 3;
+   */
+  x509PrivateKey: Uint8Array;
+
+  /**
+   * @generated from oneof jumpgate.dataplane.v1.IssueSessionCredentialResponse.credential
+   */
+  credential: {
+    /**
+     * ca: OpenSSH cert over Kw
+     *
+     * @generated from field: bytes ssh_certificate = 4;
+     */
+    value: Uint8Array;
+    case: "sshCertificate";
+  } | {
+    /**
+     * password auth (ssh/rdp)
+     *
+     * @generated from field: string password = 5;
+     */
+    value: string;
+    case: "password";
+  } | {
+    /**
+     * key auth: OpenSSH private key PEM
+     *
+     * @generated from field: bytes private_key = 6;
+     */
+    value: Uint8Array;
+    case: "privateKey";
+  } | {
+    /**
+     * postgres mtls: leaf cert PEM
+     *
+     * @generated from field: bytes x509_certificate = 7;
+     */
+    value: Uint8Array;
+    case: "x509Certificate";
+  } | {
+    /**
+     * postgres password auth
+     *
+     * @generated from field: string pg_password = 8;
+     */
+    value: string;
+    case: "pgPassword";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.IssueSessionCredentialResponse.
+ * Use `create(IssueSessionCredentialResponseSchema)` to create a new message.
+ */
+export const IssueSessionCredentialResponseSchema: GenMessage<IssueSessionCredentialResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 27);
+
+/**
  * ProbeProtocol is deliberately independent from user-facing API enums: this is
  * the authenticated worker control contract.
  *
@@ -1225,12 +1534,46 @@ export const DataplaneService: GenService<{
    * SetupSession redeems a session token: warden re-checks authorization, records
    * the live session, and returns the target address + a JIT SSH certificate.
    *
+   * DEPRECATED (migration window): SetupSession issues a credential in the same
+   * call, BEFORE the target's identity is verified. It survives only so existing
+   * ssh/postgres/rdp/k8s workers keep working until each protocol slice migrates
+   * to the PrepareSession + IssueSessionCredential two-phase flow below. Removed
+   * once every protocol enforces two-phase (see the target-identity roadmap).
+   *
    * @generated from rpc jumpgate.dataplane.v1.DataplaneService.SetupSession
    */
   setupSession: {
     methodKind: "unary";
     input: typeof SetupSessionRequestSchema;
     output: typeof SetupSessionResponseSchema;
+  },
+  /**
+   * PrepareSession redeems a session token and records the live session, returning
+   * the endpoint, protocol/recording policy, current endpoint revision, and the
+   * asset's active trust anchors — but NEVER a credential. The worker connects and
+   * authenticates the target ITSELF against these anchors, then calls
+   * IssueSessionCredential only after a successful identity match.
+   *
+   * @generated from rpc jumpgate.dataplane.v1.DataplaneService.PrepareSession
+   */
+  prepareSession: {
+    methodKind: "unary";
+    input: typeof PrepareSessionRequestSchema;
+    output: typeof PrepareSessionResponseSchema;
+  },
+  /**
+   * IssueSessionCredential releases the target credential for a prepared session,
+   * and ONLY after warden re-confirms the worker's observed target identity matches
+   * a current active anchor. The calling worker must own the prepared session and
+   * report the current endpoint revision. Any mismatch, stale revision, wrong
+   * worker, or revoked/absent anchor is refused without minting a credential.
+   *
+   * @generated from rpc jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential
+   */
+  issueSessionCredential: {
+    methodKind: "unary";
+    input: typeof IssueSessionCredentialRequestSchema;
+    output: typeof IssueSessionCredentialResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_dataplane_v1_dataplane, 0);

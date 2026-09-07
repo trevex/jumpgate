@@ -13,7 +13,27 @@ service DataplaneService {
 
   // SetupSession redeems a session token: warden re-checks authorization, records
   // the live session, and returns the target address + a JIT SSH certificate.
+  //
+  // DEPRECATED (migration window): SetupSession issues a credential in the same
+  // call, BEFORE the target's identity is verified. It survives only so existing
+  // ssh/postgres/rdp/k8s workers keep working until each protocol slice migrates
+  // to the PrepareSession + IssueSessionCredential two-phase flow below. Removed
+  // once every protocol enforces two-phase (see the target-identity roadmap).
   rpc SetupSession(SetupSessionRequest) returns (SetupSessionResponse) {}
+
+  // PrepareSession redeems a session token and records the live session, returning
+  // the endpoint, protocol/recording policy, current endpoint revision, and the
+  // asset's active trust anchors — but NEVER a credential. The worker connects and
+  // authenticates the target ITSELF against these anchors, then calls
+  // IssueSessionCredential only after a successful identity match.
+  rpc PrepareSession(PrepareSessionRequest) returns (PrepareSessionResponse) {}
+
+  // IssueSessionCredential releases the target credential for a prepared session,
+  // and ONLY after warden re-confirms the worker's observed target identity matches
+  // a current active anchor. The calling worker must own the prepared session and
+  // report the current endpoint revision. Any mismatch, stale revision, wrong
+  // worker, or revoked/absent anchor is refused without minting a credential.
+  rpc IssueSessionCredential(IssueSessionCredentialRequest) returns (IssueSessionCredentialResponse) {}
 }
 
 message WorkerMessage {
@@ -260,5 +280,70 @@ message SetupSessionResponse {
     bytes private_key = 7; // key auth: OpenSSH private key PEM
     bytes x509_certificate = 12;   // postgres mtls: leaf cert PEM (client key in x509_private_key)
     string pg_password = 14;       // postgres password auth
+  }
+}
+
+// PrepareSessionRequest opens the credential-free first phase of a session. It
+// carries the same admission inputs as SetupSession minus the target key (Kw),
+// which is only needed at credential-issue time.
+message PrepareSessionRequest {
+  string session_token = 1 [(buf.validate.field).string.min_len = 1];
+  string worker_id = 2 [(buf.validate.field).string.min_len = 1];
+  bytes client_ssh_public_key = 3; // Kc — cnf-bound for SSH CLI; empty for mode=web browser terminals
+  string login = 4 [(buf.validate.field).string.min_len = 1]; // requested target login
+}
+
+// SessionTrustAnchor is one current active trust anchor exposed to the worker so
+// it can authenticate the target itself. Public constraint material only — no
+// secrets, no credentials.
+message SessionTrustAnchor {
+  string id = 1;
+  string kind = 2; // ssh_host_key | ssh_host_ca | tls_leaf | tls_ca
+  string algorithm = 3;
+  string sha256_fingerprint = 4;
+  repeated string required_ssh_principals = 5;
+  repeated string required_dns_names = 6;
+  repeated string required_ip_addresses = 7;
+}
+
+// PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
+// worker must match — but NEVER a credential.
+message PrepareSessionResponse {
+  string session_id = 1; // token jti / live_sessions PK
+  int64 endpoint_revision = 2; // the asset's current endpoint revision at prepare time
+  string target_address = 3;
+  bool recording_required = 4;
+  string recording_object_key = 5;
+  string target_host_key = 6; // ssh: configured host-key pin (may be empty)
+  string target_server_ca = 7; // postgres: target server CA PEM (may be empty)
+  string default_database = 8; // postgres: default DB
+  string grant_id = 9; // authorizing JIT grant; empty = standing/unattributed
+  string login = 10; // the login/role warden authorized
+  repeated SessionTrustAnchor trust_anchors = 11; // current active anchors to match
+}
+
+// IssueSessionCredentialRequest releases the target credential for a prepared
+// session after the worker has matched the target's identity against one anchor.
+message IssueSessionCredentialRequest {
+  string session_id = 1 [(buf.validate.field).string.uuid = true];
+  string worker_id = 2 [(buf.validate.field).string.min_len = 1];
+  int64 endpoint_revision = 3 [(buf.validate.field).int64.gt = 0]; // revision the worker prepared against
+  string matched_anchor_id = 4 [(buf.validate.field).string.uuid = true]; // the anchor the worker matched
+  string observed_fingerprint = 5 [(buf.validate.field).string.min_len = 1]; // the target's observed identity fingerprint
+  bytes target_public_key = 6; // Kw — certified for the target (SSH ca path); empty for others
+}
+
+// IssueSessionCredentialResponse carries the credential oneof released only after
+// a successful identity match — the same shapes SetupSessionResponse returns.
+message IssueSessionCredentialResponse {
+  string session_id = 1;
+  string login = 2;
+  bytes x509_private_key = 3; // postgres mtls: client private key PEM (paired with x509_certificate)
+  oneof credential {
+    bytes ssh_certificate = 4; // ca: OpenSSH cert over Kw
+    string password = 5; // password auth (ssh/rdp)
+    bytes private_key = 6; // key auth: OpenSSH private key PEM
+    bytes x509_certificate = 7; // postgres mtls: leaf cert PEM
+    string pg_password = 8; // postgres password auth
   }
 }

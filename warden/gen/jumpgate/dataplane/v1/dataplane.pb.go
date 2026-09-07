@@ -2296,6 +2296,541 @@ func (*SetupSessionResponse_X509Certificate) isSetupSessionResponse_Credential()
 
 func (*SetupSessionResponse_PgPassword) isSetupSessionResponse_Credential() {}
 
+// PrepareSessionRequest opens the credential-free first phase of a session. It
+// carries the same admission inputs as SetupSession minus the target key (Kw),
+// which is only needed at credential-issue time.
+type PrepareSessionRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	WorkerId           string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"` // Kc — cnf-bound for SSH CLI; empty for mode=web browser terminals
+	Login              string                 `protobuf:"bytes,4,opt,name=login,proto3" json:"login,omitempty"`                                                         // requested target login
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PrepareSessionRequest) Reset() {
+	*x = PrepareSessionRequest{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareSessionRequest) ProtoMessage() {}
+
+func (x *PrepareSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareSessionRequest.ProtoReflect.Descriptor instead.
+func (*PrepareSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PrepareSessionRequest) GetSessionToken() string {
+	if x != nil {
+		return x.SessionToken
+	}
+	return ""
+}
+
+func (x *PrepareSessionRequest) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *PrepareSessionRequest) GetClientSshPublicKey() []byte {
+	if x != nil {
+		return x.ClientSshPublicKey
+	}
+	return nil
+}
+
+func (x *PrepareSessionRequest) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+// SessionTrustAnchor is one current active trust anchor exposed to the worker so
+// it can authenticate the target itself. Public constraint material only — no
+// secrets, no credentials.
+type SessionTrustAnchor struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Id                    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Kind                  string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"` // ssh_host_key | ssh_host_ca | tls_leaf | tls_ca
+	Algorithm             string                 `protobuf:"bytes,3,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	Sha256Fingerprint     string                 `protobuf:"bytes,4,opt,name=sha256_fingerprint,json=sha256Fingerprint,proto3" json:"sha256_fingerprint,omitempty"`
+	RequiredSshPrincipals []string               `protobuf:"bytes,5,rep,name=required_ssh_principals,json=requiredSshPrincipals,proto3" json:"required_ssh_principals,omitempty"`
+	RequiredDnsNames      []string               `protobuf:"bytes,6,rep,name=required_dns_names,json=requiredDnsNames,proto3" json:"required_dns_names,omitempty"`
+	RequiredIpAddresses   []string               `protobuf:"bytes,7,rep,name=required_ip_addresses,json=requiredIpAddresses,proto3" json:"required_ip_addresses,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *SessionTrustAnchor) Reset() {
+	*x = SessionTrustAnchor{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionTrustAnchor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionTrustAnchor) ProtoMessage() {}
+
+func (x *SessionTrustAnchor) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionTrustAnchor.ProtoReflect.Descriptor instead.
+func (*SessionTrustAnchor) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SessionTrustAnchor) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SessionTrustAnchor) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SessionTrustAnchor) GetAlgorithm() string {
+	if x != nil {
+		return x.Algorithm
+	}
+	return ""
+}
+
+func (x *SessionTrustAnchor) GetSha256Fingerprint() string {
+	if x != nil {
+		return x.Sha256Fingerprint
+	}
+	return ""
+}
+
+func (x *SessionTrustAnchor) GetRequiredSshPrincipals() []string {
+	if x != nil {
+		return x.RequiredSshPrincipals
+	}
+	return nil
+}
+
+func (x *SessionTrustAnchor) GetRequiredDnsNames() []string {
+	if x != nil {
+		return x.RequiredDnsNames
+	}
+	return nil
+}
+
+func (x *SessionTrustAnchor) GetRequiredIpAddresses() []string {
+	if x != nil {
+		return x.RequiredIpAddresses
+	}
+	return nil
+}
+
+// PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
+// worker must match — but NEVER a credential.
+type PrepareSessionResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	SessionId          string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                       // token jti / live_sessions PK
+	EndpointRevision   int64                  `protobuf:"varint,2,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"` // the asset's current endpoint revision at prepare time
+	TargetAddress      string                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`
+	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"`
+	TargetHostKey      string                 `protobuf:"bytes,6,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`     // ssh: configured host-key pin (may be empty)
+	TargetServerCa     string                 `protobuf:"bytes,7,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`  // postgres: target server CA PEM (may be empty)
+	DefaultDatabase    string                 `protobuf:"bytes,8,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"` // postgres: default DB
+	GrantId            string                 `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`                         // authorizing JIT grant; empty = standing/unattributed
+	Login              string                 `protobuf:"bytes,10,opt,name=login,proto3" json:"login,omitempty"`                                           // the login/role warden authorized
+	TrustAnchors       []*SessionTrustAnchor  `protobuf:"bytes,11,rep,name=trust_anchors,json=trustAnchors,proto3" json:"trust_anchors,omitempty"`         // current active anchors to match
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PrepareSessionResponse) Reset() {
+	*x = PrepareSessionResponse{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareSessionResponse) ProtoMessage() {}
+
+func (x *PrepareSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareSessionResponse.ProtoReflect.Descriptor instead.
+func (*PrepareSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PrepareSessionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetEndpointRevision() int64 {
+	if x != nil {
+		return x.EndpointRevision
+	}
+	return 0
+}
+
+func (x *PrepareSessionResponse) GetTargetAddress() string {
+	if x != nil {
+		return x.TargetAddress
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetRecordingRequired() bool {
+	if x != nil {
+		return x.RecordingRequired
+	}
+	return false
+}
+
+func (x *PrepareSessionResponse) GetRecordingObjectKey() string {
+	if x != nil {
+		return x.RecordingObjectKey
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetTargetHostKey() string {
+	if x != nil {
+		return x.TargetHostKey
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetTargetServerCa() string {
+	if x != nil {
+		return x.TargetServerCa
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetDefaultDatabase() string {
+	if x != nil {
+		return x.DefaultDatabase
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+func (x *PrepareSessionResponse) GetTrustAnchors() []*SessionTrustAnchor {
+	if x != nil {
+		return x.TrustAnchors
+	}
+	return nil
+}
+
+// IssueSessionCredentialRequest releases the target credential for a prepared
+// session after the worker has matched the target's identity against one anchor.
+type IssueSessionCredentialRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	SessionId           string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	WorkerId            string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	EndpointRevision    int64                  `protobuf:"varint,3,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"`         // revision the worker prepared against
+	MatchedAnchorId     string                 `protobuf:"bytes,4,opt,name=matched_anchor_id,json=matchedAnchorId,proto3" json:"matched_anchor_id,omitempty"`           // the anchor the worker matched
+	ObservedFingerprint string                 `protobuf:"bytes,5,opt,name=observed_fingerprint,json=observedFingerprint,proto3" json:"observed_fingerprint,omitempty"` // the target's observed identity fingerprint
+	TargetPublicKey     []byte                 `protobuf:"bytes,6,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`           // Kw — certified for the target (SSH ca path); empty for others
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *IssueSessionCredentialRequest) Reset() {
+	*x = IssueSessionCredentialRequest{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueSessionCredentialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueSessionCredentialRequest) ProtoMessage() {}
+
+func (x *IssueSessionCredentialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueSessionCredentialRequest.ProtoReflect.Descriptor instead.
+func (*IssueSessionCredentialRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *IssueSessionCredentialRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialRequest) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialRequest) GetEndpointRevision() int64 {
+	if x != nil {
+		return x.EndpointRevision
+	}
+	return 0
+}
+
+func (x *IssueSessionCredentialRequest) GetMatchedAnchorId() string {
+	if x != nil {
+		return x.MatchedAnchorId
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialRequest) GetObservedFingerprint() string {
+	if x != nil {
+		return x.ObservedFingerprint
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialRequest) GetTargetPublicKey() []byte {
+	if x != nil {
+		return x.TargetPublicKey
+	}
+	return nil
+}
+
+// IssueSessionCredentialResponse carries the credential oneof released only after
+// a successful identity match — the same shapes SetupSessionResponse returns.
+type IssueSessionCredentialResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Login          string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"`
+	X509PrivateKey []byte                 `protobuf:"bytes,3,opt,name=x509_private_key,json=x509PrivateKey,proto3" json:"x509_private_key,omitempty"` // postgres mtls: client private key PEM (paired with x509_certificate)
+	// Types that are valid to be assigned to Credential:
+	//
+	//	*IssueSessionCredentialResponse_SshCertificate
+	//	*IssueSessionCredentialResponse_Password
+	//	*IssueSessionCredentialResponse_PrivateKey
+	//	*IssueSessionCredentialResponse_X509Certificate
+	//	*IssueSessionCredentialResponse_PgPassword
+	Credential    isIssueSessionCredentialResponse_Credential `protobuf_oneof:"credential"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueSessionCredentialResponse) Reset() {
+	*x = IssueSessionCredentialResponse{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueSessionCredentialResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueSessionCredentialResponse) ProtoMessage() {}
+
+func (x *IssueSessionCredentialResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueSessionCredentialResponse.ProtoReflect.Descriptor instead.
+func (*IssueSessionCredentialResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *IssueSessionCredentialResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialResponse) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialResponse) GetX509PrivateKey() []byte {
+	if x != nil {
+		return x.X509PrivateKey
+	}
+	return nil
+}
+
+func (x *IssueSessionCredentialResponse) GetCredential() isIssueSessionCredentialResponse_Credential {
+	if x != nil {
+		return x.Credential
+	}
+	return nil
+}
+
+func (x *IssueSessionCredentialResponse) GetSshCertificate() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*IssueSessionCredentialResponse_SshCertificate); ok {
+			return x.SshCertificate
+		}
+	}
+	return nil
+}
+
+func (x *IssueSessionCredentialResponse) GetPassword() string {
+	if x != nil {
+		if x, ok := x.Credential.(*IssueSessionCredentialResponse_Password); ok {
+			return x.Password
+		}
+	}
+	return ""
+}
+
+func (x *IssueSessionCredentialResponse) GetPrivateKey() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*IssueSessionCredentialResponse_PrivateKey); ok {
+			return x.PrivateKey
+		}
+	}
+	return nil
+}
+
+func (x *IssueSessionCredentialResponse) GetX509Certificate() []byte {
+	if x != nil {
+		if x, ok := x.Credential.(*IssueSessionCredentialResponse_X509Certificate); ok {
+			return x.X509Certificate
+		}
+	}
+	return nil
+}
+
+func (x *IssueSessionCredentialResponse) GetPgPassword() string {
+	if x != nil {
+		if x, ok := x.Credential.(*IssueSessionCredentialResponse_PgPassword); ok {
+			return x.PgPassword
+		}
+	}
+	return ""
+}
+
+type isIssueSessionCredentialResponse_Credential interface {
+	isIssueSessionCredentialResponse_Credential()
+}
+
+type IssueSessionCredentialResponse_SshCertificate struct {
+	SshCertificate []byte `protobuf:"bytes,4,opt,name=ssh_certificate,json=sshCertificate,proto3,oneof"` // ca: OpenSSH cert over Kw
+}
+
+type IssueSessionCredentialResponse_Password struct {
+	Password string `protobuf:"bytes,5,opt,name=password,proto3,oneof"` // password auth (ssh/rdp)
+}
+
+type IssueSessionCredentialResponse_PrivateKey struct {
+	PrivateKey []byte `protobuf:"bytes,6,opt,name=private_key,json=privateKey,proto3,oneof"` // key auth: OpenSSH private key PEM
+}
+
+type IssueSessionCredentialResponse_X509Certificate struct {
+	X509Certificate []byte `protobuf:"bytes,7,opt,name=x509_certificate,json=x509Certificate,proto3,oneof"` // postgres mtls: leaf cert PEM
+}
+
+type IssueSessionCredentialResponse_PgPassword struct {
+	PgPassword string `protobuf:"bytes,8,opt,name=pg_password,json=pgPassword,proto3,oneof"` // postgres password auth
+}
+
+func (*IssueSessionCredentialResponse_SshCertificate) isIssueSessionCredentialResponse_Credential() {}
+
+func (*IssueSessionCredentialResponse_Password) isIssueSessionCredentialResponse_Credential() {}
+
+func (*IssueSessionCredentialResponse_PrivateKey) isIssueSessionCredentialResponse_Credential() {}
+
+func (*IssueSessionCredentialResponse_X509Certificate) isIssueSessionCredentialResponse_Credential() {
+}
+
+func (*IssueSessionCredentialResponse_PgPassword) isIssueSessionCredentialResponse_Credential() {}
+
 var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
@@ -2474,6 +3009,55 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\vpg_password\x18\x0e \x01(\tH\x00R\n" +
 	"pgPasswordB\f\n" +
 	"\n" +
+	"credential\"\xbd\x01\n" +
+	"\x15PrepareSessionRequest\x12,\n" +
+	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
+	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
+	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x12\x1d\n" +
+	"\x05login\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\x9f\x02\n" +
+	"\x12SessionTrustAnchor\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1c\n" +
+	"\talgorithm\x18\x03 \x01(\tR\talgorithm\x12-\n" +
+	"\x12sha256_fingerprint\x18\x04 \x01(\tR\x11sha256Fingerprint\x126\n" +
+	"\x17required_ssh_principals\x18\x05 \x03(\tR\x15requiredSshPrincipals\x12,\n" +
+	"\x12required_dns_names\x18\x06 \x03(\tR\x10requiredDnsNames\x122\n" +
+	"\x15required_ip_addresses\x18\a \x03(\tR\x13requiredIpAddresses\"\xea\x03\n" +
+	"\x16PrepareSessionResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12+\n" +
+	"\x11endpoint_revision\x18\x02 \x01(\x03R\x10endpointRevision\x12%\n" +
+	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\x12-\n" +
+	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
+	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
+	"\x0ftarget_host_key\x18\x06 \x01(\tR\rtargetHostKey\x12(\n" +
+	"\x10target_server_ca\x18\a \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x10default_database\x18\b \x01(\tR\x0fdefaultDatabase\x12\x19\n" +
+	"\bgrant_id\x18\t \x01(\tR\agrantId\x12\x14\n" +
+	"\x05login\x18\n" +
+	" \x01(\tR\x05login\x12N\n" +
+	"\rtrust_anchors\x18\v \x03(\v2).jumpgate.dataplane.v1.SessionTrustAnchorR\ftrustAnchors\"\xc2\x02\n" +
+	"\x1dIssueSessionCredentialRequest\x12'\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12$\n" +
+	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x124\n" +
+	"\x11endpoint_revision\x18\x03 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x10endpointRevision\x124\n" +
+	"\x11matched_anchor_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0fmatchedAnchorId\x12:\n" +
+	"\x14observed_fingerprint\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x13observedFingerprint\x12*\n" +
+	"\x11target_public_key\x18\x06 \x01(\fR\x0ftargetPublicKey\"\xc9\x02\n" +
+	"\x1eIssueSessionCredentialResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05login\x18\x02 \x01(\tR\x05login\x12(\n" +
+	"\x10x509_private_key\x18\x03 \x01(\fR\x0ex509PrivateKey\x12)\n" +
+	"\x0fssh_certificate\x18\x04 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
+	"\bpassword\x18\x05 \x01(\tH\x00R\bpassword\x12!\n" +
+	"\vprivate_key\x18\x06 \x01(\fH\x00R\n" +
+	"privateKey\x12+\n" +
+	"\x10x509_certificate\x18\a \x01(\fH\x00R\x0fx509Certificate\x12!\n" +
+	"\vpg_password\x18\b \x01(\tH\x00R\n" +
+	"pgPasswordB\f\n" +
+	"\n" +
 	"credential*\x9b\x01\n" +
 	"\rProbeProtocol\x12\x1e\n" +
 	"\x1aPROBE_PROTOCOL_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -2511,10 +3095,12 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"(PROBE_EVIDENCE_KIND_SSH_HOST_CERTIFICATE\x10\x02\x12 \n" +
 	"\x1cPROBE_EVIDENCE_KIND_TLS_LEAF\x10\x03\x12(\n" +
 	"$PROBE_EVIDENCE_KIND_TLS_INTERMEDIATE\x10\x04\x12*\n" +
-	"&PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT\x10\x052\xdf\x01\n" +
+	"&PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT\x10\x052\xda\x03\n" +
 	"\x10DataplaneService\x12`\n" +
 	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12i\n" +
-	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
+	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00\x12o\n" +
+	"\x0ePrepareSession\x12,.jumpgate.dataplane.v1.PrepareSessionRequest\x1a-.jumpgate.dataplane.v1.PrepareSessionResponse\"\x00\x12\x87\x01\n" +
+	"\x16IssueSessionCredential\x124.jumpgate.dataplane.v1.IssueSessionCredentialRequest\x1a5.jumpgate.dataplane.v1.IssueSessionCredentialResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
 
 var (
 	file_jumpgate_dataplane_v1_dataplane_proto_rawDescOnce sync.Once
@@ -2529,35 +3115,40 @@ func file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP() []byte {
 }
 
 var file_jumpgate_dataplane_v1_dataplane_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
-	(ProbeProtocol)(0),              // 0: jumpgate.dataplane.v1.ProbeProtocol
-	(ProbeOutcome)(0),               // 1: jumpgate.dataplane.v1.ProbeOutcome
-	(ProbeFailureCategory)(0),       // 2: jumpgate.dataplane.v1.ProbeFailureCategory
-	(ProbeEvidenceKind)(0),          // 3: jumpgate.dataplane.v1.ProbeEvidenceKind
-	(*WorkerMessage)(nil),           // 4: jumpgate.dataplane.v1.WorkerMessage
-	(*AdvertiseTunnels)(nil),        // 5: jumpgate.dataplane.v1.AdvertiseTunnels
-	(*Register)(nil),                // 6: jumpgate.dataplane.v1.Register
-	(*Heartbeat)(nil),               // 7: jumpgate.dataplane.v1.Heartbeat
-	(*SessionEnded)(nil),            // 8: jumpgate.dataplane.v1.SessionEnded
-	(*RecordingInfo)(nil),           // 9: jumpgate.dataplane.v1.RecordingInfo
-	(*ServerMessage)(nil),           // 10: jumpgate.dataplane.v1.ServerMessage
-	(*RegisterAck)(nil),             // 11: jumpgate.dataplane.v1.RegisterAck
-	(*Teardown)(nil),                // 12: jumpgate.dataplane.v1.Teardown
-	(*ProbeLimits)(nil),             // 13: jumpgate.dataplane.v1.ProbeLimits
-	(*SSHProbeEndpoint)(nil),        // 14: jumpgate.dataplane.v1.SSHProbeEndpoint
-	(*PostgresProbeEndpoint)(nil),   // 15: jumpgate.dataplane.v1.PostgresProbeEndpoint
-	(*RDPProbeEndpoint)(nil),        // 16: jumpgate.dataplane.v1.RDPProbeEndpoint
-	(*KubernetesProbeEndpoint)(nil), // 17: jumpgate.dataplane.v1.KubernetesProbeEndpoint
-	(*ProbeAssignment)(nil),         // 18: jumpgate.dataplane.v1.ProbeAssignment
-	(*ProbeDisplayExtension)(nil),   // 19: jumpgate.dataplane.v1.ProbeDisplayExtension
-	(*ProbeEvidence)(nil),           // 20: jumpgate.dataplane.v1.ProbeEvidence
-	(*ProbeSSHMetadata)(nil),        // 21: jumpgate.dataplane.v1.ProbeSSHMetadata
-	(*ProbeTLSMetadata)(nil),        // 22: jumpgate.dataplane.v1.ProbeTLSMetadata
-	(*ProbeKubernetesMetadata)(nil), // 23: jumpgate.dataplane.v1.ProbeKubernetesMetadata
-	(*ProbeResult)(nil),             // 24: jumpgate.dataplane.v1.ProbeResult
-	(*SetupSessionRequest)(nil),     // 25: jumpgate.dataplane.v1.SetupSessionRequest
-	(*SetupSessionResponse)(nil),    // 26: jumpgate.dataplane.v1.SetupSessionResponse
+	(ProbeProtocol)(0),                     // 0: jumpgate.dataplane.v1.ProbeProtocol
+	(ProbeOutcome)(0),                      // 1: jumpgate.dataplane.v1.ProbeOutcome
+	(ProbeFailureCategory)(0),              // 2: jumpgate.dataplane.v1.ProbeFailureCategory
+	(ProbeEvidenceKind)(0),                 // 3: jumpgate.dataplane.v1.ProbeEvidenceKind
+	(*WorkerMessage)(nil),                  // 4: jumpgate.dataplane.v1.WorkerMessage
+	(*AdvertiseTunnels)(nil),               // 5: jumpgate.dataplane.v1.AdvertiseTunnels
+	(*Register)(nil),                       // 6: jumpgate.dataplane.v1.Register
+	(*Heartbeat)(nil),                      // 7: jumpgate.dataplane.v1.Heartbeat
+	(*SessionEnded)(nil),                   // 8: jumpgate.dataplane.v1.SessionEnded
+	(*RecordingInfo)(nil),                  // 9: jumpgate.dataplane.v1.RecordingInfo
+	(*ServerMessage)(nil),                  // 10: jumpgate.dataplane.v1.ServerMessage
+	(*RegisterAck)(nil),                    // 11: jumpgate.dataplane.v1.RegisterAck
+	(*Teardown)(nil),                       // 12: jumpgate.dataplane.v1.Teardown
+	(*ProbeLimits)(nil),                    // 13: jumpgate.dataplane.v1.ProbeLimits
+	(*SSHProbeEndpoint)(nil),               // 14: jumpgate.dataplane.v1.SSHProbeEndpoint
+	(*PostgresProbeEndpoint)(nil),          // 15: jumpgate.dataplane.v1.PostgresProbeEndpoint
+	(*RDPProbeEndpoint)(nil),               // 16: jumpgate.dataplane.v1.RDPProbeEndpoint
+	(*KubernetesProbeEndpoint)(nil),        // 17: jumpgate.dataplane.v1.KubernetesProbeEndpoint
+	(*ProbeAssignment)(nil),                // 18: jumpgate.dataplane.v1.ProbeAssignment
+	(*ProbeDisplayExtension)(nil),          // 19: jumpgate.dataplane.v1.ProbeDisplayExtension
+	(*ProbeEvidence)(nil),                  // 20: jumpgate.dataplane.v1.ProbeEvidence
+	(*ProbeSSHMetadata)(nil),               // 21: jumpgate.dataplane.v1.ProbeSSHMetadata
+	(*ProbeTLSMetadata)(nil),               // 22: jumpgate.dataplane.v1.ProbeTLSMetadata
+	(*ProbeKubernetesMetadata)(nil),        // 23: jumpgate.dataplane.v1.ProbeKubernetesMetadata
+	(*ProbeResult)(nil),                    // 24: jumpgate.dataplane.v1.ProbeResult
+	(*SetupSessionRequest)(nil),            // 25: jumpgate.dataplane.v1.SetupSessionRequest
+	(*SetupSessionResponse)(nil),           // 26: jumpgate.dataplane.v1.SetupSessionResponse
+	(*PrepareSessionRequest)(nil),          // 27: jumpgate.dataplane.v1.PrepareSessionRequest
+	(*SessionTrustAnchor)(nil),             // 28: jumpgate.dataplane.v1.SessionTrustAnchor
+	(*PrepareSessionResponse)(nil),         // 29: jumpgate.dataplane.v1.PrepareSessionResponse
+	(*IssueSessionCredentialRequest)(nil),  // 30: jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	(*IssueSessionCredentialResponse)(nil), // 31: jumpgate.dataplane.v1.IssueSessionCredentialResponse
 }
 var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	6,  // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
@@ -2584,15 +3175,20 @@ var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	21, // 21: jumpgate.dataplane.v1.ProbeResult.ssh:type_name -> jumpgate.dataplane.v1.ProbeSSHMetadata
 	22, // 22: jumpgate.dataplane.v1.ProbeResult.tls:type_name -> jumpgate.dataplane.v1.ProbeTLSMetadata
 	23, // 23: jumpgate.dataplane.v1.ProbeResult.kubernetes:type_name -> jumpgate.dataplane.v1.ProbeKubernetesMetadata
-	4,  // 24: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
-	25, // 25: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
-	10, // 26: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
-	26, // 27: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
-	26, // [26:28] is the sub-list for method output_type
-	24, // [24:26] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	28, // 24: jumpgate.dataplane.v1.PrepareSessionResponse.trust_anchors:type_name -> jumpgate.dataplane.v1.SessionTrustAnchor
+	4,  // 25: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
+	25, // 26: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
+	27, // 27: jumpgate.dataplane.v1.DataplaneService.PrepareSession:input_type -> jumpgate.dataplane.v1.PrepareSessionRequest
+	30, // 28: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:input_type -> jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	10, // 29: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
+	26, // 30: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
+	29, // 31: jumpgate.dataplane.v1.DataplaneService.PrepareSession:output_type -> jumpgate.dataplane.v1.PrepareSessionResponse
+	31, // 32: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:output_type -> jumpgate.dataplane.v1.IssueSessionCredentialResponse
+	29, // [29:33] is the sub-list for method output_type
+	25, // [25:29] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_dataplane_v1_dataplane_proto_init() }
@@ -2630,13 +3226,20 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*SetupSessionResponse_X509Certificate)(nil),
 		(*SetupSessionResponse_PgPassword)(nil),
 	}
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27].OneofWrappers = []any{
+		(*IssueSessionCredentialResponse_SshCertificate)(nil),
+		(*IssueSessionCredentialResponse_Password)(nil),
+		(*IssueSessionCredentialResponse_PrivateKey)(nil),
+		(*IssueSessionCredentialResponse_X509Certificate)(nil),
+		(*IssueSessionCredentialResponse_PgPassword)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc), len(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   23,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

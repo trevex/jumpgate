@@ -211,7 +211,7 @@ func setup(t *testing.T) *fixture {
 	workerPub := newSSHKeypair(t)
 
 	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
-	svc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, audit.New(pool), time.Hour)
+	svc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, nil, audit.New(pool), time.Hour)
 
 	return &fixture{
 		pool: pool, q: q, svc: svc, ctx: ctx,

@@ -98,7 +98,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	arSvc := accessrequest.NewService(pool, auditLog, approvals.New(pool), authz.NewRoleResolver(pool), terminator, 8*time.Hour)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, "", false, time.Minute, dataplane.NewRegistry())
-	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, nil, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	// The user (bearer) services and the mesh (Dataplane/Gateway) services share one

@@ -57,7 +57,7 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 	auditLog := audit.New(p)
 	broker := vault.NewBroker(p, sealer, authorizer, auditLog)
 	verifier := sessiontoken.NewVerifier(pub)
-	setupSvc := dataplane.NewSetupService(p, verifier, authorizer, broker, auditLog, time.Hour)
+	setupSvc := dataplane.NewSetupService(p, verifier, authorizer, broker, nil, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
@@ -242,7 +242,7 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
-	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, auditLog, time.Hour)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, nil, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()

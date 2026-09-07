@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
 
 // workerIdentity returns the authoritative worker id from the request's mesh
@@ -105,6 +106,109 @@ func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[datapla
 		// No dedicated proto oneof for rdp: the password rides the generic
 		// Password arm, same as ssh-password.
 		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
+	default:
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// PrepareSession is the credential-free first phase of the two-phase session flow:
+// it redeems the token, records the live session, and returns the endpoint, policy,
+// current endpoint revision, and the asset's active trust anchors — never a
+// credential. Domain sentinels map to Connect codes here.
+func (s *Handler) PrepareSession(ctx context.Context, req *connect.Request[dataplanev1.PrepareSessionRequest]) (*connect.Response[dataplanev1.PrepareSessionResponse], error) {
+	workerID, err := workerIdentity(ctx, req.Msg.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.setup.Prepare(ctx, req.Msg.SessionToken, workerID, req.Msg.Login, req.Msg.ClientSshPublicKey)
+	switch {
+	case errors.Is(err, ErrBadToken), errors.Is(err, ErrKeyMismatch):
+		return nil, connect.NewError(connect.CodeUnauthenticated, err)
+	case errors.Is(err, ErrNotAuthorized):
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, ErrReplay):
+		return nil, connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, ErrNoTarget):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, ErrIdentityUnverified):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp := &dataplanev1.PrepareSessionResponse{
+		SessionId:          out.SessionID,
+		EndpointRevision:   out.EndpointRevision,
+		TargetAddress:      out.TargetAddress,
+		RecordingRequired:  out.RecordingRequired,
+		RecordingObjectKey: out.RecordingObjectKey,
+		TargetHostKey:      out.TargetHostKey,
+		TargetServerCa:     out.TargetServerCA,
+		DefaultDatabase:    out.DefaultDatabase,
+		GrantId:            out.GrantID,
+		Login:              out.Login,
+	}
+	for _, a := range out.Anchors {
+		resp.TrustAnchors = append(resp.TrustAnchors, &dataplanev1.SessionTrustAnchor{
+			Id:                    a.ID.String(),
+			Kind:                  string(a.Kind),
+			Algorithm:             a.Algorithm,
+			Sha256Fingerprint:     a.Fingerprint,
+			RequiredSshPrincipals: a.RequiredSSHPrincipals,
+			RequiredDnsNames:      a.RequiredDNSNames,
+			RequiredIpAddresses:   a.RequiredIPAddresses,
+		})
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// IssueSessionCredential is the second phase: it releases the target credential for
+// a prepared session ONLY after warden re-confirms the worker's observed target
+// identity matches a current active anchor. Verification failures map to Connect
+// codes without minting anything.
+func (s *Handler) IssueSessionCredential(ctx context.Context, req *connect.Request[dataplanev1.IssueSessionCredentialRequest]) (*connect.Response[dataplanev1.IssueSessionCredentialResponse], error) {
+	workerID, err := workerIdentity(ctx, req.Msg.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.setup.IssueCredential(ctx, req.Msg.SessionId, workerID, req.Msg.EndpointRevision, req.Msg.MatchedAnchorId, req.Msg.ObservedFingerprint, req.Msg.TargetPublicKey)
+	switch {
+	case errors.Is(err, ErrNoPreparedSession):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, ErrWrongWorker):
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, targetidentity.ErrIdentityMismatch):
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, targetidentity.ErrStaleRevision),
+		errors.Is(err, targetidentity.ErrNoCurrentAnchors),
+		errors.Is(err, targetidentity.ErrAnchorNotFound),
+		errors.Is(err, targetidentity.ErrAssetNotFound):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, targetidentity.ErrCAAnchorSessionUnsupported):
+		return nil, connect.NewError(connect.CodeUnimplemented, err)
+	case errors.Is(err, ErrIdentityUnverified):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	resp := &dataplanev1.IssueSessionCredentialResponse{
+		SessionId:      out.SessionID,
+		Login:          out.Login,
+		X509PrivateKey: out.X509PrivateKey,
+	}
+	switch out.CredentialKind {
+	case "ssh-cert":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_SshCertificate{SshCertificate: out.SSHCertificate}
+	case "ssh-password":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_Password{Password: out.Password}
+	case "ssh-key":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_PrivateKey{PrivateKey: out.PrivateKey}
+	case "x509":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_X509Certificate{X509Certificate: out.X509Certificate}
+	case "pg-password":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_PgPassword{PgPassword: out.Password}
+	case "rdp-password":
+		resp.Credential = &dataplanev1.IssueSessionCredentialResponse_Password{Password: out.Password}
 	default:
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
 	}
