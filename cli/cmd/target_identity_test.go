@@ -31,6 +31,13 @@ type stubTargetIdentity struct {
 	observations []*targetidentityv1.Observation
 	anchors      []*targetidentityv1.TrustAnchor
 
+	// Per-asset overrides used by the bulk migration-report/probe tests. When a
+	// map is non-nil its per-asset value wins over the single-asset defaults.
+	statusByAsset  map[string]targetidentityv1.VerificationStatus
+	anchorsByAsset map[string][]*targetidentityv1.TrustAnchor
+	// startedAssets records the asset ids StartProbe was called for, in order.
+	startedAssets []string
+
 	gotStartProbe      *targetidentityv1.StartProbeRequest
 	gotApproveEvidence *targetidentityv1.ApproveEvidenceRequest
 	gotApproveCA       *targetidentityv1.ApproveCARequest
@@ -48,6 +55,7 @@ const (
 
 func (s *stubTargetIdentity) StartProbe(_ context.Context, req *connect.Request[targetidentityv1.StartProbeRequest]) (*connect.Response[targetidentityv1.StartProbeResponse], error) {
 	s.gotStartProbe = req.Msg
+	s.startedAssets = append(s.startedAssets, req.Msg.GetAssetId())
 	return connect.NewResponse(&targetidentityv1.StartProbeResponse{Probe: &targetidentityv1.ProbeJob{
 		Id:               tiProbeID,
 		AssetId:          req.Msg.GetAssetId(),
@@ -98,8 +106,20 @@ func (s *stubTargetIdentity) ApproveCA(_ context.Context, req *connect.Request[t
 	}), nil
 }
 
-func (s *stubTargetIdentity) ListTrustAnchors(_ context.Context, _ *connect.Request[targetidentityv1.ListTrustAnchorsRequest]) (*connect.Response[targetidentityv1.ListTrustAnchorsResponse], error) {
-	return connect.NewResponse(&targetidentityv1.ListTrustAnchorsResponse{TrustAnchors: s.anchors}), nil
+func (s *stubTargetIdentity) ListTrustAnchors(_ context.Context, req *connect.Request[targetidentityv1.ListTrustAnchorsRequest]) (*connect.Response[targetidentityv1.ListTrustAnchorsResponse], error) {
+	anchors := s.anchors
+	if s.anchorsByAsset != nil {
+		anchors = s.anchorsByAsset[req.Msg.GetAssetId()]
+	}
+	return connect.NewResponse(&targetidentityv1.ListTrustAnchorsResponse{TrustAnchors: anchors}), nil
+}
+
+func (s *stubTargetIdentity) GetVerificationStatus(_ context.Context, req *connect.Request[targetidentityv1.GetVerificationStatusRequest]) (*connect.Response[targetidentityv1.GetVerificationStatusResponse], error) {
+	status := targetidentityv1.VerificationStatus_VERIFICATION_STATUS_VERIFIED
+	if s.statusByAsset != nil {
+		status = s.statusByAsset[req.Msg.GetAssetId()]
+	}
+	return connect.NewResponse(&targetidentityv1.GetVerificationStatusResponse{Status: status}), nil
 }
 
 func (s *stubTargetIdentity) RevokeTrustAnchor(_ context.Context, req *connect.Request[targetidentityv1.RevokeTrustAnchorRequest]) (*connect.Response[targetidentityv1.RevokeTrustAnchorResponse], error) {

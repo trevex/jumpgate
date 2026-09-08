@@ -1,34 +1,29 @@
-name: ci
+name: nightly
+# The kind-cluster black-box e2e and the Playwright identity-rotation scenarios
+# are slow and need docker/kind, so they run on a schedule (and on demand) rather
+# than on every push. Per-push checks live in ci.yml.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC nightly
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # One job per independent slice, run in parallel. Each slice's commands are
-  # single-sourced in the Makefile (ci-*, lint); this workflow only wires the
-  # Nix devshell and picks the target. The kind-cluster + Playwright scenarios do
-  # NOT run here — see nightly.yml.
-  check:
-    runs-on: ubuntu-latest
+  e2e:
+    # Separate jobs (separate runners) so each owns its own kind cluster.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: go, target: ci-go }
-          - { name: rust, target: ci-rust }
-          - { name: rdp-rust, target: ci-rdp }
-          - { name: web, target: ci-web }
-          - { name: generation, target: ci-gen }
-          - { name: lint, target: lint }
+          - { name: cluster-e2e, target: e2e-cluster }
+          - { name: ui-e2e, target: ui-e2e }
     name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Fast, single-user Nix install that pairs with cache-nix-action below.
       - uses: nixbuild/nix-quick-install-action@v35
         with:
           nix_conf: |
@@ -36,8 +31,6 @@ jobs:
             keep-outputs = true
             keep-derivations = true
 
-      # Persist /nix/store across runs so the devshell is restored from the
-      # GitHub Actions cache instead of re-fetched from cache.nixos.org.
       - name: Cache the Nix store
         uses: nix-community/cache-nix-action@v7
         with:
@@ -49,8 +42,6 @@ jobs:
           purge-last-accessed: 604800
           purge-primary-key: never
 
-      # Build the devshell into a profile — registers a GC root so the cache
-      # step's garbage collection keeps the whole toolchain closure.
       - name: Build devshell
         run: nix develop --profile "$RUNNER_TEMP/devshell" -c true
 

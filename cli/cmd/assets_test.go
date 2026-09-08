@@ -32,6 +32,7 @@ type stubAssets struct {
 	gotCreateAsset           *catalogv1.CreateAssetRequest
 	gotUpdateAssetConfig     *catalogv1.UpdateAssetConfigRequest
 	gotCreateEnrollmentToken *enrollmentv1.CreateEnrollmentTokenRequest
+	gotListAssets            *catalogv1.ListAssetsRequest
 
 	// enrollmentToken/enrollmentExpiresAt, when set, override the default values
 	// CreateEnrollmentToken returns.
@@ -98,7 +99,8 @@ func (s *stubAssets) CreateEnrollmentToken(_ context.Context, req *connect.Reque
 	return connect.NewResponse(&enrollmentv1.CreateEnrollmentTokenResponse{Token: token, ExpiresAt: exp}), nil
 }
 
-func (s *stubAssets) ListAssets(_ context.Context, _ *connect.Request[catalogv1.ListAssetsRequest]) (*connect.Response[catalogv1.ListAssetsResponse], error) {
+func (s *stubAssets) ListAssets(_ context.Context, req *connect.Request[catalogv1.ListAssetsRequest]) (*connect.Response[catalogv1.ListAssetsResponse], error) {
+	s.gotListAssets = req.Msg
 	return connect.NewResponse(&catalogv1.ListAssetsResponse{Assets: s.listed}), nil
 }
 

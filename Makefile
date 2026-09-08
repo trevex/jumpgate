@@ -11,6 +11,7 @@ KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 ZENSICAL_IMAGE ?= zensical/zensical:latest
 
 .PHONY: help gen wasm sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
+        ci-go ci-rust ci-rdp ci-web ci-gen \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build docs docs-serve
 
@@ -50,11 +51,15 @@ build: ## Build all binaries
 	cd cli && go build ./...
 	cargo build --workspace
 
-test: ## Run Go + Rust tests
+test: ## Run all Go + Rust + web unit tests
 	cd warden && go test ./...
 	cd cli && go test ./...
 	cd workers/pg-proxy && go test ./...
+	cd workers/k8s-agent && go test ./...
+	cd workers/k8s-broker && go test ./...
 	cargo nextest run --workspace
+	cargo test --manifest-path workers/rdp-proxy/Cargo.toml
+	pnpm --dir web test
 
 bench: ## Run the API/DB benchmark suite (opt-in; needs devshell postgres tooling)
 	cd warden && go test -tags bench -run '^$$' -bench . -benchmem ./internal/bench/...
@@ -79,7 +84,32 @@ web: ## Install + typecheck + build the SPA
 	pnpm --dir web typecheck
 	pnpm --dir web build
 
-ci: gen build test lint web ## Full CI pipeline
+ci: gen build lint web test ## Full CI pipeline (web installs deps before `test` runs web unit tests)
+
+# ── CI slices (one per parallel CI job; single-sourced here) ──────────────────
+ci-go: ## CI slice: every Go module's unit tests
+	cd warden && go test ./...
+	cd cli && go test ./...
+	cd workers/pg-proxy && go test ./...
+	cd workers/k8s-agent && go test ./...
+	cd workers/k8s-broker && go test ./...
+
+ci-rust: ## CI slice: root Rust workspace tests
+	cargo nextest run --workspace
+
+ci-rdp: ## CI slice: RDP proxy (its own cargo workspace) tests
+	cargo test --manifest-path workers/rdp-proxy/Cargo.toml
+
+ci-web: ## CI slice: web install + typecheck + build + unit tests
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web typecheck
+	pnpm --dir web build
+	pnpm --dir web test
+
+ci-gen: ## CI slice: regenerate code (buf + sqlc) and fail on any drift
+	buf generate
+	$(MAKE) sqlc
+	git diff --exit-code
 
 kind-images: ## Build the container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .
