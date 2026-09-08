@@ -61,17 +61,25 @@ jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
   --login deploy \
-  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
   --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk \
   -o json      # "path" = demo-box.demo
 ```
 
 An SSH session now fails closed unless the target's identity is verified. Onboarding queues a
-credential-free probe of the target. `--host-key` pins the expected host key and
-`--expected-fingerprint` approves that exact key once the probe observes it, so trust is
-established without prompting. Later, `assets identity list` shows the approved anchor and
-`assets probe` re-observes the target. Changing an asset's target address increments its
-endpoint revision, which invalidates the old anchor and queues a fresh probe.
+credential-free probe of the target. `--wait` runs that probe inline, and
+`--expected-fingerprint` approves the observed host key only if it matches this exact
+SHA-256 fingerprint, so trust is established without a prompt (and refused if the target
+presents anything else). Later, `assets identity list demo-box.demo` shows the approved
+anchor and `assets probe demo-box.demo` re-observes the target. Changing an asset's target
+address increments its endpoint revision, which invalidates the old anchor and queues a
+fresh probe.
+
+Two other approval styles exist. `--auto-approve` trusts whatever the probe observes
+(explicit trust-on-first-use — convenient, but it only proves the identity has not changed
+since, not that it is the right target). `--trusted-ca-file ca.pem --expected-dns-name
+host.internal` pins a certificate authority plus a required name instead of one exact key,
+which is how a fleet behind a private CA is onboarded. For an asset already in the catalog,
+`assets identity approve <asset>` takes the same flags after an `assets probe`.
 
 A CA target only accepts a certificate whose principal it has been told to trust. Provision the
 target's `AuthorizedPrincipalsFile` with the host-scoped principal `<login>@<path>` — the asset
@@ -92,7 +100,6 @@ by its DNS path once it exists in the catalog:
 jumpgate --context admin assets ssh create password-box \
   --folder demo \
   --target ssh-target-password.default.svc.cluster.local:22 \
-  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
   --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk
 printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set password-box.demo \
   --login demo --kind password --password-stdin
@@ -101,7 +108,6 @@ printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set pas
 jumpgate --context admin assets ssh create key-box \
   --folder demo \
   --target ssh-target-key.default.svc.cluster.local:22 \
-  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
   --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk
 jumpgate --context admin assets ssh login set key-box.demo \
   --login demo --kind key --key-file test/env/testworkload/demo_key
@@ -249,8 +255,17 @@ the `demo` folder and alice from the SSH acts.
 jumpgate --context admin assets pg create pg-box \
   --folder demo \
   --target pg-target.default.svc.cluster.local:5432 \
-  --database appdb -o json           # "path" = pg-box.demo
+  --database appdb \
+  --wait --auto-approve -o json      # "path" = pg-box.demo
 ```
+
+Postgres verifies the target's identity the same way SSH does, over TLS: `--wait` runs a
+credential-free TLS observe, and here `--auto-approve` trusts the presented certificate
+(explicit trust-on-first-use, fine for the demo). A production onboard would pin the
+target instead — `--trusted-ca-file pg-ca.pem --expected-dns-name
+pg-target.default.svc.cluster.local` for a CA with a required name, or
+`--expected-fingerprint SHA256:…` for an exact leaf. No session is issued until an anchor
+matches.
 
 Add DB-role logins. A postgres **login** is a target DB role plus how the worker authenticates
 it: `password` (a stored secret injected worker-side) or `mtls` (the broker mints a short-lived
@@ -377,6 +392,23 @@ kubectl rollout status deploy/jumpgate-k8s-agent --timeout=120s
 The agent dials the broker; the broker advertises the cluster's tunnel to warden. `prod.demo`
 is now reachable. (`test/env/testworkload/k8s-agent.yaml` is the demo's agent workload — in a
 real target cluster you install the agent's chart with `--set enrollmentToken=<TOKEN>` instead.)
+
+### Approve the cluster's identity
+
+Kubernetes is verified like every other kind, but agent-driven: the agent probes its own API
+server's TLS identity and reports it, and warden ties that observation to the asset through
+the agent's mesh certificate — a broker cannot forge it. No session is issued until an
+operator approves the observed identity. For the demo, trust what the agent observed:
+
+```bash
+jumpgate --context admin assets identity approve prod.demo --auto-approve
+jumpgate --context admin assets verify-report --folder demo   # prod.demo now reads "verified"
+```
+
+A production onboard would pin the API server instead, with `--trusted-ca-file` and
+`--expected-dns-name`. If the API server's certificate later changes, `prod.demo` flips to
+`identity_changed`: new sessions are blocked until an operator re-approves, while any session
+already running keeps going.
 
 ### Map a jumpgate group to a cluster role
 

@@ -47,6 +47,18 @@ live session: per-login SSH auth (`ca` / `password` / `key`) with host-scoped ce
 principals, and per-role Postgres auth (`mtls` client cert / `password`). Kubernetes
 agents get a mesh identity through single-use enrollment tokens.
 
+Target identity verification. No target credential is released until the target's
+identity matches an approved trust anchor. Session setup is two-phase: `PrepareSession`
+admits the session and returns anchors, the worker observes the target credential-free,
+and `IssueSessionCredential` mints a credential only after warden re-confirms a current
+anchor match. SSH matches an observed host key by fingerprint; Postgres and RDP validate
+a credential-free TLS observe against a leaf fingerprint or a CA with required names;
+Kubernetes is agent-driven and gated on a verified status. Trust anchors live in
+`target_trust_anchors`, established by a probe-then-approve lifecycle
+(`TargetIdentityService`; `assets probe` / `assets identity` / `assets verify-report`),
+with additive multi-anchor rotation, endpoint-revision invalidation, and off-by-default
+periodic re-probing with a notification outbox.
+
 SSH access. A Rust gateway (external TLS → HTTP CONNECT → offline PASETO verify →
 least-loaded worker → mesh mTLS with SPIFFE pinning → bidirectional pump); an ssh-proxy
 worker (russh, two-hop key-separated credential injection, real teardown). SSH sessions
@@ -113,8 +125,15 @@ cascade.
 
 Carried forward deliberately, to be addressed when their area opens:
 
-- Target SSH host-key pinning — plumbed (`ssh_asset_config.host_public_key`) but not
-  yet enforced.
+- Web CA-anchor approval form — the console approves an exact observed identity and
+  revokes anchors; approving a CA anchor with name constraints from the browser is
+  driven by the CLI (`assets identity approve --trusted-ca-file`) for now.
+- Worker-submitted session-mismatch observations — a target-identity mismatch seen at
+  session time blocks that session; durably submitting it back to warden as a
+  first-class observation for alerting is a follow-up.
+- SSH host-certificate probing — an `ssh_host_ca` anchor cannot be matched at session
+  time, because the SSH library does not surface the target's host certificate during
+  the proxied handshake; such anchors fail closed until this ceiling is lifted.
 - Inline Postgres per-statement step-up — the `db:read` / `db:write` / `db:ddl` tiers
   are defined for the model; per-statement `SET ROLE` enforcement is not built.
 - In-browser SQL console — Postgres is reachable through the loopback CLI proxy; a

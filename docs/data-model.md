@@ -8,7 +8,12 @@ columns. The schema is defined by the goose migrations embedded in the binary
 schema, `0002_postgres_asset.sql` adds the Postgres asset tables,
 `0003_agent_enrollment.sql` adds Kubernetes agent enrollment,
 `0004_authz_mgmt_visibility_fns.sql` adds the management-visibility SQL functions,
-and `0005_rdp_asset.sql` adds the RDP asset tables.
+`0005_rdp_asset.sql` adds the RDP asset tables, `0006_target_identity.sql` adds the
+target-identity probe, observation, evidence, and trust-anchor tables,
+`0007`–`0009_migrate_{ssh,postgres,rdp}_trust.sql` carry pre-existing pinned trust
+forward into approved anchors, `0010_target_identity_operations.sql` adds the
+periodic-probe schedule and the notification outbox, and
+`0011_drop_legacy_trust_fields.sql` drops the superseded inline trust columns.
 
 The relationship rows are tuple-shaped (subject → relation → object), so the whole
 model could be mirrored into an external relationship engine (OpenFGA) without
@@ -39,6 +44,10 @@ erDiagram
     assets ||--o| rdp_asset_config : "rdp target"
     assets ||--o{ rdp_asset_login : "login · kind"
     assets ||--o{ agent_enrollment_tokens : "k8s enrollment"
+    assets ||--o{ target_trust_anchors : "approved identity · per revision"
+    assets ||--o{ target_probe_jobs : "identity probes"
+    assets ||--o{ target_identity_observations : "observed identity"
+    assets ||--o| target_identity_probe_schedules : "periodic probe policy"
     assets ||--o{ asset_secrets : "sealed"
     ssh_asset_login }o--|| asset_secrets : "secret_id · same-asset FK"
     postgres_asset_login }o--o| asset_secrets : "secret_id · same-asset FK"
@@ -65,7 +74,17 @@ erDiagram
         uuid id PK
         uuid folder_id FK
         text kind "ssh / postgres / k8s / rdp"
+        bigint endpoint_revision "bumped on target-address change"
         jsonb labels
+    }
+    target_trust_anchors {
+        uuid id PK
+        uuid asset_id FK
+        bigint endpoint_revision
+        text kind "ssh_host_key / ssh_host_ca / tls_ca / tls_leaf"
+        text sha256_fingerprint
+        text source "manual / expected / tofu / migration"
+        timestamptz revoked_at "active if null"
     }
     access_grants {
         uuid role_id FK
@@ -145,6 +164,7 @@ the recursive CTEs assume this forest shape. Names are `^[a-z0-9_-]+$`.
 | `folder_id` | → `folders(id)`, NOT NULL (`ON DELETE CASCADE`) — every asset lives in exactly one folder |
 | `name` | `^[a-z0-9_-]+$` |
 | `kind` | text, NOT NULL DEFAULT `'ssh'`, CHECK in (`ssh`, `postgres`, `k8s`, `rdp`). Selects the asset's typed credential config; `assets` stays the generic authz anchor (roles, bindings, grants, and policies reference `assets.id` protocol-agnostically). An `ssh` asset has `ssh_asset_config` plus `ssh_asset_login`; a `postgres` asset has `postgres_asset_config` plus `postgres_asset_login`; an `rdp` asset has `rdp_asset_config` plus `rdp_asset_login`; a `k8s` asset has no connection config (the agent enrolls). |
+| `endpoint_revision` | bigint NOT NULL DEFAULT 1, CHECK `> 0`. Identifies the current target endpoint. A target-address change increments it, which drops the trust anchors bound to the old revision out of the current set; a login, secret, or metadata change leaves it. See [Target identity](#target-identity). |
 | `labels` | jsonb (default `{}`), GIN-indexed |
 
 ### `catalog_names` — sibling-uniqueness registry
@@ -173,7 +193,10 @@ per-login auth lives in `ssh_asset_login`.
 |---|---|
 | `asset_id` | uuid PK → `assets(id)` (`ON DELETE CASCADE`) |
 | `target_address` | text NOT NULL (default `''`) — the host:port the worker dials |
-| `host_public_key` | text NOT NULL (default `''`) — the target's SSH host key (plumbed for host-key pinning; not yet enforced) |
+
+Target trust is not an inline column here. The worker verifies the observed host key
+against an approved `target_trust_anchor` at session time; see
+[Target identity](#target-identity).
 
 ### `ssh_asset_login` — per-login auth facts
 
@@ -197,8 +220,11 @@ Holds how to reach the database; the per-role auth lives in `postgres_asset_logi
 |---|---|
 | `asset_id` | uuid PK → `assets(id)` (`ON DELETE CASCADE`) |
 | `target_address` | text NOT NULL (default `''`) — the host:port the worker dials |
-| `target_server_ca` | text NOT NULL (default `''`) — PEM of the target server's CA for verify-full TLS; empty means encryption without a pin |
 | `default_database` | text NOT NULL (default `''`) — the DB used when the client omits one |
+
+The target's TLS trust is not an inline column. The worker validates the presented
+chain against an approved `target_trust_anchor` at session time; see
+[Target identity](#target-identity).
 
 ### `postgres_asset_login` — per-role auth facts
 
@@ -223,7 +249,10 @@ how to reach the target; the per-login auth lives in `rdp_asset_login`.
 |---|---|
 | `asset_id` | uuid PK → `assets(id)` (`ON DELETE CASCADE`) |
 | `target_address` | text NOT NULL (default `''`) — the host:port the rdp-proxy worker dials |
-| `target_server_ca` | text NOT NULL (default `''`) — PEM of the target's TLS CA/cert; set verifies the target, empty requires TLS without a pin |
+
+The target's TLS trust is not an inline column. The worker validates the presented
+chain against an approved `target_trust_anchor` at session time; see
+[Target identity](#target-identity).
 
 ### `rdp_asset_login` — per-login auth facts
 
@@ -498,6 +527,96 @@ orphan GC can detect unreachable workers.
 | `worker_id` | text PK |
 | `last_seen_at` | timestamptz — updated on each heartbeat |
 
+## Target identity
+
+The tables behind [target identity verification](security.md#target-identity-verification).
+Added in `0006_target_identity.sql` and `0010_target_identity_operations.sql`. The
+observation, evidence, and validation-fact rows are immutable once written (enforced by
+triggers); the only deletion is the cascade an asset delete performs. See
+[architecture.md](architecture.md#target-identity-verification).
+
+### `target_trust_anchors` — approved target identities
+
+The set an operator has approved to trust for an asset at an endpoint revision. A
+session releases no credential unless the observed identity matches a current active
+anchor. Approval is additive, so several active anchors coexist across a rotation. An
+anchor is current when its `endpoint_revision` equals the asset's, it is not revoked,
+and it is within any `not_before`/`expires_at` window (index `target_trust_anchors_active`).
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK; also part of the composite key `(id, asset_id, endpoint_revision)` |
+| `asset_id` | → `assets(id)` (`ON DELETE CASCADE`) |
+| `endpoint_revision` | the revision this anchor was approved at; matched against `assets.endpoint_revision` |
+| `kind` | CHECK in (`ssh_host_key`, `ssh_host_ca`, `tls_ca`, `tls_leaf`). `ssh_host_ca` cannot be matched at session time (a documented ceiling) |
+| `algorithm` / `sha256_fingerprint` / `public_material` | the trusted key or certificate: algorithm, its SHA-256 fingerprint, and the non-secret public PEM |
+| `required_ssh_principals` / `required_dns_names` / `required_ip_addresses` | `text[]` name constraints; a `tls_ca` anchor requires a non-empty name set (an empty set never matches) |
+| `source` | CHECK in (`manual`, `expected`, `tofu`, `migration`) — how the anchor was approved; `tofu` is explicit trust-on-first-use |
+| `observation_id` | → the observation this anchor was approved from (nullable) |
+| `approved_by` / `approved_at` | the approving operator and time |
+| `not_before` / `expires_at` | optional validity window |
+| `revoked_at` / `revoked_by` / `revocation_reason` | set on revoke; a revoked anchor is never current |
+
+### `target_probe_jobs` / `target_probe_attempts` — the probe queue
+
+A `target_probe_job` is one queued credential-free identity probe for an asset at an
+endpoint revision, with a `reason` (`onboarding`, `manual`, `periodic`,
+`endpoint_changed`, `session_mismatch`) and a `state` (`queued`, `leased`, `succeeded`,
+`failed`, `superseded`, `cancelled`). A worker leases a job with a hashed lease token
+and a lease expiry; partial unique indexes allow at most one active onboarding/periodic
+job per asset revision. Each lease is a `target_probe_attempt` row, capturing the worker,
+outcome, and any `failure_category`. Both carry a `failure_category` from a stable
+sanitized set (for example `connection_refused`, `name_mismatch`, `insecure_downgrade`,
+`target_identity_changed`).
+
+### `target_identity_observations` / `target_identity_evidence` — what was observed
+
+An observation is one immutable record of an identity a worker saw, from a probe or a
+`session_mismatch`, at an asset endpoint revision, with an `outcome` (`succeeded`,
+`failed`, `mismatch`, `stale`) and a `validation_state`. Its `target_identity_evidence`
+rows are the observed material: a `kind` (`ssh_host_key`, `ssh_host_certificate`,
+`tls_leaf`, `tls_intermediate`, `tls_presented_root`), the fingerprint and public
+material, and certificate facts (subject, issuer, SANs, validity). A
+`target_identity_validation_fact` binds an observed leaf to the exact approved anchor it
+validated against.
+
+### `target_identity_probe_schedules` — periodic-probe policy
+
+One optional row per asset opts it into continuous monitoring. Periodic probing is off
+by default, both globally and per asset; without a row (or with `enabled=false`) an asset
+is never periodically probed.
+
+| Column | Notes |
+|---|---|
+| `asset_id` | uuid PK → `assets(id)` (`ON DELETE CASCADE`) |
+| `probe_interval_seconds` | how often to re-probe (whole seconds, CHECK `> 0`) |
+| `freshness_seconds` | optional freshness ceiling on a verification (nullable) |
+| `enabled` | boolean, default true |
+
+### `target_identity_mutation_requests` — idempotency keys
+
+A durable idempotency ledger for the approve/revoke mutations. A client-supplied
+`request_id` binds one operation to one actor, asset, and canonical payload hash;
+`response` stores the original logical result for exact replay on a retry.
+
+### `notification_outbox` — durable identity-monitoring events
+
+A transactional outbox for identity-monitoring events, drained best-effort by a
+replaceable adapter. Producers enqueue inside the transaction that observed the durable
+state. Delivery never mutates authorization or identity state, so a stuck outbox cannot
+block or weaken enforcement.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid PK |
+| `seq` | bigint, GENERATED ALWAYS AS IDENTITY (delivery order) |
+| `idempotency_key` | text, unique — producer de-dup and the downstream de-dup key |
+| `kind` | CHECK in (`identity_mismatch`, `repeated_probe_failure`, `approaching_expiry`) |
+| `subject` / `payload` | the event subject and a jsonb body |
+| `attempts` / `max_attempts` / `next_delivery_at` | retry accounting (`max_attempts` default 8) |
+| `state` | CHECK in (`pending`, `delivered`, `failed`); `delivered`/`failed` are terminal |
+| `last_error` / `created_at` / `delivered_at` | delivery bookkeeping |
+
 ## Audit
 
 ### `audit_log` — hash-chained append-only log
@@ -600,6 +719,7 @@ imperative cleanup, the schema leans on `ON DELETE CASCADE` foreign keys so a si
 | `access_requests.asset_id` | requests against the asset dropped |
 | `ssh_asset_config`, `ssh_asset_login`, `postgres_asset_config`, `postgres_asset_login`, `rdp_asset_config`, `rdp_asset_login` | SSH, Postgres, and RDP config, logins dropped |
 | `asset_secrets.asset_id`, `catalog_names.asset_id`, `agent_enrollment_tokens.asset_id` | secrets, the name-registry row, and enrollment tokens dropped |
+| `target_trust_anchors`, `target_probe_jobs`, `target_identity_observations` (and their evidence and validation facts), `target_identity_probe_schedules` | target-identity history dropped — the immutable observation/evidence rows are removed by a `BEFORE DELETE` trigger on `assets` that performs this one deliberate cleanup |
 
 `DeleteAsset` first tears down the asset's live sessions (an out-of-band side effect
 the database cannot express), then issues the delete and lets these FKs do the rest;

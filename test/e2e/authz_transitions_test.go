@@ -12,6 +12,12 @@ import (
 // default-open regressions and "the permission wasn't actually the thing that
 // enabled it" bugs that a steady-state test (TestAuthzVisibility) cannot.
 //
+// It also proves the target-identity gate is load-bearing and separate from
+// authorization: an authorized asset whose target identity is not verified refuses a
+// session (verify-before-issue), and a session becomes possible only once an operator
+// approves the observed identity. Losing that trust — a revoked anchor, the analog of
+// a detected identity change — blocks NEW sessions again until it is re-approved.
+//
 // The subtests are ordered and share state: box visibility is established by the
 // binding arc, the pending request by the policy arc is approved by the approver
 // arc.
@@ -41,6 +47,8 @@ func TestAuthzGrantTransitions(t *testing.T) {
 		if folderID == "" {
 			t.Fatal("no folder id")
 		}
+		// Created WITHOUT an identity-approval flag, so the asset starts unverified:
+		// arc 1 proves a session is refused until its target identity is approved.
 		assetOut := e.asActor(t, "admin", "assets", "ssh", "create", boxName,
 			"--folder", folder, "--target", "ssh-target.default.svc.cluster.local:22", "--login", "deploy", "-o", "json")
 		assetPath := jsonField(assetOut, "path")
@@ -70,20 +78,57 @@ func TestAuthzGrantTransitions(t *testing.T) {
 		e.login(t, "tr-mgr", mgrEmail, danaPass)
 	})
 
-	// Arc 1: a standing binding turns an invisible asset into a usable one.
-	t.Run("standing_binding_enables_visibility_and_connect", func(t *testing.T) {
+	// Arc 1: a standing binding makes an invisible asset visible, and an approved
+	// target identity is what finally lets a session open. Both gates are proven
+	// load-bearing: after the binding the user can SEE the asset but still cannot
+	// connect (identity unverified), and only approving the identity lets the same
+	// connect succeed.
+	t.Run("standing_binding_and_verified_identity_enable_connect", func(t *testing.T) {
 		// Before: no binding → the asset is invisible and unreachable.
 		e.asActorFails(t, "tr-user", "assets", "get", boxPath)
 		e.asActorFails(t, "tr-user", "connect", "deploy@"+boxPath, "--ca", e.meshCA)
 
-		// Grant: bind the deploy role to the user's group at the asset.
+		// Grant 1: bind the deploy role to the user's group at the asset.
 		e.asActor(t, "admin", "bindings", "create", "--role", deployRoleRef, "--group", grp, "--asset", boxPath)
 
-		// After: the same user now sees the asset AND can open a session on it.
+		// Now visible — but the target identity is unverified, so a session still
+		// fails closed (verify-before-issue: no credential without a matched anchor).
 		e.asActor(t, "tr-user", "assets", "get", boxPath)
+		e.asActorFails(t, "tr-user", "connect", "deploy@"+boxPath, "--ca", e.meshCA)
+
+		// Grant 2: probe the target credential-free, then approve the observed host
+		// key as a trust anchor.
+		e.asActor(t, "admin", "assets", "probe", boxPath)
+		e.asActor(t, "admin", "assets", "identity", "approve", boxPath, "--auto-approve")
+
+		// After: with both the binding and a verified identity, the same user can
+		// open a session on the asset.
 		out := e.connectWithStdin(t, "tr-user", "deploy@"+boxPath, "echo "+marker+"; exit\n")
 		if !strings.Contains(out, marker) {
-			t.Fatalf("connect after binding did not run the command:\n%s", out)
+			t.Fatalf("connect after binding and identity approval did not run the command:\n%s", out)
+		}
+	})
+
+	// Arc 1b: losing the trust anchor (a revoke — the operator response to a detected
+	// identity change) blocks NEW sessions again, and re-approving restores them.
+	t.Run("identity_anchor_revocation_blocks_new_sessions", func(t *testing.T) {
+		anchorID := jsonID(e.asActor(t, "admin", "assets", "identity", "list", boxPath, "-o", "json"))
+		if anchorID == "" {
+			t.Skip("no trust anchor from arc 1")
+		}
+
+		// Revoke: the asset has no current anchor, so it is unverified again.
+		e.asActor(t, "admin", "assets", "identity", "revoke", boxPath, anchorID, "--reason", "rotation")
+
+		// A new session is refused even though the binding is unchanged.
+		e.asActorFails(t, "tr-user", "connect", "deploy@"+boxPath, "--ca", e.meshCA)
+
+		// Re-approving the observed identity restores sessions.
+		e.asActor(t, "admin", "assets", "probe", boxPath)
+		e.asActor(t, "admin", "assets", "identity", "approve", boxPath, "--auto-approve")
+		out := e.connectWithStdin(t, "tr-user", "deploy@"+boxPath, "echo "+marker+"; exit\n")
+		if !strings.Contains(out, marker) {
+			t.Fatalf("connect after re-approving the identity did not run the command:\n%s", out)
 		}
 	})
 

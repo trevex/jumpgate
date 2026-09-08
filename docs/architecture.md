@@ -76,10 +76,11 @@ The API is split into focused ConnectRPC services.
 | `AccessRequestService` | the JIT runtime: request, approve, deny, cancel, revoke, grants, approval resolution |
 | `VaultService` | CA init and public material, mesh CA and cert issuance, session-signing-key init, asset secrets (metadata only on read) |
 | `EnrollmentService` | mint a single-use Kubernetes agent enrollment token; sign an agent's CSR into a mesh cert (`SignAgentCert`) |
+| `TargetIdentityService` | onboard and monitor target identity: `StartProbe`, `GetProbe`, `ListProbes`, `ListObservations`, `ApproveEvidence`, `ApproveCA`, `RejectObservation`, `ListTrustAnchors`, `RevokeTrustAnchor`, `GetVerificationStatus` |
 | `RecordingService` | list, get, and presigned-download of session recordings (SSH, Postgres, Kubernetes, RDP) |
 | `SessionService` | `CreateSession` (SSH), `CreatePostgresSession`, `CreateKubernetesSession`, `CreateWebSession`, `CreateRDPSession` — each mints a data-plane admission token for an authorized (user, asset) |
 | `GatewayService` | `WatchWorkers` roster stream and `GetSessionVerificationKey` for the gateway |
-| `Dataplane` (mesh) | worker registration/heartbeat stream and `SetupSession` |
+| `Dataplane` (mesh) | worker registration/heartbeat stream, the two-phase `PrepareSession` and `IssueSessionCredential`, and target-identity probe and observation reporting |
 | `HealthService` | liveness |
 
 ### Authorization is capability-only
@@ -163,10 +164,14 @@ connection and runs an SSH server on it. The exchange is two-hop and key-separat
 
 - The client authenticates to the worker with its ephemeral key **Kc**, whose
   fingerprint is bound into the session token. The worker's publickey-auth callback
-  calls `SetupSession`, which verifies that binding, re-checks the caller's live
-  entitlement, records the session, and returns a credential for the target hop over
-  a fresh key **Kw** the worker generates per session.
-- The worker then opens an SSH client to the target and proxies the channels
+  calls `PrepareSession`, which verifies that binding, re-checks the caller's live
+  entitlement, records the session, and returns the target's approved trust anchors —
+  but no credential yet.
+- The worker opens the target hop and observes the host key at key exchange, without
+  authenticating. It calls `IssueSessionCredential` with the observed fingerprint;
+  warden matches it against a current anchor and only then mints a credential for the
+  target hop over a fresh key **Kw** the worker generates per session.
+- The worker then completes authentication to the target and proxies the channels
   (pty/shell/exec, window-resize, exit status) between the two hops.
 
 Because the worker holds Kw's private key, it — not the client — authenticates the
@@ -194,19 +199,25 @@ client-key binding, since a libpq client presents no ephemeral key). The client
 attaches through a loopback CLI proxy (see [Client](#client)); the gateway tunnels
 each connection to the worker over mesh mTLS.
 
-On each connection the worker reads the pgwire startup packet, calls `SetupSession`
+On each connection the worker reads the pgwire startup packet, calls `PrepareSession`
 to redeem the token, and validates that the startup `user` equals the authorized
-role. warden mints the target credential through the [CredentialBroker](#vault--credentialbroker)
-by the login's kind:
+role. `PrepareSession` returns the target's approved trust anchors but no credential.
+The worker first opens a credential-free TLS connection to the target, captures the
+presented certificate chain without authenticating, and stops before the pgwire
+startup packet. It validates that chain against an approved anchor: an exact
+`tls_leaf` fingerprint, or a `tls_ca` chain that verifies to the anchor's CA material
+and carries a required DNS or IP name. Only then does it call
+`IssueSessionCredential`, and warden mints the target credential through the
+[CredentialBroker](#vault--credentialbroker) by the login's kind:
 
 - `password` returns the vault-sealed stored password.
 - `mtls` mints a short-lived X.509 client certificate whose common name is the DB
   role, signed by the X.509 client CA. No secret is stored.
 
-The worker then dials the real Postgres target over TLS (no plaintext downgrade),
-verifying the server against a configured CA when one is pinned, and splices pgwire
-bytes. Every Postgres session is recorded — there is no record-exempt path for
-Postgres (see [Audit and recording](#audit--recording)).
+The worker then re-dials the real Postgres target over TLS (no plaintext downgrade),
+re-authenticating the server against the matched anchor, and splices pgwire bytes.
+Every Postgres session is recorded — there is no record-exempt path for Postgres
+(see [Audit and recording](#audit--recording)).
 
 ### Kubernetes — `k8s-agent` + `k8s-broker` (Go)
 
@@ -244,18 +255,72 @@ cookie-authenticated ticket the same way `CreateWebSession` does for the browser
 SSH terminal. The browser opens that ticket as a `GET /rdp` WebSocket through the
 gateway to the rdp-proxy worker.
 
-The worker redeems the ticket with `SetupSession` (no client key to bind, since the
-mesh tunnel is already authenticated; the login comes from the ticket), re-checks
-the caller's `rdp:login:<login>` entitlement, and mints the target credential —
-today always a vault-sealed password — through the CredentialBroker. It then runs
-the full IronRDP handshake against the target on the worker side, so the password
-never reaches the browser. Once connected, the worker relays graphics PDUs to the
+The worker redeems the ticket with `PrepareSession` (no client key to bind, since the
+mesh tunnel is already authenticated; the login comes from the ticket) and re-checks
+the caller's `rdp:login:<login>` entitlement. Like Postgres, it does a credential-free
+TLS observe of the target and matches the presented chain against an approved
+`tls_leaf` or `tls_ca` anchor before calling `IssueSessionCredential`; warden then
+mints the target credential — today always a vault-sealed password — through the
+CredentialBroker. It runs the full IronRDP handshake against the target on the worker
+side, so the password never reaches the browser. Once connected, the worker relays graphics PDUs to the
 browser and input PDUs back; a `jumpgate-rdp` WASM module in the browser renders
 the stream onto a `<canvas>`, so no plugin or native client is involved. Every RDP
 session is recorded — there is no record-exempt path for RDP (see
 [Audit and recording](#audit--recording)).
 
 Planned workers: further databases.
+
+### Target identity verification
+
+No target credential is released until the target's identity is verified against an
+approved trust anchor. This is the second gate on every session, alongside
+authorization. It closes the man-in-the-middle window: a proxy that authenticates to
+a target it cannot itself identify would hand a real credential to an impostor.
+
+Verification is enforced by the two-phase session flow. `PrepareSession` redeems the
+admission token, records the live session, and returns the asset's active trust
+anchors — never a credential. The worker then observes the target's identity without
+authenticating, matches it locally against an anchor, and calls
+`IssueSessionCredential` with the observed fingerprint. warden re-confirms the match
+against a current anchor before it mints anything. On any mismatch warden deletes the
+live-session row, writes a `session.aborted` audit event, and never reaches the
+broker, so no credential is minted.
+
+The identity a worker observes is protocol-specific:
+
+- SSH observes the host key at key exchange, credential-free, and matches it by
+  SHA-256 fingerprint against an approved `ssh_host_key` anchor. Matching is
+  constant-time. A host certificate anchor (`ssh_host_ca`) cannot be verified at
+  session time, because the SSH library does not surface the target's host
+  certificate during the proxied handshake; such an anchor fails closed.
+- Postgres and RDP do a credential-free TLS observe: complete the handshake capturing
+  the presented chain, without verifying it, and stop before any protocol data. The
+  chain is matched against an exact `tls_leaf` fingerprint or a `tls_ca` anchor (the
+  chain verifies to the anchor's CA material and carries a required DNS or IP name).
+  The credentialed dial then re-authenticates the server against the matched anchor.
+- Kubernetes is agent-driven. The agent probes its own API server's TLS identity and
+  reports it. warden re-derives which asset the observation belongs to from the
+  agent's mesh-cert SPIFFE identity (`spiffe://jumpgate/agent/<asset_id>`), so a
+  broker cannot forge it, and a Kubernetes session is gated at mint time on a
+  `verified` status rather than through the two-phase worker flow.
+
+Trust anchors live in `target_trust_anchors` and are established by a probe-then-
+approve lifecycle. Onboarding an asset queues a credential-free probe. The probe's
+observation is recorded immutably, and an operator approves it into an anchor:
+an exact key or leaf fingerprint, or a CA with required name constraints. Approval is
+explicit and additive, so several active anchors can coexist during a key rotation.
+Explicit trust-on-first-use is available, where the operator accepts whatever the
+probe observed, but it proves only continuity, not identity. Each asset carries an
+`endpoint_revision`. Changing the target address increments the revision, which drops
+the anchors bound to the old revision out of the current set and queues a fresh probe;
+a login, secret, or metadata change leaves the revision and its anchors untouched. A
+mismatch blocks new sessions but does not tear down established ones. The
+`TargetIdentityService` API and the `assets probe` / `assets identity` /
+`assets verify-report` CLI drive the whole lifecycle. Periodic re-probing (off by
+default) and a durable notification outbox provide continuous monitoring without ever
+mutating authorization state. See
+[security.md](security.md#target-identity-verification) and
+[access-model.md](access-model.md).
 
 ### Shared mesh library — `jumpgate-mesh` (Rust)
 
@@ -317,15 +382,20 @@ browser SSH terminal.
 2. The gateway verifies the token offline and routes the connection: an SSH or
    Postgres CONNECT to a pinned worker over mesh mTLS, or a Kubernetes request to
    the broker named by `broker_id`.
-3. `SetupSession` (worker → warden, over the mesh) re-verifies the token, re-checks
-   authorization, writes the `live_sessions` ledger row and the audit event in one
-   transaction, then mints the target-hop credential — so a credential is never
-   issued for a session that was not just re-authorized. warden derives the
-   authoritative `worker_id` from the worker's mesh-cert SPIFFE SAN. (Kubernetes
-   sessions authorize at mint time and record per request rather than through
-   `SetupSession`.)
-4. The worker injects the credential, opens the target hop, records the session, and
-   proxies bytes until either side closes or warden signals teardown.
+3. `PrepareSession` (worker → warden, over the mesh) re-verifies the token, re-checks
+   authorization, and writes the `live_sessions` ledger row and the audit event in one
+   transaction. It returns the asset's active trust anchors, but no credential. warden
+   derives the authoritative `worker_id` from the worker's mesh-cert SPIFFE SAN.
+4. The worker observes the target's identity credential-free, matches it against an
+   anchor, and calls `IssueSessionCredential` with the observed fingerprint. warden
+   re-confirms the match against a current anchor and only then mints the target-hop
+   credential — so a credential is never issued for a session that was not just
+   re-authorized and whose target was not just verified. On a mismatch warden aborts
+   the session and mints nothing.
+5. The worker injects the credential, completes the target hop, records the session,
+   and proxies bytes until either side closes or warden signals teardown. (Kubernetes
+   sessions authorize and verify identity at mint time and record per request rather
+   than through this two-phase worker flow.)
 
 ## Access model
 
@@ -369,8 +439,9 @@ N-of-M approval, duration clamping, and revocation are detailed in
 ## Vault / CredentialBroker
 
 The vault turns "this user is authorized" into "here is the short-lived credential
-to reach the target." It is wired into every live session: `SetupSession` calls the
-broker to mint the target-hop credential after re-authorizing the session.
+to reach the target." It is wired into every live session: `IssueSessionCredential`
+calls the broker to mint the target-hop credential, after warden has re-authorized the
+session and re-confirmed the target's identity against a current anchor.
 
 ### Envelope encryption — the `secrets` package
 
@@ -429,7 +500,7 @@ For Postgres, the broker enforces `db:login:<role>` and mints an X.509 client ce
 `rdp:login:<login>` the same way SSH enforces `ssh:login:<login>` — the asset's
 configured logins intersected with the caller's held capabilities — and returns
 the stored password; RDP logins are password-only today, with no `ca`/`mtls` arm.
-`ValidUntil` is supplied by the caller: `SetupSession` passes the granting
+`ValidUntil` is supplied by the caller: `IssueSessionCredential` passes the granting
 authorization's remaining lifetime, so a credential never outlives the access
 behind it. Every successful `Issue` appends a `credential.issued` audit event.
 
@@ -544,7 +615,9 @@ Every security-relevant event is written to an append-only, hash-chained audit l
 and is detectable (`Verify`). The JIT workflow emits `access_request.created` /
 `.approved` / `.denied` / `.cancelled` and `access_grant.activated` / `.revoked` /
 `.expired`; the vault emits `credential.issued`; the data plane emits
-`session.terminated`, `recording.completed` / `.failed`, and `recording.accessed`.
+`session.terminated`, `session.aborted` (a target-identity mismatch at credential
+issuance, before any credential is minted), `recording.completed` / `.failed`, and
+`recording.accessed`.
 
 Most events are written through a transactional outbox. Each service `Enqueue`s its
 event into `audit_outbox` inside the same domain transaction (atomic with the state

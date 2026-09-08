@@ -165,7 +165,15 @@ async function onboardAsset(
   }
 
   await wizard.getByRole("button", { name: "Onboard asset" }).click();
-  await expect(wizard).toBeHidden();
+
+  // The wizard does not close on submit: it swaps to the target-identity
+  // verification step. No session can open until the target's identity is approved,
+  // so drive the probe to approval here (the seeded targets are reachable, so the
+  // credential-free probe succeeds and the approve action appears).
+  const verify = page.getByRole("dialog", { name: "Verify target identity" });
+  await expect(verify).toBeVisible();
+  await verify.getByRole("button", { name: "Approve identity & finish" }).click();
+  await expect(verify).toBeHidden();
   await expect(assetLeaf(page, opts.name).first()).toBeVisible();
 }
 
@@ -617,6 +625,10 @@ test("walkthrough 3 — delegated administration", async ({
       "catalog:asset:create",
       "catalog:asset:read",
       "catalog:asset:update",
+      // A folder admin who onboards assets must also verify their identity.
+      "catalog:asset:probe",
+      "catalog:asset:identity:read",
+      "catalog:asset:identity:approve",
       "access:role:create",
       "access:role:read",
       "access:binding:create",

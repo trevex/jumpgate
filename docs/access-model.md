@@ -351,6 +351,32 @@ Postgres and Kubernetes follow the same idea with their own vocabularies:
 one important way — wildcards grant no groups — covered in
 [capabilities.md](capabilities.md#kubernetes-holding-a-group-is-the-gate-and--is-not-cluster-admin).
 
+## Target identity — approving what a session trusts
+
+Authorization decides who may reach an asset. A separate decision governs what the
+proxy will trust as that asset. No target credential is released until the target's
+identity matches an approved trust anchor. Establishing that trust is its own
+authority, distinct from both the JIT request flow and the credential vault.
+
+Three capabilities gate it, checked at the asset scope and cascading down folders like
+every management capability:
+
+- `catalog:asset:probe` — queue a credential-free identity probe.
+- `catalog:asset:identity:read` — read probes, observations, anchors, and status.
+- `catalog:asset:identity:approve` — approve an observed identity into an anchor,
+  reject an observation, or revoke an anchor.
+
+Approval authority is deliberately separate from holding the asset's secret
+(`vault:secret:*`) and from the data-plane connect capabilities. A delegate may be
+trusted to decide which host key or certificate an asset presents without being trusted
+to read its stored password, and the reverse. Approval is explicit and additive: an
+operator approves one observation at a time, and several active anchors can coexist so a
+key rotation is staged rather than a break. Trust-on-first-use — approving whatever the
+probe observed — is supported but is a weaker assertion than pinning an exact
+fingerprint or a CA with a required name; it is an explicit choice, never a default. See
+[capabilities.md](capabilities.md) and
+[security.md](security.md#target-identity-verification).
+
 ## Onboarding & the empty-catalog consequence
 
 Because requestability is a positive predicate (a held role or a named subject), a

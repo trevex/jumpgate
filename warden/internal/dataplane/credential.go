@@ -19,8 +19,7 @@ import (
 // endpoint + trust anchors WITHOUT a credential, and IssueSessionCredential releases
 // the credential only after warden re-verifies the worker's observed target identity
 // against a current active anchor. The shared front-half steps (resolveSession,
-// recordLiveSession, issueInternal) and the migration-window Setup compat shim live
-// in setup.go because both paths use them.
+// recordLiveSession, issueInternal) live in setup.go because both phases use them.
 
 // PrepareResult is the credential-free outcome of PrepareSession: the endpoint,
 // policy, current endpoint revision, and the active trust anchors the worker must

@@ -125,8 +125,10 @@ shared gateway. The k8s-agent deploys into target clusters, not the jumpgate cha
 - Migrations are goose SQL files in `warden/internal/postgres/migrate/migrations`,
   embedded in the binary and applied on startup (`migrate.Up`). The schema is currently
   `0001_schema.sql` (core) plus additive migrations for the Postgres asset tables,
-  Kubernetes agent enrollment, the management-visibility functions, and the RDP asset
-  tables. While jumpgate is
+  Kubernetes agent enrollment, the management-visibility functions, the RDP asset
+  tables, and the target-identity tables (probes, observations, evidence, trust anchors,
+  the periodic-probe schedule, and the notification outbox), followed by the one-shot
+  legacy-trust migration that drops the superseded inline trust columns. While jumpgate is
   pre-production, migrations may be squashed rather than carrying long upgrade history;
   after a squash, reset local data with `make ui-dev-reset`, since existing databases are
   not upgrade-compatible.
@@ -269,6 +271,16 @@ sees a single same-origin app and cookie auth works over plain HTTP (warden runs
 `JUMPGATE_COOKIE_INSECURE=true` here). All state lives under `.devdata/` (gitignored) and
 persists across restarts; `make ui-dev-reset` wipes it. Run it inside the Nix devshell.
 The dev admin account is seeded by the bootstrap step: `admin@dev.local` / `devpassword123`.
+
+A target-identity probe needs a connected data-plane worker and a reachable target, so
+it runs in the kind environment rather than the `ui-dev` stack. Bring up the cluster
+(`make kind-up` or `make kind-demo`), onboard an asset, and drive the lifecycle with the
+CLI: `jumpgate assets probe <asset>` queues a credential-free probe and prints the
+observation, and `jumpgate assets identity approve <asset>` records a trust anchor —
+`--expected-fingerprint`, `--trusted-ca-file` with `--expected-dns-name`, or
+`--auto-approve` for explicit trust-on-first-use. `jumpgate assets verify-report`
+prints a per-asset verification-status rollup. The same flags are available inline on
+`assets ssh create` and `assets pg create` for guided onboarding.
 
 ### Production serving
 

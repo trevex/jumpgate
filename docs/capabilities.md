@@ -209,6 +209,9 @@ parentheses.
 | `catalog:asset:read` | get or resolve an asset | the asset |
 | `catalog:asset:update` | change an asset's config; re-mint a Kubernetes enrollment token | the asset |
 | `catalog:asset:delete` | delete an asset | the asset |
+| `catalog:asset:probe` | queue a credential-free target-identity probe | the asset |
+| `catalog:asset:identity:read` | read probes, observations, trust anchors, and verification status | the asset |
+| `catalog:asset:identity:approve` | approve an observed identity into a trust anchor, reject an observation, or revoke an anchor | the asset |
 | `access:role:create` | create a role | target folder (`Global` if a global role) |
 | `access:role:read` | get or resolve a role; list a role's grants; explain a role | the role's folder |
 | `access:role:update` | add or remove role-rewrite grants (`role_grants`) | the role's folder |
@@ -242,6 +245,12 @@ parentheses.
 
 > Moving a folder or asset requires `…:update` on the moved node and `…:create` on
 > the destination folder. A rename needs only `…:update` on the node itself.
+
+> Approving a target identity is separate authority from holding the target's secret.
+> `catalog:asset:probe` and `catalog:asset:identity:{read,approve}` gate the probe and
+> trust-anchor lifecycle; `vault:secret:*` gates the stored credential; neither implies
+> the other. Deciding what identity to trust and holding the secret to reach it are
+> distinct duties.
 
 > † `access:grant:*` is the cross-user oversight surface only. Every user sees and
 > acts on their own just-in-time access with no capability required: `ListMyRequests`

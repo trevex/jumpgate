@@ -240,9 +240,9 @@ tampered blob fails `Open`. See [architecture.md](architecture.md#vault--credent
   top-tier operational secret.
 
 Short-lived, capability-scoped credentials. The credential the broker mints is bounded
-by the granting authorization: `SetupSession` passes the remaining lifetime into the
-cert's `ValidBefore` (or the secret's validity), so a credential never outlives the
-access behind it. For SSH the cert's principals are capability-derived and host-scoped:
+by the granting authorization: `IssueSessionCredential` passes the remaining lifetime
+into the cert's `ValidBefore` (or the secret's validity), so a credential never
+outlives the access behind it. For SSH the cert's principals are capability-derived and host-scoped:
 the broker mints only the logins the user holds `ssh:login:<login>` for, as
 `<login>@<asset>` principals, with no static host login. For Postgres the `mtls` kind
 mints a short-lived X.509 client cert whose CN is the DB role, and the `password` kind
@@ -282,31 +282,65 @@ an explicit CA. See [roadmap.md](roadmap.md#known-deferrals).
 ## Target identity verification
 
 A proxy that authenticates to a target it cannot itself identify is a
-man-in-the-middle waiting to happen. SSH sessions defend against that by requiring a
-verified target identity before any credential is released.
+man-in-the-middle waiting to happen. Every session defends against that: no target
+credential is released until the target's identity is verified against an approved
+trust anchor. This holds for all four protocols.
 
-- Onboarding queues a credential-free probe. The worker observes the target's host key
+The credential-release invariant. Session setup is two-phase. `PrepareSession` admits
+the session and returns the target's active anchors, but no credential. The worker
+observes the target's identity credential-free and matches it locally; warden
+re-confirms the match against a current anchor in `IssueSessionCredential` before it
+mints anything. On any mismatch warden aborts the session and reaches no credential
+broker. An asset with no current anchor grants no session.
+
+- Onboarding queues a credential-free probe. The worker observes the target's identity
   without authenticating, so a mis-onboarded or hostile endpoint reveals its identity
   before any secret is exposed.
-- Trust is explicit and exact. An operator approves an exact host-key fingerprint,
-  which records a trust anchor. Session setup fails closed unless a current anchor
-  matches the observed key. An asset with no anchor grants no session.
+- The observation is protocol-specific. SSH observes the host key at key exchange and
+  matches it by SHA-256 fingerprint. Postgres and RDP do a credential-free TLS observe
+  and match the presented chain against an exact leaf fingerprint or a CA with required
+  name constraints. Kubernetes is agent-driven: the agent probes its own API server,
+  and warden re-derives which asset it belongs to from the agent's mesh-cert SPIFFE
+  identity, so a broker cannot forge the observation.
+- Trust is explicit and additive. An operator approves an observation into an anchor.
+  Several active anchors can coexist, which is how a key rotation is staged: approve
+  the new anchor before retiring the old. A host certificate anchor for SSH is a known
+  ceiling — the SSH library does not surface the target's host certificate during the
+  proxied handshake, so such an anchor cannot be matched at session time and fails
+  closed.
+- Trust-on-first-use is available but is not strong proof. An operator may accept
+  whatever the probe observed. That records an anchor and unblocks sessions, but it
+  proves only that the identity has not changed since, not that it is the intended
+  target. The stronger paths pin an exact fingerprint or a CA with a required name, and
+  the CLI makes trust-on-first-use an explicit, mutually-exclusive choice against those.
 - Endpoint moves invalidate trust. Each asset carries an endpoint revision, and anchors
   are bound to the revision they were approved at. Changing the target address
   increments the revision, so the old anchors stop being current and a fresh probe is
   queued. A login, secret, or metadata change does not move the endpoint, so its trust
   stands.
+- A mismatch blocks new sessions only. It does not tear down established ones, since an
+  already-connected session was verified when it started. Approval, probing, and
+  revocation are gated by capabilities distinct from the vault and credential path:
+  `catalog:asset:probe`, `catalog:asset:identity:read`, and
+  `catalog:asset:identity:approve`. See
+  [access-model.md](access-model.md) and [capabilities.md](capabilities.md).
 - Existing pins migrate without weakening. A one-shot migration converts a valid pinned
-  host key into an approved anchor. An unparseable or absent pin produces no anchor, so
-  an invalid key is never trusted and its asset stays unverified until an operator
+  key or CA into an approved anchor. An unparseable or absent pin produces no anchor, so
+  an invalid value is never trusted and its asset stays unverified until an operator
   approves it.
+
+Continuous monitoring is best-effort and never weakens enforcement. Periodic re-probing
+is off by default and opted in per asset. A durable notification outbox delivers
+identity-mismatch, repeated-probe-failure, and approaching-expiry events at least once;
+a stuck outbox can never block or weaken a session decision, because it holds no
+authorization or identity state.
 
 ## Threat-model summary
 
 | Threat | Mitigation | Status |
 |---|---|---|
 | Attacker maps infrastructure by probing | Existence-hiding: catalog returns only visible assets; invisible lookup → `CodeNotFound`, never `403` | Implemented |
-| Man-in-the-middle or swapped SSH target | Target identity verification: credential-free host-key probe, exact-fingerprint trust anchor, sessions fail closed without a current match; endpoint-address change invalidates old anchors | Implemented |
+| Man-in-the-middle or swapped target | Target identity verification (all four protocols): credential-free identity probe, approved trust anchor (exact key/leaf fingerprint or CA with required name), two-phase setup releases no credential until warden re-confirms a current anchor match; endpoint-address change invalidates old anchors; a mismatch blocks new sessions | Implemented |
 | Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation (`Logout`) | Implemented |
 | CSRF via browser cookie | `Sec-Fetch-Site: same-origin` required for cookie-authenticated requests; browsers set it automatically, cross-origin JS cannot forge it; missing header means the cookie is ignored | Implemented |
 | Privilege creep / broad standing access | Requestable, approval-gated, JIT time-boxed grants (clamped to `MaxGrantTTL=8h`); approval gate travels with the role | Implemented |

@@ -56,14 +56,27 @@ select the `demo` folder in the tree first, then use **+** (now scoped to `demo`
    - **Name** `demo-box`
    - **Target address** `ssh-target.default.svc.cluster.local:22`
    - Under **Logins**, the pre-filled row is a **CA (signed cert)** login — set its name to `deploy`.
-   - **Create asset**. (This is the box the request/approve flow uses. Its `deploy@demo-box.demo`
+   - **Onboard asset**. (This is the box the request/approve flow uses. Its `deploy@demo-box.demo`
      principal was provisioned in Prerequisites.)
+   - The wizard does not close. It swaps to **Verify target identity**, which probes the host
+     credential-free and shows the observed host key. This is the second gate on every session:
+     no credential is released until you approve the target's identity. Review the fingerprint,
+     then click **Approve identity & finish**. (If the probe is still running, **Retry probe**
+     re-runs it; **Finish later** leaves the asset unverified — you can approve it from its detail
+     panel afterwards.)
 2. **password-box (password).** Select `demo` → **+** → **New asset**. Name `password-box`, target
    `ssh-target-password.default.svc.cluster.local:22`. On the login row pick kind **Password**, name
-   it `demo`, and type the password `demo-password-123` in the secret field. **Create asset**.
+   it `demo`, and type the password `demo-password-123` in the secret field. **Onboard asset**, then
+   **Approve identity & finish** in the verification step.
 3. **key-box (private key).** Select `demo` → **+** → **New asset**. Name `key-box`, target
    `ssh-target-key.default.svc.cluster.local:22`. Login kind **Private key**, name `demo`, and
-   **paste the PEM** (`test/env/testworkload/demo_key`) into the multi-line key box. **Create asset**.
+   **paste the PEM** (`test/env/testworkload/demo_key`) into the multi-line key box. **Onboard asset**,
+   then **Approve identity & finish**.
+
+Every asset now shows a **Target identity** section in its detail panel, with the approved
+anchor, an **Approve observed identity** action after a re-probe, and a **Revoke** per anchor.
+A target whose identity later changes reads **Target identity changed** there; new sessions are
+blocked until an operator re-approves, while any session already running keeps going.
 
 **Create the two roles** (folder-scoped to `demo`). Select `demo` → **+** → **New role**. The folder
 context is pre-filled, so the role is homed in `demo`:
@@ -220,7 +233,9 @@ switch the asset-kind toggle to **RDP**, then:
 - Under **Logins**, add a **Password** login named `demo` and type the password `rdp-demo-pw-123` in
   the secret field. RDP logins are password-only. The worker injects the stored password at the target
   hop, so it never reaches the browser.
-- **Create asset**. The tree shows `rdp-box` with a monitor icon.
+- **Onboard asset**, then **Approve identity & finish** in the verification step. RDP verifies the
+  target over TLS, the same as Postgres, so no desktop opens until an anchor is approved. The tree
+  shows `rdp-box` with a monitor icon.
 
 **Grant standing access.** Mint a folder-scoped role and bind it to the `sre` group, the same shape as
 the password box:

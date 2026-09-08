@@ -33,7 +33,8 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
-// Sentinel errors returned by Setup; the RPC layer maps them to Connect codes.
+// Sentinel errors returned by the two-phase Prepare / IssueCredential flow; the RPC
+// layer maps them to Connect codes.
 var (
 	ErrBadToken      = errors.New("invalid session token")
 	ErrKeyMismatch   = errors.New("client key does not match token binding")

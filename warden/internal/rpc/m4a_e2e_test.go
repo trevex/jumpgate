@@ -44,8 +44,9 @@ import (
 //
 //  1. SessionService.CreateSession(asset, clientPubKey) → admission token.
 //  2. Worker opens DataplaneService.WorkerStream, Registers, gets an Ack.
-//  3. DataplaneService.SetupSession(token, "w1", clientPubKey) → target + SSH cert
-//     (ValidPrincipals == [deploy@<path>, deploy@<id>]); a live_sessions row exists.
+//  3. DataplaneService.PrepareSession + IssueSessionCredential(token, "w1", clientPubKey)
+//     → target + SSH cert (ValidPrincipals == [deploy@<path>, deploy@<id>]); a
+//     live_sessions row exists.
 //  4. AccessRequestService.RevokeGrant (admin) → terminator → LISTEN/NOTIFY →
 //     Listener → registry → worker RECEIVES a Teardown frame; session.terminated audited.
 //  5. Worker replies SessionEnded → the live_sessions row is deleted, session.ended
@@ -189,7 +190,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	}
 	grantID := grant.ID
 
-	// Client ephemeral SSH keypair (authorized_keys form for both CreateSession + SetupSession).
+	// Client ephemeral SSH keypair (authorized_keys form for both CreateSession + PrepareSession).
 	_, cpriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("gen client key: %v", err)
@@ -201,7 +202,7 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	clientPub := ssh.MarshalAuthorizedKey(cpub)
 
 	// Worker per-session SSH keypair (Kw) — distinct from the client cnf key; the
-	// key SetupSession certifies for the target hop.
+	// key IssueSessionCredential certifies for the target hop.
 	_, wpriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("gen worker key: %v", err)

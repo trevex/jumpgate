@@ -69,7 +69,7 @@ func (f *fakeDataplaneClient) WorkerStream(context.Context) *connect.BidiStreamF
 var _ dataplanev1connect.DataplaneServiceClient = (*fakeDataplaneClient)(nil)
 
 // TestHandleConnProxiesToPostgres drives handleConn end-to-end over a net.Pipe:
-// CONNECT preamble -> pgwire startup -> (faked) SetupSession redeem -> real dial
+// CONNECT preamble -> pgwire startup -> (faked) PrepareSession redeem -> real dial
 // to an ephemeral Postgres -> splice, and asserts SELECT 1 returns a row through
 // the proxy. A deadline on the client side means any hang fails the test.
 func TestHandleConnProxiesToPostgres(t *testing.T) {

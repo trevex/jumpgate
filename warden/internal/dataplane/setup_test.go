@@ -414,7 +414,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	tok2 := f.mintToken(t, f.clientFp)
 	res2, err := f.svc.Prepare(f.ctx, tok2, "worker-1", "deploy", f.clientPub)
 	if err != nil {
-		t.Fatalf("Setup(exempt): %v", err)
+		t.Fatalf("Prepare(exempt): %v", err)
 	}
 	if res2.RecordingRequired {
 		t.Fatal("RecordingRequired = true, want false (user holds ssh:record:exempt)")
@@ -431,7 +431,7 @@ func TestSetupWebMode(t *testing.T) {
 	// Web request: EMPTY client key, valid Kw.
 	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "", nil)
 	if err != nil {
-		t.Fatalf("Setup(web): %v", err)
+		t.Fatalf("Prepare(web): %v", err)
 	}
 	if res.TargetAddress != "10.0.0.5:22" {
 		t.Fatalf("TargetAddress = %q, want 10.0.0.5:22", res.TargetAddress)
@@ -458,7 +458,7 @@ func TestSetupWebModeUnentitled(t *testing.T) {
 	tok := f.mintWebToken(t, "root")
 
 	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "", nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
-		t.Fatalf("Setup(web, unentitled) err = %v, want ErrNotAuthorized", err)
+		t.Fatalf("Prepare(web, unentitled) err = %v, want ErrNotAuthorized", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
 		t.Fatalf("live_sessions rows = %d, want 0", n)

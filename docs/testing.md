@@ -12,7 +12,9 @@ complementary rather than redundant. Read this alongside the quick command refer
 
 `make ci` runs `make test` (plus `cargo nextest` and the web typecheck and build), so the
 first tier is the everyday correctness gate; the two e2e tiers are opt-in and kept out of
-`ci`.
+`ci`. A scheduled `nightly` workflow (`.github/workflows/nightly.yml`) runs both e2e
+tiers — including the Playwright identity-rotation scenarios — against fresh kind
+clusters overnight and on demand, since they are slow and need docker and kind.
 
 ## In-package unit and integration — the primary gate
 
@@ -38,6 +40,13 @@ first tier is the everyday correctness gate; the two e2e tiers are opt-in and ke
   the build if closure SQL is hand-written in Go).
 - HTTP and handler tests drive real `httptest` servers and decode real responses rather
   than mocking transport.
+- Target-identity logic is proven here: the `warden/internal/targetidentity` package
+  tests cover session-time anchor matching (`session_verify`), observation validation,
+  the probe scheduler, and mutation idempotency, and the handler tests assert the
+  probe/read/approve capability gates. The CLI tests
+  (`cli/cmd/target_identity_test.go`, `assets_verify_test.go`) pin the approval-flag
+  contract (`--auto-approve` mutually exclusive with the expectation flags;
+  `--expected-dns-name` requires `--trusted-ca-file`) and the verification-status labels.
 
 Scope: correctness of domain logic and every database contract in isolation, fast and
 hermetic. This is the tier that should catch a regression first.
@@ -66,7 +75,12 @@ and CLI, asserting even on recording content. The suite covers:
   API-audit recording captures both outcomes.
 - `TestAuthzVisibility` and `TestAuthzGrantTransitions` — steady-state tenant isolation
   and the load-bearing check that each authz primitive denies before it is granted, so a
-  default-open regression fails the suite.
+  default-open regression fails the suite. `TestAuthzGrantTransitions` also asserts the
+  target-identity gate: an authorized but unverified asset refuses a session, and the
+  same connect succeeds only after the target's identity is approved.
+- Target-identity onboarding is exercised throughout: `TestKubernetes` approves the
+  cluster's API-server identity (`assets identity approve --auto-approve`) before a
+  session is allowed, matching the verify-before-issue flow the other protocols follow.
 
 RDP has no CLI connect path — it is browser-only — so this Go-driven tier does not cover
 it; its governance flow is instead exercised end to end by the UI e2e tier below.
@@ -89,6 +103,13 @@ isolated browser context. Opt-in, kept out of `ci`.
 `rdp-box` asset's **Open RDP** link, and the test asserts a canvas renders and the
 `jumpgate-rdp` WASM client actually processes a graphics frame — browser through the
 gateway, the rdp-proxy worker, and the target xrdp server.
+
+`web/e2e/target-identity.spec.ts` proves the onboarding verification flow and its
+recovery scenarios: the guided step announces the probe result and offers a deliberate
+approval, a reload during a leased probe resumes from the asset detail card, a creator
+without approval authority sees the awaiting-approval message, and an asset whose target
+identity was rotated by the fixture is recoverable only by explicit re-approval. These
+identity-rotation scenarios are the reason the UI tier runs in the nightly workflow.
 
 Scope: the browser console's request → approve → connect → audit loop over the same live
 stack the cluster tier uses, exercising the cookie-session auth and the SPA views the
