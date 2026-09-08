@@ -131,3 +131,38 @@ func TestVerifySessionTargetSSHHostCAStillUnsupported(t *testing.T) {
 		t.Fatalf("VerifySessionTarget(ssh_host_ca) = %v; want ErrCAAnchorSessionUnsupported", err)
 	}
 }
+
+// TestSessionAnchorsCarryPublicMaterial proves the anchor row's public_material is
+// threaded onto the domain SessionAnchor handed to the worker at PrepareSession, so
+// a tls_ca worker can build its RootCertStore from the APPROVED anchor's own CA PEM
+// rather than a mutable config column.
+func TestSessionAnchorsCarryPublicMaterial(t *testing.T) {
+	env := newTargetIdentityEnvForProtocol(t, targetidentity.ProtocolPostgres)
+	const caPEM = "-----BEGIN CERTIFICATE-----\nMIIB-approved-ca-material\n-----END CERTIFICATE-----\n"
+	var anchorID uuid.UUID
+	if err := testPool.QueryRow(env.ctx, `
+		INSERT INTO target_trust_anchors
+			(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source, required_dns_names)
+		VALUES ($1, 1, 'tls_ca', 'ecdsa', $2, $3, 'manual', ARRAY['db.test'])
+		RETURNING id`, env.asset, fingerprint("pg-ca-material"), caPEM).Scan(&anchorID); err != nil {
+		t.Fatalf("seed tls_ca anchor: %v", err)
+	}
+
+	_, anchors, err := env.svc.SessionAnchors(env.ctx, env.asset)
+	if err != nil {
+		t.Fatalf("SessionAnchors: %v", err)
+	}
+	var found bool
+	for _, a := range anchors {
+		if a.ID != anchorID {
+			continue
+		}
+		found = true
+		if a.PublicMaterial != caPEM {
+			t.Fatalf("SessionAnchor.PublicMaterial = %q; want the approved CA PEM %q", a.PublicMaterial, caPEM)
+		}
+	}
+	if !found {
+		t.Fatalf("seeded tls_ca anchor %s not returned by SessionAnchors", anchorID)
+	}
+}

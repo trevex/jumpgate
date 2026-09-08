@@ -95,6 +95,7 @@ pub async fn prepare_session(
             fingerprint: a.sha256_fingerprint,
             required_dns_names: a.required_dns_names,
             required_ip_addresses: a.required_ip_addresses,
+            public_material: a.public_material,
         })
         .collect();
 

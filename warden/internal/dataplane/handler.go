@@ -174,6 +174,7 @@ func (s *Handler) PrepareSession(ctx context.Context, req *connect.Request[datap
 			RequiredSshPrincipals: a.RequiredSSHPrincipals,
 			RequiredDnsNames:      a.RequiredDNSNames,
 			RequiredIpAddresses:   a.RequiredIPAddresses,
+			PublicMaterial:        a.PublicMaterial,
 		})
 	}
 	return connect.NewResponse(resp), nil

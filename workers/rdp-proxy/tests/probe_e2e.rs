@@ -228,8 +228,9 @@ async fn probe_observes_leaf_and_matches_leaf_anchor() {
         fingerprint: leaf_fp.clone(),
         required_dns_names: vec![],
         required_ip_addresses: vec![],
+        public_material: String::new(),
     };
-    let m = probe::match_identity(&obs.chain, "", std::slice::from_ref(&good), UnixTime::now())
+    let m = probe::match_identity(&obs.chain, std::slice::from_ref(&good), UnixTime::now())
         .expect("correct leaf pin must match");
     assert_eq!(m.anchor_id, "a-good");
     assert_eq!(m.observed_fingerprint, leaf_fp);
@@ -238,7 +239,7 @@ async fn probe_observes_leaf_and_matches_leaf_anchor() {
         fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
         ..good
     };
-    assert!(probe::match_identity(&obs.chain, "", &[bad], UnixTime::now()).is_err());
+    assert!(probe::match_identity(&obs.chain, &[bad], UnixTime::now()).is_err());
 }
 
 #[tokio::test]
@@ -281,8 +282,9 @@ async fn ca_anchor_matches_correct_name_only() {
         fingerprint: ca_fp.clone(),
         required_dns_names: vec!["rdp.test".into()],
         required_ip_addresses: vec![],
+        public_material: ca_pem.clone(),
     };
-    let m = probe::match_identity(&obs.chain, &ca_pem, std::slice::from_ref(&right), UnixTime::now())
+    let m = probe::match_identity(&obs.chain, std::slice::from_ref(&right), UnixTime::now())
         .expect("valid chain + correct name must match the CA anchor");
     assert_eq!(m.anchor_id, "ca-right");
 
@@ -291,14 +293,22 @@ async fn ca_anchor_matches_correct_name_only() {
         required_dns_names: vec!["evil.test".into()],
         ..right.clone()
     };
-    assert!(probe::match_identity(&obs.chain, &ca_pem, &[wrong_name], UnixTime::now()).is_err());
+    assert!(probe::match_identity(&obs.chain, &[wrong_name], UnixTime::now()).is_err());
 
     // A CA anchor with NO required name never authorizes a leaf.
     let no_name = SessionAnchor {
         required_dns_names: vec![],
         ..right.clone()
     };
-    assert!(probe::match_identity(&obs.chain, &ca_pem, &[no_name], UnixTime::now()).is_err());
+    assert!(probe::match_identity(&obs.chain, &[no_name], UnixTime::now()).is_err());
+
+    // Empty approved material → the CA anchor can never validate (fail closed), even
+    // with the right fingerprint + name.
+    let empty_material = SessionAnchor {
+        public_material: String::new(),
+        ..right.clone()
+    };
+    assert!(probe::match_identity(&obs.chain, &[empty_material], UnixTime::now()).is_err());
 
     // Wrong CA fingerprint (a different, unrelated CA) → no match even with the right name.
     let (_c2, _k2, _pem2, other_ca_fp) = ca_and_leaf("rdp.test", false);
@@ -306,7 +316,7 @@ async fn ca_anchor_matches_correct_name_only() {
         fingerprint: other_ca_fp,
         ..right
     };
-    assert!(probe::match_identity(&obs.chain, &ca_pem, &[wrong_ca], UnixTime::now()).is_err());
+    assert!(probe::match_identity(&obs.chain, &[wrong_ca], UnixTime::now()).is_err());
 }
 
 #[tokio::test]
@@ -321,7 +331,7 @@ async fn ca_rotation_multiple_anchors_matches_active_ca() {
 
     // An old (rotated-out) CA anchor plus the current one. Only the current CA is in
     // the chain, so the match must resolve to it.
-    let (_c, _k, _pem, stale_ca_fp) = ca_and_leaf("rdp.test", false);
+    let (_c, _k, stale_pem, stale_ca_fp) = ca_and_leaf("rdp.test", false);
     let anchors = vec![
         SessionAnchor {
             id: "ca-old".into(),
@@ -329,6 +339,7 @@ async fn ca_rotation_multiple_anchors_matches_active_ca() {
             fingerprint: stale_ca_fp,
             required_dns_names: vec!["rdp.test".into()],
             required_ip_addresses: vec![],
+            public_material: stale_pem,
         },
         SessionAnchor {
             id: "ca-current".into(),
@@ -336,9 +347,10 @@ async fn ca_rotation_multiple_anchors_matches_active_ca() {
             fingerprint: ca_fp,
             required_dns_names: vec!["rdp.test".into()],
             required_ip_addresses: vec![],
+            public_material: ca_pem.clone(),
         },
     ];
-    let m = probe::match_identity(&obs.chain, &ca_pem, &anchors, UnixTime::now()).expect("current CA must match");
+    let m = probe::match_identity(&obs.chain, &anchors, UnixTime::now()).expect("current CA must match");
     assert_eq!(m.anchor_id, "ca-current");
 }
 
@@ -359,9 +371,10 @@ async fn expired_leaf_fails_ca_match() {
         fingerprint: ca_fp,
         required_dns_names: vec!["rdp.test".into()],
         required_ip_addresses: vec![],
+        public_material: ca_pem,
     };
     assert!(
-        probe::match_identity(&obs.chain, &ca_pem, &[anchor], UnixTime::now()).is_err(),
+        probe::match_identity(&obs.chain, &[anchor], UnixTime::now()).is_err(),
         "an expired leaf must not satisfy a CA anchor",
     );
 }
@@ -412,7 +425,6 @@ async fn oversized_chain_is_rejected() {
 /// Returns (outcome, issue_was_called).
 async fn drive_bridge(
     target_addr: &str,
-    target_server_ca: &str,
     anchors: Vec<SessionAnchor>,
 ) -> (rdp_proxy::bridge::BridgeOutcome, bool) {
     use rdp_proxy::record::RecorderConfig;
@@ -456,7 +468,6 @@ async fn drive_bridge(
 
     let report = rdp_proxy::bridge::run(
         target_addr,
-        target_server_ca,
         "operator",
         &anchors,
         issue,
@@ -483,8 +494,9 @@ async fn bridge_never_issues_credential_on_identity_mismatch() {
         fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
         required_dns_names: vec![],
         required_ip_addresses: vec![],
+        public_material: String::new(),
     };
-    let (outcome, issued) = drive_bridge(&addr, "", vec![wrong]).await;
+    let (outcome, issued) = drive_bridge(&addr, vec![wrong]).await;
     assert_eq!(
         outcome,
         rdp_proxy::bridge::BridgeOutcome::IdentityUnverified,
@@ -501,7 +513,7 @@ async fn bridge_never_issues_credential_with_no_anchors() {
     install_provider();
     let (chain, key, _leaf_fp) = self_signed("rdp.test");
     let addr = spawn_target(TargetMode::Normal, Some(server_config(chain, key))).await;
-    let (outcome, issued) = drive_bridge(&addr, "", vec![]).await;
+    let (outcome, issued) = drive_bridge(&addr, vec![]).await;
     assert_eq!(outcome, rdp_proxy::bridge::BridgeOutcome::IdentityUnverified);
     assert!(!issued, "no anchors must fail closed with no credential requested");
 }
@@ -518,8 +530,9 @@ async fn bridge_issues_credential_only_after_identity_match() {
         fingerprint: leaf_fp,
         required_dns_names: vec![],
         required_ip_addresses: vec![],
+        public_material: String::new(),
     };
-    let (_outcome, issued) = drive_bridge(&addr, "", vec![good]).await;
+    let (_outcome, issued) = drive_bridge(&addr, vec![good]).await;
     assert!(
         issued,
         "a matched target identity must reach IssueSessionCredential",

@@ -40,6 +40,11 @@ type SessionAnchor struct {
 	RequiredSSHPrincipals []string
 	RequiredDNSNames      []string
 	RequiredIPAddresses   []string
+	// PublicMaterial is the anchor's approved public material (PEM for TLS anchors,
+	// the OpenSSH line for ssh anchors). For a tls_ca anchor the worker builds its CA
+	// RootCertStore from exactly this — binding chain validation to the approved
+	// anchor, not a mutable config column. Public, non-secret, warden-authoritative.
+	PublicMaterial string
 }
 
 // SessionAnchors returns the asset's current endpoint revision and its current
@@ -163,5 +168,6 @@ func sessionAnchorFromRow(row sqlc.TargetTrustAnchor) SessionAnchor {
 		RequiredSSHPrincipals: row.RequiredSshPrincipals,
 		RequiredDNSNames:      row.RequiredDnsNames,
 		RequiredIPAddresses:   row.RequiredIpAddresses,
+		PublicMaterial:        row.PublicMaterial,
 	}
 }

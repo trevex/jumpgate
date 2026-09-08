@@ -333,7 +333,6 @@ async fn run_rdp<S>(
 
     let run_report = crate::bridge::run(
         &outcome.target_address,
-        &outcome.target_server_ca,
         &login,
         &outcome.anchors,
         issue,

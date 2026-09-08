@@ -172,7 +172,6 @@ enum RecState {
 #[allow(clippy::too_many_arguments)]
 pub async fn run<S, F, Fut>(
     target_address: &str,
-    target_server_ca: &str,
     login: &str,
     anchors: &[crate::probe::SessionAnchor],
     issue: F,
@@ -270,7 +269,6 @@ where
         .collect();
     let matched = match crate::probe::match_identity(
         &der_chain,
-        target_server_ca,
         anchors,
         rustls::pki_types::UnixTime::now(),
     ) {

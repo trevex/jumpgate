@@ -110,6 +110,11 @@ pub struct SessionAnchor {
     pub fingerprint: String,
     pub required_dns_names: Vec<String>,
     pub required_ip_addresses: Vec<String>,
+    /// The anchor's own approved CA cert PEM (`tls_ca`). The worker builds its
+    /// `RootCertStore` from exactly this, binding chain validation to the approved
+    /// anchor rather than a mutable config column. Empty for `tls_leaf` (an exact
+    /// fingerprint pin needs no CA material); an empty `tls_ca` fails closed.
+    pub public_material: String,
 }
 
 /// The anchor the worker matched, threaded into `IssueSessionCredential`.
@@ -146,13 +151,12 @@ pub fn fingerprint_der(der: &[u8]) -> String {
 ///
 /// - `tls_leaf`: exact leaf-fingerprint equality (a pin; name/validity not
 ///   re-checked, matching warden's exact-equality session rule).
-/// - `tls_ca`: the leaf must chain to the anchor's CA (validity enforced via `now`),
-///   the configured DNS/IP name must match the leaf, AND the anchor's own CA cert
-///   must be the trust root of that verified chain — binding the match to the
-///   approved CA rather than "some CA in the delivered bundle".
+/// - `tls_ca`: the leaf must chain to the anchor's own approved CA material (validity
+///   enforced via `now`), the configured DNS/IP name must match the leaf, AND the
+///   anchor's own CA cert must be the trust root of that verified chain — binding the
+///   match to the approved anchor material, not to any mutable config column.
 pub fn match_identity(
     chain: &[CertificateDer<'_>],
-    ca_pem: &str,
     anchors: &[SessionAnchor],
     now: UnixTime,
 ) -> Result<AnchorMatch, IdentityError> {
@@ -161,7 +165,7 @@ pub fn match_identity(
     for a in anchors {
         let matched = match a.kind.as_str() {
             "tls_leaf" => a.fingerprint == leaf_fp,
-            "tls_ca" => match_ca_anchor(chain, ca_pem, a, now),
+            "tls_ca" => match_ca_anchor(chain, a, now),
             _ => false,
         };
         if matched {
@@ -175,24 +179,25 @@ pub fn match_identity(
 }
 
 /// Whether the observed leaf chains to the CA anchor `a`: a valid X.509 chain whose
-/// trust root is exactly the anchor's CA cert (selected from `ca_pem` by
-/// fingerprint), with the required DNS/IP name satisfied by the leaf. Uses rustls'
-/// own webpki verifier for chain-to-root + name + validity in one call.
-fn match_ca_anchor(chain: &[CertificateDer<'_>], ca_pem: &str, a: &SessionAnchor, now: UnixTime) -> bool {
-    if ca_pem.trim().is_empty() {
-        return false; // a CA anchor with no delivered CA material can never be validated
+/// trust root is exactly the anchor's own approved CA cert (its `public_material`,
+/// selected by fingerprint), with the required DNS/IP name satisfied by the leaf.
+/// Uses rustls' own webpki verifier for chain-to-root + name + validity in one call.
+/// The trust root is warden-authoritative anchor material, never a config column.
+fn match_ca_anchor(chain: &[CertificateDer<'_>], a: &SessionAnchor, now: UnixTime) -> bool {
+    if a.public_material.trim().is_empty() {
+        return false; // a CA anchor with no approved CA material can never be validated
     }
     // A CA anchor MUST carry a name; an empty constraint never matches (a bare CA
     // must not authorize an arbitrary leaf).
     if a.required_dns_names.is_empty() && a.required_ip_addresses.is_empty() {
         return false;
     }
-    // Trust root = only the CA cert(s) in the delivered bundle whose fingerprint is
-    // the anchor's. This binds the match to the approved CA, not merely to any CA in
-    // the bundle (CA rotation delivers several).
+    // Trust root = only the cert(s) in the anchor's own material whose fingerprint is
+    // the anchor's. This binds the match to the approved anchor, not to any CA in a
+    // shared bundle.
     let mut roots = RootCertStore::empty();
     let mut any_root = false;
-    let mut pem = ca_pem.as_bytes();
+    let mut pem = a.public_material.as_bytes();
     for cert in rustls_pemfile::certs(&mut pem).flatten() {
         if fingerprint_der(&cert) == a.fingerprint && roots.add(cert).is_ok() {
             any_root = true;

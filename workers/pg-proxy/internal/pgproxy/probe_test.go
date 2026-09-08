@@ -244,11 +244,39 @@ func TestMatchTLSCASuccess(t *testing.T) {
 	c := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: c.pem}
 
-	id, fp, err := MatchIdentity(obs, c.pem, []SessionAnchor{anchor}, time.Now())
+	id, fp, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now())
 	if err != nil || id != "a1" || fp != FingerprintDER(leaf.Raw) {
 		t.Fatalf("want match a1, got id=%q fp=%q err=%v", id, fp, err)
+	}
+}
+
+// TestMatchTLSCAUsesAnchorMaterialNotConfig proves a tls_ca session validates using
+// the ANCHOR's own PublicMaterial — there is no longer any config-column CA input to
+// MatchIdentity at all, so the approved anchor material is the sole trust root.
+func TestMatchTLSCAUsesAnchorMaterialNotConfig(t *testing.T) {
+	c := newCA(t)
+	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
+	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: c.pem}
+
+	id, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now())
+	if err != nil || id != "a1" {
+		t.Fatalf("anchor material must validate, got id=%q err=%v", id, err)
+	}
+}
+
+// TestMatchTLSCAEmptyMaterialFailsClosed proves a tls_ca anchor with empty approved
+// material never validates — the worker no longer falls back to any config column.
+func TestMatchTLSCAEmptyMaterialFailsClosed(t *testing.T) {
+	c := newCA(t)
+	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
+	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: ""}
+
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+		t.Fatalf("empty anchor material must fail closed, got %v", err)
 	}
 }
 
@@ -256,9 +284,9 @@ func TestMatchTLSCARejectsWrongName(t *testing.T) {
 	c := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"evil.test"}}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"evil.test"}, PublicMaterial: c.pem}
 
-	if _, _, err := MatchIdentity(obs, c.pem, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("valid CA but wrong name must reject, got %v", err)
 	}
 }
@@ -267,9 +295,9 @@ func TestMatchTLSCARejectsExpired(t *testing.T) {
 	c := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}, notBefore: time.Now().Add(-48 * time.Hour), notAfter: time.Now().Add(-24 * time.Hour)})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: c.pem}
 
-	if _, _, err := MatchIdentity(obs, c.pem, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("expired leaf must reject, got %v", err)
 	}
 }
@@ -278,9 +306,9 @@ func TestMatchTLSCARejectsNotYetValid(t *testing.T) {
 	c := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}, notBefore: time.Now().Add(24 * time.Hour), notAfter: time.Now().Add(48 * time.Hour)})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}}
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: c.pem}
 
-	if _, _, err := MatchIdentity(obs, c.pem, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("not-yet-valid leaf must reject, got %v", err)
 	}
 }
@@ -290,10 +318,10 @@ func TestMatchTLSCARejectsWrongCA(t *testing.T) {
 	other := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	// Anchor names the OTHER CA; the leaf does not chain to it.
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(other.cert.Raw), RequiredDNSNames: []string{"db.test"}}
+	// Anchor carries the OTHER CA's material; the leaf does not chain to it.
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(other.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: other.pem}
 
-	if _, _, err := MatchIdentity(obs, other.pem, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("leaf not chaining to the anchored CA must reject, got %v", err)
 	}
 }
@@ -303,7 +331,7 @@ func TestMatchSelfSignedLeafPin(t *testing.T) {
 	obs := &Observation{Chain: []*x509.Certificate{leaf}, LeafFingerprint: FingerprintDER(leaf.Raw)}
 	anchor := SessionAnchor{ID: "pin", Kind: "tls_leaf", Fingerprint: FingerprintDER(leaf.Raw)}
 
-	id, fp, err := MatchIdentity(obs, "", []SessionAnchor{anchor}, time.Now())
+	id, fp, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now())
 	if err != nil || id != "pin" || fp != FingerprintDER(leaf.Raw) {
 		t.Fatalf("self-signed leaf pin must match, got id=%q err=%v", id, err)
 	}
@@ -315,7 +343,7 @@ func TestMatchLeafPinRejectsDifferentCert(t *testing.T) {
 	obs := &Observation{Chain: []*x509.Certificate{leaf}, LeafFingerprint: FingerprintDER(leaf.Raw)}
 	anchor := SessionAnchor{ID: "pin", Kind: "tls_leaf", Fingerprint: FingerprintDER(other.Raw)}
 
-	if _, _, err := MatchIdentity(obs, "", []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("a different cert must not satisfy a leaf pin, got %v", err)
 	}
 }
@@ -326,9 +354,9 @@ func TestMatchMultipleAnchors(t *testing.T) {
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
 	anchors := []SessionAnchor{
 		{ID: "stale", Kind: "tls_leaf", Fingerprint: "SHA256:AAAA"},
-		{ID: "ca", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}},
+		{ID: "ca", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), RequiredDNSNames: []string{"db.test"}, PublicMaterial: c.pem},
 	}
-	id, _, err := MatchIdentity(obs, c.pem, anchors, time.Now())
+	id, _, err := MatchIdentity(obs, anchors, time.Now())
 	if err != nil || id != "ca" {
 		t.Fatalf("second (CA) anchor should match, got id=%q err=%v", id, err)
 	}
@@ -338,9 +366,9 @@ func TestMatchCAAnchorWithoutNameRejected(t *testing.T) {
 	c := newCA(t)
 	_, leaf := signLeaf(t, &c, leafOpts{dnsNames: []string{"db.test"}})
 	obs := &Observation{Chain: []*x509.Certificate{leaf, c.cert}, LeafFingerprint: FingerprintDER(leaf.Raw)}
-	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw)} // no required name
+	anchor := SessionAnchor{ID: "a1", Kind: "tls_ca", Fingerprint: FingerprintDER(c.cert.Raw), PublicMaterial: c.pem} // no required name
 
-	if _, _, err := MatchIdentity(obs, c.pem, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
+	if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, time.Now()); !errors.Is(err, ErrNoAnchorMatch) {
 		t.Fatalf("a CA anchor with no name constraint must not authorize an arbitrary leaf, got %v", err)
 	}
 }

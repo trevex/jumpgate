@@ -2517,8 +2517,13 @@ type SessionTrustAnchor struct {
 	RequiredSshPrincipals []string               `protobuf:"bytes,5,rep,name=required_ssh_principals,json=requiredSshPrincipals,proto3" json:"required_ssh_principals,omitempty"`
 	RequiredDnsNames      []string               `protobuf:"bytes,6,rep,name=required_dns_names,json=requiredDnsNames,proto3" json:"required_dns_names,omitempty"`
 	RequiredIpAddresses   []string               `protobuf:"bytes,7,rep,name=required_ip_addresses,json=requiredIpAddresses,proto3" json:"required_ip_addresses,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// The anchor's approved public material (PEM). For a tls_ca anchor this is the CA
+	// cert the worker builds its RootCertStore from; tls_leaf needs none (exact
+	// fingerprint match); ssh anchors carry their OpenSSH line (TLS workers ignore it).
+	// Public, non-secret material — warden-authoritative, from the approved anchor row.
+	PublicMaterial string `protobuf:"bytes,8,opt,name=public_material,json=publicMaterial,proto3" json:"public_material,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SessionTrustAnchor) Reset() {
@@ -2598,6 +2603,13 @@ func (x *SessionTrustAnchor) GetRequiredIpAddresses() []string {
 		return x.RequiredIpAddresses
 	}
 	return nil
+}
+
+func (x *SessionTrustAnchor) GetPublicMaterial() string {
+	if x != nil {
+		return x.PublicMaterial
+	}
+	return ""
 }
 
 // PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
@@ -3161,7 +3173,7 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
 	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x12\x1d\n" +
-	"\x05login\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\x9f\x02\n" +
+	"\x05login\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xd3\x02\n" +
 	"\x12SessionTrustAnchor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1c\n" +
@@ -3169,7 +3181,8 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x12sha256_fingerprint\x18\x04 \x01(\tR\x11sha256Fingerprint\x126\n" +
 	"\x17required_ssh_principals\x18\x05 \x03(\tR\x15requiredSshPrincipals\x12,\n" +
 	"\x12required_dns_names\x18\x06 \x03(\tR\x10requiredDnsNames\x122\n" +
-	"\x15required_ip_addresses\x18\a \x03(\tR\x13requiredIpAddresses\"\xea\x03\n" +
+	"\x15required_ip_addresses\x18\a \x03(\tR\x13requiredIpAddresses\x122\n" +
+	"\x0fpublic_material\x18\b \x01(\tB\t\xbaH\x06r\x04(\x80\x80\x04R\x0epublicMaterial\"\xea\x03\n" +
 	"\x16PrepareSessionResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12+\n" +

@@ -111,6 +111,11 @@ type SessionAnchor struct {
 	Fingerprint         string
 	RequiredDNSNames    []string
 	RequiredIPAddresses []string
+	// PublicMaterial is the anchor's own approved CA cert PEM (tls_ca). The worker
+	// builds its RootCertStore from exactly this, binding chain validation to the
+	// approved anchor rather than a mutable config column. Empty for tls_leaf (an
+	// exact-fingerprint pin needs no CA material) and empty tls_ca fails closed.
+	PublicMaterial string
 }
 
 // FingerprintDER is the canonical SHA-256 fingerprint of DER bytes, in the exact
@@ -234,10 +239,11 @@ func ObserveTarget(ctx context.Context, host string, port uint32, serverName str
 //
 //   - tls_leaf: exact leaf-fingerprint equality (a pin; name/validity not re-checked,
 //     matching warden's exact-equality session rule).
-//   - tls_ca: the leaf must chain to a CA in caPEM (validity enforced via now), the
-//     configured DNS/IP name must match the leaf, AND the anchor's CA fingerprint
-//     must appear in the verified chain — binding the match to that approved CA.
-func MatchIdentity(obs *Observation, caPEM string, anchors []SessionAnchor, now time.Time) (anchorID, observedFP string, err error) {
+//   - tls_ca: the leaf must chain to the anchor's own approved CA material (validity
+//     enforced via now), the configured DNS/IP name must match the leaf, AND the
+//     anchor's CA fingerprint must appear in the verified chain — binding the match
+//     to that approved CA, not to any mutable config column.
+func MatchIdentity(obs *Observation, anchors []SessionAnchor, now time.Time) (anchorID, observedFP string, err error) {
 	if obs == nil || len(obs.Chain) == 0 {
 		return "", "", ErrNoAnchorMatch
 	}
@@ -249,7 +255,7 @@ func MatchIdentity(obs *Observation, caPEM string, anchors []SessionAnchor, now 
 				return a.ID, leafFP, nil
 			}
 		case "tls_ca":
-			if matchCAAnchor(obs, caPEM, a, now) {
+			if matchCAAnchor(obs, a, now) {
 				return a.ID, leafFP, nil
 			}
 		}
@@ -258,14 +264,16 @@ func MatchIdentity(obs *Observation, caPEM string, anchors []SessionAnchor, now 
 }
 
 // matchCAAnchor reports whether the observed leaf chains to the CA anchor a: a
-// valid X.509 chain to a root in caPEM, the required DNS/IP name satisfied by the
-// leaf, and the anchor's own CA fingerprint present in the verified chain.
-func matchCAAnchor(obs *Observation, caPEM string, a SessionAnchor, now time.Time) bool {
-	if caPEM == "" {
-		return false // a CA anchor with no delivered CA material can never be validated
+// valid X.509 chain to the anchor's own approved CA material, the required DNS/IP
+// name satisfied by the leaf, and the anchor's own CA fingerprint present in the
+// verified chain. The trust root is the anchor's PublicMaterial (warden-authoritative),
+// never worker/broker input and never a mutable config column.
+func matchCAAnchor(obs *Observation, a SessionAnchor, now time.Time) bool {
+	if a.PublicMaterial == "" {
+		return false // a CA anchor with no approved CA material can never be validated
 	}
 	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(caPEM)) {
+	if !roots.AppendCertsFromPEM([]byte(a.PublicMaterial)) {
 		return false
 	}
 	inter := x509.NewCertPool()
@@ -311,7 +319,7 @@ func matchCAAnchor(obs *Observation, caPEM string, a SessionAnchor, now time.Tim
 // VerifiedTLSConfig builds a *tls.Config for the credentialed pgconn dial that
 // re-authenticates the target against exactly the anchor already matched, so the
 // second (credential-bearing) handshake proves the identical approved identity.
-func VerifiedTLSConfig(host, caPEM string, anchor SessionAnchor, now func() time.Time) *tls.Config {
+func VerifiedTLSConfig(host string, anchor SessionAnchor, now func() time.Time) *tls.Config {
 	return &tls.Config{
 		ServerName:         host,
 		MinVersion:         tls.VersionTLS12,
@@ -321,7 +329,7 @@ func VerifiedTLSConfig(host, caPEM string, anchor SessionAnchor, now func() time
 			if len(obs.Chain) > 0 {
 				obs.LeafFingerprint = FingerprintDER(obs.Chain[0].Raw)
 			}
-			if _, _, err := MatchIdentity(obs, caPEM, []SessionAnchor{anchor}, now()); err != nil {
+			if _, _, err := MatchIdentity(obs, []SessionAnchor{anchor}, now()); err != nil {
 				return fmt.Errorf("credentialed handshake identity: %w", err)
 			}
 			return nil

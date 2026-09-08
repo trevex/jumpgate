@@ -111,7 +111,7 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 	}
 	// Re-authenticate the identical approved identity on the credentialed handshake.
 	matched := matchedAnchor(p, anchorID)
-	verifiedTLS := pgproxy.VerifiedTLSConfig(pgproxy.HostOf(p.GetTargetAddress()), p.GetTargetServerCa(), matched, time.Now)
+	verifiedTLS := pgproxy.VerifiedTLSConfig(pgproxy.HostOf(p.GetTargetAddress()), matched, time.Now)
 	target, err := pgproxy.DialTarget(setupCtx, p.GetTargetAddress(), db, p.GetLogin(), credOf(r), verifiedTLS)
 	if err != nil {
 		slog.Warn("dial target", "err", err)
@@ -192,7 +192,7 @@ func observeAndMatch(ctx context.Context, p *dataplanev1.PrepareSessionResponse)
 	if err != nil {
 		return "", "", err
 	}
-	return pgproxy.MatchIdentity(obs, p.GetTargetServerCa(), anchors, time.Now())
+	return pgproxy.MatchIdentity(obs, anchors, time.Now())
 }
 
 // sessionAnchors maps the prepared TLS trust anchors into the worker's match form,
@@ -209,6 +209,7 @@ func sessionAnchors(p *dataplanev1.PrepareSessionResponse) []pgproxy.SessionAnch
 			Fingerprint:         a.GetSha256Fingerprint(),
 			RequiredDNSNames:    a.GetRequiredDnsNames(),
 			RequiredIPAddresses: a.GetRequiredIpAddresses(),
+			PublicMaterial:      a.GetPublicMaterial(),
 		})
 	}
 	return out

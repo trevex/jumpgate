@@ -324,6 +324,11 @@ message SessionTrustAnchor {
   repeated string required_ssh_principals = 5;
   repeated string required_dns_names = 6;
   repeated string required_ip_addresses = 7;
+  // The anchor's approved public material (PEM). For a tls_ca anchor this is the CA
+  // cert the worker builds its RootCertStore from; tls_leaf needs none (exact
+  // fingerprint match); ssh anchors carry their OpenSSH line (TLS workers ignore it).
+  // Public, non-secret material — warden-authoritative, from the approved anchor row.
+  string public_material = 8 [(buf.validate.field).string.max_bytes = 65536];
 }
 
 // PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
