@@ -562,6 +562,11 @@ export type ProbeAssignment = Message<"jumpgate.dataplane.v1.ProbeAssignment"> &
   endpointRevision: bigint;
 
   /**
+   * lease_token is an opaque 32-byte proof that this worker holds the current probe
+   * lease for this job; warden matches its hash to release the lease. It is not a
+   * secret, credential, or admission token — it grants no target or session access,
+   * only the right to report this probe's result.
+   *
    * @generated from field: bytes lease_token = 4;
    */
   leaseToken: Uint8Array;
@@ -823,6 +828,10 @@ export type ProbeResult = Message<"jumpgate.dataplane.v1.ProbeResult"> & {
   endpointRevision: bigint;
 
   /**
+   * lease_token is the opaque 32-byte probe-lease claim proof from the assignment,
+   * echoed back so warden can match its hash and accept this result. Not a secret,
+   * credential, or admission token.
+   *
    * @generated from field: bytes lease_token = 4;
    */
   leaseToken: Uint8Array;

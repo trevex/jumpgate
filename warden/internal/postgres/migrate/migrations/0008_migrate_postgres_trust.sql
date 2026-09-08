@@ -6,8 +6,9 @@
 -- data plane observes and verifies each target under the new fail-closed sessions.
 --
 -- Converting a pinned target_server_ca PEM into an approved migration-source tls_ca
--- trust anchor is done by the one-shot Go helper BackfillPostgresTrustAnchors, invoked
--- once at startup after migrations. SQL cannot safely parse or SHA-256 fingerprint an
+-- trust anchor is done by the Go migration (version 11, migrations/legacy_pins.go), which
+-- runs after this migration and carries every valid CA forward; the version-12 SQL
+-- migration then drops the legacy column. SQL cannot safely parse or SHA-256 fingerprint an
 -- X.509 CA certificate — a well-formed base64 blob that is not a real certificate would
 -- be fingerprinted and trusted — so certificate parsing stays in Go where an invalid or
 -- empty CA is never trusted (the asset stays pending until an operator probes/approves).

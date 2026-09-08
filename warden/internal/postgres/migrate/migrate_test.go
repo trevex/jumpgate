@@ -3,7 +3,16 @@ package migrate
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"database/sql"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +21,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/ssh"
 
+	"github.com/trevex/jumpgate/warden/internal/postgres/migrate/migrations"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 )
@@ -906,6 +917,306 @@ func TestTargetIdentityStatusCARequiresSpecificValidatedPath(t *testing.T) {
 				t.Fatalf("verification status = %q; want %s", status.VerificationStatus, tt.wantStatus)
 			}
 		})
+	}
+}
+
+// sshTrustFixturePub is a committed OpenSSH ed25519 public key. Its exact SHA-256
+// fingerprint is what an approved migration anchor must carry (never a value SQL guessed
+// at). The private half lives with the e2e sshd fixture.
+const sshTrustFixturePub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGWmQcvPr9bEL7+OFwukS4iXZwkldBKTuTn9RkIG3cLg jumpgate-e2e-ssh-target"
+
+// legacyCarryForwardVersion is the Go migration that carries pins into anchors;
+// legacyDropVersion is the SQL migration that then drops the legacy columns.
+const (
+	legacyCarryForwardVersion = 11
+	legacyDropVersion         = 12
+)
+
+// upToVersion migrates dsn up through version, using the same provider (SQL + Go
+// migrations) as Up so the carry-forward runs exactly as in production.
+func upToVersion(t *testing.T, dsn string, version int64) {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	provider, err := newProvider(db)
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	if _, err := provider.UpTo(context.Background(), version); err != nil {
+		t.Fatalf("migrate up to %d: %v", version, err)
+	}
+}
+
+// makeCAPEM generates an ed25519 CA certificate and returns its PEM plus the canonical
+// "SHA256:" raw-std-base64 fingerprint over its DER — the exact form the CA carry-forward
+// must record (never a value SQL guessed at).
+func makeCAPEM(t *testing.T, cn string) (pemStr, fingerprint, algorithm string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		t.Fatalf("create CA certificate: %v", err)
+	}
+	sum := sha256.Sum256(der)
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA certificate: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
+		"SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]),
+		strings.ToLower(cert.PublicKeyAlgorithm.String())
+}
+
+// TestMigration0011LegacyPinCarryForward drives the real upgrade path: seed assets with
+// legacy pins at the pre-drop schema (version 10), then run the Go carry-forward + column
+// drop (version 11). It asserts valid SSH/pg/rdp pins become approved migration anchors at
+// the asset's current revision, invalid/empty pins stay pending, and the legacy columns
+// are gone while the anchors persist.
+func TestMigration0011LegacyPinCarryForward(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	// Migrate to the last SQL migration before the drop, so the legacy columns still
+	// exist to seed pinned values into.
+	upToVersion(t, dsn, legacyCarryForwardVersion-1)
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	wantKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(sshTrustFixturePub))
+	if err != nil {
+		t.Fatalf("parse fixture key: %v", err)
+	}
+	wantSSHFP := ssh.FingerprintSHA256(wantKey)
+	wantSSHAlgo := wantKey.Type()
+	caPEM, wantCAFP, wantCAAlgo := makeCAPEM(t, "legacy-ca")
+
+	seedSSH := func(name, hostKey string) uuid.UUID {
+		var folderID, assetID uuid.UUID
+		if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "mig11ssh-"+name).Scan(&folderID); err != nil {
+			t.Fatalf("insert folder %s: %v", name, err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, $2, 'ssh') RETURNING id`, folderID, name).Scan(&assetID); err != nil {
+			t.Fatalf("insert asset %s: %v", name, err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO ssh_asset_config (asset_id, target_address, host_public_key) VALUES ($1, 't.example:22', $2)`, assetID, hostKey); err != nil {
+			t.Fatalf("insert ssh config %s: %v", name, err)
+		}
+		return assetID
+	}
+	seedCA := func(kind, name, target, serverCA string) uuid.UUID {
+		var folderID, assetID uuid.UUID
+		if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "mig11"+kind+"-"+name).Scan(&folderID); err != nil {
+			t.Fatalf("insert folder %s: %v", name, err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, $2, $3) RETURNING id`, folderID, name, kind).Scan(&assetID); err != nil {
+			t.Fatalf("insert asset %s: %v", name, err)
+		}
+		switch kind {
+		case "postgres":
+			if _, err := pool.Exec(ctx, `INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database) VALUES ($1, $2, $3, 'appdb')`, assetID, target, serverCA); err != nil {
+				t.Fatalf("insert pg config %s: %v", name, err)
+			}
+		case "rdp":
+			if _, err := pool.Exec(ctx, `INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca) VALUES ($1, $2, $3)`, assetID, target, serverCA); err != nil {
+				t.Fatalf("insert rdp config %s: %v", name, err)
+			}
+		}
+		return assetID
+	}
+
+	sshValid := seedSSH("valid", sshTrustFixturePub)
+	sshInvalid := seedSSH("invalid", "this is not an authorized_keys line")
+	sshEmpty := seedSSH("empty", "")
+	// An asset whose endpoint moved before the carry-forward: the anchor must land at the
+	// CURRENT revision, not a hardcoded 1 (else it would never be current).
+	sshRev2 := seedSSH("valid-rev2", sshTrustFixturePub)
+	if _, err := pool.Exec(ctx, `UPDATE assets SET endpoint_revision = 2 WHERE id = $1`, sshRev2); err != nil {
+		t.Fatalf("bump ssh endpoint revision: %v", err)
+	}
+
+	pgValid := seedCA("postgres", "valid", "pg-primary.db.prod:5432", caPEM)
+	pgInvalid := seedCA("postgres", "invalid", "pg.db:5432", "-----BEGIN CERTIFICATE-----\nnot a cert\n-----END CERTIFICATE-----")
+	pgEmpty := seedCA("postgres", "empty", "pg.db:5432", "")
+	rdpValid := seedCA("rdp", "valid", "rdp-primary.desk.prod:3389", caPEM)
+
+	// Run the carry-forward + drop migration (version 11).
+	upToVersion(t, dsn, legacyDropVersion)
+
+	assertSSHAnchor := func(id uuid.UUID, wantRev int64) {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("ssh asset %s anchors = %d; want exactly 1", id, n)
+		}
+		var kind, algo, fp, source string
+		var rev int64
+		var revoked bool
+		if err := pool.QueryRow(ctx,
+			`SELECT kind, algorithm, sha256_fingerprint, source, endpoint_revision, revoked_at IS NOT NULL FROM target_trust_anchors WHERE asset_id = $1`,
+			id).Scan(&kind, &algo, &fp, &source, &rev, &revoked); err != nil {
+			t.Fatalf("read anchor: %v", err)
+		}
+		if kind != "ssh_host_key" || source != "migration" || fp != wantSSHFP || algo != wantSSHAlgo || rev != wantRev || revoked {
+			t.Fatalf("anchor kind=%q algo=%q fp=%q source=%q rev=%d revoked=%v; want ssh_host_key/%s/%s/migration/%d/false",
+				kind, algo, fp, source, rev, revoked, wantSSHAlgo, wantSSHFP, wantRev)
+		}
+	}
+	assertCAAnchor := func(id uuid.UUID, wantDNS string) {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("ca asset %s anchors = %d; want exactly 1", id, n)
+		}
+		var kind, algo, fp, source, material string
+		var dns []string
+		var rev int64
+		var revoked bool
+		if err := pool.QueryRow(ctx,
+			`SELECT kind, algorithm, sha256_fingerprint, source, public_material, endpoint_revision, revoked_at IS NOT NULL, required_dns_names FROM target_trust_anchors WHERE asset_id = $1`,
+			id).Scan(&kind, &algo, &fp, &source, &material, &rev, &revoked, &dns); err != nil {
+			t.Fatalf("read anchor: %v", err)
+		}
+		if kind != "tls_ca" || source != "migration" || fp != wantCAFP || algo != wantCAAlgo || rev != 1 || revoked {
+			t.Fatalf("anchor kind=%q algo=%q fp=%q source=%q rev=%d revoked=%v; want tls_ca/%s/%s/migration/1/false",
+				kind, algo, fp, source, rev, revoked, wantCAAlgo, wantCAFP)
+		}
+		if strings.TrimSpace(material) == "" {
+			t.Fatalf("ca anchor public_material is empty; want the CA PEM")
+		}
+		if len(dns) != 1 || dns[0] != wantDNS {
+			t.Fatalf("required_dns_names = %v; want [%s] (host from target)", dns, wantDNS)
+		}
+	}
+
+	// (1) valid SSH pin migrates to an approved migration anchor at the current revision.
+	assertSSHAnchor(sshValid, 1)
+	assertSSHAnchor(sshRev2, 2)
+	// (2) valid pg/rdp CA becomes a tls_ca anchor with public_material + required DNS name.
+	assertCAAnchor(pgValid, "pg-primary.db.prod")
+	assertCAAnchor(rdpValid, "rdp-primary.desk.prod")
+
+	// (3) invalid/empty pins never become a trust anchor (asset stays pending).
+	for _, id := range []uuid.UUID{sshInvalid, sshEmpty, pgInvalid, pgEmpty} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("asset %s anchors = %d; want 0 (an invalid/empty pin must never be trusted)", id, n)
+		}
+	}
+
+	// (5) after the drop the legacy columns are gone, while the anchors persist.
+	for _, col := range []struct{ table, column string }{
+		{"ssh_asset_config", "host_public_key"},
+		{"postgres_asset_config", "target_server_ca"},
+		{"rdp_asset_config", "target_server_ca"},
+	} {
+		var exists bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name=$1 AND column_name=$2)`,
+			col.table, col.column).Scan(&exists); err != nil {
+			t.Fatalf("check %s.%s: %v", col.table, col.column, err)
+		}
+		if exists {
+			t.Fatalf("legacy column %s.%s still exists after the drop", col.table, col.column)
+		}
+	}
+	var total int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE source = 'migration'`).Scan(&total); err != nil {
+		t.Fatalf("count migration anchors: %v", err)
+	}
+	if total != 4 { // sshValid, sshRev2, pgValid, rdpValid
+		t.Fatalf("migration anchors = %d; want 4 (the valid pins only)", total)
+	}
+}
+
+// TestMigration0011LegacyPinBackfillIdempotent proves the carry-forward's WHERE NOT
+// EXISTS guard: running each backfill twice against the pre-drop schema inserts exactly
+// one anchor per valid pin, never a duplicate.
+func TestMigration0011LegacyPinBackfillIdempotent(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	upToVersion(t, dsn, legacyCarryForwardVersion-1)
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	caPEM, _, _ := makeCAPEM(t, "idem-ca")
+	var folderID, sshID, pgID uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ('mig11-idem') RETURNING id`).Scan(&folderID); err != nil {
+		t.Fatalf("insert folder: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, 'ssh', 'ssh') RETURNING id`, folderID).Scan(&sshID); err != nil {
+		t.Fatalf("insert ssh asset: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO ssh_asset_config (asset_id, target_address, host_public_key) VALUES ($1, 't.example:22', $2)`, sshID, sshTrustFixturePub); err != nil {
+		t.Fatalf("insert ssh config: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, 'pg', 'postgres') RETURNING id`, folderID).Scan(&pgID); err != nil {
+		t.Fatalf("insert pg asset: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database) VALUES ($1, 'pg.db:5432', $2, 'appdb')`, pgID, caPEM); err != nil {
+		t.Fatalf("insert pg config: %v", err)
+	}
+
+	// Run every backfill twice inside one transaction against the pre-drop schema.
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := migrations.BackfillSSHTrustAnchors(ctx, tx); err != nil {
+			t.Fatalf("ssh backfill pass %d: %v", i, err)
+		}
+		if err := migrations.BackfillPostgresTrustAnchors(ctx, tx); err != nil {
+			t.Fatalf("pg backfill pass %d: %v", i, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	for _, id := range []uuid.UUID{sshID, pgID} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("asset %s anchors after two passes = %d; want exactly 1 (idempotent)", id, n)
+		}
 	}
 }
 

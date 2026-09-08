@@ -6,8 +6,9 @@
 -- data plane observes and verifies each target under the new fail-closed sessions.
 --
 -- Converting a pinned host_public_key into an approved migration-source trust anchor
--- is done by the one-shot Go helper BackfillSSHTrustAnchors, invoked once at startup
--- after migrations. SQL cannot safely canonicalize or SHA-256 fingerprint OpenSSH
+-- is done by the Go migration (version 11, migrations/legacy_pins.go), which runs after
+-- this migration and carries every valid pin forward; the version-12 SQL migration then
+-- drops the legacy column. SQL cannot safely canonicalize or SHA-256 fingerprint OpenSSH
 -- material — a well-formed base64 blob that is not a real key would be fingerprinted
 -- and trusted — so key parsing stays in Go where an invalid key is never trusted.
 --

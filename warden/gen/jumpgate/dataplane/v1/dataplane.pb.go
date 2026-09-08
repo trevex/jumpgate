@@ -1407,14 +1407,18 @@ func (x *KubernetesProbeEndpoint) GetApiServerName() string {
 // ProbeAssignment is public-target-only data. It intentionally has no secret,
 // credential, admission-token, login, or user identity field.
 type ProbeAssignment struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	JobId                string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	AssetId              string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	EndpointRevision     int64                  `protobuf:"varint,3,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"`
-	LeaseToken           []byte                 `protobuf:"bytes,4,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
-	Protocol             ProbeProtocol          `protobuf:"varint,5,opt,name=protocol,proto3,enum=jumpgate.dataplane.v1.ProbeProtocol" json:"protocol,omitempty"`
-	LeaseExpiresAtUnixMs int64                  `protobuf:"varint,6,opt,name=lease_expires_at_unix_ms,json=leaseExpiresAtUnixMs,proto3" json:"lease_expires_at_unix_ms,omitempty"`
-	Limits               *ProbeLimits           `protobuf:"bytes,7,opt,name=limits,proto3" json:"limits,omitempty"`
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	JobId            string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	AssetId          string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	EndpointRevision int64                  `protobuf:"varint,3,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"`
+	// lease_token is an opaque 32-byte proof that this worker holds the current probe
+	// lease for this job; warden matches its hash to release the lease. It is not a
+	// secret, credential, or admission token — it grants no target or session access,
+	// only the right to report this probe's result.
+	LeaseToken           []byte        `protobuf:"bytes,4,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
+	Protocol             ProbeProtocol `protobuf:"varint,5,opt,name=protocol,proto3,enum=jumpgate.dataplane.v1.ProbeProtocol" json:"protocol,omitempty"`
+	LeaseExpiresAtUnixMs int64         `protobuf:"varint,6,opt,name=lease_expires_at_unix_ms,json=leaseExpiresAtUnixMs,proto3" json:"lease_expires_at_unix_ms,omitempty"`
+	Limits               *ProbeLimits  `protobuf:"bytes,7,opt,name=limits,proto3" json:"limits,omitempty"`
 	// Types that are valid to be assigned to Endpoint:
 	//
 	//	*ProbeAssignment_Ssh
@@ -1957,18 +1961,21 @@ func (x *ProbeKubernetesMetadata) GetApiServerName() string {
 }
 
 type ProbeResult struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	JobId             string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	AssetId           string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	EndpointRevision  int64                  `protobuf:"varint,3,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"`
-	LeaseToken        []byte                 `protobuf:"bytes,4,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
-	Protocol          ProbeProtocol          `protobuf:"varint,5,opt,name=protocol,proto3,enum=jumpgate.dataplane.v1.ProbeProtocol" json:"protocol,omitempty"`
-	Outcome           ProbeOutcome           `protobuf:"varint,6,opt,name=outcome,proto3,enum=jumpgate.dataplane.v1.ProbeOutcome" json:"outcome,omitempty"`
-	ObservedAtUnixMs  int64                  `protobuf:"varint,7,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	ResolvedAddresses []string               `protobuf:"bytes,8,rep,name=resolved_addresses,json=resolvedAddresses,proto3" json:"resolved_addresses,omitempty"`
-	Evidence          []*ProbeEvidence       `protobuf:"bytes,9,rep,name=evidence,proto3" json:"evidence,omitempty"`
-	FailureCategory   ProbeFailureCategory   `protobuf:"varint,10,opt,name=failure_category,json=failureCategory,proto3,enum=jumpgate.dataplane.v1.ProbeFailureCategory" json:"failure_category,omitempty"`
-	FailureDetail     string                 `protobuf:"bytes,11,opt,name=failure_detail,json=failureDetail,proto3" json:"failure_detail,omitempty"`
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	JobId            string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	AssetId          string                 `protobuf:"bytes,2,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	EndpointRevision int64                  `protobuf:"varint,3,opt,name=endpoint_revision,json=endpointRevision,proto3" json:"endpoint_revision,omitempty"`
+	// lease_token is the opaque 32-byte probe-lease claim proof from the assignment,
+	// echoed back so warden can match its hash and accept this result. Not a secret,
+	// credential, or admission token.
+	LeaseToken        []byte               `protobuf:"bytes,4,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
+	Protocol          ProbeProtocol        `protobuf:"varint,5,opt,name=protocol,proto3,enum=jumpgate.dataplane.v1.ProbeProtocol" json:"protocol,omitempty"`
+	Outcome           ProbeOutcome         `protobuf:"varint,6,opt,name=outcome,proto3,enum=jumpgate.dataplane.v1.ProbeOutcome" json:"outcome,omitempty"`
+	ObservedAtUnixMs  int64                `protobuf:"varint,7,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	ResolvedAddresses []string             `protobuf:"bytes,8,rep,name=resolved_addresses,json=resolvedAddresses,proto3" json:"resolved_addresses,omitempty"`
+	Evidence          []*ProbeEvidence     `protobuf:"bytes,9,rep,name=evidence,proto3" json:"evidence,omitempty"`
+	FailureCategory   ProbeFailureCategory `protobuf:"varint,10,opt,name=failure_category,json=failureCategory,proto3,enum=jumpgate.dataplane.v1.ProbeFailureCategory" json:"failure_category,omitempty"`
+	FailureDetail     string               `protobuf:"bytes,11,opt,name=failure_detail,json=failureDetail,proto3" json:"failure_detail,omitempty"`
 	// Types that are valid to be assigned to ProtocolMetadata:
 	//
 	//	*ProbeResult_Ssh
