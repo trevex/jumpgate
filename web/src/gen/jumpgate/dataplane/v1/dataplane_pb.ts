@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file jumpgate/dataplane/v1/dataplane.proto.
  */
 export const file_jumpgate_dataplane_v1_dataplane: GenFile = /*@__PURE__*/
-  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEiwgIKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSAASOgoMcHJvYmVfcmVzdWx0GAUgASgLMiIuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUmVzdWx0SABCBQoDbXNnIiUKEEFkdmVydGlzZVR1bm5lbHMSEQoJYXNzZXRfaWRzGAEgAygJIoABCghSZWdpc3RlchIaCgl3b3JrZXJfaWQYASABKAlCB7pIBHICEAESEQoJcHJvdG9jb2xzGAIgAygJEhAKCGNhcGFjaXR5GAMgASgFEhgKEGxpdmVfc2Vzc2lvbl9pZHMYBCADKAkSGQoRZGF0YXBsYW5lX2FkZHJlc3MYBSABKAkiCwoJSGVhcnRiZWF0InUKDFNlc3Npb25FbmRlZBIcCgpzZXNzaW9uX2lkGAEgASgJQgi6SAVyA7ABARIOCgZyZWFzb24YAiABKAkSNwoJcmVjb3JkaW5nGAMgASgLMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJlY29yZGluZ0luZm8i6QEKDVJlY29yZGluZ0luZm8SEgoKb2JqZWN0X2tleRgBIAEoCRISCgpzaXplX2J5dGVzGAIgASgDEg4KBnNoYTI1NhgDIAEoCRIaChJzdGFydGVkX2F0X3VuaXhfbXMYBCABKAMSGAoQZW5kZWRfYXRfdW5peF9tcxgFIAEoAxIOCgZzdGF0dXMYBiABKAkSEAoIZ3JhbnRfaWQYByABKAkSDwoHdXNlcl9pZBgIIAEoCRIQCghhc3NldF9pZBgJIAEoCRIRCgl3b3JrZXJfaWQYCiABKAkSEgoKc2Vzc2lvbl9pZBgLIAEoCSLCAQoNU2VydmVyTWVzc2FnZRIxCgNhY2sYASABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJBY2tIABIzCgh0ZWFyZG93bhgCIAEoCzIfLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5UZWFyZG93bkgAEkIKEHByb2JlX2Fzc2lnbm1lbnQYAyABKAsyJi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVBc3NpZ25tZW50SABCBQoDbXNnIg0KC1JlZ2lzdGVyQWNrIi4KCFRlYXJkb3duEhIKCnNlc3Npb25faWQYASABKAkSDgoGcmVhc29uGAIgASgJIugCCgtQcm9iZUxpbWl0cxIfCg5kbnNfdGltZW91dF9tcxgBIAEoA0IHukgEIgIgABIjChJjb25uZWN0X3RpbWVvdXRfbXMYAiABKANCB7pIBCICIAASJQoUaGFuZHNoYWtlX3RpbWVvdXRfbXMYAyABKANCB7pIBCICIAASIQoQdG90YWxfdGltZW91dF9tcxgEIAEoA0IHukgEIgIgABIlChBtYXhfYmFubmVyX2J5dGVzGAUgASgFQgu6SAgaBhiAgAQgABIkCg9tYXhfZnJhbWVfYnl0ZXMYBiABKAVCC7pICBoGGICAQCAAEikKFm1heF9jaGFpbl9jZXJ0aWZpY2F0ZXMYByABKAVCCbpIBhoEGBAgABIqChVtYXhfY2VydGlmaWNhdGVfYnl0ZXMYCCABKAVCC7pICBoGGICABCAAEiUKEG1heF9yZXN1bHRfYnl0ZXMYCSABKAVCC7pICBoGGICAQCAAIkcKEFNTSFByb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgACJrChVQb3N0Z3Jlc1Byb2JlRW5kcG9pbnQSGAoEaG9zdBgBIAEoCUIKukgHcgUQARj/ARIZCgRwb3J0GAIgASgNQgu6SAgqBhj//wMgABIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wEiZgoQUkRQUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ASI8ChdLdWJlcm5ldGVzUHJvYmVFbmRwb2ludBIhCg9hcGlfc2VydmVyX25hbWUYASABKAlCCLpIBXIDGP8BIrUECg9Qcm9iZUFzc2lnbm1lbnQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEikKGGxlYXNlX2V4cGlyZXNfYXRfdW5peF9tcxgGIAEoA0IHukgEIgIgABI6CgZsaW1pdHMYByABKAsyIi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVMaW1pdHNCBrpIA8gBARI2CgNzc2gYCCABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU1NIUHJvYmVFbmRwb2ludEgAEkAKCHBvc3RncmVzGAkgASgLMiwuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlBvc3RncmVzUHJvYmVFbmRwb2ludEgAEjYKA3JkcBgKIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SRFBQcm9iZUVuZHBvaW50SAASRAoKa3ViZXJuZXRlcxgLIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5LdWJlcm5ldGVzUHJvYmVFbmRwb2ludEgAQhEKCGVuZHBvaW50EgW6SAIIASJIChVQcm9iZURpc3BsYXlFeHRlbnNpb24SFgoEbmFtZRgBIAEoCUIIukgFcgMY/wESFwoFdmFsdWUYAiABKAlCCLpIBXIDKIAgIosFCg1Qcm9iZUV2aWRlbmNlEjYKBGtpbmQYASABKA4yKC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUtpbmQSHQoJYWxnb3JpdGhtGAIgASgJQgq6SAdyBRABGP8BEiYKEnNoYTI1Nl9maW5nZXJwcmludBgDIAEoCUIKukgHcgUQARj/ARIkCg9wdWJsaWNfbWF0ZXJpYWwYBCABKAlCC7pICHIGEAEogIAEEiUKE2NlcnRpZmljYXRlX3N1YmplY3QYBSABKAlCCLpIBXIDKIAgEiQKEmNlcnRpZmljYXRlX2lzc3VlchgGIAEoCUIIukgFcgMogCASKwoZaXNzdWVyX3NoYTI1Nl9maW5nZXJwcmludBgHIAEoCUIIukgFcgMY/wESIgoJZG5zX25hbWVzGAggAygJQg+6SAySAQkQQCIFcgMY/wESJQoMaXBfYWRkcmVzc2VzGAkgAygJQg+6SAySAQkQQCIFcgMY/wESJwoOc3NoX3ByaW5jaXBhbHMYCiADKAlCD7pIDJIBCRBAIgVyAxj/ARIfCg1zZXJpYWxfbnVtYmVyGAsgASgJQgi6SAVyAxiAAhIaChJ2YWxpZF9mcm9tX3VuaXhfbXMYDCABKAMSGwoTdmFsaWRfdW50aWxfdW5peF9tcxgNIAEoAxIdCghrZXlfYml0cxgOIAEoBUILukgIGgYYgIABKAASGgoJa2V5X2N1cnZlGA8gASgJQge6SARyAhhAElIKEmRpc3BsYXlfZXh0ZW5zaW9ucxgQIAMoCzIsLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZURpc3BsYXlFeHRlbnNpb25CCLpIBZIBAhAgIloKEFByb2JlU1NITWV0YWRhdGESGAoGYmFubmVyGAEgASgJQgi6SAVyAyiAIBIsChNob3N0X2tleV9hbGdvcml0aG1zGAIgAygJQg+6SAySAQkQQCIFcgMY/wEihAEKEFByb2JlVExTTWV0YWRhdGESGQoHdmVyc2lvbhgBIAEoCUIIukgFcgMY/wESHgoMY2lwaGVyX3N1aXRlGAIgASgJQgi6SAVyAxj/ARIdCgtzZXJ2ZXJfbmFtZRgDIAEoCUIIukgFcgMY/wESFgoEYWxwbhgEIAEoCUIIukgFcgMY/wEiPAoXUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGESIQoPYXBpX3NlcnZlcl9uYW1lGAEgASgJQgi6SAVyAxj/ASK+BQoLUHJvYmVSZXN1bHQSGAoGam9iX2lkGAEgASgJQgi6SAVyA7ABARIaCghhc3NldF9pZBgCIAEoCUIIukgFcgOwAQESIgoRZW5kcG9pbnRfcmV2aXNpb24YAyABKANCB7pIBCICIAASHgoLbGVhc2VfdG9rZW4YBCABKAxCCbpIBnoEECAYIBI2Cghwcm90b2NvbBgFIAEoDjIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVByb3RvY29sEjQKB291dGNvbWUYBiABKA4yIy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVPdXRjb21lEiQKE29ic2VydmVkX2F0X3VuaXhfbXMYByABKANCB7pIBCICIAASKwoScmVzb2x2ZWRfYWRkcmVzc2VzGAggAygJQg+6SAySAQkQECIFcgMY/wESQAoIZXZpZGVuY2UYCSADKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVFdmlkZW5jZUIIukgFkgECEBASRQoQZmFpbHVyZV9jYXRlZ29yeRgKIAEoDjIrLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUZhaWx1cmVDYXRlZ29yeRIgCg5mYWlsdXJlX2RldGFpbBgLIAEoCUIIukgFcgMogCASNgoDc3NoGAwgASgLMicuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlU1NITWV0YWRhdGFIABI2CgN0bHMYDSABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVUTFNNZXRhZGF0YUgAEkQKCmt1YmVybmV0ZXMYDiABKAsyLi5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVLdWJlcm5ldGVzTWV0YWRhdGFIAEITChFwcm90b2NvbF9tZXRhZGF0YSKjAQoTU2V0dXBTZXNzaW9uUmVxdWVzdBIeCg1zZXNzaW9uX3Rva2VuGAEgASgJQge6SARyAhABEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIdChVjbGllbnRfc3NoX3B1YmxpY19rZXkYAyABKAwSGQoRdGFyZ2V0X3B1YmxpY19rZXkYBCABKAwSFgoFbG9naW4YBiABKAlCB7pIBHICEAEiiwMKFFNldHVwU2Vzc2lvblJlc3BvbnNlEhYKDnRhcmdldF9hZGRyZXNzGAEgASgJEhIKCnNlc3Npb25faWQYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAogASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCyABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgNIAEoDBINCgVsb2dpbhgPIAEoCRIZCg9zc2hfY2VydGlmaWNhdGUYAiABKAxIABISCghwYXNzd29yZBgGIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAcgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgMIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGA4gASgJSABCDAoKY3JlZGVudGlhbCKKAQoVUHJlcGFyZVNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIWCgVsb2dpbhgEIAEoCUIHukgEcgIQASK5AQoSU2Vzc2lvblRydXN0QW5jaG9yEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSEQoJYWxnb3JpdGhtGAMgASgJEhoKEnNoYTI1Nl9maW5nZXJwcmludBgEIAEoCRIfChdyZXF1aXJlZF9zc2hfcHJpbmNpcGFscxgFIAMoCRIaChJyZXF1aXJlZF9kbnNfbmFtZXMYBiADKAkSHQoVcmVxdWlyZWRfaXBfYWRkcmVzc2VzGAcgAygJIskCChZQcmVwYXJlU2Vzc2lvblJlc3BvbnNlEhIKCnNlc3Npb25faWQYASABKAkSGQoRZW5kcG9pbnRfcmV2aXNpb24YAiABKAMSFgoOdGFyZ2V0X2FkZHJlc3MYAyABKAkSGgoScmVjb3JkaW5nX3JlcXVpcmVkGAQgASgIEhwKFHJlY29yZGluZ19vYmplY3Rfa2V5GAUgASgJEhcKD3RhcmdldF9ob3N0X2tleRgGIAEoCRIYChB0YXJnZXRfc2VydmVyX2NhGAcgASgJEhgKEGRlZmF1bHRfZGF0YWJhc2UYCCABKAkSEAoIZ3JhbnRfaWQYCSABKAkSDQoFbG9naW4YCiABKAkSQAoNdHJ1c3RfYW5jaG9ycxgLIAMoCzIpLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uVHJ1c3RBbmNob3Ii5AEKHUlzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXF1ZXN0EhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEhoKCXdvcmtlcl9pZBgCIAEoCUIHukgEcgIQARIiChFlbmRwb2ludF9yZXZpc2lvbhgDIAEoA0IHukgEIgIgABIjChFtYXRjaGVkX2FuY2hvcl9pZBgEIAEoCUIIukgFcgOwAQESJQoUb2JzZXJ2ZWRfZmluZ2VycHJpbnQYBSABKAlCB7pIBHICEAESGQoRdGFyZ2V0X3B1YmxpY19rZXkYBiABKAwi5AEKHklzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXNwb25zZRISCgpzZXNzaW9uX2lkGAEgASgJEg0KBWxvZ2luGAIgASgJEhgKEHg1MDlfcHJpdmF0ZV9rZXkYAyABKAwSGQoPc3NoX2NlcnRpZmljYXRlGAQgASgMSAASEgoIcGFzc3dvcmQYBSABKAlIABIVCgtwcml2YXRlX2tleRgGIAEoDEgAEhoKEHg1MDlfY2VydGlmaWNhdGUYByABKAxIABIVCgtwZ19wYXNzd29yZBgIIAEoCUgAQgwKCmNyZWRlbnRpYWwqmwEKDVByb2JlUHJvdG9jb2wSHgoaUFJPQkVfUFJPVE9DT0xfVU5TUEVDSUZJRUQQABIWChJQUk9CRV9QUk9UT0NPTF9TU0gQARIbChdQUk9CRV9QUk9UT0NPTF9QT1NUR1JFUxACEhYKElBST0JFX1BST1RPQ09MX1JEUBADEh0KGVBST0JFX1BST1RPQ09MX0tVQkVSTkVURVMQBCpkCgxQcm9iZU91dGNvbWUSHQoZUFJPQkVfT1VUQ09NRV9VTlNQRUNJRklFRBAAEhsKF1BST0JFX09VVENPTUVfU1VDQ0VFREVEEAESGAoUUFJPQkVfT1VUQ09NRV9GQUlMRUQQAirtBgoUUHJvYmVGYWlsdXJlQ2F0ZWdvcnkSJgoiUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNQRUNJRklFRBAAEi8KK1BST0JFX0ZBSUxVUkVfQ0FURUdPUllfVU5TVVBQT1JURURfUFJPVE9DT0wQARIvCitQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX05PX0NPTVBBVElCTEVfV09SS0VSEAISMAosUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9ETlNfUkVTT0xVVElPTl9GQUlMRUQQAxItCilQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NPTk5FQ1RJT05fUkVGVVNFRBAEEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfQ09OTkVDVElPTl9USU1FT1VUEAUSLAooUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9QUk9UT0NPTF9NSVNNQVRDSBAGEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfSU5TRUNVUkVfRE9XTkdSQURFEAcSOQo1UFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNVUFBPUlRFRF9JREVOVElUWV9BTEdPUklUSE0QCBItCilQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX01BTEZPUk1FRF9JREVOVElUWRAJEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfSURFTlRJVFlfVE9PX0xBUkdFEAoSLgoqUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DRVJUSUZJQ0FURV9FWFBJUkVEEAsSNAowUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DRVJUSUZJQ0FURV9OT1RfWUVUX1ZBTElEEAwSKAokUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9OQU1FX01JU01BVENIEA0SLworUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9FWFBFQ1RBVElPTl9NSVNNQVRDSBAOEiYKIlBST0JFX0ZBSUxVUkVfQ0FURUdPUllfV09SS0VSX0xPU1QQDxIoCiRQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0xFQVNFX0VYUElSRUQQEBIyCi5QUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1RBUkdFVF9JREVOVElUWV9DSEFOR0VEEBEqhAIKEVByb2JlRXZpZGVuY2VLaW5kEiMKH1BST0JFX0VWSURFTkNFX0tJTkRfVU5TUEVDSUZJRUQQABIkCiBQUk9CRV9FVklERU5DRV9LSU5EX1NTSF9IT1NUX0tFWRABEiwKKFBST0JFX0VWSURFTkNFX0tJTkRfU1NIX0hPU1RfQ0VSVElGSUNBVEUQAhIgChxQUk9CRV9FVklERU5DRV9LSU5EX1RMU19MRUFGEAMSKAokUFJPQkVfRVZJREVOQ0VfS0lORF9UTFNfSU5URVJNRURJQVRFEAQSKgomUFJPQkVfRVZJREVOQ0VfS0lORF9UTFNfUFJFU0VOVEVEX1JPT1QQBTLaAwoQRGF0YXBsYW5lU2VydmljZRJgCgxXb3JrZXJTdHJlYW0SJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuV29ya2VyTWVzc2FnZRokLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXJ2ZXJNZXNzYWdlIgAoATABEmkKDFNldHVwU2Vzc2lvbhIqLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXR1cFNlc3Npb25SZXF1ZXN0GisuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlc3BvbnNlIgASbwoOUHJlcGFyZVNlc3Npb24SLC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJlcGFyZVNlc3Npb25SZXF1ZXN0Gi0uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByZXBhcmVTZXNzaW9uUmVzcG9uc2UiABKHAQoWSXNzdWVTZXNzaW9uQ3JlZGVudGlhbBI0Lmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Jc3N1ZVNlc3Npb25DcmVkZW50aWFsUmVxdWVzdBo1Lmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Jc3N1ZVNlc3Npb25DcmVkZW50aWFsUmVzcG9uc2UiAEJJWkdnaXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2RhdGFwbGFuZS92MTtkYXRhcGxhbmV2MWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CiVqdW1wZ2F0ZS9kYXRhcGxhbmUvdjEvZGF0YXBsYW5lLnByb3RvEhVqdW1wZ2F0ZS5kYXRhcGxhbmUudjEikQMKDVdvcmtlck1lc3NhZ2USMwoIcmVnaXN0ZXIYASABKAsyHy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVnaXN0ZXJIABI1CgloZWFydGJlYXQYAiABKAsyIC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuSGVhcnRiZWF0SAASPAoNc2Vzc2lvbl9lbmRlZBgDIAEoCzIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TZXNzaW9uRW5kZWRIABJEChFhZHZlcnRpc2VfdHVubmVscxgEIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5BZHZlcnRpc2VUdW5uZWxzSAASOgoMcHJvYmVfcmVzdWx0GAUgASgLMiIuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUmVzdWx0SAASTQoTYXBpX3NlcnZlcl9pZGVudGl0eRgGIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZXBvcnRBcGlTZXJ2ZXJJZGVudGl0eUgAQgUKA21zZyJaChBBZHZlcnRpc2VUdW5uZWxzEhEKCWFzc2V0X2lkcxgBIAMoCRIzCgZhZ2VudHMYAiADKAsyIy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuQWdlbnRCaW5kaW5nIiYKDEFnZW50QmluZGluZxIWCg5hZ2VudF9jZXJ0X2RlchgBIAEoDCJZChdSZXBvcnRBcGlTZXJ2ZXJJZGVudGl0eRIWCg5hZ2VudF9jZXJ0X2RlchgBIAEoDBITCgtzZXJ2ZXJfbmFtZRgCIAEoCRIRCgljaGFpbl9kZXIYAyADKAwigAEKCFJlZ2lzdGVyEhoKCXdvcmtlcl9pZBgBIAEoCUIHukgEcgIQARIRCglwcm90b2NvbHMYAiADKAkSEAoIY2FwYWNpdHkYAyABKAUSGAoQbGl2ZV9zZXNzaW9uX2lkcxgEIAMoCRIZChFkYXRhcGxhbmVfYWRkcmVzcxgFIAEoCSILCglIZWFydGJlYXQidQoMU2Vzc2lvbkVuZGVkEhwKCnNlc3Npb25faWQYASABKAlCCLpIBXIDsAEBEg4KBnJlYXNvbhgCIAEoCRI3CglyZWNvcmRpbmcYAyABKAsyJC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUmVjb3JkaW5nSW5mbyLpAQoNUmVjb3JkaW5nSW5mbxISCgpvYmplY3Rfa2V5GAEgASgJEhIKCnNpemVfYnl0ZXMYAiABKAMSDgoGc2hhMjU2GAMgASgJEhoKEnN0YXJ0ZWRfYXRfdW5peF9tcxgEIAEoAxIYChBlbmRlZF9hdF91bml4X21zGAUgASgDEg4KBnN0YXR1cxgGIAEoCRIQCghncmFudF9pZBgHIAEoCRIPCgd1c2VyX2lkGAggASgJEhAKCGFzc2V0X2lkGAkgASgJEhEKCXdvcmtlcl9pZBgKIAEoCRISCgpzZXNzaW9uX2lkGAsgASgJIsIBCg1TZXJ2ZXJNZXNzYWdlEjEKA2FjaxgBIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5SZWdpc3RlckFja0gAEjMKCHRlYXJkb3duGAIgASgLMh8uanVtcGdhdGUuZGF0YXBsYW5lLnYxLlRlYXJkb3duSAASQgoQcHJvYmVfYXNzaWdubWVudBgDIAEoCzImLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUFzc2lnbm1lbnRIAEIFCgNtc2ciDQoLUmVnaXN0ZXJBY2siLgoIVGVhcmRvd24SEgoKc2Vzc2lvbl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAki6AIKC1Byb2JlTGltaXRzEh8KDmRuc190aW1lb3V0X21zGAEgASgDQge6SAQiAiAAEiMKEmNvbm5lY3RfdGltZW91dF9tcxgCIAEoA0IHukgEIgIgABIlChRoYW5kc2hha2VfdGltZW91dF9tcxgDIAEoA0IHukgEIgIgABIhChB0b3RhbF90aW1lb3V0X21zGAQgASgDQge6SAQiAiAAEiUKEG1heF9iYW5uZXJfYnl0ZXMYBSABKAVCC7pICBoGGICABCAAEiQKD21heF9mcmFtZV9ieXRlcxgGIAEoBUILukgIGgYYgIBAIAASKQoWbWF4X2NoYWluX2NlcnRpZmljYXRlcxgHIAEoBUIJukgGGgQYECAAEioKFW1heF9jZXJ0aWZpY2F0ZV9ieXRlcxgIIAEoBUILukgIGgYYgIAEIAASJQoQbWF4X3Jlc3VsdF9ieXRlcxgJIAEoBUILukgIGgYYgIBAIAAiRwoQU1NIUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAImsKFVBvc3RncmVzUHJvYmVFbmRwb2ludBIYCgRob3N0GAEgASgJQgq6SAdyBRABGP8BEhkKBHBvcnQYAiABKA1CC7pICCoGGP//AyAAEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ASJmChBSRFBQcm9iZUVuZHBvaW50EhgKBGhvc3QYASABKAlCCrpIB3IFEAEY/wESGQoEcG9ydBgCIAEoDUILukgIKgYY//8DIAASHQoLc2VydmVyX25hbWUYAyABKAlCCLpIBXIDGP8BIjwKF0t1YmVybmV0ZXNQcm9iZUVuZHBvaW50EiEKD2FwaV9zZXJ2ZXJfbmFtZRgBIAEoCUIIukgFcgMY/wEitQQKD1Byb2JlQXNzaWdubWVudBIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEhoKCGFzc2V0X2lkGAIgASgJQgi6SAVyA7ABARIiChFlbmRwb2ludF9yZXZpc2lvbhgDIAEoA0IHukgEIgIgABIeCgtsZWFzZV90b2tlbhgEIAEoDEIJukgGegQQIBggEjYKCHByb3RvY29sGAUgASgOMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUHJvdG9jb2wSKQoYbGVhc2VfZXhwaXJlc19hdF91bml4X21zGAYgASgDQge6SAQiAiAAEjoKBmxpbWl0cxgHIAEoCzIiLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUxpbWl0c0IGukgDyAEBEjYKA3NzaBgIIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5TU0hQcm9iZUVuZHBvaW50SAASQAoIcG9zdGdyZXMYCSABKAsyLC5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUG9zdGdyZXNQcm9iZUVuZHBvaW50SAASNgoDcmRwGAogASgLMicuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlJEUFByb2JlRW5kcG9pbnRIABJECgprdWJlcm5ldGVzGAsgASgLMi4uanVtcGdhdGUuZGF0YXBsYW5lLnYxLkt1YmVybmV0ZXNQcm9iZUVuZHBvaW50SABCEQoIZW5kcG9pbnQSBbpIAggBIkgKFVByb2JlRGlzcGxheUV4dGVuc2lvbhIWCgRuYW1lGAEgASgJQgi6SAVyAxj/ARIXCgV2YWx1ZRgCIAEoCUIIukgFcgMogCAiiwUKDVByb2JlRXZpZGVuY2USNgoEa2luZBgBIAEoDjIoLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUV2aWRlbmNlS2luZBIdCglhbGdvcml0aG0YAiABKAlCCrpIB3IFEAEY/wESJgoSc2hhMjU2X2ZpbmdlcnByaW50GAMgASgJQgq6SAdyBRABGP8BEiQKD3B1YmxpY19tYXRlcmlhbBgEIAEoCUILukgIcgYQASiAgAQSJQoTY2VydGlmaWNhdGVfc3ViamVjdBgFIAEoCUIIukgFcgMogCASJAoSY2VydGlmaWNhdGVfaXNzdWVyGAYgASgJQgi6SAVyAyiAIBIrChlpc3N1ZXJfc2hhMjU2X2ZpbmdlcnByaW50GAcgASgJQgi6SAVyAxj/ARIiCglkbnNfbmFtZXMYCCADKAlCD7pIDJIBCRBAIgVyAxj/ARIlCgxpcF9hZGRyZXNzZXMYCSADKAlCD7pIDJIBCRBAIgVyAxj/ARInCg5zc2hfcHJpbmNpcGFscxgKIAMoCUIPukgMkgEJEEAiBXIDGP8BEh8KDXNlcmlhbF9udW1iZXIYCyABKAlCCLpIBXIDGIACEhoKEnZhbGlkX2Zyb21fdW5peF9tcxgMIAEoAxIbChN2YWxpZF91bnRpbF91bml4X21zGA0gASgDEh0KCGtleV9iaXRzGA4gASgFQgu6SAgaBhiAgAEoABIaCglrZXlfY3VydmUYDyABKAlCB7pIBHICGEASUgoSZGlzcGxheV9leHRlbnNpb25zGBAgAygLMiwuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlRGlzcGxheUV4dGVuc2lvbkIIukgFkgECECAiWgoQUHJvYmVTU0hNZXRhZGF0YRIYCgZiYW5uZXIYASABKAlCCLpIBXIDKIAgEiwKE2hvc3Rfa2V5X2FsZ29yaXRobXMYAiADKAlCD7pIDJIBCRBAIgVyAxj/ASKEAQoQUHJvYmVUTFNNZXRhZGF0YRIZCgd2ZXJzaW9uGAEgASgJQgi6SAVyAxj/ARIeCgxjaXBoZXJfc3VpdGUYAiABKAlCCLpIBXIDGP8BEh0KC3NlcnZlcl9uYW1lGAMgASgJQgi6SAVyAxj/ARIWCgRhbHBuGAQgASgJQgi6SAVyAxj/ASI8ChdQcm9iZUt1YmVybmV0ZXNNZXRhZGF0YRIhCg9hcGlfc2VydmVyX25hbWUYASABKAlCCLpIBXIDGP8BIr4FCgtQcm9iZVJlc3VsdBIYCgZqb2JfaWQYASABKAlCCLpIBXIDsAEBEhoKCGFzc2V0X2lkGAIgASgJQgi6SAVyA7ABARIiChFlbmRwb2ludF9yZXZpc2lvbhgDIAEoA0IHukgEIgIgABIeCgtsZWFzZV90b2tlbhgEIAEoDEIJukgGegQQIBggEjYKCHByb3RvY29sGAUgASgOMiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlUHJvdG9jb2wSNAoHb3V0Y29tZRgGIAEoDjIjLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZU91dGNvbWUSJAoTb2JzZXJ2ZWRfYXRfdW5peF9tcxgHIAEoA0IHukgEIgIgABIrChJyZXNvbHZlZF9hZGRyZXNzZXMYCCADKAlCD7pIDJIBCRAQIgVyAxj/ARJACghldmlkZW5jZRgJIAMoCzIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUV2aWRlbmNlQgi6SAWSAQIQEBJFChBmYWlsdXJlX2NhdGVnb3J5GAogASgOMisuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlByb2JlRmFpbHVyZUNhdGVnb3J5EiAKDmZhaWx1cmVfZGV0YWlsGAsgASgJQgi6SAVyAyiAIBI2CgNzc2gYDCABKAsyJy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJvYmVTU0hNZXRhZGF0YUgAEjYKA3RscxgNIAEoCzInLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZVRMU01ldGFkYXRhSAASRAoKa3ViZXJuZXRlcxgOIAEoCzIuLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Qcm9iZUt1YmVybmV0ZXNNZXRhZGF0YUgAQhMKEXByb3RvY29sX21ldGFkYXRhIqMBChNTZXR1cFNlc3Npb25SZXF1ZXN0Eh4KDXNlc3Npb25fdG9rZW4YASABKAlCB7pIBHICEAESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEh0KFWNsaWVudF9zc2hfcHVibGljX2tleRgDIAEoDBIZChF0YXJnZXRfcHVibGljX2tleRgEIAEoDBIWCgVsb2dpbhgGIAEoCUIHukgEcgIQASKLAwoUU2V0dXBTZXNzaW9uUmVzcG9uc2USFgoOdGFyZ2V0X2FkZHJlc3MYASABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAggASgJEhAKCGdyYW50X2lkGAkgASgJEhgKEHRhcmdldF9zZXJ2ZXJfY2EYCiABKAkSGAoQZGVmYXVsdF9kYXRhYmFzZRgLIAEoCRIYChB4NTA5X3ByaXZhdGVfa2V5GA0gASgMEg0KBWxvZ2luGA8gASgJEhkKD3NzaF9jZXJ0aWZpY2F0ZRgCIAEoDEgAEhIKCHBhc3N3b3JkGAYgASgJSAASFQoLcHJpdmF0ZV9rZXkYByABKAxIABIaChB4NTA5X2NlcnRpZmljYXRlGAwgASgMSAASFQoLcGdfcGFzc3dvcmQYDiABKAlIAEIMCgpjcmVkZW50aWFsIooBChVQcmVwYXJlU2Vzc2lvblJlcXVlc3QSHgoNc2Vzc2lvbl90b2tlbhgBIAEoCUIHukgEcgIQARIaCgl3b3JrZXJfaWQYAiABKAlCB7pIBHICEAESHQoVY2xpZW50X3NzaF9wdWJsaWNfa2V5GAMgASgMEhYKBWxvZ2luGAQgASgJQge6SARyAhABIrkBChJTZXNzaW9uVHJ1c3RBbmNob3ISCgoCaWQYASABKAkSDAoEa2luZBgCIAEoCRIRCglhbGdvcml0aG0YAyABKAkSGgoSc2hhMjU2X2ZpbmdlcnByaW50GAQgASgJEh8KF3JlcXVpcmVkX3NzaF9wcmluY2lwYWxzGAUgAygJEhoKEnJlcXVpcmVkX2Ruc19uYW1lcxgGIAMoCRIdChVyZXF1aXJlZF9pcF9hZGRyZXNzZXMYByADKAkiyQIKFlByZXBhcmVTZXNzaW9uUmVzcG9uc2USEgoKc2Vzc2lvbl9pZBgBIAEoCRIZChFlbmRwb2ludF9yZXZpc2lvbhgCIAEoAxIWCg50YXJnZXRfYWRkcmVzcxgDIAEoCRIaChJyZWNvcmRpbmdfcmVxdWlyZWQYBCABKAgSHAoUcmVjb3JkaW5nX29iamVjdF9rZXkYBSABKAkSFwoPdGFyZ2V0X2hvc3Rfa2V5GAYgASgJEhgKEHRhcmdldF9zZXJ2ZXJfY2EYByABKAkSGAoQZGVmYXVsdF9kYXRhYmFzZRgIIAEoCRIQCghncmFudF9pZBgJIAEoCRINCgVsb2dpbhgKIAEoCRJACg10cnVzdF9hbmNob3JzGAsgAygLMikuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlc3Npb25UcnVzdEFuY2hvciLkAQodSXNzdWVTZXNzaW9uQ3JlZGVudGlhbFJlcXVlc3QSHAoKc2Vzc2lvbl9pZBgBIAEoCUIIukgFcgOwAQESGgoJd29ya2VyX2lkGAIgASgJQge6SARyAhABEiIKEWVuZHBvaW50X3JldmlzaW9uGAMgASgDQge6SAQiAiAAEiMKEW1hdGNoZWRfYW5jaG9yX2lkGAQgASgJQgi6SAVyA7ABARIlChRvYnNlcnZlZF9maW5nZXJwcmludBgFIAEoCUIHukgEcgIQARIZChF0YXJnZXRfcHVibGljX2tleRgGIAEoDCLkAQoeSXNzdWVTZXNzaW9uQ3JlZGVudGlhbFJlc3BvbnNlEhIKCnNlc3Npb25faWQYASABKAkSDQoFbG9naW4YAiABKAkSGAoQeDUwOV9wcml2YXRlX2tleRgDIAEoDBIZCg9zc2hfY2VydGlmaWNhdGUYBCABKAxIABISCghwYXNzd29yZBgFIAEoCUgAEhUKC3ByaXZhdGVfa2V5GAYgASgMSAASGgoQeDUwOV9jZXJ0aWZpY2F0ZRgHIAEoDEgAEhUKC3BnX3Bhc3N3b3JkGAggASgJSABCDAoKY3JlZGVudGlhbCqbAQoNUHJvYmVQcm90b2NvbBIeChpQUk9CRV9QUk9UT0NPTF9VTlNQRUNJRklFRBAAEhYKElBST0JFX1BST1RPQ09MX1NTSBABEhsKF1BST0JFX1BST1RPQ09MX1BPU1RHUkVTEAISFgoSUFJPQkVfUFJPVE9DT0xfUkRQEAMSHQoZUFJPQkVfUFJPVE9DT0xfS1VCRVJORVRFUxAEKmQKDFByb2JlT3V0Y29tZRIdChlQUk9CRV9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGwoXUFJPQkVfT1VUQ09NRV9TVUNDRUVERUQQARIYChRQUk9CRV9PVVRDT01FX0ZBSUxFRBACKu0GChRQcm9iZUZhaWx1cmVDYXRlZ29yeRImCiJQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1BFQ0lGSUVEEAASLworUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9VTlNVUFBPUlRFRF9QUk9UT0NPTBABEi8KK1BST0JFX0ZBSUxVUkVfQ0FURUdPUllfTk9fQ09NUEFUSUJMRV9XT1JLRVIQAhIwCixQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0ROU19SRVNPTFVUSU9OX0ZBSUxFRBADEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfQ09OTkVDVElPTl9SRUZVU0VEEAQSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9DT05ORUNUSU9OX1RJTUVPVVQQBRIsCihQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1BST1RPQ09MX01JU01BVENIEAYSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JTlNFQ1VSRV9ET1dOR1JBREUQBxI5CjVQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX1VOU1VQUE9SVEVEX0lERU5USVRZX0FMR09SSVRITRAIEi0KKVBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTUFMRk9STUVEX0lERU5USVRZEAkSLQopUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9JREVOVElUWV9UT09fTEFSR0UQChIuCipQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX0VYUElSRUQQCxI0CjBQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0NFUlRJRklDQVRFX05PVF9ZRVRfVkFMSUQQDBIoCiRQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX05BTUVfTUlTTUFUQ0gQDRIvCitQUk9CRV9GQUlMVVJFX0NBVEVHT1JZX0VYUEVDVEFUSU9OX01JU01BVENIEA4SJgoiUFJPQkVfRkFJTFVSRV9DQVRFR09SWV9XT1JLRVJfTE9TVBAPEigKJFBST0JFX0ZBSUxVUkVfQ0FURUdPUllfTEVBU0VfRVhQSVJFRBAQEjIKLlBST0JFX0ZBSUxVUkVfQ0FURUdPUllfVEFSR0VUX0lERU5USVRZX0NIQU5HRUQQESqEAgoRUHJvYmVFdmlkZW5jZUtpbmQSIwofUFJPQkVfRVZJREVOQ0VfS0lORF9VTlNQRUNJRklFRBAAEiQKIFBST0JFX0VWSURFTkNFX0tJTkRfU1NIX0hPU1RfS0VZEAESLAooUFJPQkVfRVZJREVOQ0VfS0lORF9TU0hfSE9TVF9DRVJUSUZJQ0FURRACEiAKHFBST0JFX0VWSURFTkNFX0tJTkRfVExTX0xFQUYQAxIoCiRQUk9CRV9FVklERU5DRV9LSU5EX1RMU19JTlRFUk1FRElBVEUQBBIqCiZQUk9CRV9FVklERU5DRV9LSU5EX1RMU19QUkVTRU5URURfUk9PVBAFMtoDChBEYXRhcGxhbmVTZXJ2aWNlEmAKDFdvcmtlclN0cmVhbRIkLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5Xb3JrZXJNZXNzYWdlGiQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNlcnZlck1lc3NhZ2UiACgBMAESaQoMU2V0dXBTZXNzaW9uEiouanVtcGdhdGUuZGF0YXBsYW5lLnYxLlNldHVwU2Vzc2lvblJlcXVlc3QaKy5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuU2V0dXBTZXNzaW9uUmVzcG9uc2UiABJvCg5QcmVwYXJlU2Vzc2lvbhIsLmp1bXBnYXRlLmRhdGFwbGFuZS52MS5QcmVwYXJlU2Vzc2lvblJlcXVlc3QaLS5qdW1wZ2F0ZS5kYXRhcGxhbmUudjEuUHJlcGFyZVNlc3Npb25SZXNwb25zZSIAEocBChZJc3N1ZVNlc3Npb25DcmVkZW50aWFsEjQuanVtcGdhdGUuZGF0YXBsYW5lLnYxLklzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXF1ZXN0GjUuanVtcGdhdGUuZGF0YXBsYW5lLnYxLklzc3VlU2Vzc2lvbkNyZWRlbnRpYWxSZXNwb25zZSIAQklaR2dpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvZGF0YXBsYW5lL3YxO2RhdGFwbGFuZXYxYgZwcm90bzM", [file_buf_validate_validate]);
 
 /**
  * @generated from message jumpgate.dataplane.v1.WorkerMessage
@@ -50,6 +50,12 @@ export type WorkerMessage = Message<"jumpgate.dataplane.v1.WorkerMessage"> & {
      */
     value: ProbeResult;
     case: "probeResult";
+  } | {
+    /**
+     * @generated from field: jumpgate.dataplane.v1.ReportApiServerIdentity api_server_identity = 6;
+     */
+    value: ReportApiServerIdentity;
+    case: "apiServerIdentity";
   } | { case: undefined; value?: undefined };
 };
 
@@ -61,8 +67,12 @@ export const WorkerMessageSchema: GenMessage<WorkerMessage> = /*@__PURE__*/
   messageDesc(file_jumpgate_dataplane_v1_dataplane, 0);
 
 /**
- * AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
- * re-sent whenever an agent connects or disconnects.
+ * AdvertiseTunnels is the broker's current set of held agent tunnels, re-sent
+ * whenever an agent connects or disconnects. Each held tunnel carries the agent's
+ * verified mesh leaf certificate (DER) so warden re-derives the bound asset id
+ * from the SPIFFE SAN itself rather than trusting the broker's advertised list.
+ * asset_ids is retained for logging/back-compat only; warden ignores it when
+ * agents is populated (a compromised broker cannot forge a valid agent cert).
  *
  * @generated from message jumpgate.dataplane.v1.AdvertiseTunnels
  */
@@ -71,6 +81,11 @@ export type AdvertiseTunnels = Message<"jumpgate.dataplane.v1.AdvertiseTunnels">
    * @generated from field: repeated string asset_ids = 1;
    */
   assetIds: string[];
+
+  /**
+   * @generated from field: repeated jumpgate.dataplane.v1.AgentBinding agents = 2;
+   */
+  agents: AgentBinding[];
 };
 
 /**
@@ -79,6 +94,62 @@ export type AdvertiseTunnels = Message<"jumpgate.dataplane.v1.AdvertiseTunnels">
  */
 export const AdvertiseTunnelsSchema: GenMessage<AdvertiseTunnels> = /*@__PURE__*/
   messageDesc(file_jumpgate_dataplane_v1_dataplane, 1);
+
+/**
+ * AgentBinding is one held agent tunnel: the agent's verified mesh leaf cert (DER).
+ *
+ * @generated from message jumpgate.dataplane.v1.AgentBinding
+ */
+export type AgentBinding = Message<"jumpgate.dataplane.v1.AgentBinding"> & {
+  /**
+   * @generated from field: bytes agent_cert_der = 1;
+   */
+  agentCertDer: Uint8Array;
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.AgentBinding.
+ * Use `create(AgentBindingSchema)` to create a new message.
+ */
+export const AgentBindingSchema: GenMessage<AgentBinding> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 2);
+
+/**
+ * ReportApiServerIdentity carries the API-server TLS evidence an in-cluster agent
+ * observed for its bound asset, relayed by the broker over its control stream.
+ * agent_cert_der is the agent's verified mesh leaf so warden binds the observation
+ * to the SPIFFE-derived asset id, not to the broker's claim. It never carries a
+ * ServiceAccount token — the agent probe stops at the TLS handshake.
+ *
+ * @generated from message jumpgate.dataplane.v1.ReportApiServerIdentity
+ */
+export type ReportApiServerIdentity = Message<"jumpgate.dataplane.v1.ReportApiServerIdentity"> & {
+  /**
+   * @generated from field: bytes agent_cert_der = 1;
+   */
+  agentCertDer: Uint8Array;
+
+  /**
+   * API-server name the agent connected to
+   *
+   * @generated from field: string server_name = 2;
+   */
+  serverName: string;
+
+  /**
+   * presented certificate chain, leaf-first (DER)
+   *
+   * @generated from field: repeated bytes chain_der = 3;
+   */
+  chainDer: Uint8Array[];
+};
+
+/**
+ * Describes the message jumpgate.dataplane.v1.ReportApiServerIdentity.
+ * Use `create(ReportApiServerIdentitySchema)` to create a new message.
+ */
+export const ReportApiServerIdentitySchema: GenMessage<ReportApiServerIdentity> = /*@__PURE__*/
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 3);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Register
@@ -119,7 +190,7 @@ export type Register = Message<"jumpgate.dataplane.v1.Register"> & {
  * Use `create(RegisterSchema)` to create a new message.
  */
 export const RegisterSchema: GenMessage<Register> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 2);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 4);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Heartbeat
@@ -132,7 +203,7 @@ export type Heartbeat = Message<"jumpgate.dataplane.v1.Heartbeat"> & {
  * Use `create(HeartbeatSchema)` to create a new message.
  */
 export const HeartbeatSchema: GenMessage<Heartbeat> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 3);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 5);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SessionEnded
@@ -161,7 +232,7 @@ export type SessionEnded = Message<"jumpgate.dataplane.v1.SessionEnded"> & {
  * Use `create(SessionEndedSchema)` to create a new message.
  */
 export const SessionEndedSchema: GenMessage<SessionEnded> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 4);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 6);
 
 /**
  * RecordingInfo is the worker's report of a session recording's disposition.
@@ -246,7 +317,7 @@ export type RecordingInfo = Message<"jumpgate.dataplane.v1.RecordingInfo"> & {
  * Use `create(RecordingInfoSchema)` to create a new message.
  */
 export const RecordingInfoSchema: GenMessage<RecordingInfo> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 5);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 7);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ServerMessage
@@ -281,7 +352,7 @@ export type ServerMessage = Message<"jumpgate.dataplane.v1.ServerMessage"> & {
  * Use `create(ServerMessageSchema)` to create a new message.
  */
 export const ServerMessageSchema: GenMessage<ServerMessage> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 6);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 8);
 
 /**
  * @generated from message jumpgate.dataplane.v1.RegisterAck
@@ -294,7 +365,7 @@ export type RegisterAck = Message<"jumpgate.dataplane.v1.RegisterAck"> & {
  * Use `create(RegisterAckSchema)` to create a new message.
  */
 export const RegisterAckSchema: GenMessage<RegisterAck> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 7);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
 
 /**
  * @generated from message jumpgate.dataplane.v1.Teardown
@@ -316,7 +387,7 @@ export type Teardown = Message<"jumpgate.dataplane.v1.Teardown"> & {
  * Use `create(TeardownSchema)` to create a new message.
  */
 export const TeardownSchema: GenMessage<Teardown> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 8);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 10);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeLimits
@@ -373,7 +444,7 @@ export type ProbeLimits = Message<"jumpgate.dataplane.v1.ProbeLimits"> & {
  * Use `create(ProbeLimitsSchema)` to create a new message.
  */
 export const ProbeLimitsSchema: GenMessage<ProbeLimits> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 9);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 11);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SSHProbeEndpoint
@@ -395,7 +466,7 @@ export type SSHProbeEndpoint = Message<"jumpgate.dataplane.v1.SSHProbeEndpoint">
  * Use `create(SSHProbeEndpointSchema)` to create a new message.
  */
 export const SSHProbeEndpointSchema: GenMessage<SSHProbeEndpoint> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 10);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 12);
 
 /**
  * @generated from message jumpgate.dataplane.v1.PostgresProbeEndpoint
@@ -422,7 +493,7 @@ export type PostgresProbeEndpoint = Message<"jumpgate.dataplane.v1.PostgresProbe
  * Use `create(PostgresProbeEndpointSchema)` to create a new message.
  */
 export const PostgresProbeEndpointSchema: GenMessage<PostgresProbeEndpoint> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 11);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 13);
 
 /**
  * @generated from message jumpgate.dataplane.v1.RDPProbeEndpoint
@@ -449,7 +520,7 @@ export type RDPProbeEndpoint = Message<"jumpgate.dataplane.v1.RDPProbeEndpoint">
  * Use `create(RDPProbeEndpointSchema)` to create a new message.
  */
 export const RDPProbeEndpointSchema: GenMessage<RDPProbeEndpoint> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 12);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 14);
 
 /**
  * @generated from message jumpgate.dataplane.v1.KubernetesProbeEndpoint
@@ -466,7 +537,7 @@ export type KubernetesProbeEndpoint = Message<"jumpgate.dataplane.v1.KubernetesP
  * Use `create(KubernetesProbeEndpointSchema)` to create a new message.
  */
 export const KubernetesProbeEndpointSchema: GenMessage<KubernetesProbeEndpoint> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 13);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 15);
 
 /**
  * ProbeAssignment is public-target-only data. It intentionally has no secret,
@@ -545,7 +616,7 @@ export type ProbeAssignment = Message<"jumpgate.dataplane.v1.ProbeAssignment"> &
  * Use `create(ProbeAssignmentSchema)` to create a new message.
  */
 export const ProbeAssignmentSchema: GenMessage<ProbeAssignment> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 14);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 16);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeDisplayExtension
@@ -567,7 +638,7 @@ export type ProbeDisplayExtension = Message<"jumpgate.dataplane.v1.ProbeDisplayE
  * Use `create(ProbeDisplayExtensionSchema)` to create a new message.
  */
 export const ProbeDisplayExtensionSchema: GenMessage<ProbeDisplayExtension> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 15);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 17);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeEvidence
@@ -659,7 +730,7 @@ export type ProbeEvidence = Message<"jumpgate.dataplane.v1.ProbeEvidence"> & {
  * Use `create(ProbeEvidenceSchema)` to create a new message.
  */
 export const ProbeEvidenceSchema: GenMessage<ProbeEvidence> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 16);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 18);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeSSHMetadata
@@ -681,7 +752,7 @@ export type ProbeSSHMetadata = Message<"jumpgate.dataplane.v1.ProbeSSHMetadata">
  * Use `create(ProbeSSHMetadataSchema)` to create a new message.
  */
 export const ProbeSSHMetadataSchema: GenMessage<ProbeSSHMetadata> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 17);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 19);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeTLSMetadata
@@ -713,7 +784,7 @@ export type ProbeTLSMetadata = Message<"jumpgate.dataplane.v1.ProbeTLSMetadata">
  * Use `create(ProbeTLSMetadataSchema)` to create a new message.
  */
 export const ProbeTLSMetadataSchema: GenMessage<ProbeTLSMetadata> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 18);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 20);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeKubernetesMetadata
@@ -730,7 +801,7 @@ export type ProbeKubernetesMetadata = Message<"jumpgate.dataplane.v1.ProbeKubern
  * Use `create(ProbeKubernetesMetadataSchema)` to create a new message.
  */
 export const ProbeKubernetesMetadataSchema: GenMessage<ProbeKubernetesMetadata> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 19);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 21);
 
 /**
  * @generated from message jumpgate.dataplane.v1.ProbeResult
@@ -820,7 +891,7 @@ export type ProbeResult = Message<"jumpgate.dataplane.v1.ProbeResult"> & {
  * Use `create(ProbeResultSchema)` to create a new message.
  */
 export const ProbeResultSchema: GenMessage<ProbeResult> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 20);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 22);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SetupSessionRequest
@@ -863,7 +934,7 @@ export type SetupSessionRequest = Message<"jumpgate.dataplane.v1.SetupSessionReq
  * Use `create(SetupSessionRequestSchema)` to create a new message.
  */
 export const SetupSessionRequestSchema: GenMessage<SetupSessionRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 21);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 23);
 
 /**
  * @generated from message jumpgate.dataplane.v1.SetupSessionResponse
@@ -993,7 +1064,7 @@ export type SetupSessionResponse = Message<"jumpgate.dataplane.v1.SetupSessionRe
  * Use `create(SetupSessionResponseSchema)` to create a new message.
  */
 export const SetupSessionResponseSchema: GenMessage<SetupSessionResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 22);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 24);
 
 /**
  * PrepareSessionRequest opens the credential-free first phase of a session. It
@@ -1033,7 +1104,7 @@ export type PrepareSessionRequest = Message<"jumpgate.dataplane.v1.PrepareSessio
  * Use `create(PrepareSessionRequestSchema)` to create a new message.
  */
 export const PrepareSessionRequestSchema: GenMessage<PrepareSessionRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 23);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 25);
 
 /**
  * SessionTrustAnchor is one current active trust anchor exposed to the worker so
@@ -1086,7 +1157,7 @@ export type SessionTrustAnchor = Message<"jumpgate.dataplane.v1.SessionTrustAnch
  * Use `create(SessionTrustAnchorSchema)` to create a new message.
  */
 export const SessionTrustAnchorSchema: GenMessage<SessionTrustAnchor> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 24);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 26);
 
 /**
  * PrepareSessionResponse returns the endpoint, policy, and the trust anchors the
@@ -1172,7 +1243,7 @@ export type PrepareSessionResponse = Message<"jumpgate.dataplane.v1.PrepareSessi
  * Use `create(PrepareSessionResponseSchema)` to create a new message.
  */
 export const PrepareSessionResponseSchema: GenMessage<PrepareSessionResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 25);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 27);
 
 /**
  * IssueSessionCredentialRequest releases the target credential for a prepared
@@ -1225,7 +1296,7 @@ export type IssueSessionCredentialRequest = Message<"jumpgate.dataplane.v1.Issue
  * Use `create(IssueSessionCredentialRequestSchema)` to create a new message.
  */
 export const IssueSessionCredentialRequestSchema: GenMessage<IssueSessionCredentialRequest> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 26);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 28);
 
 /**
  * IssueSessionCredentialResponse carries the credential oneof released only after
@@ -1302,7 +1373,7 @@ export type IssueSessionCredentialResponse = Message<"jumpgate.dataplane.v1.Issu
  * Use `create(IssueSessionCredentialResponseSchema)` to create a new message.
  */
 export const IssueSessionCredentialResponseSchema: GenMessage<IssueSessionCredentialResponse> = /*@__PURE__*/
-  messageDesc(file_jumpgate_dataplane_v1_dataplane, 27);
+  messageDesc(file_jumpgate_dataplane_v1_dataplane, 29);
 
 /**
  * ProbeProtocol is deliberately independent from user-facing API enums: this is

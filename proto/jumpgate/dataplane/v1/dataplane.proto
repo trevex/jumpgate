@@ -43,11 +43,31 @@ message WorkerMessage {
     SessionEnded session_ended = 3;
     AdvertiseTunnels advertise_tunnels = 4;
     ProbeResult probe_result = 5;
+    ReportApiServerIdentity api_server_identity = 6;
   }
 }
-// AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
-// re-sent whenever an agent connects or disconnects.
-message AdvertiseTunnels { repeated string asset_ids = 1; }
+// AdvertiseTunnels is the broker's current set of held agent tunnels, re-sent
+// whenever an agent connects or disconnects. Each held tunnel carries the agent's
+// verified mesh leaf certificate (DER) so warden re-derives the bound asset id
+// from the SPIFFE SAN itself rather than trusting the broker's advertised list.
+// asset_ids is retained for logging/back-compat only; warden ignores it when
+// agents is populated (a compromised broker cannot forge a valid agent cert).
+message AdvertiseTunnels {
+  repeated string asset_ids = 1;
+  repeated AgentBinding agents = 2;
+}
+// AgentBinding is one held agent tunnel: the agent's verified mesh leaf cert (DER).
+message AgentBinding { bytes agent_cert_der = 1; }
+// ReportApiServerIdentity carries the API-server TLS evidence an in-cluster agent
+// observed for its bound asset, relayed by the broker over its control stream.
+// agent_cert_der is the agent's verified mesh leaf so warden binds the observation
+// to the SPIFFE-derived asset id, not to the broker's claim. It never carries a
+// ServiceAccount token — the agent probe stops at the TLS handshake.
+message ReportApiServerIdentity {
+  bytes agent_cert_der = 1;
+  string server_name = 2; // API-server name the agent connected to
+  repeated bytes chain_der = 3; // presented certificate chain, leaf-first (DER)
+}
 message Register {
   string worker_id = 1 [(buf.validate.field).string.min_len = 1];
   repeated string protocols = 2;

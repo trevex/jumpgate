@@ -6,13 +6,29 @@ package proxy
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/trevex/jumpgate/workers/k8s-agent/internal/probe"
 )
+
+// IdentityPath is the reserved tunnel path the broker requests to obtain the
+// agent's API-server identity evidence. It is served locally by the agent and is
+// never forwarded to the API server, so it can never carry the SA token.
+const IdentityPath = "/_jumpgate/identity"
+
+// IdentityResponse is the JSON contract returned on IdentityPath: the API-server
+// name the agent probed and the presented certificate chain (leaf-first, DER).
+// [][]byte fields marshal as arrays of base64 strings.
+type IdentityResponse struct {
+	ServerName string   `json:"server_name"`
+	ChainDER   [][]byte `json:"chain_der"`
+}
 
 // Handler forwards requests to a Kubernetes API server as the agent's SA.
 type Handler struct {
@@ -57,6 +73,14 @@ var hopByHop = map[string]bool{
 // with the agent's SA bearer and leaves Impersonate-* headers (set upstream by
 // the broker from the verified identity) intact.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Identity probing is served locally and stops at the TLS handshake — it must
+	// short-circuit BEFORE the SA token is read, so the credential never touches the
+	// observation path.
+	if r.URL.Path == IdentityPath {
+		h.serveIdentity(w, r)
+		return
+	}
+
 	token, err := os.ReadFile(h.saTokenFile) //nolint:gosec // trusted env path
 	if err != nil {
 		http.Error(w, "read sa token", http.StatusInternalServerError)
@@ -90,4 +114,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// serveIdentity probes the local API server's TLS identity and returns the presented
+// chain. It never reads the SA token.
+func (h *Handler) serveIdentity(w http.ResponseWriter, r *http.Request) {
+	ev, err := probe.Probe(r.Context(), h.target.String())
+	if err != nil {
+		http.Error(w, "probe: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(IdentityResponse{ServerName: ev.ServerName, ChainDER: ev.ChainDER})
 }

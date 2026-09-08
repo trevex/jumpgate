@@ -13,6 +13,7 @@ import (
 	dataplanev1 "github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1/dataplanev1connect"
 
+	"github.com/trevex/jumpgate/workers/k8s-broker/internal/broker"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/frontdoor"
 	"github.com/trevex/jumpgate/workers/k8s-broker/internal/tunnels"
 )
@@ -26,9 +27,9 @@ const (
 // protocol=kubernetes, dataplane_address), heartbeats, re-advertises the held
 // tunnel set on every change, and forwards SessionEnd reports from `ended` as
 // SessionEnded frames. Reconnects with backoff until ctx ends.
-func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd) error {
+func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd, evidence <-chan broker.APIServerReport) error {
 	for {
-		if err := connectAndRun(ctx, client, reg, brokerID, dataplaneAddr, ended); err != nil && ctx.Err() == nil {
+		if err := connectAndRun(ctx, client, reg, brokerID, dataplaneAddr, ended, evidence); err != nil && ctx.Err() == nil {
 			slog.Warn("worker stream dropped; reconnecting", "err", err)
 		}
 		select {
@@ -39,7 +40,7 @@ func Run(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, 
 	}
 }
 
-func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd) error {
+func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServiceClient, reg *tunnels.Registry, brokerID, dataplaneAddr string, ended <-chan frontdoor.SessionEnd, evidence <-chan broker.APIServerReport) error {
 	stream := client.WorkerStream(ctx)
 	defer func() { _ = stream.CloseRequest() }()
 	defer func() { _ = stream.CloseResponse() }()
@@ -122,6 +123,16 @@ func connectAndRun(ctx context.Context, client dataplanev1connect.DataplaneServi
 			}); err != nil {
 				return err
 			}
+		case rep := <-evidence:
+			if err := stream.Send(&dataplanev1.WorkerMessage{
+				Msg: &dataplanev1.WorkerMessage_ApiServerIdentity{ApiServerIdentity: &dataplanev1.ReportApiServerIdentity{
+					AgentCertDer: rep.AgentCertDER,
+					ServerName:   rep.ServerName,
+					ChainDer:     rep.ChainDER,
+				}},
+			}); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -145,7 +156,14 @@ func unsupportedProbeResult(pa *dataplanev1.ProbeAssignment) *dataplanev1.ProbeR
 func advertise(stream interface {
 	Send(*dataplanev1.WorkerMessage) error
 }, reg *tunnels.Registry) error {
+	bindings := reg.Bindings()
+	agents := make([]*dataplanev1.AgentBinding, 0, len(bindings))
+	assetIDs := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		agents = append(agents, &dataplanev1.AgentBinding{AgentCertDer: b.CertDER})
+		assetIDs = append(assetIDs, b.AssetID) // logging/back-compat; warden re-derives from certs
+	}
 	return stream.Send(&dataplanev1.WorkerMessage{Msg: &dataplanev1.WorkerMessage_AdvertiseTunnels{
-		AdvertiseTunnels: &dataplanev1.AdvertiseTunnels{AssetIds: reg.AssetIDs()},
+		AdvertiseTunnels: &dataplanev1.AdvertiseTunnels{AssetIds: assetIDs, Agents: agents},
 	}})
 }

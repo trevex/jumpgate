@@ -64,6 +64,19 @@ func TestKubernetes(t *testing.T) {
 	// Deploy the agent with the token so it enrolls on first start.
 	e.deployAgent(t, token)
 
+	// Target-identity gate (Task 13): CreateKubernetesSession now refuses unless the
+	// asset's API-server identity is verified. The agent probes its API server on
+	// connect and relays the presented chain (agent -> broker -> warden), which warden
+	// persists as a k8s observation bound to the agent's SPIFFE-derived asset id. An
+	// operator then approves that observed identity as a trust anchor. Approve it here
+	// (auto-approve = trust the first valid observation) so the session gate opens.
+	// NOTE: this step is UNVERIFIED in CI — the kind e2e is not run in this
+	// environment. A live cluster run needs the agent connected (so the observation
+	// exists) before this approval, and warrants a negative case: a rotated/mismatched
+	// API-server identity must leave the asset unverified and block NEW sessions while
+	// leaving established tunnels running.
+	e.approveK8sAPIServerIdentity(t, assetPath)
+
 	// Grant a connecting user the developers group (concrete cap; wildcards yield
 	// no group). Standing binding on the asset, mirroring the pg test.
 	e.asActor(t, "admin", "roles", "create", e.name("k8sdev"),
@@ -167,6 +180,28 @@ func (e *env) downloadAllRecordings(t *testing.T, listJSON, dir string) string {
 		}
 	}
 	return sb.String()
+}
+
+// approveK8sAPIServerIdentity waits for the agent-sourced API-server observation to
+// land in warden, then approves the observed identity as a trust anchor so the
+// CreateKubernetesSession gate opens. Best-effort: it polls the identity listing for
+// a recorded observation, then auto-approves. Non-fatal on its own — if the identity
+// is not approved the subsequent get-pods poll fails, which is the intended
+// fail-closed signal. (Not exercised in CI; the kind e2e is not run here.)
+func (e *env) approveK8sAPIServerIdentity(t *testing.T, assetRef string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		list := e.asActor(t, "admin", "assets", "identity", "list", assetRef, "-o", "json")
+		if strings.Contains(list, "tls_leaf") || strings.Contains(list, "observation") {
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+	// Auto-approve the first valid observed identity (demo/CI TOFU posture; production
+	// supplies --trusted-ca-file + --expected-dns-name for the API server instead).
+	out := e.asActor(t, "admin", "assets", "identity", "approve", assetRef, "--auto-approve")
+	t.Logf("k8s identity approve:\n%s", out)
 }
 
 // deployAgent creates the enrollment-token Secret and applies the agent workload,

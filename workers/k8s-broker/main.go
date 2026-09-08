@@ -103,7 +103,7 @@ func main() {
 	slog.Info("front door up", "addr", cfg.DataplaneAddr)
 
 	client := meshclient.New(cfg.WardenMeshAddr, leaf, pool, cfg.WardenSpiffe)
-	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr, ended); err != nil && ctx.Err() == nil {
+	if err := control.Run(ctx, client, b.Registry(), cfg.BrokerID, cfg.DataplaneAddr, ended, b.Evidence()); err != nil && ctx.Err() == nil {
 		slog.Error("control loop", "err", err)
 		os.Exit(1)
 	}

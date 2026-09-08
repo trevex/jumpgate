@@ -53,7 +53,7 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL, dataplane.NewRegistry())
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL, dataplane.NewRegistry(), nil)
 	return svc, pub
 }
 
@@ -159,7 +159,7 @@ func registerMeshServices(mux *http.ServeMux, pool *pgxpool.Pool, auditLog *audi
 	terminator := dataplane.NewTerminator(pool, authorizer, auditLog)
 	services := rpc.MeshServices{Gateway: gateway.NewHandler(registry, pubKey)}
 	if setupSvc != nil {
-		services.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, nil)
+		services.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, nil, nil, nil)
 	}
 	rpc.RegisterMeshServices(mux, services)
 	return nil

@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
@@ -57,5 +59,44 @@ func TestHandlerForwardsWithSATokenAndImpersonation(t *testing.T) {
 	}
 	if gotPath != "/api/v1/namespaces/default/pods" {
 		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+// TestIdentityPathProbesWithoutSAToken proves the reserved identity path returns
+// the API server's presented chain AND never reads the SA token: the token file is
+// deliberately absent, which would 500 a forward request but must not affect a probe.
+func TestIdentityPathProbesWithoutSAToken(t *testing.T) {
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("identity probe must not send an HTTP request to the API server")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer api.Close()
+
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ca")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: api.Certificate().Raw})
+	if err := os.WriteFile(caFile, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// SA token path that does NOT exist: a forward would fail reading it, so a
+	// successful identity response proves the probe path never touches the token.
+	h, err := New(api.URL, caFile, filepath.Join(dir, "does-not-exist"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://tunnel"+IdentityPath, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("identity resp = %d %q", rec.Code, rec.Body.String())
+	}
+	var got IdentityResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode identity: %v", err)
+	}
+	if len(got.ChainDER) == 0 || !bytes.Equal(got.ChainDER[0], api.Certificate().Raw) {
+		t.Fatalf("identity chain does not match server certificate")
 	}
 }

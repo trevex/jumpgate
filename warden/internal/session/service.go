@@ -10,6 +10,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
 
 // webTTL bounds a browser-terminal admission ticket. It is short because the
@@ -30,11 +31,25 @@ var ErrNoAccess = errors.New("no session access to asset")
 // cluster's agent tunnel.
 var ErrClusterOffline = errors.New("cluster has no connected agent")
 
+// ErrIdentityUnverified means the asset's target identity is not currently verified
+// (no active anchor matches the latest observation, or a mismatch is unresolved), so
+// a NEW session must not be created. Established sessions are unaffected — this gates
+// only session creation, fail-closed.
+var ErrIdentityUnverified = errors.New("target identity not verified")
+
 // brokerLocator resolves which broker currently holds an asset's agent tunnel.
 // Defined here (not imported from dataplane) to avoid a session↔dataplane import
 // cycle; *dataplane.Registry satisfies it structurally.
 type brokerLocator interface {
 	BrokerForAsset(assetID string) (string, bool)
+}
+
+// identityGate reports an asset's derived target-identity verification status.
+// *targetidentity.Service satisfies it; k8s session creation is gated on a
+// verified status. Kept as an interface so the session service does not require a
+// full targetidentity wiring to test the gate.
+type identityGate interface {
+	Status(ctx context.Context, req targetidentity.StatusRequest) (targetidentity.VerificationStatus, error)
 }
 
 // Service authorizes and mints data-plane admission tokens.
@@ -51,6 +66,7 @@ type Service struct {
 	allowInsecure bool
 	ttl           time.Duration
 	brokers       brokerLocator
+	identity      identityGate
 }
 
 // NewService builds the CreateSession domain service. insecureEndpoint/allowInsecure
@@ -58,7 +74,7 @@ type Service struct {
 // browser's insecure request is downgraded to the secure endpoint (fail-closed).
 // brokers resolves the broker currently holding a k8s asset's agent tunnel
 // (CreateKubernetesSession); the shared *dataplane.Registry satisfies it.
-func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint, insecureEndpoint string, allowInsecure bool, ttl time.Duration, brokers brokerLocator) *Service {
+func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minter, gatewayEndpoint, insecureEndpoint string, allowInsecure bool, ttl time.Duration, brokers brokerLocator, identity identityGate) *Service {
 	return &Service{
 		q:                q,
 		authz:            a,
@@ -68,6 +84,7 @@ func NewService(q *sqlc.Queries, a *authz.Authorizer, minter *sessiontoken.Minte
 		allowInsecure:    allowInsecure,
 		ttl:              ttl,
 		brokers:          brokers,
+		identity:         identity,
 	}
 }
 
@@ -181,6 +198,14 @@ func (s *Service) CreateKubernetesSession(ctx context.Context, userID, assetID u
 	}
 	if len(groups) == 0 {
 		return Created{}, ErrNoAccess
+	}
+	// Fail-closed identity gate: a new k8s session may be created only when the
+	// asset's target (API-server) identity is currently verified — a current active
+	// anchor matches the agent's latest observed API-server evidence and no mismatch
+	// is unresolved. This blocks NEW sessions on absent/changed identity; it never
+	// tears down established broker tunnels (those are the broker's HTTP/2 conns).
+	if err := s.requireVerified(ctx, assetID); err != nil {
+		return Created{}, err
 	}
 	brokerID, ok := s.brokers.BrokerForAsset(assetID.String())
 	if !ok {
@@ -311,6 +336,22 @@ func (s *Service) entitledRDPLogins(ctx context.Context, userID, assetID uuid.UU
 		return nil, ErrNoAccess
 	}
 	return logins, nil
+}
+
+// requireVerified fails closed unless the asset's derived target-identity status is
+// verified. A nil gate (identity verification not wired) also fails closed.
+func (s *Service) requireVerified(ctx context.Context, assetID uuid.UUID) error {
+	if s.identity == nil {
+		return ErrIdentityUnverified
+	}
+	status, err := s.identity.Status(ctx, targetidentity.StatusRequest{AssetID: assetID})
+	if err != nil {
+		return err
+	}
+	if status != targetidentity.StatusVerified {
+		return ErrIdentityUnverified
+	}
+	return nil
 }
 
 func contains(ss []string, s string) bool {

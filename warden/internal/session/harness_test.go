@@ -33,9 +33,21 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
+
+// stubGate is a fixed-status identity gate for session tests. The default server
+// uses a verified stub so non-identity session tests are unaffected; the k8s
+// identity-gate test constructs its own with a chosen status.
+type stubGate struct {
+	status targetidentity.VerificationStatus
+}
+
+func (g stubGate) Status(context.Context, targetidentity.StatusRequest) (targetidentity.VerificationStatus, error) {
+	return g.status, nil
+}
 
 // testSessionTTL / testGatewayEndpoint are the fixed session-admission params used
 // by the session test servers.
@@ -82,7 +94,7 @@ func testSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Sealer
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL, brokers)
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, "", false, testSessionTTL, brokers, stubGate{status: targetidentity.StatusVerified})
 	return svc, pub
 }
 
@@ -123,7 +135,7 @@ func insecureSessionService(t *testing.T, pool *pgxpool.Pool, sealer *secrets.Se
 	if err != nil {
 		t.Fatalf("session keystore load: %v", err)
 	}
-	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, insecureEndpoint, allowInsecure, testSessionTTL, dataplane.NewRegistry())
+	svc := session.NewService(sqlc.New(pool), authz.New(pool), sessiontoken.NewMinter(priv), testGatewayEndpoint, insecureEndpoint, allowInsecure, testSessionTTL, dataplane.NewRegistry(), stubGate{status: targetidentity.StatusVerified})
 
 	q := sqlc.New(pool)
 	assetID := seedSSHAsset(t, q, []string{"deploy"})

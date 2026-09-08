@@ -222,7 +222,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 			return err
 		} else {
 			sessionPubKey = pub
-			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.GatewayInsecureEndpoint, cfg.AllowInsecureSessions, cfg.SessionTokenTTL, registry)
+			sessionSvc = session.NewService(sqlc.New(pool), authorizer, sessiontoken.NewMinter(priv), cfg.GatewayEndpoint, cfg.GatewayInsecureEndpoint, cfg.AllowInsecureSessions, cfg.SessionTokenTTL, registry, targetIdentitySvc)
 			broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 			verifier := sessiontoken.NewVerifier(pub)
 			setupSvc = dataplane.NewSetupService(pool, verifier, authorizer, broker, targetIdentitySvc, auditLog, cfg.SSHCertMaxTTL)
@@ -305,7 +305,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Peer identity is the mTLS client cert URI SAN (mesh.Middleware). Degraded boot:
 	// if MESH_LISTEN_ADDR is unset or the cert files are missing/unreadable, warden
 	// logs a warning and serves only the user API (workers/gateway cannot connect).
-	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator, probeDispatcher)
+	meshSrv := buildMeshServer(cfg, pool, setupSvc, registry, sessionPubKey, terminator, probeDispatcher, targetIdentitySvc)
 
 	// Buffered for both producers (user + mesh listener) so a failing server never
 	// blocks its goroutine on send after we've stopped selecting.
@@ -361,7 +361,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 // buildMeshServer constructs warden's mTLS mesh HTTP server (Dataplane + Gateway
 // behind mesh.Middleware), or returns nil for a degraded boot when the mesh
 // listener is disabled (MESH_LISTEN_ADDR unset) or its cert files cannot be loaded.
-func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey, terminator *dataplane.Terminator, probes *dataplane.ProbeDispatcher) *http.Server {
+func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.SetupService, registry *dataplane.Registry, sessionPubKey ed25519.PublicKey, terminator *dataplane.Terminator, probes *dataplane.ProbeDispatcher, targetIdentity *targetidentity.Service) *http.Server {
 	if cfg.MeshListenAddr == "" {
 		slog.Warn("mesh listener disabled: MESH_LISTEN_ADDR unset (workers/gateway cannot connect)")
 		return nil
@@ -382,7 +382,7 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.
 	meshMux := http.NewServeMux()
 	meshServices := rpc.MeshServices{Gateway: gateway.NewHandler(registry, sessionPubKey)}
 	if setupSvc != nil {
-		meshServices.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, probes)
+		meshServices.Dataplane = dataplane.NewHandler(setupSvc, registry, pool, terminator, probes, targetIdentity, caPEM)
 	}
 	rpc.RegisterMeshServices(meshMux, meshServices)
 	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /

@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,12 +49,28 @@ type Handler struct {
 	pool       *pgxpool.Pool
 	terminator *Terminator
 	probes     *ProbeDispatcher // nil when identity probing is not wired
+	identity   *targetidentity.Service
+	// meshRoots verifies broker-relayed agent certs so warden re-derives the bound
+	// asset id from the SPIFFE SAN rather than trusting the broker's advertised list.
+	// nil (no mesh CA configured) fails k8s tunnel advertisement closed.
+	meshRoots *x509.CertPool
 }
 
 // NewHandler constructs the data-plane RPC implementation. probes may be nil, in
 // which case the worker stream carries no probe assignments (probing disabled).
-func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, terminator *Terminator, probes *ProbeDispatcher) *Handler {
-	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator, probes: probes}
+// meshCAPEM is the mesh CA bundle used to verify broker-relayed agent certificates
+// (agent-to-asset tunnel ownership); an empty/invalid bundle fails k8s advertisement
+// closed. identity persists agent-reported API-server observations (may be nil).
+func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, terminator *Terminator, probes *ProbeDispatcher, identity *targetidentity.Service, meshCAPEM []byte) *Handler {
+	var roots *x509.CertPool
+	if len(meshCAPEM) > 0 {
+		roots = x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(meshCAPEM) {
+			slog.Error("dataplane: mesh CA bundle carried no certificates; agent tunnel advertisement fails closed")
+			roots = nil
+		}
+	}
+	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator, probes: probes, identity: identity, meshRoots: roots}
 }
 
 // SetupSession redeems a session token: it re-checks authorization, records the
@@ -305,10 +322,16 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 				}
 			}
 			if adv := msg.GetAdvertiseTunnels(); adv != nil {
-				s.registry.SetTunnels(workerID, adv.GetAssetIds())
+				// SECURITY: do not trust the broker's advertised asset ids. Re-derive each
+				// from the agent's verified mesh cert SAN; a broker can only advertise an
+				// asset for which it holds a cert warden's mesh CA actually signed.
+				s.registry.SetTunnels(workerID, s.verifiedAdvertisedAssets(adv))
 			}
 			if pr := msg.GetProbeResult(); pr != nil && s.probes != nil {
 				s.probes.HandleResult(ctx, workerID, pr)
+			}
+			if rep := msg.GetApiServerIdentity(); rep != nil {
+				s.handleAgentIdentity(ctx, workerID, rep)
 			}
 			// Register(after first): no-op.
 		}
@@ -336,6 +359,91 @@ func (s *Handler) WorkerStream(ctx context.Context, stream *connect.BidiStream[d
 				return err
 			}
 		}
+	}
+}
+
+// verifiedAdvertisedAssets returns the asset ids warden derives from the agent
+// certs the broker relayed, verifying each against the mesh CA. The broker's bare
+// asset_ids list is used only for logging — never trusted. A binding whose cert
+// fails verification (or whose SAN is not an agent identity) is dropped, so a
+// compromised or buggy broker cannot route another asset's sessions to itself. An
+// advertisement with no agent certs clears this broker's tunnels (fail-closed).
+func (s *Handler) verifiedAdvertisedAssets(adv *dataplanev1.AdvertiseTunnels) []string {
+	if len(adv.GetAgents()) == 0 {
+		if len(adv.GetAssetIds()) > 0 {
+			slog.Warn("advertisement carried asset ids without agent certs; dropping (fail-closed)", "asset_ids", adv.GetAssetIds())
+		}
+		return nil
+	}
+	out := make([]string, 0, len(adv.GetAgents()))
+	seen := make(map[string]struct{}, len(adv.GetAgents()))
+	for _, a := range adv.GetAgents() {
+		id, err := s.deriveAgentAsset(a.GetAgentCertDer())
+		if err != nil {
+			slog.Warn("rejecting advertised agent tunnel: cert verification failed", "err", err)
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// deriveAgentAsset verifies a broker-relayed agent leaf cert chains to warden's
+// mesh CA and carries a single spiffe://jumpgate/agent/<asset_id> URI SAN, and
+// returns that asset id. Fails closed when no mesh CA is configured.
+func (s *Handler) deriveAgentAsset(certDER []byte) (string, error) {
+	if s.meshRoots == nil {
+		return "", errors.New("mesh CA not configured")
+	}
+	if len(certDER) == 0 {
+		return "", errors.New("empty agent cert")
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return "", fmt.Errorf("parse agent cert: %w", err)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: s.meshRoots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		return "", fmt.Errorf("agent cert chain: %w", err)
+	}
+	if len(cert.URIs) != 1 {
+		return "", fmt.Errorf("agent cert must carry exactly one URI SAN, got %d", len(cert.URIs))
+	}
+	id, err := mesh.ParseIdentity(cert.URIs[0])
+	if err != nil {
+		return "", err
+	}
+	if id.Role != "agent" {
+		return "", fmt.Errorf("cert role %q, want agent", id.Role)
+	}
+	return id.ID, nil
+}
+
+// handleAgentIdentity persists an agent's API-server TLS evidence as a k8s
+// observation, binding it to the asset re-derived from the agent's verified mesh
+// cert SAN (never the broker's claim). Best-effort: a persistence hiccup is logged,
+// never severs the broker's lifeline.
+func (s *Handler) handleAgentIdentity(ctx context.Context, workerID string, rep *dataplanev1.ReportApiServerIdentity) {
+	if s.identity == nil {
+		return
+	}
+	assetIDStr, err := s.deriveAgentAsset(rep.GetAgentCertDer())
+	if err != nil {
+		slog.Warn("rejecting agent api-server identity: cert verification failed", "err", err)
+		return
+	}
+	assetID, err := uuid.Parse(assetIDStr)
+	if err != nil {
+		slog.Warn("agent asset id not a uuid", "asset", assetIDStr, "err", err)
+		return
+	}
+	if _, err := s.identity.RecordAgentObservation(ctx, targetidentity.AgentObservationRequest{
+		AssetID: assetID, WorkerID: workerID, APIServerName: rep.GetServerName(), ChainDER: rep.GetChainDer(),
+	}); err != nil {
+		slog.Error("record agent api-server observation failed", "asset", assetID, "err", err)
 	}
 }
 

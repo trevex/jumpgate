@@ -133,6 +133,8 @@ func (s *Handler) CreateKubernetesSession(ctx context.Context, req *connect.Requ
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("no session access"))
 	case errors.Is(err, ErrClusterOffline):
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("cluster has no connected agent"))
+	case errors.Is(err, ErrIdentityUnverified):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("target identity not verified"))
 	case err != nil:
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

@@ -289,6 +289,7 @@ type WorkerMessage struct {
 	//	*WorkerMessage_SessionEnded
 	//	*WorkerMessage_AdvertiseTunnels
 	//	*WorkerMessage_ProbeResult
+	//	*WorkerMessage_ApiServerIdentity
 	Msg           isWorkerMessage_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -376,6 +377,15 @@ func (x *WorkerMessage) GetProbeResult() *ProbeResult {
 	return nil
 }
 
+func (x *WorkerMessage) GetApiServerIdentity() *ReportApiServerIdentity {
+	if x != nil {
+		if x, ok := x.Msg.(*WorkerMessage_ApiServerIdentity); ok {
+			return x.ApiServerIdentity
+		}
+	}
+	return nil
+}
+
 type isWorkerMessage_Msg interface {
 	isWorkerMessage_Msg()
 }
@@ -400,6 +410,10 @@ type WorkerMessage_ProbeResult struct {
 	ProbeResult *ProbeResult `protobuf:"bytes,5,opt,name=probe_result,json=probeResult,proto3,oneof"`
 }
 
+type WorkerMessage_ApiServerIdentity struct {
+	ApiServerIdentity *ReportApiServerIdentity `protobuf:"bytes,6,opt,name=api_server_identity,json=apiServerIdentity,proto3,oneof"`
+}
+
 func (*WorkerMessage_Register) isWorkerMessage_Msg() {}
 
 func (*WorkerMessage_Heartbeat) isWorkerMessage_Msg() {}
@@ -410,11 +424,18 @@ func (*WorkerMessage_AdvertiseTunnels) isWorkerMessage_Msg() {}
 
 func (*WorkerMessage_ProbeResult) isWorkerMessage_Msg() {}
 
-// AdvertiseTunnels is the broker's current set of held agent tunnels (asset ids),
-// re-sent whenever an agent connects or disconnects.
+func (*WorkerMessage_ApiServerIdentity) isWorkerMessage_Msg() {}
+
+// AdvertiseTunnels is the broker's current set of held agent tunnels, re-sent
+// whenever an agent connects or disconnects. Each held tunnel carries the agent's
+// verified mesh leaf certificate (DER) so warden re-derives the bound asset id
+// from the SPIFFE SAN itself rather than trusting the broker's advertised list.
+// asset_ids is retained for logging/back-compat only; warden ignores it when
+// agents is populated (a compromised broker cannot forge a valid agent cert).
 type AdvertiseTunnels struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetIds      []string               `protobuf:"bytes,1,rep,name=asset_ids,json=assetIds,proto3" json:"asset_ids,omitempty"`
+	Agents        []*AgentBinding        `protobuf:"bytes,2,rep,name=agents,proto3" json:"agents,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -456,6 +477,123 @@ func (x *AdvertiseTunnels) GetAssetIds() []string {
 	return nil
 }
 
+func (x *AdvertiseTunnels) GetAgents() []*AgentBinding {
+	if x != nil {
+		return x.Agents
+	}
+	return nil
+}
+
+// AgentBinding is one held agent tunnel: the agent's verified mesh leaf cert (DER).
+type AgentBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentCertDer  []byte                 `protobuf:"bytes,1,opt,name=agent_cert_der,json=agentCertDer,proto3" json:"agent_cert_der,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentBinding) Reset() {
+	*x = AgentBinding{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentBinding) ProtoMessage() {}
+
+func (x *AgentBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentBinding.ProtoReflect.Descriptor instead.
+func (*AgentBinding) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AgentBinding) GetAgentCertDer() []byte {
+	if x != nil {
+		return x.AgentCertDer
+	}
+	return nil
+}
+
+// ReportApiServerIdentity carries the API-server TLS evidence an in-cluster agent
+// observed for its bound asset, relayed by the broker over its control stream.
+// agent_cert_der is the agent's verified mesh leaf so warden binds the observation
+// to the SPIFFE-derived asset id, not to the broker's claim. It never carries a
+// ServiceAccount token — the agent probe stops at the TLS handshake.
+type ReportApiServerIdentity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentCertDer  []byte                 `protobuf:"bytes,1,opt,name=agent_cert_der,json=agentCertDer,proto3" json:"agent_cert_der,omitempty"`
+	ServerName    string                 `protobuf:"bytes,2,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"` // API-server name the agent connected to
+	ChainDer      [][]byte               `protobuf:"bytes,3,rep,name=chain_der,json=chainDer,proto3" json:"chain_der,omitempty"`       // presented certificate chain, leaf-first (DER)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportApiServerIdentity) Reset() {
+	*x = ReportApiServerIdentity{}
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportApiServerIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportApiServerIdentity) ProtoMessage() {}
+
+func (x *ReportApiServerIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportApiServerIdentity.ProtoReflect.Descriptor instead.
+func (*ReportApiServerIdentity) Descriptor() ([]byte, []int) {
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ReportApiServerIdentity) GetAgentCertDer() []byte {
+	if x != nil {
+		return x.AgentCertDer
+	}
+	return nil
+}
+
+func (x *ReportApiServerIdentity) GetServerName() string {
+	if x != nil {
+		return x.ServerName
+	}
+	return ""
+}
+
+func (x *ReportApiServerIdentity) GetChainDer() [][]byte {
+	if x != nil {
+		return x.ChainDer
+	}
+	return nil
+}
+
 type Register struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	WorkerId         string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
@@ -469,7 +607,7 @@ type Register struct {
 
 func (x *Register) Reset() {
 	*x = Register{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +619,7 @@ func (x *Register) String() string {
 func (*Register) ProtoMessage() {}
 
 func (x *Register) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[2]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +632,7 @@ func (x *Register) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Register.ProtoReflect.Descriptor instead.
 func (*Register) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{2}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Register) GetWorkerId() string {
@@ -540,7 +678,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +690,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[3]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +703,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{3}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
 }
 
 type SessionEnded struct {
@@ -579,7 +717,7 @@ type SessionEnded struct {
 
 func (x *SessionEnded) Reset() {
 	*x = SessionEnded{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +729,7 @@ func (x *SessionEnded) String() string {
 func (*SessionEnded) ProtoMessage() {}
 
 func (x *SessionEnded) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[4]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +742,7 @@ func (x *SessionEnded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEnded.ProtoReflect.Descriptor instead.
 func (*SessionEnded) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{4}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SessionEnded) GetSessionId() string {
@@ -651,7 +789,7 @@ type RecordingInfo struct {
 
 func (x *RecordingInfo) Reset() {
 	*x = RecordingInfo{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -663,7 +801,7 @@ func (x *RecordingInfo) String() string {
 func (*RecordingInfo) ProtoMessage() {}
 
 func (x *RecordingInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[5]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -676,7 +814,7 @@ func (x *RecordingInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordingInfo.ProtoReflect.Descriptor instead.
 func (*RecordingInfo) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{5}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RecordingInfo) GetObjectKey() string {
@@ -770,7 +908,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -782,7 +920,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -795,7 +933,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{6}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ServerMessage) GetMsg() isServerMessage_Msg {
@@ -862,7 +1000,7 @@ type RegisterAck struct {
 
 func (x *RegisterAck) Reset() {
 	*x = RegisterAck{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -874,7 +1012,7 @@ func (x *RegisterAck) String() string {
 func (*RegisterAck) ProtoMessage() {}
 
 func (x *RegisterAck) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[7]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -887,7 +1025,7 @@ func (x *RegisterAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAck.ProtoReflect.Descriptor instead.
 func (*RegisterAck) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{7}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{9}
 }
 
 type Teardown struct {
@@ -900,7 +1038,7 @@ type Teardown struct {
 
 func (x *Teardown) Reset() {
 	*x = Teardown{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -912,7 +1050,7 @@ func (x *Teardown) String() string {
 func (*Teardown) ProtoMessage() {}
 
 func (x *Teardown) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -925,7 +1063,7 @@ func (x *Teardown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Teardown.ProtoReflect.Descriptor instead.
 func (*Teardown) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{8}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Teardown) GetSessionId() string {
@@ -959,7 +1097,7 @@ type ProbeLimits struct {
 
 func (x *ProbeLimits) Reset() {
 	*x = ProbeLimits{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -971,7 +1109,7 @@ func (x *ProbeLimits) String() string {
 func (*ProbeLimits) ProtoMessage() {}
 
 func (x *ProbeLimits) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[9]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -984,7 +1122,7 @@ func (x *ProbeLimits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeLimits.ProtoReflect.Descriptor instead.
 func (*ProbeLimits) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{9}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ProbeLimits) GetDnsTimeoutMs() int64 {
@@ -1060,7 +1198,7 @@ type SSHProbeEndpoint struct {
 
 func (x *SSHProbeEndpoint) Reset() {
 	*x = SSHProbeEndpoint{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1210,7 @@ func (x *SSHProbeEndpoint) String() string {
 func (*SSHProbeEndpoint) ProtoMessage() {}
 
 func (x *SSHProbeEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[10]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1223,7 @@ func (x *SSHProbeEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHProbeEndpoint.ProtoReflect.Descriptor instead.
 func (*SSHProbeEndpoint) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{10}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SSHProbeEndpoint) GetHost() string {
@@ -1113,7 +1251,7 @@ type PostgresProbeEndpoint struct {
 
 func (x *PostgresProbeEndpoint) Reset() {
 	*x = PostgresProbeEndpoint{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[11]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1125,7 +1263,7 @@ func (x *PostgresProbeEndpoint) String() string {
 func (*PostgresProbeEndpoint) ProtoMessage() {}
 
 func (x *PostgresProbeEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[11]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1138,7 +1276,7 @@ func (x *PostgresProbeEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostgresProbeEndpoint.ProtoReflect.Descriptor instead.
 func (*PostgresProbeEndpoint) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{11}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PostgresProbeEndpoint) GetHost() string {
@@ -1173,7 +1311,7 @@ type RDPProbeEndpoint struct {
 
 func (x *RDPProbeEndpoint) Reset() {
 	*x = RDPProbeEndpoint{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[12]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1185,7 +1323,7 @@ func (x *RDPProbeEndpoint) String() string {
 func (*RDPProbeEndpoint) ProtoMessage() {}
 
 func (x *RDPProbeEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[12]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1198,7 +1336,7 @@ func (x *RDPProbeEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RDPProbeEndpoint.ProtoReflect.Descriptor instead.
 func (*RDPProbeEndpoint) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{12}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RDPProbeEndpoint) GetHost() string {
@@ -1231,7 +1369,7 @@ type KubernetesProbeEndpoint struct {
 
 func (x *KubernetesProbeEndpoint) Reset() {
 	*x = KubernetesProbeEndpoint{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[13]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1243,7 +1381,7 @@ func (x *KubernetesProbeEndpoint) String() string {
 func (*KubernetesProbeEndpoint) ProtoMessage() {}
 
 func (x *KubernetesProbeEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[13]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1256,7 +1394,7 @@ func (x *KubernetesProbeEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubernetesProbeEndpoint.ProtoReflect.Descriptor instead.
 func (*KubernetesProbeEndpoint) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{13}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *KubernetesProbeEndpoint) GetApiServerName() string {
@@ -1290,7 +1428,7 @@ type ProbeAssignment struct {
 
 func (x *ProbeAssignment) Reset() {
 	*x = ProbeAssignment{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[14]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1302,7 +1440,7 @@ func (x *ProbeAssignment) String() string {
 func (*ProbeAssignment) ProtoMessage() {}
 
 func (x *ProbeAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[14]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1315,7 +1453,7 @@ func (x *ProbeAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeAssignment.ProtoReflect.Descriptor instead.
 func (*ProbeAssignment) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{14}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ProbeAssignment) GetJobId() string {
@@ -1448,7 +1586,7 @@ type ProbeDisplayExtension struct {
 
 func (x *ProbeDisplayExtension) Reset() {
 	*x = ProbeDisplayExtension{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[15]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1598,7 @@ func (x *ProbeDisplayExtension) String() string {
 func (*ProbeDisplayExtension) ProtoMessage() {}
 
 func (x *ProbeDisplayExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[15]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1611,7 @@ func (x *ProbeDisplayExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeDisplayExtension.ProtoReflect.Descriptor instead.
 func (*ProbeDisplayExtension) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{15}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ProbeDisplayExtension) GetName() string {
@@ -1514,7 +1652,7 @@ type ProbeEvidence struct {
 
 func (x *ProbeEvidence) Reset() {
 	*x = ProbeEvidence{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[16]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1526,7 +1664,7 @@ func (x *ProbeEvidence) String() string {
 func (*ProbeEvidence) ProtoMessage() {}
 
 func (x *ProbeEvidence) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[16]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1539,7 +1677,7 @@ func (x *ProbeEvidence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeEvidence.ProtoReflect.Descriptor instead.
 func (*ProbeEvidence) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{16}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProbeEvidence) GetKind() ProbeEvidenceKind {
@@ -1664,7 +1802,7 @@ type ProbeSSHMetadata struct {
 
 func (x *ProbeSSHMetadata) Reset() {
 	*x = ProbeSSHMetadata{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[17]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1814,7 @@ func (x *ProbeSSHMetadata) String() string {
 func (*ProbeSSHMetadata) ProtoMessage() {}
 
 func (x *ProbeSSHMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[17]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1827,7 @@ func (x *ProbeSSHMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeSSHMetadata.ProtoReflect.Descriptor instead.
 func (*ProbeSSHMetadata) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{17}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ProbeSSHMetadata) GetBanner() string {
@@ -1718,7 +1856,7 @@ type ProbeTLSMetadata struct {
 
 func (x *ProbeTLSMetadata) Reset() {
 	*x = ProbeTLSMetadata{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[18]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1730,7 +1868,7 @@ func (x *ProbeTLSMetadata) String() string {
 func (*ProbeTLSMetadata) ProtoMessage() {}
 
 func (x *ProbeTLSMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[18]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1743,7 +1881,7 @@ func (x *ProbeTLSMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeTLSMetadata.ProtoReflect.Descriptor instead.
 func (*ProbeTLSMetadata) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{18}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ProbeTLSMetadata) GetVersion() string {
@@ -1783,7 +1921,7 @@ type ProbeKubernetesMetadata struct {
 
 func (x *ProbeKubernetesMetadata) Reset() {
 	*x = ProbeKubernetesMetadata{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[19]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1795,7 +1933,7 @@ func (x *ProbeKubernetesMetadata) String() string {
 func (*ProbeKubernetesMetadata) ProtoMessage() {}
 
 func (x *ProbeKubernetesMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[19]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1808,7 +1946,7 @@ func (x *ProbeKubernetesMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeKubernetesMetadata.ProtoReflect.Descriptor instead.
 func (*ProbeKubernetesMetadata) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{19}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ProbeKubernetesMetadata) GetApiServerName() string {
@@ -1843,7 +1981,7 @@ type ProbeResult struct {
 
 func (x *ProbeResult) Reset() {
 	*x = ProbeResult{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[20]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1855,7 +1993,7 @@ func (x *ProbeResult) String() string {
 func (*ProbeResult) ProtoMessage() {}
 
 func (x *ProbeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[20]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1868,7 +2006,7 @@ func (x *ProbeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProbeResult.ProtoReflect.Descriptor instead.
 func (*ProbeResult) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{20}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ProbeResult) GetJobId() string {
@@ -2017,7 +2155,7 @@ type SetupSessionRequest struct {
 
 func (x *SetupSessionRequest) Reset() {
 	*x = SetupSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[21]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2029,7 +2167,7 @@ func (x *SetupSessionRequest) String() string {
 func (*SetupSessionRequest) ProtoMessage() {}
 
 func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[21]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2042,7 +2180,7 @@ func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionRequest.ProtoReflect.Descriptor instead.
 func (*SetupSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{21}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SetupSessionRequest) GetSessionToken() string {
@@ -2112,7 +2250,7 @@ type SetupSessionResponse struct {
 
 func (x *SetupSessionResponse) Reset() {
 	*x = SetupSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2124,7 +2262,7 @@ func (x *SetupSessionResponse) String() string {
 func (*SetupSessionResponse) ProtoMessage() {}
 
 func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2137,7 +2275,7 @@ func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupSessionResponse.ProtoReflect.Descriptor instead.
 func (*SetupSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{22}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SetupSessionResponse) GetTargetAddress() string {
@@ -2311,7 +2449,7 @@ type PrepareSessionRequest struct {
 
 func (x *PrepareSessionRequest) Reset() {
 	*x = PrepareSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2323,7 +2461,7 @@ func (x *PrepareSessionRequest) String() string {
 func (*PrepareSessionRequest) ProtoMessage() {}
 
 func (x *PrepareSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2336,7 +2474,7 @@ func (x *PrepareSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionRequest.ProtoReflect.Descriptor instead.
 func (*PrepareSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{23}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PrepareSessionRequest) GetSessionToken() string {
@@ -2385,7 +2523,7 @@ type SessionTrustAnchor struct {
 
 func (x *SessionTrustAnchor) Reset() {
 	*x = SessionTrustAnchor{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2397,7 +2535,7 @@ func (x *SessionTrustAnchor) String() string {
 func (*SessionTrustAnchor) ProtoMessage() {}
 
 func (x *SessionTrustAnchor) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2410,7 +2548,7 @@ func (x *SessionTrustAnchor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionTrustAnchor.ProtoReflect.Descriptor instead.
 func (*SessionTrustAnchor) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{24}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SessionTrustAnchor) GetId() string {
@@ -2483,7 +2621,7 @@ type PrepareSessionResponse struct {
 
 func (x *PrepareSessionResponse) Reset() {
 	*x = PrepareSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2495,7 +2633,7 @@ func (x *PrepareSessionResponse) String() string {
 func (*PrepareSessionResponse) ProtoMessage() {}
 
 func (x *PrepareSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2508,7 +2646,7 @@ func (x *PrepareSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionResponse.ProtoReflect.Descriptor instead.
 func (*PrepareSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{25}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *PrepareSessionResponse) GetSessionId() string {
@@ -2604,7 +2742,7 @@ type IssueSessionCredentialRequest struct {
 
 func (x *IssueSessionCredentialRequest) Reset() {
 	*x = IssueSessionCredentialRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2616,7 +2754,7 @@ func (x *IssueSessionCredentialRequest) String() string {
 func (*IssueSessionCredentialRequest) ProtoMessage() {}
 
 func (x *IssueSessionCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2629,7 +2767,7 @@ func (x *IssueSessionCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueSessionCredentialRequest.ProtoReflect.Descriptor instead.
 func (*IssueSessionCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{26}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *IssueSessionCredentialRequest) GetSessionId() string {
@@ -2695,7 +2833,7 @@ type IssueSessionCredentialResponse struct {
 
 func (x *IssueSessionCredentialResponse) Reset() {
 	*x = IssueSessionCredentialResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2707,7 +2845,7 @@ func (x *IssueSessionCredentialResponse) String() string {
 func (*IssueSessionCredentialResponse) ProtoMessage() {}
 
 func (x *IssueSessionCredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2720,7 +2858,7 @@ func (x *IssueSessionCredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueSessionCredentialResponse.ProtoReflect.Descriptor instead.
 func (*IssueSessionCredentialResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{27}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *IssueSessionCredentialResponse) GetSessionId() string {
@@ -2835,16 +2973,25 @@ var File_jumpgate_dataplane_v1_dataplane_proto protoreflect.FileDescriptor
 
 const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
-	"%jumpgate/dataplane/v1/dataplane.proto\x12\x15jumpgate.dataplane.v1\x1a\x1bbuf/validate/validate.proto\"\x84\x03\n" +
+	"%jumpgate/dataplane/v1/dataplane.proto\x12\x15jumpgate.dataplane.v1\x1a\x1bbuf/validate/validate.proto\"\xe6\x03\n" +
 	"\rWorkerMessage\x12=\n" +
 	"\bregister\x18\x01 \x01(\v2\x1f.jumpgate.dataplane.v1.RegisterH\x00R\bregister\x12@\n" +
 	"\theartbeat\x18\x02 \x01(\v2 .jumpgate.dataplane.v1.HeartbeatH\x00R\theartbeat\x12J\n" +
 	"\rsession_ended\x18\x03 \x01(\v2#.jumpgate.dataplane.v1.SessionEndedH\x00R\fsessionEnded\x12V\n" +
 	"\x11advertise_tunnels\x18\x04 \x01(\v2'.jumpgate.dataplane.v1.AdvertiseTunnelsH\x00R\x10advertiseTunnels\x12G\n" +
-	"\fprobe_result\x18\x05 \x01(\v2\".jumpgate.dataplane.v1.ProbeResultH\x00R\vprobeResultB\x05\n" +
-	"\x03msg\"/\n" +
+	"\fprobe_result\x18\x05 \x01(\v2\".jumpgate.dataplane.v1.ProbeResultH\x00R\vprobeResult\x12`\n" +
+	"\x13api_server_identity\x18\x06 \x01(\v2..jumpgate.dataplane.v1.ReportApiServerIdentityH\x00R\x11apiServerIdentityB\x05\n" +
+	"\x03msg\"l\n" +
 	"\x10AdvertiseTunnels\x12\x1b\n" +
-	"\tasset_ids\x18\x01 \x03(\tR\bassetIds\"\xc1\x01\n" +
+	"\tasset_ids\x18\x01 \x03(\tR\bassetIds\x12;\n" +
+	"\x06agents\x18\x02 \x03(\v2#.jumpgate.dataplane.v1.AgentBindingR\x06agents\"4\n" +
+	"\fAgentBinding\x12$\n" +
+	"\x0eagent_cert_der\x18\x01 \x01(\fR\fagentCertDer\"}\n" +
+	"\x17ReportApiServerIdentity\x12$\n" +
+	"\x0eagent_cert_der\x18\x01 \x01(\fR\fagentCertDer\x12\x1f\n" +
+	"\vserver_name\x18\x02 \x01(\tR\n" +
+	"serverName\x12\x1b\n" +
+	"\tchain_der\x18\x03 \x03(\fR\bchainDer\"\xc1\x01\n" +
 	"\bRegister\x12$\n" +
 	"\tworker_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x12\x1c\n" +
 	"\tprotocols\x18\x02 \x03(\tR\tprotocols\x12\x1a\n" +
@@ -3115,7 +3262,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP() []byte {
 }
 
 var file_jumpgate_dataplane_v1_dataplane_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(ProbeProtocol)(0),                     // 0: jumpgate.dataplane.v1.ProbeProtocol
 	(ProbeOutcome)(0),                      // 1: jumpgate.dataplane.v1.ProbeOutcome
@@ -3123,72 +3270,76 @@ var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(ProbeEvidenceKind)(0),                 // 3: jumpgate.dataplane.v1.ProbeEvidenceKind
 	(*WorkerMessage)(nil),                  // 4: jumpgate.dataplane.v1.WorkerMessage
 	(*AdvertiseTunnels)(nil),               // 5: jumpgate.dataplane.v1.AdvertiseTunnels
-	(*Register)(nil),                       // 6: jumpgate.dataplane.v1.Register
-	(*Heartbeat)(nil),                      // 7: jumpgate.dataplane.v1.Heartbeat
-	(*SessionEnded)(nil),                   // 8: jumpgate.dataplane.v1.SessionEnded
-	(*RecordingInfo)(nil),                  // 9: jumpgate.dataplane.v1.RecordingInfo
-	(*ServerMessage)(nil),                  // 10: jumpgate.dataplane.v1.ServerMessage
-	(*RegisterAck)(nil),                    // 11: jumpgate.dataplane.v1.RegisterAck
-	(*Teardown)(nil),                       // 12: jumpgate.dataplane.v1.Teardown
-	(*ProbeLimits)(nil),                    // 13: jumpgate.dataplane.v1.ProbeLimits
-	(*SSHProbeEndpoint)(nil),               // 14: jumpgate.dataplane.v1.SSHProbeEndpoint
-	(*PostgresProbeEndpoint)(nil),          // 15: jumpgate.dataplane.v1.PostgresProbeEndpoint
-	(*RDPProbeEndpoint)(nil),               // 16: jumpgate.dataplane.v1.RDPProbeEndpoint
-	(*KubernetesProbeEndpoint)(nil),        // 17: jumpgate.dataplane.v1.KubernetesProbeEndpoint
-	(*ProbeAssignment)(nil),                // 18: jumpgate.dataplane.v1.ProbeAssignment
-	(*ProbeDisplayExtension)(nil),          // 19: jumpgate.dataplane.v1.ProbeDisplayExtension
-	(*ProbeEvidence)(nil),                  // 20: jumpgate.dataplane.v1.ProbeEvidence
-	(*ProbeSSHMetadata)(nil),               // 21: jumpgate.dataplane.v1.ProbeSSHMetadata
-	(*ProbeTLSMetadata)(nil),               // 22: jumpgate.dataplane.v1.ProbeTLSMetadata
-	(*ProbeKubernetesMetadata)(nil),        // 23: jumpgate.dataplane.v1.ProbeKubernetesMetadata
-	(*ProbeResult)(nil),                    // 24: jumpgate.dataplane.v1.ProbeResult
-	(*SetupSessionRequest)(nil),            // 25: jumpgate.dataplane.v1.SetupSessionRequest
-	(*SetupSessionResponse)(nil),           // 26: jumpgate.dataplane.v1.SetupSessionResponse
-	(*PrepareSessionRequest)(nil),          // 27: jumpgate.dataplane.v1.PrepareSessionRequest
-	(*SessionTrustAnchor)(nil),             // 28: jumpgate.dataplane.v1.SessionTrustAnchor
-	(*PrepareSessionResponse)(nil),         // 29: jumpgate.dataplane.v1.PrepareSessionResponse
-	(*IssueSessionCredentialRequest)(nil),  // 30: jumpgate.dataplane.v1.IssueSessionCredentialRequest
-	(*IssueSessionCredentialResponse)(nil), // 31: jumpgate.dataplane.v1.IssueSessionCredentialResponse
+	(*AgentBinding)(nil),                   // 6: jumpgate.dataplane.v1.AgentBinding
+	(*ReportApiServerIdentity)(nil),        // 7: jumpgate.dataplane.v1.ReportApiServerIdentity
+	(*Register)(nil),                       // 8: jumpgate.dataplane.v1.Register
+	(*Heartbeat)(nil),                      // 9: jumpgate.dataplane.v1.Heartbeat
+	(*SessionEnded)(nil),                   // 10: jumpgate.dataplane.v1.SessionEnded
+	(*RecordingInfo)(nil),                  // 11: jumpgate.dataplane.v1.RecordingInfo
+	(*ServerMessage)(nil),                  // 12: jumpgate.dataplane.v1.ServerMessage
+	(*RegisterAck)(nil),                    // 13: jumpgate.dataplane.v1.RegisterAck
+	(*Teardown)(nil),                       // 14: jumpgate.dataplane.v1.Teardown
+	(*ProbeLimits)(nil),                    // 15: jumpgate.dataplane.v1.ProbeLimits
+	(*SSHProbeEndpoint)(nil),               // 16: jumpgate.dataplane.v1.SSHProbeEndpoint
+	(*PostgresProbeEndpoint)(nil),          // 17: jumpgate.dataplane.v1.PostgresProbeEndpoint
+	(*RDPProbeEndpoint)(nil),               // 18: jumpgate.dataplane.v1.RDPProbeEndpoint
+	(*KubernetesProbeEndpoint)(nil),        // 19: jumpgate.dataplane.v1.KubernetesProbeEndpoint
+	(*ProbeAssignment)(nil),                // 20: jumpgate.dataplane.v1.ProbeAssignment
+	(*ProbeDisplayExtension)(nil),          // 21: jumpgate.dataplane.v1.ProbeDisplayExtension
+	(*ProbeEvidence)(nil),                  // 22: jumpgate.dataplane.v1.ProbeEvidence
+	(*ProbeSSHMetadata)(nil),               // 23: jumpgate.dataplane.v1.ProbeSSHMetadata
+	(*ProbeTLSMetadata)(nil),               // 24: jumpgate.dataplane.v1.ProbeTLSMetadata
+	(*ProbeKubernetesMetadata)(nil),        // 25: jumpgate.dataplane.v1.ProbeKubernetesMetadata
+	(*ProbeResult)(nil),                    // 26: jumpgate.dataplane.v1.ProbeResult
+	(*SetupSessionRequest)(nil),            // 27: jumpgate.dataplane.v1.SetupSessionRequest
+	(*SetupSessionResponse)(nil),           // 28: jumpgate.dataplane.v1.SetupSessionResponse
+	(*PrepareSessionRequest)(nil),          // 29: jumpgate.dataplane.v1.PrepareSessionRequest
+	(*SessionTrustAnchor)(nil),             // 30: jumpgate.dataplane.v1.SessionTrustAnchor
+	(*PrepareSessionResponse)(nil),         // 31: jumpgate.dataplane.v1.PrepareSessionResponse
+	(*IssueSessionCredentialRequest)(nil),  // 32: jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	(*IssueSessionCredentialResponse)(nil), // 33: jumpgate.dataplane.v1.IssueSessionCredentialResponse
 }
 var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
-	6,  // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
-	7,  // 1: jumpgate.dataplane.v1.WorkerMessage.heartbeat:type_name -> jumpgate.dataplane.v1.Heartbeat
-	8,  // 2: jumpgate.dataplane.v1.WorkerMessage.session_ended:type_name -> jumpgate.dataplane.v1.SessionEnded
+	8,  // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
+	9,  // 1: jumpgate.dataplane.v1.WorkerMessage.heartbeat:type_name -> jumpgate.dataplane.v1.Heartbeat
+	10, // 2: jumpgate.dataplane.v1.WorkerMessage.session_ended:type_name -> jumpgate.dataplane.v1.SessionEnded
 	5,  // 3: jumpgate.dataplane.v1.WorkerMessage.advertise_tunnels:type_name -> jumpgate.dataplane.v1.AdvertiseTunnels
-	24, // 4: jumpgate.dataplane.v1.WorkerMessage.probe_result:type_name -> jumpgate.dataplane.v1.ProbeResult
-	9,  // 5: jumpgate.dataplane.v1.SessionEnded.recording:type_name -> jumpgate.dataplane.v1.RecordingInfo
-	11, // 6: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
-	12, // 7: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
-	18, // 8: jumpgate.dataplane.v1.ServerMessage.probe_assignment:type_name -> jumpgate.dataplane.v1.ProbeAssignment
-	0,  // 9: jumpgate.dataplane.v1.ProbeAssignment.protocol:type_name -> jumpgate.dataplane.v1.ProbeProtocol
-	13, // 10: jumpgate.dataplane.v1.ProbeAssignment.limits:type_name -> jumpgate.dataplane.v1.ProbeLimits
-	14, // 11: jumpgate.dataplane.v1.ProbeAssignment.ssh:type_name -> jumpgate.dataplane.v1.SSHProbeEndpoint
-	15, // 12: jumpgate.dataplane.v1.ProbeAssignment.postgres:type_name -> jumpgate.dataplane.v1.PostgresProbeEndpoint
-	16, // 13: jumpgate.dataplane.v1.ProbeAssignment.rdp:type_name -> jumpgate.dataplane.v1.RDPProbeEndpoint
-	17, // 14: jumpgate.dataplane.v1.ProbeAssignment.kubernetes:type_name -> jumpgate.dataplane.v1.KubernetesProbeEndpoint
-	3,  // 15: jumpgate.dataplane.v1.ProbeEvidence.kind:type_name -> jumpgate.dataplane.v1.ProbeEvidenceKind
-	19, // 16: jumpgate.dataplane.v1.ProbeEvidence.display_extensions:type_name -> jumpgate.dataplane.v1.ProbeDisplayExtension
-	0,  // 17: jumpgate.dataplane.v1.ProbeResult.protocol:type_name -> jumpgate.dataplane.v1.ProbeProtocol
-	1,  // 18: jumpgate.dataplane.v1.ProbeResult.outcome:type_name -> jumpgate.dataplane.v1.ProbeOutcome
-	20, // 19: jumpgate.dataplane.v1.ProbeResult.evidence:type_name -> jumpgate.dataplane.v1.ProbeEvidence
-	2,  // 20: jumpgate.dataplane.v1.ProbeResult.failure_category:type_name -> jumpgate.dataplane.v1.ProbeFailureCategory
-	21, // 21: jumpgate.dataplane.v1.ProbeResult.ssh:type_name -> jumpgate.dataplane.v1.ProbeSSHMetadata
-	22, // 22: jumpgate.dataplane.v1.ProbeResult.tls:type_name -> jumpgate.dataplane.v1.ProbeTLSMetadata
-	23, // 23: jumpgate.dataplane.v1.ProbeResult.kubernetes:type_name -> jumpgate.dataplane.v1.ProbeKubernetesMetadata
-	28, // 24: jumpgate.dataplane.v1.PrepareSessionResponse.trust_anchors:type_name -> jumpgate.dataplane.v1.SessionTrustAnchor
-	4,  // 25: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
-	25, // 26: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
-	27, // 27: jumpgate.dataplane.v1.DataplaneService.PrepareSession:input_type -> jumpgate.dataplane.v1.PrepareSessionRequest
-	30, // 28: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:input_type -> jumpgate.dataplane.v1.IssueSessionCredentialRequest
-	10, // 29: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
-	26, // 30: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
-	29, // 31: jumpgate.dataplane.v1.DataplaneService.PrepareSession:output_type -> jumpgate.dataplane.v1.PrepareSessionResponse
-	31, // 32: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:output_type -> jumpgate.dataplane.v1.IssueSessionCredentialResponse
-	29, // [29:33] is the sub-list for method output_type
-	25, // [25:29] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	26, // 4: jumpgate.dataplane.v1.WorkerMessage.probe_result:type_name -> jumpgate.dataplane.v1.ProbeResult
+	7,  // 5: jumpgate.dataplane.v1.WorkerMessage.api_server_identity:type_name -> jumpgate.dataplane.v1.ReportApiServerIdentity
+	6,  // 6: jumpgate.dataplane.v1.AdvertiseTunnels.agents:type_name -> jumpgate.dataplane.v1.AgentBinding
+	11, // 7: jumpgate.dataplane.v1.SessionEnded.recording:type_name -> jumpgate.dataplane.v1.RecordingInfo
+	13, // 8: jumpgate.dataplane.v1.ServerMessage.ack:type_name -> jumpgate.dataplane.v1.RegisterAck
+	14, // 9: jumpgate.dataplane.v1.ServerMessage.teardown:type_name -> jumpgate.dataplane.v1.Teardown
+	20, // 10: jumpgate.dataplane.v1.ServerMessage.probe_assignment:type_name -> jumpgate.dataplane.v1.ProbeAssignment
+	0,  // 11: jumpgate.dataplane.v1.ProbeAssignment.protocol:type_name -> jumpgate.dataplane.v1.ProbeProtocol
+	15, // 12: jumpgate.dataplane.v1.ProbeAssignment.limits:type_name -> jumpgate.dataplane.v1.ProbeLimits
+	16, // 13: jumpgate.dataplane.v1.ProbeAssignment.ssh:type_name -> jumpgate.dataplane.v1.SSHProbeEndpoint
+	17, // 14: jumpgate.dataplane.v1.ProbeAssignment.postgres:type_name -> jumpgate.dataplane.v1.PostgresProbeEndpoint
+	18, // 15: jumpgate.dataplane.v1.ProbeAssignment.rdp:type_name -> jumpgate.dataplane.v1.RDPProbeEndpoint
+	19, // 16: jumpgate.dataplane.v1.ProbeAssignment.kubernetes:type_name -> jumpgate.dataplane.v1.KubernetesProbeEndpoint
+	3,  // 17: jumpgate.dataplane.v1.ProbeEvidence.kind:type_name -> jumpgate.dataplane.v1.ProbeEvidenceKind
+	21, // 18: jumpgate.dataplane.v1.ProbeEvidence.display_extensions:type_name -> jumpgate.dataplane.v1.ProbeDisplayExtension
+	0,  // 19: jumpgate.dataplane.v1.ProbeResult.protocol:type_name -> jumpgate.dataplane.v1.ProbeProtocol
+	1,  // 20: jumpgate.dataplane.v1.ProbeResult.outcome:type_name -> jumpgate.dataplane.v1.ProbeOutcome
+	22, // 21: jumpgate.dataplane.v1.ProbeResult.evidence:type_name -> jumpgate.dataplane.v1.ProbeEvidence
+	2,  // 22: jumpgate.dataplane.v1.ProbeResult.failure_category:type_name -> jumpgate.dataplane.v1.ProbeFailureCategory
+	23, // 23: jumpgate.dataplane.v1.ProbeResult.ssh:type_name -> jumpgate.dataplane.v1.ProbeSSHMetadata
+	24, // 24: jumpgate.dataplane.v1.ProbeResult.tls:type_name -> jumpgate.dataplane.v1.ProbeTLSMetadata
+	25, // 25: jumpgate.dataplane.v1.ProbeResult.kubernetes:type_name -> jumpgate.dataplane.v1.ProbeKubernetesMetadata
+	30, // 26: jumpgate.dataplane.v1.PrepareSessionResponse.trust_anchors:type_name -> jumpgate.dataplane.v1.SessionTrustAnchor
+	4,  // 27: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
+	27, // 28: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
+	29, // 29: jumpgate.dataplane.v1.DataplaneService.PrepareSession:input_type -> jumpgate.dataplane.v1.PrepareSessionRequest
+	32, // 30: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:input_type -> jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	12, // 31: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
+	28, // 32: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
+	31, // 33: jumpgate.dataplane.v1.DataplaneService.PrepareSession:output_type -> jumpgate.dataplane.v1.PrepareSessionResponse
+	33, // 34: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:output_type -> jumpgate.dataplane.v1.IssueSessionCredentialResponse
+	31, // [31:35] is the sub-list for method output_type
+	27, // [27:31] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_dataplane_v1_dataplane_proto_init() }
@@ -3202,31 +3353,32 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*WorkerMessage_SessionEnded)(nil),
 		(*WorkerMessage_AdvertiseTunnels)(nil),
 		(*WorkerMessage_ProbeResult)(nil),
+		(*WorkerMessage_ApiServerIdentity)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[6].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[8].OneofWrappers = []any{
 		(*ServerMessage_Ack)(nil),
 		(*ServerMessage_Teardown)(nil),
 		(*ServerMessage_ProbeAssignment)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[14].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[16].OneofWrappers = []any{
 		(*ProbeAssignment_Ssh)(nil),
 		(*ProbeAssignment_Postgres)(nil),
 		(*ProbeAssignment_Rdp)(nil),
 		(*ProbeAssignment_Kubernetes)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[20].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22].OneofWrappers = []any{
 		(*ProbeResult_Ssh)(nil),
 		(*ProbeResult_Tls)(nil),
 		(*ProbeResult_Kubernetes)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[22].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24].OneofWrappers = []any{
 		(*SetupSessionResponse_SshCertificate)(nil),
 		(*SetupSessionResponse_Password)(nil),
 		(*SetupSessionResponse_PrivateKey)(nil),
 		(*SetupSessionResponse_X509Certificate)(nil),
 		(*SetupSessionResponse_PgPassword)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29].OneofWrappers = []any{
 		(*IssueSessionCredentialResponse_SshCertificate)(nil),
 		(*IssueSessionCredentialResponse_Password)(nil),
 		(*IssueSessionCredentialResponse_PrivateKey)(nil),
@@ -3239,7 +3391,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc), len(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
