@@ -70,8 +70,7 @@ var (
 	probeEndpointRevision int64
 	probeWaitTimeout      time.Duration
 
-	identityWaitTimeout time.Duration
-	identityFlagValues  identityFlags
+	identityFlagValues identityFlags
 
 	revokeReason string
 )
@@ -122,8 +121,6 @@ func init() {
 	assetsProbeCmd.Flags().DurationVar(&probeWaitTimeout, "wait-timeout", 60*time.Second, "how long to wait for the probe to complete")
 
 	addApprovalFlags(assetsIdentityApproveCmd, &identityFlagValues)
-	assetsIdentityApproveCmd.Flags().DurationVar(&identityWaitTimeout, "wait-timeout", 60*time.Second, "how long to wait for a probe (unused for approve; kept for symmetry)")
-	_ = assetsIdentityApproveCmd.Flags().MarkHidden("wait-timeout")
 
 	assetsIdentityRevokeCmd.Flags().StringVar(&revokeReason, "reason", "", "reason recorded with the revocation")
 

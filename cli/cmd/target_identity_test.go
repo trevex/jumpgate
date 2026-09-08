@@ -113,7 +113,6 @@ func resetIdentityFlags() {
 	identityFlagValues = identityFlags{}
 	probeEndpointRevision = 1
 	probeWaitTimeout = 60_000_000_000 // 60s
-	identityWaitTimeout = 60_000_000_000
 	revokeReason = ""
 	stdinIsTTY = defaultStdinIsTTY
 	for _, c := range []*cobra.Command{assetsProbeCmd, assetsIdentityApproveCmd, assetsIdentityRevokeCmd} {
