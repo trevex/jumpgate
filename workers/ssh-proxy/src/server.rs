@@ -52,29 +52,241 @@ pub(crate) fn unix_millis_now() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
-use crate::setup::{setup_session, SetupOutcome, TargetCredential};
+use crate::setup::{
+    issue_session_credential, prepare_session, IssueOutcome, PrepareOutcome, TargetCredential,
+    TrustAnchor,
+};
 use crate::{proxy, target};
 use jumpgate_mesh::tls::MeshClientCerts;
+use subtle::ConstantTimeEq;
 
-/// Dial the target and authenticate the second hop by the login's configured
-/// credential kind (cert / password / key), returning the connected russh client
-/// handle. Shared by the SSH and browser-terminal ingresses so both authenticate
-/// the target identically. On error the caller aborts the hop (never bridges).
-pub(crate) async fn dial_target_by_auth(
-    target_address: &str,
-    host_key_pin: &str,
+/// The enforced verify-before-issue target hop, shared by the SSH and
+/// browser-terminal ingresses so both observe the STRICT order and neither can
+/// release a credential to an unverified target.
+///
+/// Order:
+/// 1. connect + KEX to the target, observing its host key WITHOUT authenticating;
+/// 2. constant-time match the observed SHA-256 fingerprint against an approved
+///    `ssh_host_key` anchor (fail closed on mismatch / no anchor / host-CA anchor —
+///    `IssueSessionCredential` is NEVER called on a failure here);
+/// 3. `IssueSessionCredential` over `Kw` (the credential first exists HERE);
+/// 4. authenticate the (already-connected) target with the released credential.
+///
+/// Returns the connected+authenticated handle. On failure the caller aborts the
+/// hop (never bridges) and reports the session ended.
+pub(crate) async fn verify_and_dial_target(
+    prepared: &PreparedSession,
     login: &str,
-    target_auth: &TargetAuth,
-) -> anyhow::Result<russh::client::Handle<target::TargetHandler>> {
-    match target_auth {
+    issue: &IssueFn,
+) -> Result<russh::client::Handle<target::TargetHandler>, HopError> {
+    // 1. Connect + KEX. The handle is connected-but-unauthenticated; we observe
+    //    the host key but present NO credential until it is verified.
+    let (mut handle, observed) = target::connect_observe(&prepared.target_address)
+        .await
+        .map_err(HopError::Connect)?;
+
+    // 2. Match the observed identity against an approved anchor. A failure here is
+    //    terminal and MUST NOT reach IssueSessionCredential — we drop the
+    //    unauthenticated connection with no credential ever requested.
+    let matched = match_anchor(&observed, &prepared.anchors).map_err(|why| {
+        // The mismatch observation: the public identity the target actually
+        // presented, recorded for operators. No secret is involved.
+        tracing::warn!(
+            session_id = %prepared.session_id,
+            target = %prepared.target_address,
+            observed_algorithm = %observed.algorithm(),
+            observed_fingerprint = %observed.fingerprint(Default::default()),
+            reason = why.log_detail(),
+            "target host identity did NOT match an approved anchor; refusing session before credential issuance",
+        );
+        HopError::Identity(why)
+    })?;
+
+    // 3. Only now — after a successful match — request the credential over Kw.
+    let kw_pub = public_key_line(prepared.kw.public_key())
+        .map_err(|e| HopError::Credential(e.to_string()))?;
+    let outcome: IssueOutcome = issue(
+        prepared.session_id.clone(),
+        prepared.endpoint_revision,
+        matched.anchor_id,
+        matched.observed_fingerprint,
+        kw_pub,
+    )
+    .await
+    .map_err(|e| HopError::Credential(e.to_string()))?;
+
+    // 4. Validate the released credential and authenticate the verified target.
+    let target_auth =
+        build_target_auth(outcome.credential, &prepared.kw, login).map_err(HopError::Credential)?;
+    match &target_auth {
         TargetAuth::Cert { certificate, kw } => {
-            target::dial_target(target_address, host_key_pin, login, kw, certificate).await
+            target::authenticate_cert_on(&mut handle, login, kw, certificate).await
         }
         TargetAuth::Password(password) => {
-            target::authenticate_password(target_address, host_key_pin, login, password).await
+            target::authenticate_password_on(&mut handle, login, password).await
         }
-        TargetAuth::Key(pem) => {
-            target::authenticate_publickey(target_address, host_key_pin, login, pem).await
+        TargetAuth::Key(pem) => target::authenticate_publickey_on(&mut handle, login, pem).await,
+    }
+    .map_err(|e| HopError::Credential(e.to_string()))?;
+
+    Ok(handle)
+}
+
+/// The anchor the worker matched, threaded into `IssueSessionCredential`.
+#[derive(Debug)]
+struct AnchorMatch {
+    anchor_id: String,
+    observed_fingerprint: String,
+}
+
+/// Why the observed target identity did not resolve to an approved anchor. Both
+/// variants fail closed and map to the SAME client-safe reason; the distinction is
+/// for the server-side observation log only.
+#[derive(Debug, Clone, Copy)]
+pub enum IdentityError {
+    /// No approved `ssh_host_key` anchor matched the observed host key — a changed
+    /// key, an unknown target, or no anchors at all. The MITM / unverified signal.
+    Unmatched,
+    /// The applicable anchor is a host-CA anchor. russh 0.62 never surfaces the
+    /// target's host CERTIFICATE (only its plain host KEY — see `probe.rs` and the
+    /// Task 6 finding), so a CA anchor cannot be verified at session time. Fail
+    /// closed rather than accept-any or fake a CA match.
+    CaUnsupported,
+}
+
+impl IdentityError {
+    fn log_detail(self) -> &'static str {
+        match self {
+            IdentityError::Unmatched => "no approved ssh_host_key anchor matched the observed key",
+            IdentityError::CaUnsupported => {
+                "only a host-CA anchor applies; unverifiable at session time with russh 0.62"
+            }
+        }
+    }
+}
+
+/// Match the observed target host key against the prepared trust anchors.
+///
+/// Only exact-key (`ssh_host_key`) anchors are verifiable at SSH session time: the
+/// observed host key's SHA-256 fingerprint is compared with each anchor's stored
+/// fingerprint using CONSTANT-TIME byte equality. On the first match the anchor's
+/// id is selected. Host-CA anchors fail closed (russh 0.62 cannot obtain the host
+/// certificate; see [`IdentityError::CaUnsupported`]). No match → fail closed.
+fn match_anchor(
+    observed: &PublicKey,
+    anchors: &[TrustAnchor],
+) -> Result<AnchorMatch, IdentityError> {
+    let observed_fp = observed.fingerprint(Default::default()).to_string();
+    let observed_bytes = observed_fp.as_bytes();
+
+    let mut saw_ca_anchor = false;
+    for anchor in anchors {
+        match anchor.kind.as_str() {
+            "ssh_host_key" => {
+                let anchor_bytes = anchor.sha256_fingerprint.as_bytes();
+                // Constant-time equality is only meaningful over equal-length
+                // slices; the length of a public fingerprint is not a secret, so
+                // gating on it first is safe.
+                if anchor_bytes.len() == observed_bytes.len()
+                    && bool::from(anchor_bytes.ct_eq(observed_bytes))
+                {
+                    return Ok(AnchorMatch {
+                        anchor_id: anchor.id.clone(),
+                        observed_fingerprint: observed_fp,
+                    });
+                }
+            }
+            "ssh_host_ca" => saw_ca_anchor = true,
+            // tls_leaf / tls_ca are not SSH identities; ignore them here.
+            _ => {}
+        }
+    }
+
+    if saw_ca_anchor {
+        Err(IdentityError::CaUnsupported)
+    } else {
+        Err(IdentityError::Unmatched)
+    }
+}
+
+/// Validate a released credential and build the [`TargetAuth`] the target hop
+/// authenticates with. For the `Cert` (ca) kind the certificate MUST parse, be
+/// over `Kw` (the only key the worker presents), and carry only `<login>@<scope>`
+/// principals. `Password`/`Key` are cached as-is (warden already enforced the
+/// entitlement). Any failure is a hard error (the caller aborts the hop).
+fn build_target_auth(
+    credential: TargetCredential,
+    kw: &PrivateKey,
+    login: &str,
+) -> Result<TargetAuth, String> {
+    match credential {
+        TargetCredential::Cert(cert_bytes) => {
+            let cert_str = String::from_utf8(cert_bytes)
+                .map_err(|e| format!("released certificate is not utf-8: {e}"))?;
+            let certificate = Certificate::from_openssh(cert_str.trim())
+                .map_err(|e| format!("released certificate failed to parse: {e}"))?;
+
+            // The cert MUST certify Kw — the only key we present on the target hop.
+            if certificate.public_key() != kw.public_key().key_data() {
+                return Err("released certificate is not over the worker's session key Kw".into());
+            }
+
+            // Every principal MUST be host-scoped to the requested login
+            // (`<login>@<scope>`). The host binding is enforced target-side by its
+            // AuthorizedPrincipalsFile.
+            let principals = certificate.valid_principals();
+            let login_prefix = format!("{login}@");
+            if principals.is_empty() || !principals.iter().all(|p| p.starts_with(&login_prefix)) {
+                return Err(format!(
+                    "released certificate principals {principals:?} are not all scoped to login {login:?}"
+                ));
+            }
+
+            Ok(TargetAuth::Cert {
+                certificate: Box::new(certificate),
+                kw: Box::new(kw.clone()),
+            })
+        }
+        TargetCredential::Password(password) => Ok(TargetAuth::Password(password)),
+        TargetCredential::Key(pem) => Ok(TargetAuth::Key(pem)),
+    }
+}
+
+/// How the verify-before-issue target hop ([`verify_and_dial_target`]) failed,
+/// mapped by the caller to a client-safe message + a live-session end reason. The
+/// three variants exist so an identity refusal (no credential ever issued) is
+/// never conflated with a plain connectivity failure.
+#[derive(Debug)]
+pub enum HopError {
+    /// The target's identity did not match an approved anchor. IssueSessionCredential
+    /// was NOT called. Client-safe: "target identity could not be verified".
+    Identity(IdentityError),
+    /// Connect/KEX to the target failed (unreachable, protocol error).
+    Connect(anyhow::Error),
+    /// IssueSessionCredential failed, the released credential was invalid, or the
+    /// target rejected the credential.
+    Credential(String),
+}
+
+impl HopError {
+    /// The stable live-session end reason reported to warden.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            // Stable machine-readable token for CLI/UI rendering (covers both
+            // Unmatched and CaUnsupported — one token by design). The human-readable
+            // client message stays generic (see `client_message`).
+            HopError::Identity(_) => "target_identity_mismatch",
+            HopError::Connect(_) => "target_unavailable",
+            HopError::Credential(_) => "credential_rejected",
+        }
+    }
+
+    /// The stable, generic client-facing message (never leaks which check failed).
+    pub fn client_message(&self) -> &'static str {
+        match self {
+            HopError::Identity(_) => "target identity could not be verified",
+            HopError::Connect(_) => "target unavailable",
+            HopError::Credential(_) => "session credential rejected",
         }
     }
 }
@@ -160,19 +372,26 @@ impl std::fmt::Debug for TargetAuth {
     }
 }
 
-/// A validated, cached session: the outcome of a successful publickey auth.
-#[derive(Debug)]
-pub struct SessionState {
+/// A prepared session: the credential-free outcome of a successful `PrepareSession`
+/// (accepted at publickey-auth time). It carries the endpoint, the trust anchors
+/// the observed target must match, and the per-session key `Kw` — but NO credential.
+/// The credential is released only at target-hop time, after the identity match
+/// (see [`verify_and_dial_target`]).
+pub struct PreparedSession {
     pub session_id: String,
+    /// The asset's endpoint revision at prepare time, echoed to IssueSessionCredential
+    /// so warden rejects a match against an endpoint that moved under the session.
+    pub endpoint_revision: i64,
     pub target_address: String,
-    /// The asset's configured target host-key pin (OpenSSH authorized_keys line),
-    /// or empty for no pin. Enforced on the target hop (fail closed on mismatch).
-    pub target_host_key: String,
     /// The access grant that authorized this session (empty for standing-only
     /// access). Echoed back in the recording report for session attribution.
     pub grant_id: String,
-    /// How the worker authenticates the target hop for this session.
-    pub target_auth: TargetAuth,
+    /// The asset's current active trust anchors; the observed target host key must
+    /// match one (constant-time) before a credential is released.
+    pub anchors: Vec<TrustAnchor>,
+    /// The fresh per-session key. Certified over at issue time (ca) or unused
+    /// (password/key). Kept so the credential is minted over exactly this key.
+    pub kw: PrivateKey,
     /// warden requires this session to be recorded; if a recording cannot be
     /// established (or a write fails mid-session) the session is refused/torn down.
     pub recording_required: bool,
@@ -303,35 +522,43 @@ struct PtyParams {
     modes: Vec<(Pty, u32)>,
 }
 
-/// Why an auth attempt was rejected. All variants map to `Auth::Reject` — the
-/// distinction exists for logging/tests only, never to leak to the client.
+/// Why publickey auth (the [`prepare`] phase) was rejected. Both variants map to
+/// `Auth::Reject` — the distinction exists for logging/tests only, never to leak
+/// to the client. The credential checks (cert-over-`Kw`, host-scoped principals)
+/// now live in [`build_target_auth`] at issue time, not here.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
-    #[error("SetupSession failed: {0}")]
+    #[error("PrepareSession failed: {0}")]
     Setup(String),
-    #[error("certificate parse failed: {0}")]
-    CertParse(String),
-    #[error("certificate is not over the worker's per-session key Kw")]
-    CertNotOverKw,
-    #[error("certificate principals {principals:?} are not all scoped to login {login:?}")]
-    PrincipalNotForLogin {
-        login: String,
-        principals: Vec<String>,
-    },
     #[error("failed to serialize public key: {0}")]
     KeySerialize(String),
 }
 
-/// The SetupSession call, injected so [`authorize`] can be tested without a real
-/// warden. Takes the requested `login` plus the OpenSSH public-key bytes for `Kc`
-/// and `Kw`; returns warden's outcome or an error (which the caller MUST treat as
-/// a hard reject).
-pub type SetupFn = Arc<
+/// The `PrepareSession` call, injected so [`prepare`] can be tested without a real
+/// warden. Takes the requested `login` plus the OpenSSH public-key bytes for `Kc`;
+/// returns warden's credential-free outcome or an error (a hard reject).
+pub type PrepareFn = Arc<
     dyn Fn(
             String,  // login (the client's requested SSH username)
-            Vec<u8>, // kc_pub (authorized_keys line)
+            Vec<u8>, // kc_pub (authorized_keys line; empty for web mode)
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<PrepareOutcome>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// The `IssueSessionCredential` call, injected so the target-hop verify path can be
+/// tested without a real warden. Called ONLY after the observed target identity
+/// matched an anchor; takes the session id, the prepared endpoint revision, the
+/// matched anchor id, the observed fingerprint, and `Kw`'s public-key bytes;
+/// returns the released credential or an error (a hard reject).
+pub type IssueFn = Arc<
+    dyn Fn(
+            String,  // session_id
+            i64,     // endpoint_revision (prepared against)
+            String,  // matched_anchor_id
+            String,  // observed_fingerprint
             Vec<u8>, // kw_pub (authorized_keys line)
-        ) -> Pin<Box<dyn Future<Output = anyhow::Result<SetupOutcome>> + Send>>
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<IssueOutcome>> + Send>>
         + Send
         + Sync,
 >;
@@ -344,39 +571,31 @@ fn public_key_line(pk: &PublicKey) -> Result<Vec<u8>, AuthError> {
         .map_err(|e| AuthError::KeySerialize(e.to_string()))
 }
 
-/// The security-critical publickey-auth decision, isolated from russh.
+/// The publickey-auth decision (phase 1 of the two-phase flow), isolated from russh.
 ///
-/// Generates a fresh `Kw` and calls SetupSession (via the injected `setup`) with
-/// the requested `login` + the offered `Kc` + `Kw`. warden returns a
-/// discriminated credential keyed on the login's configured kind, and the worker
-/// branches:
-/// - `Cert` (ca): the returned certificate must parse, be **over `Kw`** (defence
-///   against a swapped/confused cert — we only ever present `Kw` on the target
-///   hop), and have every principal of the form `<login>@<scope>` (host-scoped).
-///   The host binding is enforced by the target's `AuthorizedPrincipalsFile`.
-///   `Kw` + the cert are cached.
-/// - `Password`/`Key`: `Kw` is discarded; the plain secret is cached for the
-///   target hop. warden already enforced the login entitlement.
-///
-/// The worker still generates and offers `Kw` in every case (the proto requires
-/// `target_public_key`); only its *use* is gated to the `Cert` path.
+/// Generates a fresh `Kw` and calls `PrepareSession` (via the injected `prepare`)
+/// with the requested `login` + the offered `Kc`. warden verifies `cnf == fp(Kc)`,
+/// re-checks the login entitlement, records the live session, and returns the
+/// endpoint + the asset's trust anchors — but NO credential. Accepting the SSH auth
+/// on a successful `PrepareSession` therefore carries no secret: the credential is
+/// released later, only after the worker matches the target's observed identity
+/// (see [`verify_and_dial_target`]).
 ///
 /// `kc` is the client's ephemeral key for the SSH ingress (proof-of-possession
 /// binds it via the token's `cnf`). The browser-terminal ingress has no client
 /// key: it passes `None`, which sends an EMPTY client key — warden's `mode=web`
-/// tokens skip the `cnf` proof and take the login from the ticket. Every other
-/// check (SetupSession authorization, cert-over-Kw, host-scoped principals) is
-/// identical for both ingresses.
+/// tokens skip the `cnf` proof and take the login from the ticket.
 ///
-/// Returns the cached [`SessionState`] on success; ANY failure is an
+/// Returns the cached [`PreparedSession`] on success; ANY failure is an
 /// [`AuthError`] and the caller MUST reject. It never returns `Ok` on error.
-pub async fn authorize(
+pub async fn prepare(
     login: &str,
     kc: Option<&PublicKey>,
-    setup: &SetupFn,
-) -> Result<SessionState, AuthError> {
-    // 1. Fresh per-session Kw (ed25519). Infallible in practice; treat a keygen
-    //    failure as a setup-class error rather than ever accepting.
+    prepare_fn: &PrepareFn,
+) -> Result<PreparedSession, AuthError> {
+    // Fresh per-session Kw (ed25519), generated now and held until issue time so
+    // the credential is minted over exactly this key. Infallible in practice;
+    // treat a keygen failure as a setup-class error rather than ever accepting.
     let kw = PrivateKey::random(&mut rand::rng(), russh::keys::ssh_key::Algorithm::Ed25519)
         .map_err(|e| AuthError::Setup(format!("generate Kw: {e}")))?;
 
@@ -386,77 +605,108 @@ pub async fn authorize(
         Some(kc) => public_key_line(kc)?,
         None => Vec::new(),
     };
-    let kw_pub = public_key_line(kw.public_key())?;
 
-    // 2. Redeem the token. A transport/authorization error is a hard reject.
-    let outcome = setup(login.to_string(), kc_pub, kw_pub)
+    // Redeem the token (credential-free). A transport/authorization error is a
+    // hard reject.
+    let outcome = prepare_fn(login.to_string(), kc_pub)
         .await
         .map_err(|e| AuthError::Setup(e.to_string()))?;
 
-    // 3. Branch on the credential kind warden returned.
-    let target_auth = match outcome.credential {
-        TargetCredential::Cert(cert_bytes) => {
-            // Parse the cert (authorized_keys cert line, per warden's `ca.MarshalCert`).
-            let cert_str = String::from_utf8(cert_bytes)
-                .map_err(|e| AuthError::CertParse(format!("cert not utf-8: {e}")))?;
-            let certificate = Certificate::from_openssh(cert_str.trim())
-                .map_err(|e| AuthError::CertParse(e.to_string()))?;
-
-            // The cert MUST certify Kw — the only key we present on the target hop.
-            if certificate.public_key() != kw.public_key().key_data() {
-                return Err(AuthError::CertNotOverKw);
-            }
-
-            // Every principal MUST be host-scoped to the requested login
-            // (`<login>@<scope>`), binding the cert to the login the worker
-            // authenticates as. The *host* binding (which asset) is enforced by the
-            // target's AuthorizedPrincipalsFile — the worker need not know the path/id.
-            // (Prefix-only by design: the worker binds login, the target's
-            // AuthorizedPrincipalsFile enforces the exact <login>@<scope> match.)
-            let principals = certificate.valid_principals();
-            let login_prefix = format!("{login}@");
-            if principals.is_empty() || !principals.iter().all(|p| p.starts_with(&login_prefix)) {
-                return Err(AuthError::PrincipalNotForLogin {
-                    login: login.to_string(),
-                    principals: principals.to_vec(),
-                });
-            }
-
-            TargetAuth::Cert {
-                certificate: Box::new(certificate),
-                kw: Box::new(kw),
-            }
-        }
-        // Password/key: Kw is not used; warden already enforced the entitlement.
-        TargetCredential::Password(password) => TargetAuth::Password(password),
-        TargetCredential::Key(pem) => TargetAuth::Key(pem),
-    };
-
-    Ok(SessionState {
+    Ok(PreparedSession {
         session_id: outcome.session_id,
+        endpoint_revision: outcome.endpoint_revision,
         target_address: outcome.target_address,
-        target_host_key: outcome.target_host_key,
         grant_id: outcome.grant_id,
-        target_auth,
+        anchors: outcome.anchors,
+        kw,
         recording_required: outcome.recording_required,
         recording_object_key: outcome.recording_object_key,
     })
 }
 
+/// Build the injected warden fns for a connection: a [`PrepareFn`] and an
+/// [`IssueFn`] closing over the worker's mesh identity + warden coordinates.
+/// Shared by the SSH ingress ([`SshHandler::new`]) and the browser-terminal
+/// ingress so both drive the identical two-phase flow against a real warden.
+pub(crate) fn warden_fns(
+    token: String,
+    worker_id: String,
+    warden_addr: String,
+    warden_spiffe: String,
+    certs: Arc<MeshClientCerts>,
+) -> (PrepareFn, IssueFn) {
+    let prepare_fn: PrepareFn = {
+        let token = token.clone();
+        let worker_id = worker_id.clone();
+        let warden_addr = warden_addr.clone();
+        let warden_spiffe = warden_spiffe.clone();
+        let certs = certs.clone();
+        Arc::new(move |login, kc_pub| {
+            let token = token.clone();
+            let worker_id = worker_id.clone();
+            let warden_addr = warden_addr.clone();
+            let warden_spiffe = warden_spiffe.clone();
+            let certs = certs.clone();
+            Box::pin(async move {
+                prepare_session(
+                    &warden_addr,
+                    &warden_spiffe,
+                    &certs,
+                    &token,
+                    &worker_id,
+                    &login,
+                    kc_pub,
+                )
+                .await
+            })
+        })
+    };
+
+    let issue_fn: IssueFn = Arc::new(
+        move |session_id, endpoint_revision, matched_anchor_id, observed_fingerprint, kw_pub| {
+            let worker_id = worker_id.clone();
+            let warden_addr = warden_addr.clone();
+            let warden_spiffe = warden_spiffe.clone();
+            let certs = certs.clone();
+            Box::pin(async move {
+                issue_session_credential(
+                    &warden_addr,
+                    &warden_spiffe,
+                    &certs,
+                    &session_id,
+                    &worker_id,
+                    endpoint_revision,
+                    &matched_anchor_id,
+                    &observed_fingerprint,
+                    kw_pub,
+                )
+                .await
+            })
+        },
+    );
+
+    (prepare_fn, issue_fn)
+}
+
 /// Per-connection SSH server handler. Holds the CONNECT token + shared deps, and
-/// (after a successful auth) the cached [`SessionState`], the requested login,
+/// (after a successful auth) the cached [`PreparedSession`], the requested login,
 /// the accepted client channel, and any pty parameters — everything the
-/// shell/exec trigger needs to dial the target and start the bridge.
+/// shell/exec trigger needs to verify the target, obtain the credential, and start
+/// the bridge.
 pub struct SshHandler {
-    setup: SetupFn,
+    /// PrepareSession (phase 1, at auth time) + IssueSessionCredential (phase 2, at
+    /// target-hop time, after the identity match). Injected so tests stub warden.
+    prepare_fn: PrepareFn,
+    issue_fn: IssueFn,
     /// Force-close registry + finished-session reporter, shared with the control
     /// plane so warden can tear a live session down and learn when it ends.
     registry: SessionRegistry,
     session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
     /// Recording store settings, used to build the per-session uploader.
     recording: RecordingSettings,
-    /// Cached after a successful publickey auth; consumed by the target hop.
-    state: Option<SessionState>,
+    /// Cached after a successful publickey auth (credential-free); consumed by the
+    /// target hop, which verifies the target then issues the credential.
+    state: Option<PreparedSession>,
     /// The login the client authenticated as (a cert principal).
     login: Option<String>,
     /// The client's session channel, accepted in `channel_open_session`.
@@ -466,8 +716,9 @@ pub struct SshHandler {
 }
 
 impl SshHandler {
-    /// Build a handler that redeems `token` via a real SetupSession call to
-    /// `warden_addr` (pinned to `warden_spiffe`) as `worker_id`.
+    /// Build a handler that redeems `token` via real PrepareSession /
+    /// IssueSessionCredential calls to `warden_addr` (pinned to `warden_spiffe`) as
+    /// `worker_id`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         token: String,
@@ -479,38 +730,23 @@ impl SshHandler {
         session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
         recording: RecordingSettings,
     ) -> Self {
-        let setup: SetupFn = Arc::new(move |login, kc_pub, kw_pub| {
-            let token = token.clone();
-            let worker_id = worker_id.clone();
-            let warden_addr = warden_addr.clone();
-            let warden_spiffe = warden_spiffe.clone();
-            let certs = certs.clone();
-            Box::pin(async move {
-                setup_session(
-                    &warden_addr,
-                    &warden_spiffe,
-                    &certs,
-                    &token,
-                    &worker_id,
-                    &login,
-                    kc_pub,
-                    kw_pub,
-                )
-                .await
-            })
-        });
-        Self::with_setup(setup, registry, session_ended_tx, recording)
+        let (prepare_fn, issue_fn) =
+            warden_fns(token, worker_id, warden_addr, warden_spiffe, certs);
+        Self::with_fns(prepare_fn, issue_fn, registry, session_ended_tx, recording)
     }
 
-    /// Build a handler over an injected SetupSession fn (tests stub warden here).
-    pub fn with_setup(
-        setup: SetupFn,
+    /// Build a handler over injected warden fns (tests stub PrepareSession /
+    /// IssueSessionCredential here).
+    pub fn with_fns(
+        prepare_fn: PrepareFn,
+        issue_fn: IssueFn,
         registry: SessionRegistry,
         session_ended_tx: mpsc::UnboundedSender<SessionEndReport>,
         recording: RecordingSettings,
     ) -> Self {
         Self {
-            setup,
+            prepare_fn,
+            issue_fn,
             registry,
             session_ended_tx,
             recording,
@@ -521,8 +757,8 @@ impl SshHandler {
         }
     }
 
-    /// The cached session after a successful auth, if any (tests).
-    pub fn session_state(&self) -> Option<&SessionState> {
+    /// The cached prepared session after a successful auth, if any (tests).
+    pub fn session_state(&self) -> Option<&PreparedSession> {
         self.state.as_ref()
     }
 
@@ -587,33 +823,43 @@ impl SshHandler {
             None
         };
 
-        let (target_handle, target_channel) =
-            match self.open_target_channel(state, &login, command).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(session_id = %state.session_id, error = %e, "target hop failed");
-                    // Finalize any recorder (abort the upload) and ALWAYS report the
-                    // session ended — SetupSession already registered it in warden's
-                    // ledger, so an unrecorded target-fail that skipped the report left
-                    // an orphaned live-session entry. `finalize_recording` yields None
-                    // for an unrecorded session; the report still fires.
-                    let recording = finalize_recording(
-                        recorder,
-                        false,
-                        &state.session_id,
-                        &state.recording_object_key,
-                        &state.grant_id,
-                    )
-                    .await;
-                    let _ = self.session_ended_tx.send(SessionEndReport {
-                        session_id: state.session_id.clone(),
-                        reason: "target_unavailable".into(),
-                        recording,
-                    });
-                    Self::fail_client_channel(client_channel, "target unavailable").await;
-                    return;
-                }
-            };
+        let (target_handle, target_channel) = match self
+            .open_target_channel(state, &login, command)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                // A target-identity refusal (HopError::Identity) NEVER reached
+                // IssueSessionCredential; the observed identity was already logged
+                // in `verify_and_dial_target`. Report the session ended with a
+                // stable reason and surface a generic client-safe message — this
+                // closes the live-session ledger for THIS session ONLY (the
+                // per-session `session_ended_tx.send`) and touches nothing else.
+                let reason = e.reason();
+                let client_msg = e.client_message();
+                tracing::warn!(session_id = %state.session_id, %reason, error = ?e, "target hop refused");
+                // Finalize any recorder (abort the upload) and ALWAYS report the
+                // session ended — PrepareSession already recorded it in warden's
+                // ledger, so a target-fail that skipped the report would orphan the
+                // live-session entry. `finalize_recording` yields None for an
+                // unrecorded session; the report still fires.
+                let recording = finalize_recording(
+                    recorder,
+                    false,
+                    &state.session_id,
+                    &state.recording_object_key,
+                    &state.grant_id,
+                )
+                .await;
+                let _ = self.session_ended_tx.send(SessionEndReport {
+                    session_id: state.session_id.clone(),
+                    reason: reason.to_string(),
+                    recording,
+                });
+                Self::fail_client_channel(client_channel, client_msg).await;
+                return;
+            }
+        };
 
         // Register the live session so a Teardown can force-close it, then bridge.
         let session_id = state.session_id.clone();
@@ -683,7 +929,7 @@ impl SshHandler {
     /// a fail-closed trigger for a `recording_required` session.
     async fn build_recorder(
         &self,
-        state: &SessionState,
+        state: &PreparedSession,
     ) -> anyhow::Result<(
         crate::record::RecorderHandle,
         tokio::task::JoinHandle<crate::record::RecordingReport>,
@@ -699,29 +945,33 @@ impl SshHandler {
         build_recorder(&self.recording, &state.recording_object_key, width, height).await
     }
 
-    /// Dial the target and open the matching channel (applying the remembered
-    /// pty, then requesting a shell or the given exec command). Returns the
-    /// client handle too: it must outlive the channel, or the connection closes.
+    /// Verify the target's identity, obtain the credential, and open the matching
+    /// channel (applying the remembered pty, then requesting a shell or the given
+    /// exec command). Returns the client handle too: it must outlive the channel,
+    /// or the connection closes. On any failure the caller aborts the hop (never
+    /// bridges); a [`HopError::Identity`] means no credential was ever requested.
     async fn open_target_channel(
         &self,
-        state: &SessionState,
+        state: &PreparedSession,
         login: &str,
         command: Option<Vec<u8>>,
-    ) -> anyhow::Result<(
-        russh::client::Handle<target::TargetHandler>,
-        Channel<russh::client::Msg>,
-    )> {
-        // Authenticate the target hop by the login's configured kind. On error,
-        // the caller aborts the hop (never bridges).
-        let handle = dial_target_by_auth(
-            &state.target_address,
-            &state.target_host_key,
-            login,
-            &state.target_auth,
-        )
-        .await?;
+    ) -> Result<
+        (
+            russh::client::Handle<target::TargetHandler>,
+            Channel<russh::client::Msg>,
+        ),
+        HopError,
+    > {
+        // Connect → observe → match anchor → issue → authenticate (the enforced
+        // verify-before-issue order lives in `verify_and_dial_target`).
+        let handle = verify_and_dial_target(state, login, &self.issue_fn).await?;
 
-        let target_channel = handle.channel_open_session().await?;
+        // Channel setup is post-auth; a failure here is a target-side connectivity
+        // problem (the credential was already released).
+        let target_channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| HopError::Connect(e.into()))?;
 
         if let Some(pty) = self.pty.as_ref() {
             target_channel
@@ -734,12 +984,19 @@ impl SshHandler {
                     pty.pix_height,
                     &pty.modes,
                 )
-                .await?;
+                .await
+                .map_err(|e| HopError::Connect(e.into()))?;
         }
 
         match command {
-            Some(cmd) => target_channel.exec(true, cmd).await?,
-            None => target_channel.request_shell(true).await?,
+            Some(cmd) => target_channel
+                .exec(true, cmd)
+                .await
+                .map_err(|e| HopError::Connect(e.into()))?,
+            None => target_channel
+                .request_shell(true)
+                .await
+                .map_err(|e| HopError::Connect(e.into()))?,
         }
 
         Ok((handle, target_channel))
@@ -754,12 +1011,12 @@ impl Handler for SshHandler {
         user: &str,
         public_key: &PublicKey,
     ) -> Result<Auth, Self::Error> {
-        match authorize(user, Some(public_key), &self.setup).await {
+        match prepare(user, Some(public_key), &self.prepare_fn).await {
             Ok(state) => {
                 tracing::info!(
                     session_id = %state.session_id,
                     login = %user,
-                    "ssh publickey auth accepted; session set up",
+                    "ssh publickey auth accepted; session prepared (credential deferred to target verify)",
                 );
                 self.state = Some(state);
                 self.login = Some(user.to_string());
@@ -1064,6 +1321,16 @@ mod tests {
     use super::*;
     use russh::keys::ssh_key::{certificate, Algorithm};
 
+    fn ed25519() -> PrivateKey {
+        PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()
+    }
+
+    /// The `SHA256:...` fingerprint of a public key, exactly as the anchor store
+    /// and the session-time observation both compute it.
+    fn fp(pk: &PublicKey) -> String {
+        pk.fingerprint(Default::default()).to_string()
+    }
+
     /// A test SSH CA that mints certs over a given public key with given
     /// principals — mirrors warden's `ca.MarshalCert` output (authorized_keys
     /// cert line).
@@ -1089,90 +1356,274 @@ mod tests {
         cert.to_openssh().unwrap().into_bytes()
     }
 
-    fn ed25519() -> PrivateKey {
-        PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()
+    fn anchor(id: &str, kind: &str, fingerprint: &str) -> TrustAnchor {
+        TrustAnchor {
+            id: id.into(),
+            kind: kind.into(),
+            algorithm: "ssh-ed25519".into(),
+            sha256_fingerprint: fingerprint.into(),
+        }
     }
 
-    /// A handler over a stubbed setup with a throwaway registry + ended channel
-    /// (the auth path under test touches neither).
-    fn test_handler(setup: SetupFn) -> SshHandler {
+    // --- match_anchor: the constant-time verify-before-issue identity gate -----
+
+    /// An exact `ssh_host_key` anchor whose fingerprint equals the observed host
+    /// key matches, selecting that anchor's id and echoing the observed fingerprint.
+    #[test]
+    fn match_anchor_exact_key_matches() {
+        let host = ed25519();
+        let observed = host.public_key().clone();
+        let anchors = vec![anchor("anchor-1", "ssh_host_key", &fp(&observed))];
+
+        let m = match_anchor(&observed, &anchors).expect("exact fingerprint must match");
+        assert_eq!(m.anchor_id, "anchor-1");
+        assert_eq!(m.observed_fingerprint, fp(&observed));
+    }
+
+    /// A changed key (anchor fingerprint no longer equals the observed key) fails
+    /// closed as Unmatched — the MITM / stale-key signal.
+    #[test]
+    fn match_anchor_changed_key_unmatched() {
+        let observed = ed25519().public_key().clone();
+        let other = ed25519(); // a different host key was approved
+        let anchors = vec![anchor("anchor-1", "ssh_host_key", &fp(other.public_key()))];
+
+        let err = match_anchor(&observed, &anchors).expect_err("changed key must fail closed");
+        assert!(matches!(err, IdentityError::Unmatched));
+    }
+
+    /// With several `ssh_host_key` anchors, the one whose fingerprint matches is
+    /// selected (and its id, not a sibling's, is returned).
+    #[test]
+    fn match_anchor_multiple_anchors_picks_right() {
+        let observed = ed25519().public_key().clone();
+        let noise_a = ed25519();
+        let noise_b = ed25519();
+        let anchors = vec![
+            anchor("noise-a", "ssh_host_key", &fp(noise_a.public_key())),
+            anchor("the-one", "ssh_host_key", &fp(&observed)),
+            anchor("noise-b", "ssh_host_key", &fp(noise_b.public_key())),
+        ];
+
+        let m = match_anchor(&observed, &anchors).expect("the matching anchor must be selected");
+        assert_eq!(m.anchor_id, "the-one");
+    }
+
+    /// A host-CA anchor is refused (fail closed) even when its stored fingerprint
+    /// coincides with the observed key: russh 0.62 never surfaces the target's host
+    /// CERTIFICATE, so a CA anchor is unverifiable at session time (see probe.rs /
+    /// the Task 6 finding). This covers the "host CA principal" path — the session
+    /// is refused, never a spoofed CA "match".
+    #[test]
+    fn match_anchor_host_ca_fails_closed() {
+        let observed = ed25519().public_key().clone();
+        // Even with a coincidentally-equal fingerprint, a CA anchor must not match.
+        let anchors = vec![anchor("ca-1", "ssh_host_ca", &fp(&observed))];
+
+        let err = match_anchor(&observed, &anchors).expect_err("host-CA anchor must fail closed");
+        assert!(matches!(err, IdentityError::CaUnsupported));
+    }
+
+    /// No anchors at all (e.g. the only approved anchor was revoked/expired, so
+    /// warden returned none) fails closed as Unmatched — an unknown target is
+    /// refused, never accepted-and-logged.
+    #[test]
+    fn match_anchor_no_anchors_fails_closed() {
+        let observed = ed25519().public_key().clone();
+        let err = match_anchor(&observed, &[]).expect_err("no anchors must fail closed");
+        assert!(matches!(err, IdentityError::Unmatched));
+    }
+
+    // --- build_target_auth: credential validation at issue time ----------------
+
+    #[test]
+    fn build_target_auth_accepts_scoped_cert() {
+        let ca = ed25519();
+        let kw = ed25519();
+        let cert = mint_cert(&ca, kw.public_key(), &["deploy@prod.db", "deploy@a1b2c3"]);
+
+        let ta = build_target_auth(TargetCredential::Cert(cert), &kw, "deploy")
+            .expect("cert over Kw scoped to deploy must build");
+        let TargetAuth::Cert {
+            certificate,
+            kw: cert_kw,
+        } = &ta
+        else {
+            panic!("ca credential must select the Cert branch");
+        };
+        assert_eq!(certificate.public_key(), cert_kw.public_key().key_data());
+    }
+
+    #[test]
+    fn build_target_auth_rejects_cert_not_over_kw() {
+        let ca = ed25519();
+        let kw = ed25519();
+        let other = ed25519(); // cert minted over a DIFFERENT key than Kw
+        let cert = mint_cert(&ca, other.public_key(), &["deploy@prod.db"]);
+
+        let err = build_target_auth(TargetCredential::Cert(cert), &kw, "deploy")
+            .expect_err("cert not over Kw must be rejected");
+        assert!(
+            err.contains("not over the worker's session key"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn build_target_auth_rejects_unscoped_principal() {
+        let ca = ed25519();
+        let kw = ed25519();
+        // Cert scoped to deploy; login is root.
+        let cert = mint_cert(&ca, kw.public_key(), &["deploy@prod.db"]);
+
+        let err = build_target_auth(TargetCredential::Cert(cert), &kw, "root")
+            .expect_err("principals not scoped to login must be rejected");
+        assert!(err.contains("not all scoped to login"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn build_target_auth_rejects_bare_principal() {
+        let ca = ed25519();
+        let kw = ed25519();
+        // A legacy bare-login principal ("deploy", no @scope) is no longer accepted.
+        let cert = mint_cert(&ca, kw.public_key(), &["deploy"]);
+
+        let err = build_target_auth(TargetCredential::Cert(cert), &kw, "deploy")
+            .expect_err("bare (unscoped) principal must be rejected");
+        assert!(err.contains("not all scoped to login"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn build_target_auth_password_and_key_branches() {
+        let kw = ed25519();
+        let pw = build_target_auth(
+            TargetCredential::Password(Zeroizing::new("hunter2".into())),
+            &kw,
+            "demo",
+        )
+        .expect("password credential builds");
+        match pw {
+            TargetAuth::Password(p) => assert_eq!(p.as_str(), "hunter2"),
+            other => panic!("expected Password, got {other:?}"),
+        }
+
+        let pem = ed25519()
+            .to_openssh(Default::default())
+            .unwrap()
+            .to_string();
+        let key = build_target_auth(
+            TargetCredential::Key(Zeroizing::new(pem.clone().into_bytes())),
+            &kw,
+            "demo",
+        )
+        .expect("key credential builds");
+        match key {
+            TargetAuth::Key(b) => assert_eq!(b.as_slice(), pem.as_bytes()),
+            other => panic!("expected Key, got {other:?}"),
+        }
+    }
+
+    // --- prepare (phase 1) + handler wiring ------------------------------------
+
+    fn prepare_stub(anchors: Vec<TrustAnchor>) -> PrepareFn {
+        Arc::new(move |_login, _kc_pub| {
+            let anchors = anchors.clone();
+            Box::pin(async move {
+                Ok(PrepareOutcome {
+                    session_id: "sess-1".into(),
+                    endpoint_revision: 7,
+                    target_address: "10.0.0.5:22".into(),
+                    grant_id: String::new(),
+                    recording_required: false,
+                    recording_object_key: String::new(),
+                    login: "deploy".into(),
+                    anchors,
+                })
+            })
+        })
+    }
+
+    fn prepare_err() -> PrepareFn {
+        Arc::new(|_login, _kc| Box::pin(async { Err(anyhow::anyhow!("warden unreachable")) }))
+    }
+
+    /// An IssueFn that panics if ever called — used to prove that phase 1 (prepare)
+    /// and a mismatched identity NEVER reach IssueSessionCredential.
+    fn issue_never() -> IssueFn {
+        Arc::new(|_sid, _rev, _anchor, _fp, _kw| {
+            Box::pin(async { panic!("IssueSessionCredential must not be called on this path") })
+        })
+    }
+
+    fn test_handler(prepare_fn: PrepareFn, issue_fn: IssueFn) -> SshHandler {
         let (tx, _rx) = mpsc::unbounded_channel();
-        SshHandler::with_setup(
-            setup,
+        SshHandler::with_fns(
+            prepare_fn,
+            issue_fn,
             SessionRegistry::default(),
             tx,
             RecordingSettings::disabled(),
         )
     }
 
-    /// A stub SetupFn that mints a cert (over the Kw it is handed) with the given
-    /// principals, so the principal check runs against a real, parseable cert.
-    fn stub_ok(ca: PrivateKey, principals: Vec<String>) -> SetupFn {
-        Arc::new(move |_login, _kc_pub, kw_pub| {
-            let ca = ca.clone();
-            let principals = principals.clone();
-            Box::pin(async move {
-                // Recover Kw's public key from the authorized_keys line the
-                // handler sent, and mint a cert over exactly that key.
-                let kw_line = String::from_utf8(kw_pub).unwrap();
-                let kw_pk = PublicKey::from_openssh(kw_line.trim()).unwrap();
-                let refs: Vec<&str> = principals.iter().map(String::as_str).collect();
-                let cert = mint_cert(&ca, &kw_pk, &refs);
-                Ok(SetupOutcome {
-                    session_id: "sess-1".into(),
-                    target_address: "10.0.0.5:22".into(),
-                    target_host_key: String::new(),
-                    grant_id: String::new(),
-                    credential: TargetCredential::Cert(cert),
-                    recording_required: false,
-                    recording_object_key: String::new(),
-                })
-            })
-        })
+    /// prepare returns the anchors + a per-session Kw and NO credential; it does
+    /// not touch IssueSessionCredential.
+    #[tokio::test]
+    async fn prepare_carries_anchors_and_no_credential() {
+        let kc = ed25519();
+        let host = ed25519();
+        let anchors = vec![anchor("anchor-1", "ssh_host_key", &fp(host.public_key()))];
+        let prep = prepare("deploy", Some(kc.public_key()), &prepare_stub(anchors))
+            .await
+            .expect("prepare succeeds");
+
+        assert_eq!(prep.session_id, "sess-1");
+        assert_eq!(prep.endpoint_revision, 7);
+        assert_eq!(prep.target_address, "10.0.0.5:22");
+        assert_eq!(prep.anchors.len(), 1);
+        assert_eq!(prep.anchors[0].id, "anchor-1");
+        // A usable per-session key was generated (its public key serializes).
+        assert!(public_key_line(prep.kw.public_key()).is_ok());
     }
 
-    /// A stub SetupFn that returns a plain `Password` credential (kind `password`).
-    fn stub_password(password: &str) -> SetupFn {
-        let password = password.to_string();
-        Arc::new(move |_login, _kc_pub, _kw_pub| {
-            let password = password.clone();
-            Box::pin(async move {
-                Ok(SetupOutcome {
-                    session_id: "sess-pw".into(),
-                    target_address: "10.0.0.6:22".into(),
-                    target_host_key: String::new(),
-                    grant_id: String::new(),
-                    credential: TargetCredential::Password(Zeroizing::new(password)),
-                    recording_required: false,
-                    recording_object_key: String::new(),
-                })
-            })
-        })
+    #[tokio::test]
+    async fn prepare_rejects_on_prepare_error() {
+        let kc = ed25519();
+        let err = match prepare("deploy", Some(kc.public_key()), &prepare_err()).await {
+            Ok(_) => panic!("PrepareSession error → reject"),
+            Err(e) => e,
+        };
+        assert!(matches!(err, AuthError::Setup(_)));
     }
 
-    /// A stub SetupFn that returns a plain `Key` credential (kind `key`) carrying
-    /// the given OpenSSH private-key PEM bytes.
-    fn stub_key(pem: Vec<u8>) -> SetupFn {
-        Arc::new(move |_login, _kc_pub, _kw_pub| {
-            let pem = pem.clone();
-            Box::pin(async move {
-                Ok(SetupOutcome {
-                    session_id: "sess-key".into(),
-                    target_address: "10.0.0.7:22".into(),
-                    target_host_key: String::new(),
-                    grant_id: String::new(),
-                    credential: TargetCredential::Key(Zeroizing::new(pem)),
-                    recording_required: false,
-                    recording_object_key: String::new(),
-                })
-            })
-        })
+    #[tokio::test]
+    async fn handler_auth_publickey_accepts_and_caches_then_rejects() {
+        let kc = ed25519();
+        let host = ed25519();
+        let anchors = vec![anchor("anchor-1", "ssh_host_key", &fp(host.public_key()))];
+        let mut handler = test_handler(prepare_stub(anchors), issue_never());
+
+        let auth = handler
+            .auth_publickey("deploy", kc.public_key())
+            .await
+            .expect("handler auth must not error");
+        assert!(matches!(auth, Auth::Accept));
+        assert_eq!(
+            handler.session_state().expect("state cached").session_id,
+            "sess-1"
+        );
+
+        // A PrepareSession error rejects (never Accept) and caches no state.
+        let mut handler2 = test_handler(prepare_err(), issue_never());
+        let auth2 = handler2
+            .auth_publickey("deploy", kc.public_key())
+            .await
+            .expect("handler auth must not error");
+        assert!(matches!(auth2, Auth::Reject { .. }));
+        assert!(handler2.session_state().is_none());
     }
 
-    /// A stub SetupFn that always errors (unreachable warden / bad token / …).
-    fn stub_err() -> SetupFn {
-        Arc::new(|_login, _kc, _kw| Box::pin(async { Err(anyhow::anyhow!("warden unreachable")) }))
-    }
+    // --- recording fail-closed + misc ------------------------------------------
 
     /// The shared recording finalizer both ingresses route through: a clean end
     /// maps to "completed", a recording failure to "failed", and no recorder
@@ -1199,7 +1650,6 @@ mod tests {
             }
         }
 
-        // Clean end → completed, carrying the caller's object key / grant / start.
         let (h, join) = spawn_recorder(OkUploader, crate::asciicast::Header::new(80, 24, 0), cfg());
         let out = finalize_recording(Some((h, join, 1234)), true, "sess", "obj/key", "grant-1")
             .await
@@ -1209,221 +1659,30 @@ mod tests {
         assert_eq!(out.grant_id, "grant-1");
         assert_eq!(out.started_at_unix_ms, 1234);
 
-        // Recording failure → failed (the multipart upload is aborted).
         let (h, join) = spawn_recorder(OkUploader, crate::asciicast::Header::new(80, 24, 0), cfg());
         let out = finalize_recording(Some((h, join, 0)), false, "sess", "obj/key", "grant-1")
             .await
             .expect("a recorder yields an outcome");
         assert_eq!(out.status, "failed");
 
-        // No recorder → no outcome.
         assert!(finalize_recording(None, true, "sess", "obj/key", "grant-1")
             .await
             .is_none());
     }
 
-    #[tokio::test]
-    async fn accepts_when_all_principals_scoped_to_login() {
-        let ca = ed25519();
-        let kc = ed25519();
-        // Warden mints [deploy@<path>, deploy@<id>]; both are scoped to `deploy`.
-        let setup = stub_ok(ca, vec!["deploy@prod.db".into(), "deploy@a1b2c3".into()]);
-
-        let state = authorize("deploy", Some(kc.public_key()), &setup)
-            .await
-            .expect("all principals scoped to deploy → accept");
-
-        assert_eq!(state.session_id, "sess-1");
-        assert_eq!(state.target_address, "10.0.0.5:22");
-        let TargetAuth::Cert { certificate, kw } = &state.target_auth else {
-            panic!("ca credential must select the Cert target-auth branch");
-        };
-        assert_eq!(certificate.public_key(), kw.public_key().key_data());
-        assert!(certificate
-            .valid_principals()
-            .iter()
-            .all(|p| p.starts_with("deploy@")));
-    }
-
-    #[tokio::test]
-    async fn password_credential_selects_password_branch() {
-        // A `password` credential caches the plain secret for the target hop and
-        // skips Kw/cert entirely (no principal check applies).
-        let kc = ed25519();
-        let setup = stub_password("hunter2");
-
-        let state = authorize("demo", Some(kc.public_key()), &setup)
-            .await
-            .expect("password credential → accept");
-
-        assert_eq!(state.session_id, "sess-pw");
-        assert_eq!(state.target_address, "10.0.0.6:22");
-        match &state.target_auth {
-            TargetAuth::Password(pw) => assert_eq!(pw.as_str(), "hunter2"),
-            other => panic!("expected Password branch, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn key_credential_selects_key_branch() {
-        // A `key` credential caches the private-key PEM bytes for the target hop.
-        let kc = ed25519();
-        let pem = ed25519()
-            .to_openssh(Default::default())
-            .unwrap()
-            .to_string();
-        let setup = stub_key(pem.clone().into_bytes());
-
-        let state = authorize("demo", Some(kc.public_key()), &setup)
-            .await
-            .expect("key credential → accept");
-
-        assert_eq!(state.session_id, "sess-key");
-        assert_eq!(state.target_address, "10.0.0.7:22");
-        match &state.target_auth {
-            TargetAuth::Key(bytes) => assert_eq!(bytes.as_slice(), pem.as_bytes()),
-            other => panic!("expected Key branch, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn handler_auth_publickey_accepts_and_caches_then_rejects() {
-        // Exercise the russh Handler wrapper end-to-end (minus the live
-        // handshake): accept caches state; a subsequent bad login rejects and
-        // does not clobber the cached state with a bogus one.
-        let ca = ed25519();
-        let kc = ed25519();
-        let mut handler = test_handler(stub_ok(ca, vec!["deploy@prod.db".into()]));
-
-        let auth = handler
-            .auth_publickey("deploy", kc.public_key())
-            .await
-            .expect("handler auth must not error");
-        assert!(matches!(auth, Auth::Accept));
-        assert_eq!(
-            handler.session_state().expect("state cached").session_id,
-            "sess-1"
-        );
-
-        // A rejected attempt yields Auth::Reject (never Accept) and leaves no
-        // new state cached beyond what a rejection would set (None).
-        let mut handler2 = test_handler(stub_err());
-        let auth2 = handler2
-            .auth_publickey("deploy", kc.public_key())
-            .await
-            .expect("handler auth must not error");
-        assert!(matches!(auth2, Auth::Reject { .. }));
-        assert!(handler2.session_state().is_none());
-    }
-
-    #[tokio::test]
-    async fn rejects_when_principal_not_scoped_to_login() {
-        let ca = ed25519();
-        let kc = ed25519();
-        // Cert is scoped to "deploy"; the client asks for "root".
-        let setup = stub_ok(ca, vec!["deploy@prod.db".into()]);
-
-        let err = authorize("root", Some(kc.public_key()), &setup)
-            .await
-            .expect_err("principals not scoped to root → reject");
-        assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
-    }
-
-    #[tokio::test]
-    async fn rejects_bare_login_principal() {
-        let ca = ed25519();
-        let kc = ed25519();
-        // A legacy bare-login cert ("deploy", no @scope) must no longer be accepted.
-        let setup = stub_ok(ca, vec!["deploy".into()]);
-
-        let err = authorize("deploy", Some(kc.public_key()), &setup)
-            .await
-            .expect_err("bare (unscoped) principal → reject");
-        assert!(matches!(err, AuthError::PrincipalNotForLogin { .. }));
-    }
-
-    #[tokio::test]
-    async fn rejects_when_setup_session_errors() {
-        let kc = ed25519();
-        let err = authorize("deploy", Some(kc.public_key()), &stub_err())
-            .await
-            .expect_err("SetupSession error → reject");
-        assert!(matches!(err, AuthError::Setup(_)));
-    }
-
-    #[tokio::test]
-    async fn rejects_when_cert_is_not_over_kw() {
-        // Stub mints a cert over a DIFFERENT key than the Kw it was handed —
-        // the cert-over-Kw invariant must catch it.
-        let ca = ed25519();
-        let kc = ed25519();
-        let setup: SetupFn = Arc::new(move |_login, _kc_pub, _kw_pub| {
-            let ca = ca.clone();
-            Box::pin(async move {
-                let other = ed25519();
-                let cert = mint_cert(&ca, other.public_key(), &["deploy@prod.db"]);
-                Ok(SetupOutcome {
-                    session_id: "sess-x".into(),
-                    target_address: "t:22".into(),
-                    target_host_key: String::new(),
-                    grant_id: String::new(),
-                    credential: TargetCredential::Cert(cert),
-                    recording_required: false,
-                    recording_object_key: String::new(),
-                })
-            })
-        });
-
-        let err = authorize("deploy", Some(kc.public_key()), &setup)
-            .await
-            .expect_err("cert not over Kw → reject");
-        assert!(matches!(err, AuthError::CertNotOverKw));
-    }
-
-    #[tokio::test]
-    async fn rejects_when_cert_unparseable() {
-        let kc = ed25519();
-        let setup: SetupFn = Arc::new(|_login, _kc, _kw| {
-            Box::pin(async {
-                Ok(SetupOutcome {
-                    session_id: "s".into(),
-                    target_address: "t:22".into(),
-                    target_host_key: String::new(),
-                    grant_id: String::new(),
-                    credential: TargetCredential::Cert(b"not a real cert".to_vec()),
-                    recording_required: false,
-                    recording_object_key: String::new(),
-                })
-            })
-        });
-        let err = authorize("deploy", Some(kc.public_key()), &setup)
-            .await
-            .expect_err("garbage cert → reject");
-        assert!(matches!(err, AuthError::CertParse(_)));
-    }
-
     /// FAIL CLOSED: a `recording_required` session whose worker has no recording
-    /// bucket configured must not be able to build a recorder — `build_recorder`
-    /// errors, and `start_hop` turns that into a refuse (no bridge).
+    /// bucket configured cannot build a recorder — `build_recorder` errors, which
+    /// `start_hop` turns into a refuse (no bridge, no credential ever issued).
     #[tokio::test]
     async fn build_recorder_fails_closed_without_a_bucket() {
-        let handler = test_handler(stub_ok(ed25519(), vec!["deploy@prod.db".into()]));
-        // A minimal required-recording session state (the cert/kw are unused by
-        // build_recorder; only the object key + the disabled bucket matter).
-        let kw = ed25519();
-        let ca = ed25519();
-        let cert_bytes = mint_cert(&ca, kw.public_key(), &["deploy@prod.db"]);
-        let cert =
-            Certificate::from_openssh(std::str::from_utf8(&cert_bytes).unwrap().trim()).unwrap();
-        let state = SessionState {
+        let handler = test_handler(prepare_stub(vec![]), issue_never());
+        let state = PreparedSession {
             session_id: "sess-rec".into(),
+            endpoint_revision: 1,
             target_address: "t:22".into(),
-            target_host_key: String::new(),
             grant_id: String::new(),
-            target_auth: TargetAuth::Cert {
-                certificate: Box::new(cert),
-                kw: Box::new(kw),
-            },
+            anchors: vec![],
+            kw: ed25519(),
             recording_required: true,
             recording_object_key: "recordings/ssh/x.cast".into(),
         };

@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
@@ -211,7 +212,10 @@ func setup(t *testing.T) *fixture {
 	workerPub := newSSHKeypair(t)
 
 	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
-	svc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, nil, audit.New(pool), time.Hour)
+	// A real target-identity service backs the enforced two-phase flow
+	// (Prepare + IssueCredential). The compat Setup path ignores it.
+	identity := targetidentity.NewService(pool, audit.New(pool))
+	svc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, identity, audit.New(pool), time.Hour)
 
 	return &fixture{
 		pool: pool, q: q, svc: svc, ctx: ctx,
@@ -683,5 +687,230 @@ func TestSetupCertifiesWorkerKeyNotClient(t *testing.T) {
 	}
 	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
 		t.Fatal("cert.Key != Kw — the cert must be over the worker key")
+	}
+}
+
+// --- Two-phase flow: PrepareSession + IssueSessionCredential ----------------
+
+// sshHostFingerprint returns a fresh SSH host key's SHA-256 fingerprint (the
+// `SHA256:...` form a worker observes and reports) and its authorized_keys line.
+func sshHostFingerprint(t *testing.T) (string, string) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := ssh.NewPublicKey(priv.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ssh.FingerprintSHA256(pub), string(ssh.MarshalAuthorizedKey(pub))
+}
+
+// approveAnchor seeds an active trust anchor for the fixture's asset at its current
+// endpoint revision (revision 1 by default) and returns its id.
+func (f *fixture) approveAnchor(t *testing.T, kind, fingerprint, publicMaterial string) uuid.UUID {
+	t.Helper()
+	asset, err := f.q.GetAsset(f.ctx, f.asset)
+	if err != nil {
+		t.Fatalf("GetAsset: %v", err)
+	}
+	row, err := f.q.ApproveTrustAnchor(f.ctx, sqlc.ApproveTrustAnchorParams{
+		AssetID:               f.asset,
+		EndpointRevision:      asset.EndpointRevision,
+		Kind:                  kind,
+		Algorithm:             "ssh-ed25519",
+		Sha256Fingerprint:     fingerprint,
+		PublicMaterial:        publicMaterial,
+		RequiredSshPrincipals: []string{},
+		RequiredDnsNames:      []string{},
+		RequiredIpAddresses:   []string{},
+		Source:                "manual",
+		ApprovedBy:            pg(f.user),
+		ApprovedAt:            pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ApproveTrustAnchor: %v", err)
+	}
+	return row.ID
+}
+
+// TestPrepareReturnsAnchorsNoCredential: PrepareSession redeems the token, records
+// the live session, and returns the endpoint + active anchors — but NO credential
+// (PrepareResult has no credential field; the credential comes only from Issue).
+func TestPrepareReturnsAnchorsNoCredential(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if prep.TargetAddress != "10.0.0.5:22" {
+		t.Fatalf("TargetAddress = %q, want 10.0.0.5:22", prep.TargetAddress)
+	}
+	if prep.EndpointRevision != 1 {
+		t.Fatalf("EndpointRevision = %d, want 1", prep.EndpointRevision)
+	}
+	if len(prep.Anchors) != 1 || prep.Anchors[0].ID != anchorID {
+		t.Fatalf("Anchors = %+v, want the single approved anchor %s", prep.Anchors, anchorID)
+	}
+	if prep.Anchors[0].Fingerprint != fp || string(prep.Anchors[0].Kind) != "ssh_host_key" {
+		t.Fatalf("anchor = %+v, want kind ssh_host_key fp %s", prep.Anchors[0], fp)
+	}
+	// The live session was recorded (Prepare records it, credential-free).
+	if n := f.liveSessionCount(t); n != 1 {
+		t.Fatalf("live_sessions rows = %d, want 1", n)
+	}
+}
+
+// TestIssueCredentialReleasesOverKwAfterMatch: after a matching observation, Issue
+// releases an SSH certificate minted over Kw with host-scoped principals — the
+// over-Kw / principals assertions that previously lived on the fused Setup path,
+// now proven on the issue step (Kw travels on IssueSessionCredential).
+func TestIssueCredentialReleasesOverKwAfterMatch(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	// The worker observed exactly the approved fingerprint → release over Kw.
+	out, err := f.svc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), fp, f.workerPub)
+	if err != nil {
+		t.Fatalf("IssueCredential: %v", err)
+	}
+	if out.CredentialKind != "ssh-cert" || len(out.SSHCertificate) == 0 {
+		t.Fatalf("credential = %q/%dB, want a non-empty ssh-cert", out.CredentialKind, len(out.SSHCertificate))
+	}
+
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(out.SSHCertificate)
+	if err != nil {
+		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
+	}
+	cert := pub.(*ssh.Certificate)
+	kwPub, _, _, _, _ := ssh.ParseAuthorizedKey(f.workerPub)
+	kcPub, _, _, _, _ := ssh.ParseAuthorizedKey(f.clientPub)
+	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
+		t.Fatal("cert.Key != Kw — the released cert must be over the worker key")
+	}
+	if bytes.Equal(cert.Key.Marshal(), kcPub.Marshal()) {
+		t.Fatal("cert.Key == Kc — the cert must NOT be over the client key")
+	}
+	if len(cert.ValidPrincipals) == 0 {
+		t.Fatal("cert has no principals")
+	}
+	for _, p := range cert.ValidPrincipals {
+		if !strings.HasPrefix(p, "deploy@") {
+			t.Fatalf("principal %q not scoped to deploy@", p)
+		}
+	}
+}
+
+// TestIssueCredentialMismatchAbortsSession: an observed fingerprint that does NOT
+// match the anchor is refused with ErrIdentityMismatch — the broker is never
+// reached and the prepared session is aborted (row deleted).
+func TestIssueCredentialMismatchAbortsSession(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	otherFp, _ := sshHostFingerprint(t) // a different observed key
+
+	_, err = f.svc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), otherFp, f.workerPub)
+	if !errors.Is(err, targetidentity.ErrIdentityMismatch) {
+		t.Fatalf("IssueCredential err = %v, want ErrIdentityMismatch", err)
+	}
+	// The prepared session was aborted (torn down), not left dangling.
+	if n := f.liveSessionCount(t); n != 0 {
+		t.Fatalf("live_sessions rows = %d, want 0 (aborted)", n)
+	}
+}
+
+// TestIssueCredentialCAAnchorUnsupported: a host-CA anchor cannot be verified at
+// session time — Issue refuses with ErrCAAnchorSessionUnsupported and mints nothing.
+func TestIssueCredentialCAAnchorUnsupported(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_ca", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	_, err = f.svc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), fp, f.workerPub)
+	if !errors.Is(err, targetidentity.ErrCAAnchorSessionUnsupported) {
+		t.Fatalf("IssueCredential err = %v, want ErrCAAnchorSessionUnsupported", err)
+	}
+}
+
+// TestIssueCredentialWrongWorker: a worker that does not own the prepared session
+// cannot issue against it (and cannot abort it).
+func TestIssueCredentialWrongWorker(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	_, err = f.svc.IssueCredential(f.ctx, prep.SessionID, "worker-2", prep.EndpointRevision, anchorID.String(), fp, f.workerPub)
+	if !errors.Is(err, dataplane.ErrWrongWorker) {
+		t.Fatalf("IssueCredential err = %v, want ErrWrongWorker", err)
+	}
+	// The session is NOT aborted by a non-owner attempt.
+	if n := f.liveSessionCount(t); n != 1 {
+		t.Fatalf("live_sessions rows = %d, want 1 (untouched)", n)
+	}
+}
+
+// TestIssueCredentialStaleRevision: an endpoint revision that no longer matches the
+// asset's current revision is refused (the endpoint moved under the session).
+func TestIssueCredentialStaleRevision(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	anchorID := f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	prep, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	_, err = f.svc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision+1, anchorID.String(), fp, f.workerPub)
+	if !errors.Is(err, targetidentity.ErrStaleRevision) {
+		t.Fatalf("IssueCredential err = %v, want ErrStaleRevision", err)
+	}
+}
+
+// TestPrepareReplay: replaying the same token at Prepare conflicts on the live
+// session PK → ErrReplay (Prepare records the session, like the old Setup path).
+func TestPrepareReplay(t *testing.T) {
+	f := setup(t)
+	fp, line := sshHostFingerprint(t)
+	f.approveAnchor(t, "ssh_host_key", fp, line)
+	tok := f.mintToken(t, f.clientFp)
+
+	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub); err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub); !errors.Is(err, dataplane.ErrReplay) {
+		t.Fatalf("second Prepare err = %v, want ErrReplay", err)
+	}
+	if n := f.liveSessionCount(t); n != 1 {
+		t.Fatalf("live_sessions rows = %d, want exactly 1", n)
 	}
 }

@@ -7,9 +7,10 @@
 //! the russh SSH server.
 //!
 //! The terminal ingress REUSES the rest of the machinery unchanged: it redeems
-//! the session with warden via [`crate::setup::setup_session`] (in `mode=web`, so
-//! it passes an EMPTY client key and the ticket-bound login), dials the target
-//! with the same [`crate::target`] helpers, records with the same
+//! the session with warden via the two-phase [`crate::server::prepare`] +
+//! [`crate::server::verify_and_dial_target`] flow (in `mode=web`, so it passes an
+//! EMPTY client key and the ticket-bound login), verifies + dials the target with
+//! the same [`crate::target`] helpers, records with the same
 //! [`crate::record`] recorder, and registers/reports the live session on the same
 //! control-plane seam. Only the *client-facing* transport differs: instead of a
 //! russh channel it is a framed opcode stream.
@@ -34,10 +35,9 @@ use crate::control::SessionRegistry;
 use crate::proxy::tap_event;
 use crate::record::RecorderHandle;
 use crate::server::{
-    build_recorder, dial_target_by_auth, failed_recording_outcome, finalize_recording,
-    RecordingSettings, SessionEndReport, SessionState, SetupFn,
+    build_recorder, failed_recording_outcome, finalize_recording, verify_and_dial_target,
+    warden_fns, IssueFn, PreparedSession, RecordingSettings, SessionEndReport,
 };
-use crate::setup::setup_session;
 use jumpgate_mesh::tls::MeshClientCerts;
 
 /// Inbound opcode: raw terminal input bytes destined for the target's stdin.
@@ -192,36 +192,18 @@ pub struct TerminalDeps {
 }
 
 impl TerminalDeps {
-    /// Build the injected SetupSession fn for this connection — mirrors
+    /// Build the injected two-phase warden fns for this connection — mirrors
     /// [`crate::server::SshHandler::new`] but the browser has no client key, so
-    /// `authorize(login, None, …)` sends an empty `Kc` (warden's `mode=web` token
+    /// `prepare(login, None, …)` sends an empty `Kc` (warden's `mode=web` token
     /// skips the `cnf` proof and takes the login from the ticket).
-    fn setup_fn(&self) -> SetupFn {
-        let token = self.token.clone();
-        let worker_id = self.worker_id.clone();
-        let warden_addr = self.warden_addr.clone();
-        let warden_spiffe = self.warden_spiffe.clone();
-        let certs = self.certs.clone();
-        Arc::new(move |login, kc_pub, kw_pub| {
-            let token = token.clone();
-            let worker_id = worker_id.clone();
-            let warden_addr = warden_addr.clone();
-            let warden_spiffe = warden_spiffe.clone();
-            let certs = certs.clone();
-            Box::pin(async move {
-                setup_session(
-                    &warden_addr,
-                    &warden_spiffe,
-                    &certs,
-                    &token,
-                    &worker_id,
-                    &login,
-                    kc_pub,
-                    kw_pub,
-                )
-                .await
-            })
-        })
+    fn warden_fns(&self) -> (crate::server::PrepareFn, IssueFn) {
+        warden_fns(
+            self.token.clone(),
+            self.worker_id.clone(),
+            self.warden_addr.clone(),
+            self.warden_spiffe.clone(),
+            self.certs.clone(),
+        )
     }
 }
 
@@ -229,12 +211,13 @@ impl TerminalDeps {
 ///
 /// The gateway has read the CONNECT preamble (with `X-Jumpgate-Terminal: 1`),
 /// answered `200`, and now relays the framed opcode protocol. This:
-/// 1. redeems the session with warden (`mode=web`, empty client key) and
-///    validates the target credential — REUSING [`crate::server::authorize`];
+/// 1. prepares the session with warden (`mode=web`, empty client key),
+///    credential-free — REUSING [`crate::server::prepare`];
 /// 2. builds the recorder (fail-closed when warden requires recording) — REUSING
 ///    [`crate::server::build_recorder`];
-/// 3. dials the target and opens a pty+shell — REUSING
-///    [`crate::server::dial_target_by_auth`] + the same [`crate::target`] helpers;
+/// 3. verifies the target identity, issues the credential, and opens a pty+shell —
+///    REUSING [`crate::server::verify_and_dial_target`] + the same
+///    [`crate::target`] helpers;
 /// 4. registers the live session and pumps frames both ways, taps the recorder
 ///    identically to the SSH bridge, and on end finalizes the recording +
 ///    reports `SessionEnded` EXACTLY as the SSH path does.
@@ -246,21 +229,21 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let login = deps.login.clone();
-    let setup = deps.setup_fn();
+    let (prepare_fn, issue_fn) = deps.warden_fns();
 
     let (mut reader, mut writer) = tokio::io::split(stream);
 
-    // 1. Redeem the session (web mode: no client key). Any failure is a hard
-    //    refuse — surface it to the browser as an ERROR frame and close.
-    let state = match crate::server::authorize(&login, None, &setup).await {
+    // 1. Prepare the session (web mode: no client key) — credential-free. Any
+    //    failure is a hard refuse; surface it to the browser and close.
+    let state = match crate::server::prepare(&login, None, &prepare_fn).await {
         Ok(s) => s,
         Err(e) => {
-            tracing::warn!(login = %login, error = %e, "terminal SetupSession rejected");
+            tracing::warn!(login = %login, error = %e, "terminal PrepareSession rejected");
             send_error(&mut writer, "session setup failed").await;
             return;
         }
     };
-    tracing::info!(session_id = %state.session_id, login = %login, "terminal session set up");
+    tracing::info!(session_id = %state.session_id, login = %login, "terminal session prepared");
 
     // 2. Read the initial size: peek the first inbound frame. A leading RESIZE
     //    sets the pty; a leading DATA (or anything else) uses the 80x24 default
@@ -315,18 +298,28 @@ where
         None
     };
 
-    // 4. Dial the target and open the pty+shell. On failure, finalize any recorder
-    //    (fail) + report, and surface an ERROR — mirroring the SSH target-hop
-    //    failure path.
-    let (target_handle, target_channel) = match open_target_shell(&state, &login, initial_size)
-        .await
+    // 4. Verify the target, issue the credential, and open the pty+shell — the
+    //    enforced verify-before-issue flow (identical to the SSH ingress). On
+    //    failure, finalize any recorder (fail) + report with the stable reason, and
+    //    surface a generic client-safe ERROR. A HopError::Identity NEVER reached
+    //    IssueSessionCredential.
+    let (target_handle, target_channel) = match open_target_shell(
+        &state,
+        &login,
+        initial_size,
+        &issue_fn,
+    )
+    .await
     {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(session_id = %state.session_id, error = %e, "terminal target hop failed");
+            let reason = e.reason();
+            let client_msg = e.client_message();
+            tracing::warn!(session_id = %state.session_id, %reason, error = ?e, "terminal target hop refused");
             // Finalize any recorder and ALWAYS report the end (mirrors the SSH
-            // path): the session is already in warden's ledger, so an unrecorded
-            // target-fail that skipped the report would orphan the live session.
+            // path): the session is already in warden's ledger, so a target-fail
+            // that skipped the report would orphan the live session. This closes
+            // the ledger for THIS session only.
             let recording = finalize_recording(
                 recorder,
                 false,
@@ -337,10 +330,10 @@ where
             .await;
             let _ = deps.session_ended_tx.send(SessionEndReport {
                 session_id: state.session_id.clone(),
-                reason: "target_unavailable".into(),
+                reason: reason.to_string(),
                 recording,
             });
-            send_error(&mut writer, "target unavailable").await;
+            send_error(&mut writer, client_msg).await;
             return;
         }
     };
@@ -412,31 +405,37 @@ impl PumpOutcome {
     }
 }
 
-/// Dial the target and open a pty+shell sized to `size`. REUSES
-/// [`dial_target_by_auth`] (identical target auth to the SSH path) then requests
-/// a pty with the browser's initial size and a shell.
+/// Verify the target, issue the credential, and open a pty+shell sized to `size`.
+/// REUSES [`verify_and_dial_target`] (the identical verify-before-issue flow as the
+/// SSH path) then requests a pty with the browser's initial size and a shell.
 async fn open_target_shell(
-    state: &SessionState,
+    state: &PreparedSession,
     login: &str,
     size: PtySize,
-) -> anyhow::Result<(
-    russh::client::Handle<crate::target::TargetHandler>,
-    russh::Channel<russh::client::Msg>,
-)> {
-    let handle = dial_target_by_auth(
-        &state.target_address,
-        &state.target_host_key,
-        login,
-        &state.target_auth,
-    )
-    .await?;
-    let target_channel = handle.channel_open_session().await?;
+    issue: &IssueFn,
+) -> Result<
+    (
+        russh::client::Handle<crate::target::TargetHandler>,
+        russh::Channel<russh::client::Msg>,
+    ),
+    crate::server::HopError,
+> {
+    use crate::server::HopError;
+    let handle = verify_and_dial_target(state, login, issue).await?;
+    let target_channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| HopError::Connect(e.into()))?;
     // xterm-256color matches the terminal the browser xterm.js emulates; no pty
     // modes are negotiated (the browser has no local termios to mirror).
     target_channel
         .request_pty(false, "xterm-256color", size.cols, size.rows, 0, 0, &[])
-        .await?;
-    target_channel.request_shell(true).await?;
+        .await
+        .map_err(|e| HopError::Connect(e.into()))?;
+    target_channel
+        .request_shell(true)
+        .await
+        .map_err(|e| HopError::Connect(e.into()))?;
     Ok((handle, target_channel))
 }
 

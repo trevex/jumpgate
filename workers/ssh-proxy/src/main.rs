@@ -36,12 +36,8 @@ async fn main() -> anyhow::Result<()> {
         dataplane_addr = %config.dataplane_addr,
         warden_mesh_addr = %config.warden_mesh_addr,
         capacity = config.capacity,
-        require_host_key_pin = config.require_host_key_pin,
         "ssh-proxy starting",
     );
-
-    // Install the deploy-time host-key policy before any target hop runs.
-    ssh_proxy::target::set_require_host_key_pin(config.require_host_key_pin);
 
     // Read the worker's mesh identity PEMs once, here, so an unreadable cert is a
     // fatal startup error rather than a silently-disabled control plane (which

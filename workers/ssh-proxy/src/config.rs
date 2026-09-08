@@ -37,10 +37,6 @@ pub struct Config {
     pub recording_s3_region: String,
     /// RECORDING_PART_SIZE — multipart upload part size in bytes.
     pub recording_part_size: usize,
-    /// WORKER_REQUIRE_HOST_KEY_PIN — when true, a target with no configured
-    /// host-key pin is rejected (fail closed) instead of accept-and-logged.
-    /// Default false preserves accept-and-log for unpinned assets.
-    pub require_host_key_pin: bool,
 }
 
 impl Config {
@@ -91,10 +87,6 @@ impl Config {
             recording_s3_endpoint: opt("RECORDING_S3_ENDPOINT", ""),
             recording_s3_region: opt("RECORDING_S3_REGION", "us-east-1"),
             recording_part_size,
-            require_host_key_pin: matches!(
-                opt("WORKER_REQUIRE_HOST_KEY_PIN", "false").trim(),
-                "true" | "1"
-            ),
         })
     }
 }

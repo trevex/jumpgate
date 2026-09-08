@@ -1,26 +1,28 @@
-//! End-to-end data-path test for the ssh-proxy worker.
+//! End-to-end data-path + ordering tests for the ssh-proxy worker.
 //!
-//! Drives the worker's real russh SSH server (`SshHandler` + `run_stream`)
-//! against three in-process stubs and asserts a byte round-trip through the
-//! whole auth → session-setup → target-dial → channel-bridge path:
+//! Drives the worker's real russh SSH server (`SshHandler` + `run_stream`) against
+//! in-process stubs and asserts the STRICT verify-before-issue ordering:
 //!
-//! - a **test SSH CA** that mints certs over a subject key, mirroring warden's
-//!   `ca.MarshalCert` output (authorized_keys cert line),
-//! - a **stub SetupFn** injected into the handler in place of the real warden
-//!   `SetupSession` call (via `SshHandler::with_setup`): it mints a cert over
-//!   the worker's per-session key `Kw` with host-scoped principals
-//!   `["deploy@prod.db"]` and points the second hop at the stub target's address,
-//! - a **stub target sshd**: a russh server that accepts any publickey/cert
-//!   auth and echoes an exec command back before exiting `0` (or echoes stdin
-//!   for an interactive shell).
+//!   PrepareSession → target key exchange → local anchor match →
+//!   IssueSessionCredential → target user authentication
 //!
-//! The TLS + HTTP CONNECT front door is intentionally bypassed here: the worker
-//! runs its russh server on a plain loopback TCP stream. That layer (mesh mTLS,
-//! CONNECT preamble) is covered by the mesh crate's own tests; this test targets
-//! the SSH auth + proxy path, so it drives the russh server directly on a stream
+//! The proof is layered so it is not mock theater:
+//! - a shared, ordered event log records `prepare`, `issue`, and `target_auth`
+//!   (the last emitted by the stub target the instant it sees a userauth request);
+//! - `IssueSessionCredential` is only ever called with the anchor id + the
+//!   fingerprint the worker observed on the target's REAL host key — the worker can
+//!   obtain that fingerprint only by completing KEX with the target, so a recorded
+//!   `issue` event cryptographically implies the key exchange + match preceded it;
+//! - on every mismatch path the injected `IssueFn` records nothing and the test
+//!   asserts `issue` NEVER appears in the log — no credential is requested for an
+//!   unverified target.
+//!
+//! The TLS + HTTP CONNECT front door is intentionally bypassed (covered by the
+//! mesh crate's tests); this drives the russh server directly on a loopback stream
 //! exactly as `handle_conn` does after the tunnel is established.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use russh::keys::ssh_key::{certificate, Algorithm, Certificate, PrivateKey, PublicKey};
@@ -30,17 +32,47 @@ use russh::{Channel, ChannelId, ChannelMsg};
 use tokio::sync::mpsc;
 
 use ssh_proxy::control::SessionRegistry;
-use ssh_proxy::server::{RecordingSettings, SessionEndReport, SetupFn, SshHandler};
-use ssh_proxy::setup::{SetupOutcome, TargetCredential};
+use ssh_proxy::server::{IssueFn, PrepareFn, RecordingSettings, SessionEndReport, SshHandler};
+use ssh_proxy::setup::{IssueOutcome, PrepareOutcome, TargetCredential, TrustAnchor};
+
+/// An ordered event log shared across the prepare stub, the issue stub, and the
+/// stub target, so a test can assert the exact call order.
+type OrderLog = Arc<Mutex<Vec<String>>>;
+
+fn new_log() -> OrderLog {
+    Arc::new(Mutex::new(Vec::new()))
+}
+
+fn record(log: &OrderLog, event: &str) {
+    log.lock().unwrap().push(event.to_string());
+}
+
+fn events(log: &OrderLog) -> Vec<String> {
+    log.lock().unwrap().clone()
+}
 
 /// Fresh ed25519 private key.
 fn ed25519() -> PrivateKey {
     PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()
 }
 
-/// Mint a User certificate over `subject` with `principals`, signed by `ca`,
-/// valid from an hour ago until an hour from now — the authorized_keys cert line
-/// warden's `ca.MarshalCert` would produce.
+/// The `SHA256:...` fingerprint of a public key — the exact form the anchor store
+/// and the session-time observation both use.
+fn fingerprint(pk: &PublicKey) -> String {
+    pk.fingerprint(Default::default()).to_string()
+}
+
+fn anchor(id: &str, kind: &str, fp: &str) -> TrustAnchor {
+    TrustAnchor {
+        id: id.into(),
+        kind: kind.into(),
+        algorithm: "ssh-ed25519".into(),
+        sha256_fingerprint: fp.into(),
+    }
+}
+
+/// Mint a User certificate over `subject` with `principals`, signed by `ca` —
+/// the authorized_keys cert line warden's `ca.MarshalCert` would produce.
 fn mint_cert(ca: &PrivateKey, subject: &PublicKey, principals: &[&str]) -> Certificate {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -62,55 +94,76 @@ fn mint_cert(ca: &PrivateKey, subject: &PublicKey, principals: &[&str]) -> Certi
     builder.sign(ca).unwrap()
 }
 
-/// A stub SetupFn standing in for warden's `SetupSession`. It optionally checks
-/// the offered `Kc` against an expected fingerprint, mints a cert over the `Kw`
-/// the handler generated (with the given principals), and returns the stub
-/// target's address as the second-hop target.
-fn stub_setup(
-    ca: PrivateKey,
-    principals: Vec<String>,
-    target_address: String,
-    expect_kc_fp: Option<String>,
-) -> SetupFn {
-    Arc::new(move |_login, kc_pub, kw_pub| {
-        let ca = ca.clone();
-        let principals = principals.clone();
+/// What the injected `IssueFn` observed when (or if) it was called — the anchor id
+/// and the observed fingerprint the worker passed. `None` means it was never
+/// called (the mismatch invariant).
+type IssueSpy = Arc<Mutex<Option<(String, String)>>>;
+
+/// A `PrepareFn` stub: records `prepare`, returns the given anchors + endpoint
+/// revision and NO credential (as warden's PrepareSession does).
+fn prepare_stub(log: OrderLog, anchors: Vec<TrustAnchor>, target_address: String) -> PrepareFn {
+    Arc::new(move |_login, _kc_pub| {
+        let log = log.clone();
+        let anchors = anchors.clone();
         let target_address = target_address.clone();
-        let expect_kc_fp = expect_kc_fp.clone();
         Box::pin(async move {
-            if let Some(expected) = expect_kc_fp {
-                let kc_line = String::from_utf8(kc_pub)?;
-                let kc = PublicKey::from_openssh(kc_line.trim())?;
-                let got = kc.fingerprint(Default::default()).to_string();
-                if got != expected {
-                    anyhow::bail!("offered Kc fingerprint {got} != expected {expected}");
-                }
-            }
-            // Mint the cert over exactly the Kw the handler generated.
-            let kw_line = String::from_utf8(kw_pub)?;
-            let kw = PublicKey::from_openssh(kw_line.trim())?;
-            let refs: Vec<&str> = principals.iter().map(String::as_str).collect();
-            let cert = mint_cert(&ca, &kw, &refs);
-            Ok(SetupOutcome {
+            record(&log, "prepare");
+            Ok(PrepareOutcome {
                 session_id: "sess-1".into(),
+                endpoint_revision: 42,
                 target_address,
-                // Empty pin: the test target's host key is ephemeral, so the hop
-                // uses accept-and-log (host-key pinning is unit-tested in target.rs).
-                target_host_key: String::new(),
                 grant_id: String::new(),
-                credential: TargetCredential::Cert(cert.to_openssh().unwrap().into_bytes()),
                 recording_required: false,
                 recording_object_key: String::new(),
+                login: "deploy".into(),
+                anchors,
             })
         })
     })
 }
 
-/// A russh server `Config` with a fresh ephemeral ed25519 host key and a short
-/// auth-rejection delay (the default is 1s, which slows the reject test).
-fn ssh_server_config() -> Arc<russh::server::Config> {
+/// An `IssueFn` stub for the SUCCESS path: records `issue` + captures the anchor id
+/// and observed fingerprint the worker passed, then mints a cert over exactly the
+/// `Kw` it was handed (so the target hop authenticates).
+fn issue_ca_stub(log: OrderLog, spy: IssueSpy, ca: PrivateKey, principals: Vec<String>) -> IssueFn {
+    Arc::new(
+        move |_session_id, _revision, matched_anchor_id, observed_fingerprint, kw_pub| {
+            let log = log.clone();
+            let spy = spy.clone();
+            let ca = ca.clone();
+            let principals = principals.clone();
+            Box::pin(async move {
+                record(&log, "issue");
+                *spy.lock().unwrap() = Some((matched_anchor_id, observed_fingerprint));
+                let kw_line = String::from_utf8(kw_pub)?;
+                let kw = PublicKey::from_openssh(kw_line.trim())?;
+                let refs: Vec<&str> = principals.iter().map(String::as_str).collect();
+                let cert = mint_cert(&ca, &kw, &refs);
+                Ok(IssueOutcome {
+                    credential: TargetCredential::Cert(cert.to_openssh().unwrap().into_bytes()),
+                })
+            })
+        },
+    )
+}
+
+/// An `IssueFn` that MUST NOT be called: it sets `called` and panics. Used on every
+/// mismatch path to prove IssueSessionCredential is never reached.
+fn issue_forbidden(called: Arc<AtomicBool>) -> IssueFn {
+    Arc::new(move |_s, _r, _a, _f, _k| {
+        let called = called.clone();
+        Box::pin(async move {
+            called.store(true, Ordering::SeqCst);
+            panic!("IssueSessionCredential must NOT be called for an unverified target");
+        })
+    })
+}
+
+/// A russh server `Config` with a specific host key and a short auth-rejection
+/// delay (the default 1s slows the reject test).
+fn ssh_server_config(host_key: PrivateKey) -> Arc<russh::server::Config> {
     Arc::new(russh::server::Config {
-        keys: vec![ed25519()],
+        keys: vec![host_key],
         auth_rejection_time: Duration::from_millis(1),
         auth_rejection_time_initial: Some(Duration::from_millis(1)),
         ..Default::default()
@@ -119,15 +172,19 @@ fn ssh_server_config() -> Arc<russh::server::Config> {
 
 // --- Stub target sshd -------------------------------------------------------
 
-/// A minimal russh server that accepts any auth and, on exec, echoes the command
-/// back then exits 0; on an interactive shell it echoes whatever stdin it reads.
+/// A minimal russh server that records `target_auth` the moment it sees a userauth
+/// request, accepts any auth, and on exec echoes the command back then exits 0; on
+/// an interactive shell it echoes stdin.
 #[derive(Clone)]
-struct TargetStub;
+struct TargetStub {
+    log: OrderLog,
+}
 
 impl ServerHandler for TargetStub {
     type Error = russh::Error;
 
     async fn auth_publickey(&mut self, _u: &str, _k: &PublicKey) -> Result<Auth, Self::Error> {
+        record(&self.log, "target_auth");
         Ok(Auth::Accept)
     }
 
@@ -136,6 +193,7 @@ impl ServerHandler for TargetStub {
         _u: &str,
         _c: &Certificate,
     ) -> Result<Auth, Self::Error> {
+        record(&self.log, "target_auth");
         Ok(Auth::Accept)
     }
 
@@ -156,7 +214,6 @@ impl ServerHandler for TargetStub {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         session.channel_success(channel)?;
-        // Echo the command back to the client, then close cleanly with status 0.
         session.data(channel, data.to_vec())?;
         session.exit_status_request(channel, 0)?;
         session.eof(channel)?;
@@ -179,23 +236,25 @@ impl ServerHandler for TargetStub {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        // Interactive-shell echo: bounce stdin straight back.
         session.data(channel, data.to_vec())?;
         Ok(())
     }
 }
 
-/// Bind a stub target sshd on loopback and return its address. It serves every
-/// accepted connection with [`TargetStub`] until the process exits.
-async fn spawn_target_stub() -> String {
+/// Bind a stub target sshd on loopback with host key `host_key` and return its
+/// address. It serves every accepted connection with [`TargetStub`].
+async fn spawn_target_stub(host_key: PrivateKey, log: OrderLog) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
-    let config = ssh_server_config();
+    let config = ssh_server_config(host_key);
     tokio::spawn(async move {
         while let Ok((tcp, _)) = listener.accept().await {
             let config = config.clone();
+            let log = log.clone();
             tokio::spawn(async move {
-                if let Ok(session) = russh::server::run_stream(config, tcp, TargetStub).await {
+                if let Ok(session) =
+                    russh::server::run_stream(config, tcp, TargetStub { log }).await
+                {
                     let _ = session.await;
                 }
             });
@@ -206,12 +265,13 @@ async fn spawn_target_stub() -> String {
 
 // --- Worker under test ------------------------------------------------------
 
-/// Wire the worker's real `SshHandler` (with the injected stub setup) to one end
-/// of a loopback TCP pair and run its russh server; return the other end's
-/// address for the synthetic client to dial, plus the shared registry and the
-/// SessionEnded receiver.
+/// Wire the worker's real `SshHandler` (with injected prepare/issue stubs) to one
+/// end of a loopback TCP pair and run its russh server; return the other end's
+/// address for the synthetic client, plus the shared registry and the SessionEnded
+/// receiver.
 async fn spawn_worker(
-    setup: SetupFn,
+    prepare_fn: PrepareFn,
+    issue_fn: IssueFn,
 ) -> (
     String,
     SessionRegistry,
@@ -225,13 +285,14 @@ async fn spawn_worker(
     let worker_registry = registry.clone();
     tokio::spawn(async move {
         let (tcp, _) = listener.accept().await.unwrap();
-        let handler = SshHandler::with_setup(
-            setup,
+        let handler = SshHandler::with_fns(
+            prepare_fn,
+            issue_fn,
             worker_registry,
             ended_tx,
             RecordingSettings::disabled(),
         );
-        let config = ssh_server_config();
+        let config = ssh_server_config(ed25519());
         if let Ok(session) = russh::server::run_stream(config, tcp, handler).await {
             let _ = session.await;
         }
@@ -273,43 +334,52 @@ async fn client_connect(
     (handle, result.success())
 }
 
+/// Await the next SessionEnded report (with a timeout).
+async fn next_ended(rx: &mut mpsc::UnboundedReceiver<SessionEndReport>) -> SessionEndReport {
+    tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for SessionEnded")
+        .expect("SessionEnded channel closed")
+}
+
 // --- Tests ------------------------------------------------------------------
 
+/// HAPPY PATH ORDERING: an exact-key anchor match drives the full strict order —
+/// prepare, then (KEX + match, proven by the observed fingerprint reaching issue),
+/// then issue, then target auth — and the bytes round-trip.
 #[tokio::test]
-async fn proxy_echoes_through_worker() {
+async fn strict_order_prepare_match_issue_then_target_auth() {
     let ca = ed25519();
     let kc = ed25519();
+    let target_host = ed25519();
+    let target_fp = fingerprint(target_host.public_key());
+    let log = new_log();
+    let spy: IssueSpy = Arc::new(Mutex::new(None));
 
-    let target_addr = spawn_target_stub().await;
-    let setup = stub_setup(
-        ca,
-        vec!["deploy@prod.db".into()],
-        target_addr,
-        Some(kc.public_key().fingerprint(Default::default()).to_string()),
-    );
-    let (worker_addr, _registry, _ended_rx) = spawn_worker(setup).await;
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let anchors = vec![anchor("anchor-1", "ssh_host_key", &target_fp)];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    let issue_fn = issue_ca_stub(log.clone(), spy.clone(), ca, vec!["deploy@prod.db".into()]);
+    let (worker_addr, _registry, _ended_rx) = spawn_worker(prepare_fn, issue_fn).await;
 
     let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
-    assert!(ok, "client publickey auth must succeed for login 'deploy'");
+    assert!(
+        ok,
+        "publickey auth (PrepareSession) must succeed for 'deploy'"
+    );
 
     let mut channel = handle
         .channel_open_session()
         .await
         .expect("open session channel through worker");
-    channel
-        .exec(true, "jumpgate-ok")
-        .await
-        .expect("exec through worker");
+    channel.exec(true, "jumpgate-ok").await.expect("exec");
 
-    // Read the echoed command + exit status streamed back from the stub target
-    // through the worker's bridge.
     let mut out = Vec::new();
     let mut exit_status = None;
     while let Some(msg) = channel.wait().await {
         match msg {
             ChannelMsg::Data { data } => out.extend_from_slice(&data),
             ChannelMsg::ExitStatus { exit_status: code } => exit_status = Some(code),
-            ChannelMsg::Close | ChannelMsg::Eof => {}
             _ => {}
         }
         if exit_status.is_some() && !out.is_empty() {
@@ -320,34 +390,197 @@ async fn proxy_echoes_through_worker() {
     assert_eq!(
         String::from_utf8_lossy(&out),
         "jumpgate-ok",
-        "the target's echoed command must round-trip through the worker",
+        "echo must round-trip"
     );
-    assert_eq!(exit_status, Some(0), "target exit status must reach client");
+    assert_eq!(exit_status, Some(0));
+
+    // The strict order, observed end to end.
+    assert_eq!(
+        events(&log),
+        vec!["prepare", "issue", "target_auth"],
+        "order must be PrepareSession → (KEX+match) → IssueSessionCredential → target auth",
+    );
+    // Issue was called with the matched anchor AND the fingerprint the worker
+    // observed on the target's real host key — proof the KEX + match preceded it.
+    let (matched_anchor, observed_fp) = spy.lock().unwrap().clone().expect("issue was called");
+    assert_eq!(matched_anchor, "anchor-1");
+    assert_eq!(
+        observed_fp, target_fp,
+        "issue got the observed host-key fingerprint"
+    );
 }
 
+/// MULTIPLE ANCHORS: several exact-key anchors, only one matching the target — the
+/// worker selects the matching anchor's id and issues against it.
+#[tokio::test]
+async fn multiple_anchors_selects_the_matching_one() {
+    let ca = ed25519();
+    let kc = ed25519();
+    let target_host = ed25519();
+    let target_fp = fingerprint(target_host.public_key());
+    let log = new_log();
+    let spy: IssueSpy = Arc::new(Mutex::new(None));
+
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let anchors = vec![
+        anchor(
+            "noise-a",
+            "ssh_host_key",
+            &fingerprint(ed25519().public_key()),
+        ),
+        anchor("the-one", "ssh_host_key", &target_fp),
+        anchor(
+            "noise-b",
+            "ssh_host_key",
+            &fingerprint(ed25519().public_key()),
+        ),
+    ];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    let issue_fn = issue_ca_stub(log.clone(), spy.clone(), ca, vec!["deploy@prod.db".into()]);
+    let (worker_addr, _registry, mut ended_rx) = spawn_worker(prepare_fn, issue_fn).await;
+
+    let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
+    assert!(ok);
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.exec(true, "ok").await.expect("exec");
+    while channel.wait().await.is_some() {}
+
+    let (matched_anchor, observed_fp) = spy.lock().unwrap().clone().expect("issue was called");
+    assert_eq!(
+        matched_anchor, "the-one",
+        "the matching anchor id must be selected"
+    );
+    assert_eq!(observed_fp, target_fp);
+    let _ = next_ended(&mut ended_rx).await; // session ends cleanly
+}
+
+/// CHANGED KEY / MISMATCH: the only anchor's fingerprint no longer matches the
+/// target's host key. IssueSessionCredential must NEVER be called and the session
+/// is refused with the stable reason.
+#[tokio::test]
+async fn changed_key_never_issues_credential() {
+    let kc = ed25519();
+    let target_host = ed25519();
+    let approved_but_stale = ed25519(); // a DIFFERENT key was approved
+    let log = new_log();
+    let issue_called = Arc::new(AtomicBool::new(false));
+
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let anchors = vec![anchor(
+        "anchor-1",
+        "ssh_host_key",
+        &fingerprint(approved_but_stale.public_key()),
+    )];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    let (worker_addr, _registry, mut ended_rx) =
+        spawn_worker(prepare_fn, issue_forbidden(issue_called.clone())).await;
+
+    let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
+    assert!(
+        ok,
+        "PrepareSession still accepts the SSH auth; the refusal is at hop time"
+    );
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.exec(true, "ok").await.expect("exec");
+    while channel.wait().await.is_some() {}
+
+    let ended = next_ended(&mut ended_rx).await;
+    assert_eq!(ended.session_id, "sess-1");
+    assert_eq!(
+        ended.reason, "target_identity_mismatch",
+        "a changed host key must be refused with the stable reason",
+    );
+    assert!(
+        !issue_called.load(Ordering::SeqCst),
+        "IssueSessionCredential must not run"
+    );
+    assert!(
+        !events(&log).contains(&"target_auth".to_string()),
+        "no target auth on a mismatch"
+    );
+}
+
+/// HOST-CA ANCHOR: fails closed. russh 0.62 never surfaces the target's host
+/// CERTIFICATE (only its plain host KEY), so a CA anchor is unverifiable at session
+/// time. Even with a matching stored fingerprint the session is refused and
+/// IssueSessionCredential is NEVER called.
+#[tokio::test]
+async fn host_ca_anchor_fails_closed_never_issues() {
+    let kc = ed25519();
+    let target_host = ed25519();
+    let target_fp = fingerprint(target_host.public_key());
+    let log = new_log();
+    let issue_called = Arc::new(AtomicBool::new(false));
+
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    // A host-CA anchor, even with a coincidentally-matching fingerprint.
+    let anchors = vec![anchor("ca-1", "ssh_host_ca", &target_fp)];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    let (worker_addr, _registry, mut ended_rx) =
+        spawn_worker(prepare_fn, issue_forbidden(issue_called.clone())).await;
+
+    let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
+    assert!(ok);
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.exec(true, "ok").await.expect("exec");
+    while channel.wait().await.is_some() {}
+
+    let ended = next_ended(&mut ended_rx).await;
+    assert_eq!(ended.reason, "target_identity_mismatch");
+    assert!(
+        !issue_called.load(Ordering::SeqCst),
+        "a host-CA anchor must not lead to an issue"
+    );
+}
+
+/// NO ANCHORS: warden returned no active anchors (e.g. the only approved anchor was
+/// revoked/expired, which warden filters out — the worker simply sees none). Fail
+/// closed; IssueSessionCredential is NEVER called.
+#[tokio::test]
+async fn no_anchors_fails_closed_never_issues() {
+    let kc = ed25519();
+    let target_host = ed25519();
+    let log = new_log();
+    let issue_called = Arc::new(AtomicBool::new(false));
+
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let prepare_fn = prepare_stub(log.clone(), vec![], target_addr);
+    let (worker_addr, _registry, mut ended_rx) =
+        spawn_worker(prepare_fn, issue_forbidden(issue_called.clone())).await;
+
+    let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
+    assert!(ok);
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.exec(true, "ok").await.expect("exec");
+    while channel.wait().await.is_some() {}
+
+    let ended = next_ended(&mut ended_rx).await;
+    assert_eq!(ended.reason, "target_identity_mismatch");
+    assert!(!issue_called.load(Ordering::SeqCst));
+}
+
+/// TEARDOWN still tears down a verified, live session (a matching anchor lets the
+/// session go live; a control-plane teardown then closes it).
 #[tokio::test]
 async fn teardown_closes_live_session() {
     let ca = ed25519();
     let kc = ed25519();
+    let target_host = ed25519();
+    let target_fp = fingerprint(target_host.public_key());
+    let log = new_log();
+    let spy: IssueSpy = Arc::new(Mutex::new(None));
 
-    let target_addr = spawn_target_stub().await;
-    let setup = stub_setup(ca, vec!["deploy@prod.db".into()], target_addr, None);
-    let (worker_addr, registry, mut ended_rx) = spawn_worker(setup).await;
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let anchors = vec![anchor("anchor-1", "ssh_host_key", &target_fp)];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    let issue_fn = issue_ca_stub(log.clone(), spy, ca, vec!["deploy@prod.db".into()]);
+    let (worker_addr, registry, mut ended_rx) = spawn_worker(prepare_fn, issue_fn).await;
 
     let (handle, ok) = client_connect(&worker_addr, "deploy", &kc).await;
-    assert!(ok, "client publickey auth must succeed");
+    assert!(ok);
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.request_shell(true).await.expect("request shell");
 
-    let mut channel = handle
-        .channel_open_session()
-        .await
-        .expect("open session channel");
-    // A shell keeps the session live (no exit) so teardown has something to kill.
-    channel
-        .request_shell(true)
-        .await
-        .expect("request shell through worker");
-
-    // Wait for the worker to register the live session before tearing it down.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
         if registry.live_ids().contains(&"sess-1".to_string()) {
@@ -355,7 +588,7 @@ async fn teardown_closes_live_session() {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "session never became live",
+            "session never became live"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -365,43 +598,58 @@ async fn teardown_closes_live_session() {
         "teardown must find the session"
     );
 
-    // The client's channel must close promptly on teardown.
     let closed = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(msg) = channel.wait().await {
             if matches!(msg, ChannelMsg::Close | ChannelMsg::Eof) {
                 return true;
             }
         }
-        // `wait()` returning None also means the channel ended.
         true
     })
     .await
     .expect("client channel did not close after teardown");
-    assert!(closed, "client channel must close after teardown");
+    assert!(closed);
 
-    // The worker must report the session ended with reason "terminated".
-    let ended = tokio::time::timeout(Duration::from_secs(5), ended_rx.recv())
-        .await
-        .expect("timed out waiting for SessionEnded")
-        .expect("SessionEnded channel closed");
+    let ended = next_ended(&mut ended_rx).await;
     assert_eq!(ended.session_id, "sess-1");
     assert_eq!(ended.reason, "terminated");
-    assert!(ended.recording.is_none());
 }
 
+/// LOGIN NOT IN PRINCIPALS: the identity verifies (anchor matches) and a credential
+/// is issued, but the released cert's principals are not scoped to the requested
+/// login — the credential is rejected at the hop, so the session is refused with a
+/// stable reason and never bridges. (The entitlement itself is enforced by warden's
+/// PrepareSession; this is the worker-side defence-in-depth check.)
 #[tokio::test]
 async fn login_not_in_principals_rejected() {
     let ca = ed25519();
     let kc = ed25519();
+    let target_host = ed25519();
+    let target_fp = fingerprint(target_host.public_key());
+    let log = new_log();
+    let spy: IssueSpy = Arc::new(Mutex::new(None));
 
-    let target_addr = spawn_target_stub().await;
-    // Cert is scoped to "deploy"; the client asks for "root" — must be rejected.
-    let setup = stub_setup(ca, vec!["deploy@prod.db".into()], target_addr, None);
-    let (worker_addr, _registry, _ended_rx) = spawn_worker(setup).await;
+    let target_addr = spawn_target_stub(target_host, log.clone()).await;
+    let anchors = vec![anchor("anchor-1", "ssh_host_key", &target_fp)];
+    let prepare_fn = prepare_stub(log.clone(), anchors, target_addr);
+    // Cert scoped to "deploy"; the client asks for "root".
+    let issue_fn = issue_ca_stub(log.clone(), spy, ca, vec!["deploy@prod.db".into()]);
+    let (worker_addr, _registry, mut ended_rx) = spawn_worker(prepare_fn, issue_fn).await;
 
-    let (_handle, ok) = client_connect(&worker_addr, "root", &kc).await;
+    let (handle, ok) = client_connect(&worker_addr, "root", &kc).await;
     assert!(
-        !ok,
-        "auth for a login whose principals are not all scoped to it must be rejected",
+        ok,
+        "PrepareSession accepts; the cert-principal check is at hop time"
     );
+    let mut channel = handle.channel_open_session().await.expect("open channel");
+    channel.exec(true, "ok").await.expect("exec");
+    while channel.wait().await.is_some() {}
+
+    let ended = next_ended(&mut ended_rx).await;
+    assert_eq!(
+        ended.reason, "credential_rejected",
+        "a cert whose principals are not scoped to the login must be refused",
+    );
+    // The target never authenticated: the credential was rejected before auth.
+    assert!(!events(&log).contains(&"target_auth".to_string()));
 }
