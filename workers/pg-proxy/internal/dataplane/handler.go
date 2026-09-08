@@ -4,6 +4,7 @@ package dataplane
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"time"
@@ -21,6 +22,10 @@ import (
 // sessionSetupTimeout bounds SetupSession + DialTarget so a hung warden RPC or a
 // stalled target handshake cannot wedge the handler goroutine indefinitely.
 const sessionSetupTimeout = 10 * time.Second
+
+// errNoAnchors means PrepareSession returned no applicable trust anchor, so there
+// is nothing to authenticate the target against — the session fails closed.
+var errNoAnchors = errors.New("no current trust anchors for asset")
 
 // handleConn runs one gateway connection end-to-end: CONNECT → pgwire startup →
 // SetupSession redeem → validate role → complete auth → dial target → splice.
@@ -46,34 +51,68 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 	setupCtx, cancelSetup := context.WithTimeout(ctx, sessionSetupTimeout)
 	defer cancelSetup()
 
-	resp, err := client.SetupSession(setupCtx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
+	// Phase 1: PrepareSession — redeem the token and get the endpoint + the asset's
+	// current active trust anchors, but NO credential. Warden releases a credential
+	// only after we authenticate the target against these anchors (phase 2).
+	prep, err := client.PrepareSession(setupCtx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
 		SessionToken: token,
 		WorkerId:     workerID,
 		Login:        startup.User, // warden authorizes the token's bound role and echoes it as resp.Login
 	}))
 	if err != nil {
-		slog.Warn("setup session", "err", err)
+		slog.Warn("prepare session", "err", err)
 		pgproxy.RejectUser(be, "access denied")
 		return
 	}
-	r := resp.Msg
+	p := prep.Msg
 	// The client must connect as exactly the role warden authorized.
-	if startup.User != r.GetLogin() {
-		pgproxy.RejectUser(be, "must connect as role "+r.GetLogin())
+	if startup.User != p.GetLogin() {
+		pgproxy.RejectUser(be, "must connect as role "+p.GetLogin())
 		return
 	}
 
 	// Fail closed: warden requires recording but this worker has no upload target.
-	if r.GetRecordingRequired() && uploader == nil {
+	if p.GetRecordingRequired() && uploader == nil {
 		pgproxy.RejectUser(be, "recording unavailable")
 		return
 	}
 
+	// Credential-free observe of the REAL target, then match its identity against the
+	// prepared anchors locally — all before any credential exists. This is a separate
+	// TLS handshake from the credentialed pgconn dial below (pgconn drives its own TLS
+	// with the credential up front), so a verified session costs two handshakes to the
+	// target: one to authenticate identity here, one credentialed after issuance.
+	anchorID, observedFP, verr := observeAndMatch(setupCtx, p)
+	if verr != nil {
+		slog.Warn("target identity verification failed", "err", verr, "asset_target", p.GetTargetAddress())
+		pgproxy.RejectUser(be, "target identity not verified")
+		return
+	}
+
+	// Phase 2: IssueSessionCredential — warden re-confirms the matched anchor is
+	// current+active for the asset revision, then releases the credential.
+	issued, err := client.IssueSessionCredential(setupCtx, connect.NewRequest(&dataplanev1.IssueSessionCredentialRequest{
+		SessionId:           p.GetSessionId(),
+		WorkerId:            workerID,
+		EndpointRevision:    p.GetEndpointRevision(),
+		MatchedAnchorId:     anchorID,
+		ObservedFingerprint: observedFP,
+	}))
+	if err != nil {
+		slog.Warn("issue session credential", "err", err)
+		pgproxy.RejectUser(be, "access denied")
+		return
+	}
+	r := issued.Msg
+
 	db := startup.Database
 	if db == "" {
-		db = r.GetDefaultDatabase()
+		db = p.GetDefaultDatabase()
 	}
-	target, err := pgproxy.DialTarget(setupCtx, r.GetTargetAddress(), db, r.GetLogin(), credOf(r), r.GetTargetServerCa())
+	// Re-authenticate the identical approved identity on the credentialed handshake.
+	matched := matchedAnchor(p, anchorID)
+	verifiedTLS := pgproxy.VerifiedTLSConfig(pgproxy.HostOf(p.GetTargetAddress()), p.GetTargetServerCa(), matched, time.Now)
+	target, err := pgproxy.DialTarget(setupCtx, p.GetTargetAddress(), db, p.GetLogin(), credOf(r), verifiedTLS)
 	if err != nil {
 		slog.Warn("dial target", "err", err)
 		pgproxy.RejectUser(be, "target unavailable")
@@ -85,13 +124,13 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 		return
 	}
 
-	sid := r.GetSessionId()
+	sid := p.GetSessionId()
 
 	var rec *record.Recorder
 	start := time.Now()
-	if r.GetRecordingRequired() {
-		rec = record.New(uploader, r.GetRecordingObjectKey(), record.Header{
-			V: 1, Kind: "pg", SessionID: sid, Role: r.GetLogin(),
+	if p.GetRecordingRequired() {
+		rec = record.New(uploader, p.GetRecordingObjectKey(), record.Header{
+			V: 1, Kind: "pg", SessionID: sid, Role: p.GetLogin(),
 			Database: db, StartedAtMS: start.UnixMilli(),
 		})
 	}
@@ -118,7 +157,7 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 			StartedAtUnixMs: rep.StartedAtMS,
 			EndedAtUnixMs:   rep.EndedAtMS,
 			Status:          rep.Status,
-			GrantId:         r.GetGrantId(),
+			GrantId:         p.GetGrantId(),
 		}
 	}
 	select {
@@ -127,10 +166,60 @@ func handleConn(ctx context.Context, raw net.Conn, workerID string, client datap
 	}
 }
 
-// credOf maps the SetupSession response's credential oneof to a TargetCredential.
-func credOf(r *dataplanev1.SetupSessionResponse) pgproxy.TargetCredential {
+// credOf maps the IssueSessionCredential response's credential oneof to a
+// TargetCredential.
+func credOf(r *dataplanev1.IssueSessionCredentialResponse) pgproxy.TargetCredential {
 	if c := r.GetX509Certificate(); len(c) > 0 {
 		return pgproxy.TargetCredential{X509CertPEM: c, X509KeyPEM: r.GetX509PrivateKey()}
 	}
 	return pgproxy.TargetCredential{Password: r.GetPgPassword()}
+}
+
+// observeAndMatch runs the credential-free TLS observe against the real target and
+// matches its identity against the prepared trust anchors, returning the matched
+// anchor id and the observed leaf fingerprint. It fails closed: any observe error,
+// no anchors, or no anchor match returns an error and NO credential is requested.
+func observeAndMatch(ctx context.Context, p *dataplanev1.PrepareSessionResponse) (anchorID, observedFP string, err error) {
+	host, port, err := pgproxy.SplitTargetAddr(p.GetTargetAddress())
+	if err != nil {
+		return "", "", err
+	}
+	anchors := sessionAnchors(p)
+	if len(anchors) == 0 {
+		return "", "", errNoAnchors
+	}
+	obs, err := pgproxy.ObserveTarget(ctx, host, port, host, pgproxy.DefaultProbeLimits())
+	if err != nil {
+		return "", "", err
+	}
+	return pgproxy.MatchIdentity(obs, p.GetTargetServerCa(), anchors, time.Now())
+}
+
+// sessionAnchors maps the prepared TLS trust anchors into the worker's match form,
+// dropping non-TLS kinds (a pg asset only carries tls_leaf / tls_ca).
+func sessionAnchors(p *dataplanev1.PrepareSessionResponse) []pgproxy.SessionAnchor {
+	out := make([]pgproxy.SessionAnchor, 0, len(p.GetTrustAnchors()))
+	for _, a := range p.GetTrustAnchors() {
+		if a.GetKind() != "tls_leaf" && a.GetKind() != "tls_ca" {
+			continue
+		}
+		out = append(out, pgproxy.SessionAnchor{
+			ID:                  a.GetId(),
+			Kind:                a.GetKind(),
+			Fingerprint:         a.GetSha256Fingerprint(),
+			RequiredDNSNames:    a.GetRequiredDnsNames(),
+			RequiredIPAddresses: a.GetRequiredIpAddresses(),
+		})
+	}
+	return out
+}
+
+// matchedAnchor finds the prepared anchor with id, for the credentialed re-verify.
+func matchedAnchor(p *dataplanev1.PrepareSessionResponse, id string) pgproxy.SessionAnchor {
+	for _, a := range sessionAnchors(p) {
+		if a.ID == id {
+			return a
+		}
+	}
+	return pgproxy.SessionAnchor{}
 }

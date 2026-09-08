@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/trevex/jumpgate/workers/pg-proxy/internal/pgproxy"
 )
 
 // startPostgres boots an ephemeral, TLS-enabled PostgreSQL listening on a free
@@ -28,7 +30,7 @@ import (
 // the plaintext fallback stripped (Fallbacks=nil), so the primary attempt is
 // TLS-only. It skips the test when initdb is not on PATH. Returns the
 // "127.0.0.1:<port>" address, the database name, and a stop func.
-func startPostgres(t *testing.T) (addr, db string, stop func()) {
+func startPostgres(t *testing.T) (addr, db, leafFP string, stop func()) {
 	t.Helper()
 	for _, bin := range []string{"initdb", "pg_ctl"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -55,6 +57,7 @@ func startPostgres(t *testing.T) (addr, db string, stop func()) {
 	run("initdb", "-D", dataDir, "-U", "postgres", "--auth=trust", "-E", "UTF8")
 
 	crt, key := selfSignedCert(t)
+	leafFP = leafFingerprint(t, crt)
 	writeFile(t, filepath.Join(dataDir, "server.crt"), crt)
 	writeFile(t, filepath.Join(dataDir, "server.key"), key) // 0600: postgres refuses a group/world-readable key
 
@@ -101,7 +104,18 @@ func startPostgres(t *testing.T) (addr, db string, stop func()) {
 	_ = conn.Close(ctx)
 
 	ok = true
-	return fmt.Sprintf("127.0.0.1:%d", port), "appdb", stop
+	return fmt.Sprintf("127.0.0.1:%d", port), "appdb", leafFP, stop
+}
+
+// leafFingerprint parses a PEM cert and returns its canonical SHA-256 fingerprint,
+// the exact form a tls_leaf trust anchor carries.
+func leafFingerprint(t *testing.T, certPEM []byte) string {
+	t.Helper()
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("no PEM block in server cert")
+	}
+	return pgproxy.FingerprintDER(block.Bytes)
 }
 
 func freePort(t *testing.T) int {

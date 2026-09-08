@@ -1,13 +1,15 @@
 #!/bin/bash
 # First-boot init (runs from /docker-entrypoint-initdb.d/ while a temp server is up):
-# self-sign a server cert, create the app role, enable TLS, and require TLS for app.
+# install the committed server cert, create the app role, enable TLS, require TLS for app.
 set -euo pipefail
 
-# Self-signed server cert in PGDATA (owned by the postgres user running this script).
-openssl req -new -x509 -days 3650 -nodes -text \
-  -subj "/CN=pg-target" \
-  -keyout "$PGDATA/server.key" -out "$PGDATA/server.crt"
-chmod 600 "$PGDATA/server.key"
+# Install the COMMITTED server cert/key into PGDATA (owned by the postgres user
+# running this script). Committing them makes the target present a DETERMINISTIC TLS
+# leaf, so onboarding can pin its exact SHA-256 fingerprint (pg_test.go pgTargetLeafFP)
+# rather than a value that changes every first boot. A self-signed cert regenerated at
+# boot would defeat exact-fingerprint onboarding.
+install -m 600 /etc/pg/server.key "$PGDATA/server.key"
+install -m 644 /etc/pg/server.crt "$PGDATA/server.crt"
 
 # App role (scram password; pg17 defaults password_encryption=scram-sha-256) + TLS config.
 # mtlsuser: client-cert auth (pg-proxy mints a cert with CN=mtlsuser; postgres

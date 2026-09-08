@@ -70,7 +70,7 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		}
 		// Queue the onboarding identity probe in this same transaction so the asset is
 		// never persisted without its probe (a probe-queue failure rolls the create back).
-		if err := s.queueSSHProbe(ctx, qtx, a.ID, a.EndpointRevision, targetidentity.ProbeReasonOnboarding); err != nil {
+		if err := s.queueIdentityProbe(ctx, qtx, a.ID, a.EndpointRevision, targetidentity.ProbeReasonOnboarding); err != nil {
 			return AssetWithConfig{}, err
 		}
 		cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
@@ -89,6 +89,10 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		}
 		if err := writePostgresConfig(ctx, qtx, a.ID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
+		}
+		// Queue the onboarding identity probe in the same transaction (see the ssh arm).
+		if err := s.queueIdentityProbe(ctx, qtx, a.ID, a.EndpointRevision, targetidentity.ProbeReasonOnboarding); err != nil {
+			return AssetWithConfig{}, err
 		}
 		cfg, err := qtx.GetPostgresAssetConfig(ctx, a.ID)
 		if err != nil {
@@ -130,11 +134,13 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 	return res, nil
 }
 
-// queueSSHProbe queues a credential-free identity probe for an SSH asset within the
-// caller's transaction q, at the given endpoint revision. It is a no-op when probe
-// queueing is disabled (nil probes). Any queue failure aborts the surrounding asset
-// write, so an asset is never persisted or re-pointed without its probe.
-func (s *Service) queueSSHProbe(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, revision int64, reason targetidentity.ProbeReason) error {
+// queueIdentityProbe queues a credential-free identity probe for an asset within the
+// caller's transaction q, at the given endpoint revision. The probe's protocol is
+// derived from the asset's kind inside QueueProbeTx, so this serves every verified
+// kind (ssh, postgres, ...). It is a no-op when probe queueing is disabled (nil
+// probes). Any queue failure aborts the surrounding asset write, so an asset is never
+// persisted or re-pointed without its probe.
+func (s *Service) queueIdentityProbe(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, revision int64, reason targetidentity.ProbeReason) error {
 	if s.probes == nil {
 		return nil
 	}
@@ -144,7 +150,7 @@ func (s *Service) queueSSHProbe(ctx context.Context, q *sqlc.Queries, assetID uu
 		Reason:           reason,
 		RequestedBy:      callerID(ctx),
 	}); err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("queue ssh identity probe: %w", err))
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("queue identity probe: %w", err))
 	}
 	return nil
 }
@@ -251,17 +257,34 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 			if err != nil {
 				return connect.NewError(connect.CodeInternal, err)
 			}
-			if err := s.queueSSHProbe(ctx, qtx, assetID, rev, targetidentity.ProbeReasonEndpointChanged); err != nil {
+			if err := s.queueIdentityProbe(ctx, qtx, assetID, rev, targetidentity.ProbeReasonEndpointChanged); err != nil {
 				return err
 			}
 		}
 	case "postgres":
+		// A target-address change moves the endpoint: bump the revision (invalidating
+		// anchors bound to the old revision) and queue a fresh probe. A login/secret/CA
+		// or metadata-only change leaves the endpoint — and its trust — untouched.
+		old, cfgErr := qtx.GetPostgresAssetConfig(ctx, assetID)
+		if cfgErr != nil && !errors.Is(cfgErr, pgx.ErrNoRows) {
+			return connect.NewError(connect.CodeInternal, cfgErr)
+		}
+		addressChanged := cfgErr != nil || old.TargetAddress != in.Postgres.TargetAddress
 		rows, err := s.resolvePostgresConfigInput(ctx, qtx, assetID, *in.Postgres, false)
 		if err != nil {
 			return err
 		}
 		if err := writePostgresConfig(ctx, qtx, assetID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
 			return apierr.MapWrite(err)
+		}
+		if addressChanged {
+			rev, err := qtx.IncrementAssetEndpointRevision(ctx, assetID)
+			if err != nil {
+				return connect.NewError(connect.CodeInternal, err)
+			}
+			if err := s.queueIdentityProbe(ctx, qtx, assetID, rev, targetidentity.ProbeReasonEndpointChanged); err != nil {
+				return err
+			}
 		}
 	case "rdp":
 		rows, err := s.resolveRDPConfigInput(ctx, qtx, assetID, *in.RDP, false)

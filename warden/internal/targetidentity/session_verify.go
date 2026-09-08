@@ -22,10 +22,10 @@ var (
 	// ErrIdentityMismatch means the worker's observed target fingerprint does not
 	// match the anchor it claims to have matched. This is the MITM signal.
 	ErrIdentityMismatch = errors.New("observed target identity does not match anchor")
-	// ErrCAAnchorSessionUnsupported means the matched anchor is a CA-type anchor
-	// (ssh_host_ca / tls_ca), whose per-session verification needs chain evidence
-	// (ValidationFacts) that this issue-time re-check does not yet accept. CA-anchor
-	// session verification lands with the per-protocol worker slices.
+	// ErrCAAnchorSessionUnsupported means the matched anchor is an ssh_host_ca anchor,
+	// whose per-session verification needs local chain validation the SSH/russh worker
+	// does not yet perform. tls_ca is supported (the pg-proxy worker validates the
+	// chain locally); ssh_host_ca stays refused until its worker does the same.
 	ErrCAAnchorSessionUnsupported = errors.New("CA-anchor session verification not supported yet")
 )
 
@@ -92,9 +92,16 @@ type VerifySessionTargetRequest struct {
 //
 // Scope: exact-key (ssh_host_key) and leaf (tls_leaf) anchors are proven by exact
 // fingerprint equality, which is cryptographically sound with just the observed
-// fingerprint. CA-type anchors need chain evidence the worker does not yet supply
-// on this path and are refused with ErrCAAnchorSessionUnsupported (they land with
-// the per-protocol worker slices).
+// fingerprint. A tls_ca anchor is accepted on the strength of it being CURRENT and
+// ACTIVE (this is exactly the ListCurrentActiveTrustAnchors gate below): the pg-proxy
+// worker already did the full X.509 chain-to-CA + required-name validation locally
+// and warden holds only the observed leaf fingerprint (not the chain), so warden
+// re-verifies what it can — that the claimed CA anchor is still current, unrevoked,
+// and unexpired at this revision — and trusts the mesh-mTLS-authenticated worker's
+// chain attestation for the rest. A revoked/expired/stale-revision CA anchor is
+// absent from the current set and so is refused (ErrAnchorNotFound), keeping the
+// path fail-closed. ssh_host_ca stays refused (its worker does no such local
+// validation yet) with ErrCAAnchorSessionUnsupported.
 func (s *Service) VerifySessionTarget(ctx context.Context, req VerifySessionTargetRequest) (uuid.UUID, error) {
 	if req.AssetID == uuid.Nil || req.AnchorID == uuid.Nil || req.ObservedFingerprint == "" || req.ReportedRevision <= 0 {
 		return uuid.Nil, ErrInvalidRequest
@@ -131,7 +138,14 @@ func (s *Service) VerifySessionTarget(ctx context.Context, req VerifySessionTarg
 				return anchor.ID, nil
 			}
 			return uuid.Nil, ErrIdentityMismatch
-		case AnchorSSHHostCA, AnchorTLSCA:
+		case AnchorTLSCA:
+			// Current + active (proven by presence in the set above). The worker
+			// validated the chain to this CA + the required name locally; warden has
+			// only the leaf fingerprint, so it gates on currency and trusts that
+			// mesh-authenticated attestation. Not a pin — the leaf fingerprint is not
+			// compared.
+			return anchor.ID, nil
+		case AnchorSSHHostCA:
 			return uuid.Nil, ErrCAAnchorSessionUnsupported
 		default:
 			return uuid.Nil, ErrIdentityMismatch

@@ -127,6 +127,10 @@ func resetAssetsFlags() {
 	sshCreateApproval = identityFlags{}
 	sshCreateWait = false
 	sshCreateWaitTimeout = 60 * time.Second
+	pgCreateLogins = nil
+	pgCreateApproval = identityFlags{}
+	pgCreateWait = false
+	pgCreateWaitTimeout = 60 * time.Second
 	stdinIsTTY = defaultStdinIsTTY
 	if f := assetsSSHCreateCmd.Flags().Lookup("login"); f != nil {
 		_ = f.Value.(interface{ Replace([]string) error }).Replace(nil)
@@ -141,6 +145,13 @@ func resetAssetsFlags() {
 		if f := assetsSSHCreateCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
+		if f := assetsPGCreateCmd.Flags().Lookup(name); f != nil {
+			f.Changed = false
+		}
+	}
+	if f := assetsPGCreateCmd.Flags().Lookup("mtls-login"); f != nil {
+		_ = f.Value.(interface{ Replace([]string) error }).Replace(nil)
+		f.Changed = false
 	}
 	if f := assetsListCmd.Flags().Lookup("cascade"); f != nil {
 		f.Changed = false
@@ -367,6 +378,120 @@ func TestAssetsSSHCreateWaitTimeoutContinues(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "not cancelled") {
 		t.Fatalf("stderr must state the probe continues/was not cancelled: %s", errb.String())
+	}
+}
+
+// TestAssetsPGCreateAutoApprove drives the guided flow for `assets pg create`: create
+// persists first, then a probe is started against the fresh endpoint (revision 1),
+// waited on, and its observed TLS evidence auto-approved (TOFU). The asset stays the
+// single stdout document. Routes through the SAME shared helpers as ssh create.
+func TestAssetsPGCreateAutoApprove(t *testing.T) {
+	const folderID = "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1"
+	ti := &stubTargetIdentity{
+		probeStates:  []targetidentityv1.ProbeState{targetidentityv1.ProbeState_PROBE_STATE_QUEUED, targetidentityv1.ProbeState_PROBE_STATE_SUCCEEDED},
+		observations: []*targetidentityv1.Observation{{Id: tiObsID, ProbeId: tiProbeID, EndpointRevision: 1, Evidence: []*targetidentityv1.Evidence{{Id: tiEvidID, Kind: targetidentityv1.EvidenceKind_EVIDENCE_KIND_TLS_LEAF, Sha256Fingerprint: "SHA256:pgleaf"}}}},
+	}
+	s := &stubAssets{ti: ti}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "pg", "create", "pgbox", "--folder", folderID, "--target", "h:5432", "--auto-approve", "-o", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v (stderr=%s)", err, errb.String())
+	}
+	if s.gotCreateAsset == nil || s.gotCreateAsset.GetPostgres() == nil {
+		t.Fatal("pg asset must be persisted first")
+	}
+	if ti.gotStartProbe == nil || ti.gotStartProbe.GetExpectedEndpointRevision() != 1 {
+		t.Fatalf("probe not started at fresh revision 1: %+v", ti.gotStartProbe)
+	}
+	if ti.gotApproveEvidence == nil || ti.gotApproveEvidence.GetSource() != targetidentityv1.TrustSource_TRUST_SOURCE_TOFU {
+		t.Fatalf("auto-approve must approve as TOFU: %+v", ti.gotApproveEvidence)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout not the parseable asset JSON: %v\n%s", err, out.String())
+	}
+	if got["id"] != "a-123" {
+		t.Fatalf("stdout is not the asset: %s", out.String())
+	}
+}
+
+// TestAssetsPGCreateExpectedFingerprintMismatch fails the guided approval when the
+// observed fingerprint does not match the expectation; the asset was still created.
+func TestAssetsPGCreateExpectedFingerprintMismatch(t *testing.T) {
+	const folderID = "a2a2a2a2-a2a2-a2a2-a2a2-a2a2a2a2a2a2"
+	ti := &stubTargetIdentity{
+		probeStates:  []targetidentityv1.ProbeState{targetidentityv1.ProbeState_PROBE_STATE_SUCCEEDED},
+		observations: []*targetidentityv1.Observation{{Id: tiObsID, ProbeId: tiProbeID, EndpointRevision: 1, Evidence: []*targetidentityv1.Evidence{{Id: tiEvidID, Kind: targetidentityv1.EvidenceKind_EVIDENCE_KIND_TLS_LEAF, Sha256Fingerprint: "SHA256:pgleaf"}}}},
+	}
+	s := &stubAssets{ti: ti}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "pg", "create", "pgbox", "--folder", folderID, "--target", "h:5432", "--expected-fingerprint", "SHA256:WRONG"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a mismatch error")
+	}
+	if s.gotCreateAsset == nil {
+		t.Fatal("asset is persisted before the probe even on a later mismatch")
+	}
+	if ti.gotApproveEvidence != nil {
+		t.Fatal("no approval on mismatch")
+	}
+}
+
+// TestAssetsPGCreateMutualExclusion rejects an illegal flag combination before
+// creating anything.
+func TestAssetsPGCreateMutualExclusion(t *testing.T) {
+	const folderID = "a3a3a3a3-a3a3-a3a3-a3a3-a3a3a3a3a3a3"
+	s := &stubAssets{ti: &stubTargetIdentity{}}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "pg", "create", "pgbox", "--folder", folderID, "--auto-approve", "--expected-fingerprint", "SHA256:abc"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a mutual-exclusion error")
+	}
+	if s.gotCreateAsset != nil {
+		t.Fatal("nothing must be created when the flag contract is violated")
+	}
+}
+
+// TestAssetsPGCreateNonTTYRefusal refuses --wait in a non-interactive context with no
+// automation mode, before creating anything.
+func TestAssetsPGCreateNonTTYRefusal(t *testing.T) {
+	const folderID = "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4"
+	s := &stubAssets{ti: &stubTargetIdentity{}}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "pg", "create", "pgbox", "--folder", folderID, "--wait"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a refusal for --wait without an automation mode in a non-TTY")
+	}
+	if s.gotCreateAsset != nil {
+		t.Fatal("must refuse before creating")
 	}
 }
 

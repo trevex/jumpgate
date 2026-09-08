@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+// pgTargetLeafFP is the exact SHA-256 fingerprint of the committed pg-target server
+// leaf certificate (test/env/testworkload/pg_server.crt), in the canonical
+// "SHA256:" + raw-std-base64 form the identity probe reports. The committed cert makes
+// the target present a deterministic TLS identity, so onboarding pins it as a tls_leaf
+// expectation (exactly as scenario_test.go pins sshHostKeyFP), and sessions then
+// enforce a real trust anchor rather than trust-on-first-use. Regenerate this constant
+// if pg_server.crt ever changes:
+//
+//	openssl x509 -in test/env/testworkload/pg_server.crt -outform DER |
+//	  openssl dgst -sha256 -binary | base64 | tr -d '='
+const pgTargetLeafFP = "SHA256:SHBudUdQngfuqdtImCO/Q5415Ca2ChVL1llOPHsLPhM"
+
 // TestPostgresPassword drives the postgres password-login connect path end-to-end:
 // onboard a postgres asset with a password login, grant an actor `db:login:app` via
 // a standing binding (the postgres analog of TestScenario's act3b SSH-password
@@ -39,7 +51,12 @@ func TestPostgresPassword(t *testing.T) {
 	assetOut := e.asActor(t, "admin", "assets", "pg", "create", e.name("pg-box"),
 		"--folder", folder,
 		"--target", "pg-target.default.svc.cluster.local:5432",
-		"--database", "appdb", "-o", "json")
+		"--database", "appdb",
+		// Guided identity onboarding: probe the fresh endpoint and pin its exact leaf
+		// fingerprint, mirroring scenario_test.go's ssh onboarding. Progress rides
+		// stderr so -o json stdout stays a clean asset document.
+		"--wait", "--expected-fingerprint", pgTargetLeafFP,
+		"-o", "json")
 	assetID := jsonID(assetOut)
 	if assetID == "" {
 		t.Fatalf("no asset id:\n%s", assetOut)
@@ -123,7 +140,11 @@ func TestPostgresMtls(t *testing.T) {
 	assetOut := e.asActor(t, "admin", "assets", "pg", "create", e.name("pg-box-mtls"),
 		"--folder", folder,
 		"--target", "pg-target.default.svc.cluster.local:5432",
-		"--database", "appdb", "-o", "json")
+		"--database", "appdb",
+		// Same guided identity onboarding as the password case: pin the deterministic
+		// server leaf so the mtls session enforces a real trust anchor.
+		"--wait", "--expected-fingerprint", pgTargetLeafFP,
+		"-o", "json")
 	assetID := jsonID(assetOut)
 	if assetID == "" {
 		t.Fatalf("no asset id:\n%s", assetOut)

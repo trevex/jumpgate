@@ -3,7 +3,15 @@ package migrate
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -1007,6 +1015,136 @@ func TestMigration0007SSHTrustBackfill(t *testing.T) {
 
 	// Idempotent: a second pass creates no duplicate anchors.
 	if err := BackfillSSHTrustAnchors(ctx, pool); err != nil {
+		t.Fatalf("backfill re-run: %v", err)
+	}
+	assertAnchor(validID, 1)
+	assertAnchor(rev2ID, 2)
+}
+
+// makeCAPEM generates an ed25519 CA certificate and returns its PEM plus the canonical
+// "SHA256:" raw-std-base64 fingerprint over its DER — the exact form
+// BackfillPostgresTrustAnchors must record (never a value SQL guessed at).
+func makeCAPEM(t *testing.T, cn string) (pemStr, fingerprint, algorithm string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
+	if err != nil {
+		t.Fatalf("create CA certificate: %v", err)
+	}
+	sum := sha256.Sum256(der)
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA certificate: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
+		"SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]),
+		strings.ToLower(cert.PublicKeyAlgorithm.String())
+}
+
+// TestMigration0008PostgresTrustBackfill covers the one-shot Postgres trust migration:
+// a valid target_server_ca PEM converts to exactly one approved migration-source tls_ca
+// anchor at the asset's current endpoint revision, with the correct fingerprint,
+// algorithm, and required DNS name derived from the target host; an invalid or empty CA
+// never produces an anchor; and the backfill is idempotent.
+func TestMigration0008PostgresTrustBackfill(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	caPEM, wantFP, wantAlgo := makeCAPEM(t, "pg-ca")
+
+	seed := func(name, target, serverCA string) uuid.UUID {
+		var folderID, assetID uuid.UUID
+		if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "mig8-"+name).Scan(&folderID); err != nil {
+			t.Fatalf("insert folder %s: %v", name, err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, $2, 'postgres') RETURNING id`, folderID, name).Scan(&assetID); err != nil {
+			t.Fatalf("insert asset %s: %v", name, err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database) VALUES ($1, $2, $3, 'appdb')`, assetID, target, serverCA); err != nil {
+			t.Fatalf("insert pg config %s: %v", name, err)
+		}
+		return assetID
+	}
+
+	validID := seed("valid", "pg-primary.db.prod:5432", caPEM)
+	invalidID := seed("invalid", "pg.db:5432", "-----BEGIN CERTIFICATE-----\nnot a cert\n-----END CERTIFICATE-----")
+	emptyID := seed("empty", "pg.db:5432", "")
+
+	// An asset whose endpoint moved before the backfill: the anchor must land at the
+	// CURRENT revision, not a hardcoded 1 (else it would never be current).
+	rev2ID := seed("valid-rev2", "pg-primary.db.prod:5432", caPEM)
+	if _, err := pool.Exec(ctx, `UPDATE assets SET endpoint_revision = 2 WHERE id = $1`, rev2ID); err != nil {
+		t.Fatalf("bump endpoint revision: %v", err)
+	}
+
+	if err := BackfillPostgresTrustAnchors(ctx, pool); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	assertAnchor := func(id uuid.UUID, wantRev int64) {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("asset %s anchors = %d; want exactly 1", id, n)
+		}
+		var kind, algo, fp, source string
+		var dns []string
+		var rev int64
+		var revoked bool
+		if err := pool.QueryRow(ctx,
+			`SELECT kind, algorithm, sha256_fingerprint, source, endpoint_revision, revoked_at IS NOT NULL, required_dns_names FROM target_trust_anchors WHERE asset_id = $1`,
+			id).Scan(&kind, &algo, &fp, &source, &rev, &revoked, &dns); err != nil {
+			t.Fatalf("read anchor: %v", err)
+		}
+		if kind != "tls_ca" || source != "migration" || fp != wantFP || algo != wantAlgo || rev != wantRev || revoked {
+			t.Fatalf("anchor kind=%q algo=%q fp=%q source=%q rev=%d revoked=%v; want tls_ca/%s/%s/migration/%d/false",
+				kind, algo, fp, source, rev, revoked, wantAlgo, wantFP, wantRev)
+		}
+		if len(dns) != 1 || dns[0] != "pg-primary.db.prod" {
+			t.Fatalf("required_dns_names = %v; want [pg-primary.db.prod] (host from target)", dns)
+		}
+	}
+
+	// (a) valid CA migrates to an approved migration tls_ca anchor at the current revision.
+	assertAnchor(validID, 1)
+	assertAnchor(rev2ID, 2)
+
+	// (b) invalid/empty CAs never become a trust anchor.
+	for _, id := range []uuid.UUID{invalidID, emptyID} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("asset %s anchors = %d; want 0 (an invalid/empty CA must never be trusted)", id, n)
+		}
+	}
+
+	// Idempotent: a second pass creates no duplicate anchors.
+	if err := BackfillPostgresTrustAnchors(ctx, pool); err != nil {
 		t.Fatalf("backfill re-run: %v", err)
 	}
 	assertAnchor(validID, 1)

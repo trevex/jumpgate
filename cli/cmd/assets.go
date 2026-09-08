@@ -88,10 +88,13 @@ var assetsPGCmd = &cobra.Command{
 }
 
 var (
-	pgCreateFolder   string
-	pgCreateTarget   string
-	pgCreateDatabase string
-	pgCreateLogins   []string
+	pgCreateFolder      string
+	pgCreateTarget      string
+	pgCreateDatabase    string
+	pgCreateLogins      []string
+	pgCreateApproval    identityFlags
+	pgCreateWait        bool
+	pgCreateWaitTimeout time.Duration
 )
 
 var assetsPGCreateCmd = &cobra.Command{
@@ -251,6 +254,9 @@ func init() {
 	assetsPGCreateCmd.Flags().StringVar(&pgCreateTarget, "target", "", "target host:port")
 	assetsPGCreateCmd.Flags().StringVar(&pgCreateDatabase, "database", "", "default database")
 	assetsPGCreateCmd.Flags().StringSliceVar(&pgCreateLogins, "mtls-login", nil, "mtls login role to allow (repeatable or comma-separated)")
+	addApprovalFlags(assetsPGCreateCmd, &pgCreateApproval)
+	assetsPGCreateCmd.Flags().BoolVar(&pgCreateWait, "wait", false, "probe the target's identity after creating and guide approval")
+	assetsPGCreateCmd.Flags().DurationVar(&pgCreateWaitTimeout, "wait-timeout", 60*time.Second, "how long to wait for the identity probe to complete")
 	_ = assetsPGCreateCmd.MarkFlagRequired("folder")
 
 	assetsPGLoginSetCmd.Flags().StringVar(&pgLoginRole, "role", "", "login role (required)")
@@ -587,6 +593,19 @@ func trimTrailingNewline(b []byte) []byte {
 var pgLoginHeaders = []string{"ROLE", "KIND"}
 
 func runAssetsPGCreate(cmd *cobra.Command, args []string) error {
+	// A probe+approval flow is guided when the operator opts in with --wait or any
+	// approval flag. Validate the flag contract before persisting anything so a bad
+	// combination fails without creating an asset. Shared with `assets ssh create`.
+	guided := pgCreateWait || pgCreateApproval.autoApprove || pgCreateApproval.hasExpectation()
+	if guided {
+		if err := pgCreateApproval.validate(); err != nil {
+			return err
+		}
+		if pgCreateApproval.wouldPrompt() && !stdinIsTTY() {
+			return errors.New("refusing to prompt in a non-interactive context: pass --expected-fingerprint, --trusted-ca-file, --auto-approve, or drop --wait")
+		}
+	}
+
 	cl, err := newClient()
 	if err != nil {
 		return err
@@ -619,6 +638,24 @@ func runAssetsPGCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	asset := createResp.Msg.GetAsset()
+
+	// Creation persisted first; now (only if guided) probe the just-created endpoint
+	// (revision 1) and guide approval of what it observed. Same shared helpers as the
+	// ssh create path. Progress and prompts go to stderr so the asset stays the single
+	// stdout document.
+	if guided {
+		job, err := startProbe(cmd.Context(), cl, asset.GetId(), 1)
+		if err != nil {
+			return err
+		}
+		obs, err := probeAndObserve(cmd, cl, asset.GetId(), job, pgCreateWaitTimeout)
+		if err != nil {
+			return err
+		}
+		if _, err := decideAndApprove(cmd, cl, asset.GetId(), obs, pgCreateApproval); err != nil {
+			return err
+		}
+	}
 
 	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
 		Headers: assetHeaders,

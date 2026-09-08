@@ -3,7 +3,6 @@ package pgproxy
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -20,9 +19,15 @@ type TargetCredential struct {
 
 // DialTarget opens an authenticated connection to the Postgres target as `role`,
 // injecting the credential, and returns the hijacked raw net.Conn (sitting at
-// ReadyForQuery). targetServerCA (PEM, may be empty) pins the target's TLS cert
-// for the mtls path.
-func DialTarget(ctx context.Context, targetAddr, database, role string, cred TargetCredential, targetServerCA string) (net.Conn, error) {
+// ReadyForQuery). verifiedTLS is the identity-pinned TLS config the handler built
+// from the anchor it already matched on the credential-free observe; it MUST be
+// non-nil, so this credentialed handshake re-authenticates the identical approved
+// target identity. There is NO unverified-TLS path — a session never reaches here
+// without a matched anchor.
+func DialTarget(ctx context.Context, targetAddr, database, role string, cred TargetCredential, verifiedTLS *tls.Config) (net.Conn, error) {
+	if verifiedTLS == nil {
+		return nil, errors.New("refusing to dial target without a verified TLS identity config")
+	}
 	dsn := fmt.Sprintf("postgres://%s/%s?connect_timeout=10", targetAddr, database)
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
@@ -31,29 +36,20 @@ func DialTarget(ctx context.Context, targetAddr, database, role string, cred Tar
 	cfg.User = role
 	cfg.Fallbacks = nil // no plaintext downgrade
 
+	tlsCfg := verifiedTLS.Clone()
 	switch {
 	case len(cred.X509CertPEM) > 0:
 		crt, err := tls.X509KeyPair(cred.X509CertPEM, cred.X509KeyPEM)
 		if err != nil {
 			return nil, fmt.Errorf("client cert: %w", err)
 		}
-		tlsCfg := &tls.Config{Certificates: []tls.Certificate{crt}, MinVersion: tls.VersionTLS12}
-		if targetServerCA != "" {
-			pool := x509.NewCertPool()
-			if !pool.AppendCertsFromPEM([]byte(targetServerCA)) {
-				return nil, errors.New("bad target_server_ca")
-			}
-			tlsCfg.RootCAs = pool
-			tlsCfg.ServerName = hostOf(targetAddr) // verify-full
-		} else {
-			tlsCfg.InsecureSkipVerify = true //nolint:gosec // no pin configured; encryption only
-		}
-		cfg.TLSConfig = tlsCfg
+		tlsCfg.Certificates = []tls.Certificate{crt}
 	case cred.Password != "":
 		cfg.Password = cred.Password
 	default:
 		return nil, errors.New("no target credential")
 	}
+	cfg.TLSConfig = tlsCfg
 
 	pgc, err := pgconn.ConnectConfig(ctx, cfg)
 	if err != nil {
@@ -70,9 +66,25 @@ func DialTarget(ctx context.Context, targetAddr, database, role string, cred Tar
 	return hj.Conn, nil
 }
 
-func hostOf(addr string) string {
+// HostOf returns the host portion of a "host:port" address (or the address
+// unchanged if it carries no port).
+func HostOf(addr string) string {
 	if h, _, err := net.SplitHostPort(addr); err == nil {
 		return h
 	}
 	return addr
+}
+
+// SplitTargetAddr splits a "host:port" target address into host and a validated
+// uint32 port, for the credential-free observe.
+func SplitTargetAddr(addr string) (string, uint32, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", 0, fmt.Errorf("split target address %q: %w", addr, err)
+	}
+	var port int
+	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil || port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid target port in %q", addr)
+	}
+	return host, uint32(port), nil
 }

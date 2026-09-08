@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -20,40 +21,69 @@ import (
 	"github.com/jackc/pgx/v5/pgproto3"
 )
 
-// fakeDataplaneClient stands in for warden: SetupSession returns a canned
-// response pointing at the ephemeral Postgres with a pg-password credential.
+// fakeDataplaneClient stands in for warden's two-phase flow: PrepareSession
+// returns the ephemeral Postgres endpoint plus a tls_leaf anchor pinned to the
+// target's self-signed cert (so the worker's credential-free observe matches it),
+// and IssueSessionCredential releases the pg-password credential — but only after
+// the worker reports a matched anchor + observed fingerprint. issued records the
+// last IssueSessionCredential request so a test can assert issuance order/inputs.
 type fakeDataplaneClient struct {
-	addr, db string
+	addr, db, leafFP string
+	issued           *dataplanev1.IssueSessionCredentialRequest
 }
 
-func (f fakeDataplaneClient) SetupSession(_ context.Context, _ *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
-	return connect.NewResponse(&dataplanev1.SetupSessionResponse{
-		TargetAddress:   f.addr,
-		DefaultDatabase: f.db,
-		Login:           "app",
-		SessionId:       "sess-1",
-		Credential:      &dataplanev1.SetupSessionResponse_PgPassword{PgPassword: "s3cr3t"},
+func (f *fakeDataplaneClient) PrepareSession(_ context.Context, _ *connect.Request[dataplanev1.PrepareSessionRequest]) (*connect.Response[dataplanev1.PrepareSessionResponse], error) {
+	return connect.NewResponse(&dataplanev1.PrepareSessionResponse{
+		TargetAddress:    f.addr,
+		DefaultDatabase:  f.db,
+		Login:            "app",
+		SessionId:        "sess-1",
+		EndpointRevision: 1,
+		TrustAnchors: []*dataplanev1.SessionTrustAnchor{{
+			Id:                "anchor-1",
+			Kind:              "tls_leaf",
+			Algorithm:         "x509",
+			Sha256Fingerprint: f.leafFP,
+		}},
 	}), nil
 }
 
-func (f fakeDataplaneClient) WorkerStream(context.Context) *connect.BidiStreamForClient[dataplanev1.WorkerMessage, dataplanev1.ServerMessage] {
+func (f *fakeDataplaneClient) IssueSessionCredential(_ context.Context, req *connect.Request[dataplanev1.IssueSessionCredentialRequest]) (*connect.Response[dataplanev1.IssueSessionCredentialResponse], error) {
+	f.issued = req.Msg
+	// Stand-in for warden's enforcement: a real caller only reaches here with a
+	// matched anchor; refuse if the worker somehow issued without one.
+	if req.Msg.GetMatchedAnchorId() == "" || req.Msg.GetObservedFingerprint() == "" {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("no matched anchor"))
+	}
+	return connect.NewResponse(&dataplanev1.IssueSessionCredentialResponse{
+		SessionId:  req.Msg.GetSessionId(),
+		Login:      "app",
+		Credential: &dataplanev1.IssueSessionCredentialResponse_PgPassword{PgPassword: "s3cr3t"},
+	}), nil
+}
+
+func (f *fakeDataplaneClient) SetupSession(_ context.Context, _ *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
+	panic("SetupSession is not used by the enforced two-phase handler")
+}
+
+func (f *fakeDataplaneClient) WorkerStream(context.Context) *connect.BidiStreamForClient[dataplanev1.WorkerMessage, dataplanev1.ServerMessage] {
 	panic("unused")
 }
 
-var _ dataplanev1connect.DataplaneServiceClient = fakeDataplaneClient{}
+var _ dataplanev1connect.DataplaneServiceClient = (*fakeDataplaneClient)(nil)
 
 // TestHandleConnProxiesToPostgres drives handleConn end-to-end over a net.Pipe:
 // CONNECT preamble -> pgwire startup -> (faked) SetupSession redeem -> real dial
 // to an ephemeral Postgres -> splice, and asserts SELECT 1 returns a row through
 // the proxy. A deadline on the client side means any hang fails the test.
 func TestHandleConnProxiesToPostgres(t *testing.T) {
-	addr, db, stop := startPostgres(t)
+	addr, db, leafFP, stop := startPostgres(t)
 	defer stop()
 
 	cliConn, srvConn := net.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go handleConn(ctx, srvConn, "pg-0", fakeDataplaneClient{addr: addr, db: db},
+	go handleConn(ctx, srvConn, "pg-0", &fakeDataplaneClient{addr: addr, db: db, leafFP: leafFP},
 		control.NewRegistry(), make(chan control.SessionEnd, 1), nil)
 	defer func() { _ = cliConn.Close() }()
 
@@ -122,6 +152,73 @@ func TestHandleConnProxiesToPostgres(t *testing.T) {
 	waitFor[*pgproto3.ReadyForQuery](t, fe)
 }
 
+// mismatchClient returns a tls_leaf anchor pinned to a fingerprint the real target
+// will NOT present, so the worker's observe cannot match any anchor.
+type mismatchClient struct{ *fakeDataplaneClient }
+
+func (c mismatchClient) PrepareSession(ctx context.Context, req *connect.Request[dataplanev1.PrepareSessionRequest]) (*connect.Response[dataplanev1.PrepareSessionResponse], error) {
+	resp, _ := c.fakeDataplaneClient.PrepareSession(ctx, req)
+	resp.Msg.TrustAnchors[0].Sha256Fingerprint = "SHA256:" + strings.Repeat("A", 43) // never the real leaf
+	return resp, nil
+}
+
+// TestHandleConnRefusesOnIdentityMismatch is the handler-level ordering invariant:
+// when the observed target identity matches no approved anchor, the worker rejects
+// the client and NEVER calls IssueSessionCredential — no credential is requested,
+// let alone released, before a successful match.
+func TestHandleConnRefusesOnIdentityMismatch(t *testing.T) {
+	addr, db, leafFP, stop := startPostgres(t)
+	defer stop()
+
+	fake := &fakeDataplaneClient{addr: addr, db: db, leafFP: leafFP}
+	cliConn, srvConn := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go handleConn(ctx, srvConn, "pg-0", mismatchClient{fake},
+		control.NewRegistry(), make(chan control.SessionEnd, 1), nil)
+	defer func() { _ = cliConn.Close() }()
+
+	if err := cliConn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	br := bufio.NewReader(cliConn)
+	if _, err := io.WriteString(cliConn, "CONNECT asset HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer tok\r\n\r\n"); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	if status, err := br.ReadString('\n'); err != nil || !strings.HasPrefix(status, "HTTP/1.1 200") {
+		t.Fatalf("CONNECT not established: %q err=%v", status, err)
+	}
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read headers: %v", err)
+		}
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+	}
+	fe := pgproto3.NewFrontend(br, cliConn)
+	fe.Send(&pgproto3.SSLRequest{})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush ssl: %v", err)
+	}
+	if b, err := br.ReadByte(); err != nil || b != 'N' {
+		t.Fatalf("ssl decline: %q err=%v", b, err)
+	}
+	fe.Send(&pgproto3.StartupMessage{ProtocolVersion: pgproto3.ProtocolVersionNumber, Parameters: map[string]string{"user": "app", "database": "appdb"}})
+	if err := fe.Flush(); err != nil {
+		t.Fatalf("flush startup: %v", err)
+	}
+	// The worker must reject with a FATAL error, not authenticate.
+	msg := waitFor[*pgproto3.ErrorResponse](t, fe)
+	if msg.Severity != "FATAL" {
+		t.Fatalf("want FATAL rejection, got %+v", msg)
+	}
+	if fake.issued != nil {
+		t.Fatal("IssueSessionCredential was called despite no anchor match — credential requested before verification")
+	}
+}
+
 // waitFor receives backend messages until one of type T arrives (skipping the
 // expected intervening messages), failing on any receive error (deadline hang).
 func waitFor[T pgproto3.BackendMessage](t *testing.T, fe *pgproto3.Frontend) T {
@@ -137,11 +234,12 @@ func waitFor[T pgproto3.BackendMessage](t *testing.T, fe *pgproto3.Frontend) T {
 	}
 }
 
-// recordingClient is a fakeDataplaneClient that also requires recording.
-type recordingClient struct{ fakeDataplaneClient }
+// recordingClient is a fakeDataplaneClient whose PrepareSession also requires
+// recording.
+type recordingClient struct{ *fakeDataplaneClient }
 
-func (c recordingClient) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
-	resp, _ := c.fakeDataplaneClient.SetupSession(ctx, req)
+func (c recordingClient) PrepareSession(ctx context.Context, req *connect.Request[dataplanev1.PrepareSessionRequest]) (*connect.Response[dataplanev1.PrepareSessionResponse], error) {
+	resp, _ := c.fakeDataplaneClient.PrepareSession(ctx, req)
 	resp.Msg.RecordingRequired = true
 	resp.Msg.RecordingObjectKey = "recordings/postgres/2026/03/07/sess-1.ndjson"
 	return resp, nil
@@ -161,7 +259,7 @@ func (m *memUploader) Put(_ context.Context, key string, body []byte) error {
 }
 
 func TestHandleConnRecordsTimeline(t *testing.T) {
-	addr, db, stop := startPostgres(t)
+	addr, db, leafFP, stop := startPostgres(t)
 	defer stop()
 
 	cliConn, srvConn := net.Pipe()
@@ -170,7 +268,7 @@ func TestHandleConnRecordsTimeline(t *testing.T) {
 
 	up := &memUploader{}
 	ended := make(chan control.SessionEnd, 1)
-	go handleConn(ctx, srvConn, "pg-0", recordingClient{fakeDataplaneClient{addr: addr, db: db}},
+	go handleConn(ctx, srvConn, "pg-0", recordingClient{&fakeDataplaneClient{addr: addr, db: db, leafFP: leafFP}},
 		control.NewRegistry(), ended, up)
 	defer func() { _ = cliConn.Close() }()
 

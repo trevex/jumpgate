@@ -68,6 +68,14 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
+	// One-shot Postgres trust migration: convert configured target_server_ca PEMs into
+	// approved migration-source tls_ca trust anchors (idempotent). Runs in Go because
+	// parsing/fingerprinting X.509 material safely is not possible in SQL; the 0008 SQL
+	// migration queues the companion onboarding probes.
+	if err := migrate.BackfillPostgresTrustAnchors(ctx, pool); err != nil {
+		return err
+	}
+
 	// Derive a cancellable lifecycle ctx and track every background worker in bg, so
 	// shutdown cancels them and waits for them to drain before the deferred
 	// pool.Close() fires. Without this, pool.Close races in-flight worker queries.
