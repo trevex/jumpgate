@@ -23,21 +23,23 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/recording/v1/recordingv1connect"
 	sessionv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/session/v1/sessionv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1/targetidentityv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/vault/v1/vaultv1connect"
 )
 
 // Client wraps the warden ConnectRPC clients the CLI uses. Every request is
 // authenticated with the configured bearer token.
 type Client struct {
-	token         string
-	catalog       catalogv1connect.CatalogServiceClient
-	session       sessionv1connect.SessionServiceClient
-	identity      identityv1connect.IdentityServiceClient
-	access        accessv1connect.AccessServiceClient
-	accessRequest accessrequestv1connect.AccessRequestServiceClient
-	recording     recordingv1connect.RecordingServiceClient
-	vault         vaultv1connect.VaultServiceClient
-	enrollment    enrollmentv1connect.EnrollmentServiceClient
+	token          string
+	catalog        catalogv1connect.CatalogServiceClient
+	session        sessionv1connect.SessionServiceClient
+	identity       identityv1connect.IdentityServiceClient
+	access         accessv1connect.AccessServiceClient
+	accessRequest  accessrequestv1connect.AccessRequestServiceClient
+	recording      recordingv1connect.RecordingServiceClient
+	vault          vaultv1connect.VaultServiceClient
+	enrollment     enrollmentv1connect.EnrollmentServiceClient
+	targetIdentity targetidentityv1connect.TargetIdentityServiceClient
 }
 
 // New builds a Client for the warden at addr, authenticating with token. The
@@ -46,15 +48,16 @@ type Client struct {
 func New(addr, token string) *Client {
 	httpc := httpClient(addr)
 	return &Client{
-		token:         token,
-		catalog:       catalogv1connect.NewCatalogServiceClient(httpc, addr),
-		session:       sessionv1connect.NewSessionServiceClient(httpc, addr),
-		identity:      identityv1connect.NewIdentityServiceClient(httpc, addr),
-		access:        accessv1connect.NewAccessServiceClient(httpc, addr),
-		accessRequest: accessrequestv1connect.NewAccessRequestServiceClient(httpc, addr),
-		recording:     recordingv1connect.NewRecordingServiceClient(httpc, addr),
-		vault:         vaultv1connect.NewVaultServiceClient(httpc, addr),
-		enrollment:    enrollmentv1connect.NewEnrollmentServiceClient(httpc, addr),
+		token:          token,
+		catalog:        catalogv1connect.NewCatalogServiceClient(httpc, addr),
+		session:        sessionv1connect.NewSessionServiceClient(httpc, addr),
+		identity:       identityv1connect.NewIdentityServiceClient(httpc, addr),
+		access:         accessv1connect.NewAccessServiceClient(httpc, addr),
+		accessRequest:  accessrequestv1connect.NewAccessRequestServiceClient(httpc, addr),
+		recording:      recordingv1connect.NewRecordingServiceClient(httpc, addr),
+		vault:          vaultv1connect.NewVaultServiceClient(httpc, addr),
+		enrollment:     enrollmentv1connect.NewEnrollmentServiceClient(httpc, addr),
+		targetIdentity: targetidentityv1connect.NewTargetIdentityServiceClient(httpc, addr),
 	}
 }
 
@@ -77,6 +80,11 @@ func (c *Client) Recording() recordingv1connect.RecordingServiceClient { return 
 
 // Vault returns the vault service client.
 func (c *Client) Vault() vaultv1connect.VaultServiceClient { return c.vault }
+
+// TargetIdentity returns the target-identity service client.
+func (c *Client) TargetIdentity() targetidentityv1connect.TargetIdentityServiceClient {
+	return c.targetIdentity
+}
 
 // Authorize attaches the bearer token to any connect request. Command files
 // build their own typed requests and call this before sending.

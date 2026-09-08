@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -32,10 +34,13 @@ var assetsSSHCmd = &cobra.Command{
 }
 
 var (
-	sshCreateFolder  string
-	sshCreateTarget  string
-	sshCreateLogins  []string
-	sshCreateHostKey string
+	sshCreateFolder      string
+	sshCreateTarget      string
+	sshCreateLogins      []string
+	sshCreateHostKey     string
+	sshCreateApproval    identityFlags
+	sshCreateWait        bool
+	sshCreateWaitTimeout time.Duration
 )
 
 var assetsSSHCreateCmd = &cobra.Command{
@@ -224,6 +229,9 @@ func init() {
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateTarget, "target", "", "target host:port")
 	assetsSSHCreateCmd.Flags().StringSliceVar(&sshCreateLogins, "login", nil, "ca login to allow (repeatable or comma-separated)")
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateHostKey, "host-key", "", "target host public key (authorized_keys line)")
+	addApprovalFlags(assetsSSHCreateCmd, &sshCreateApproval)
+	assetsSSHCreateCmd.Flags().BoolVar(&sshCreateWait, "wait", false, "probe the target's identity after creating and guide approval")
+	assetsSSHCreateCmd.Flags().DurationVar(&sshCreateWaitTimeout, "wait-timeout", 60*time.Second, "how long to wait for the identity probe to complete")
 	_ = assetsSSHCreateCmd.MarkFlagRequired("folder")
 
 	assetsSSHLoginSetCmd.Flags().StringVar(&sshLoginName, "login", "", "login name (required)")
@@ -294,6 +302,19 @@ func sshLoginRow(l *catalogv1.SSHLogin) []string {
 }
 
 func runAssetsSSHCreate(cmd *cobra.Command, args []string) error {
+	// A probe+approval flow is guided when the operator opts in with --wait or
+	// any approval flag. Validate the flag contract before persisting anything so
+	// a bad combination fails without creating an asset.
+	guided := sshCreateWait || sshCreateApproval.autoApprove || sshCreateApproval.hasExpectation()
+	if guided {
+		if err := sshCreateApproval.validate(); err != nil {
+			return err
+		}
+		if sshCreateApproval.wouldPrompt() && !stdinIsTTY() {
+			return errors.New("refusing to prompt in a non-interactive context: pass --expected-fingerprint, --trusted-ca-file, --auto-approve, or drop --wait")
+		}
+	}
+
 	cl, err := newClient()
 	if err != nil {
 		return err
@@ -331,6 +352,23 @@ func runAssetsSSHCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	asset := createResp.Msg.GetAsset()
+
+	// Creation persisted first; now (only if guided) probe the just-created
+	// endpoint (revision 1) and guide approval of what it observed. Progress and
+	// prompts go to stderr so the asset stays the single stdout document.
+	if guided {
+		job, err := startProbe(cmd.Context(), cl, asset.GetId(), 1)
+		if err != nil {
+			return err
+		}
+		obs, err := probeAndObserve(cmd, cl, asset.GetId(), job, sshCreateWaitTimeout)
+		if err != nil {
+			return err
+		}
+		if _, err := decideAndApprove(cmd, cl, asset.GetId(), obs, sshCreateApproval); err != nil {
+			return err
+		}
+	}
 
 	return output.RenderProto(cmd.OutOrStdout(), flagOutput, asset, &output.Table{
 		Headers: assetHeaders,

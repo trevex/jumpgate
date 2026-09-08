@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	enrollmentv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1/enrollmentv1connect"
+	targetidentityv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/targetidentity/v1/targetidentityv1connect"
 )
 
 // stubAssets serves the catalog service. `assets ssh create` is a single
@@ -48,6 +52,10 @@ type stubAssets struct {
 
 	// listed is returned by ListAssets (single page, empty NextPageToken).
 	listed []*catalogv1.Asset
+
+	// ti, when non-nil, is also served so the guided `assets ssh create` flow
+	// (create → probe → approve) can be exercised off the same server.
+	ti *stubTargetIdentity
 }
 
 func (s *stubAssets) CreateAsset(_ context.Context, req *connect.Request[catalogv1.CreateAssetRequest]) (*connect.Response[catalogv1.CreateAssetResponse], error) {
@@ -116,12 +124,21 @@ func resetAssetsFlags() {
 	sshLoginKind = ""
 	sshLoginStdin = false
 	sshLoginKeyFile = ""
+	sshCreateApproval = identityFlags{}
+	sshCreateWait = false
+	sshCreateWaitTimeout = 60 * time.Second
+	stdinIsTTY = defaultStdinIsTTY
 	if f := assetsSSHCreateCmd.Flags().Lookup("login"); f != nil {
 		_ = f.Value.(interface{ Replace([]string) error }).Replace(nil)
 		f.Changed = false
 	}
 	for _, name := range []string{"login", "kind", "password-stdin", "key-file"} {
 		if f := assetsSSHLoginSetCmd.Flags().Lookup(name); f != nil {
+			f.Changed = false
+		}
+	}
+	for _, name := range []string{"auto-approve", "expected-fingerprint", "trusted-ca-file", "expected-dns-name", "wait", "wait-timeout"} {
+		if f := assetsSSHCreateCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
 	}
@@ -141,6 +158,9 @@ func newAssetsStub(t *testing.T, s *stubAssets) string {
 	mux := http.NewServeMux()
 	mux.Handle(catalogv1connect.NewCatalogServiceHandler(s))
 	mux.Handle(enrollmentv1connect.NewEnrollmentServiceHandler(s))
+	if s.ti != nil {
+		mux.Handle(targetidentityv1connect.NewTargetIdentityServiceHandler(s.ti))
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -199,6 +219,154 @@ func TestAssetsSSHCreate(t *testing.T) {
 
 	if !strings.Contains(out.String(), "a-123") {
 		t.Fatalf("out=%s", out.String())
+	}
+}
+
+// TestAssetsSSHCreateAutoApprove drives the guided flow: create persists first,
+// then a probe is started against the fresh endpoint (revision 1), waited on,
+// and its observed evidence auto-approved (TOFU). The asset stays the single
+// stdout document.
+func TestAssetsSSHCreateAutoApprove(t *testing.T) {
+	const folderID = "88888888-8888-8888-8888-888888888888"
+	ti := &stubTargetIdentity{
+		probeStates:  []targetidentityv1.ProbeState{targetidentityv1.ProbeState_PROBE_STATE_QUEUED, targetidentityv1.ProbeState_PROBE_STATE_SUCCEEDED},
+		observations: []*targetidentityv1.Observation{{Id: tiObsID, ProbeId: tiProbeID, EndpointRevision: 1, Evidence: []*targetidentityv1.Evidence{{Id: tiEvidID, Kind: targetidentityv1.EvidenceKind_EVIDENCE_KIND_SSH_HOST_KEY, Sha256Fingerprint: "SHA256:abc"}}}},
+	}
+	s := &stubAssets{ti: ti}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "ssh", "create", "box", "--folder", folderID, "--target", "h:22", "--auto-approve", "-o", "json"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute: %v (stderr=%s)", err, errb.String())
+	}
+	if s.gotCreateAsset == nil {
+		t.Fatal("asset must be persisted first")
+	}
+	if ti.gotStartProbe == nil || ti.gotStartProbe.GetExpectedEndpointRevision() != 1 {
+		t.Fatalf("probe not started at fresh revision 1: %+v", ti.gotStartProbe)
+	}
+	if ti.gotApproveEvidence == nil || ti.gotApproveEvidence.GetSource() != targetidentityv1.TrustSource_TRUST_SOURCE_TOFU {
+		t.Fatalf("auto-approve must approve as TOFU: %+v", ti.gotApproveEvidence)
+	}
+	// stdout is the asset document, not the approval result.
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("stdout not the parseable asset JSON: %v\n%s", err, out.String())
+	}
+	if got["id"] != "a-123" {
+		t.Fatalf("stdout is not the asset: %s", out.String())
+	}
+}
+
+// TestAssetsSSHCreateExpectedFingerprintMismatch fails the guided approval when
+// the observed fingerprint does not match the expectation; the asset was still
+// created (persist-first).
+func TestAssetsSSHCreateExpectedFingerprintMismatch(t *testing.T) {
+	const folderID = "99999999-9999-9999-9999-999999999999"
+	ti := &stubTargetIdentity{
+		probeStates:  []targetidentityv1.ProbeState{targetidentityv1.ProbeState_PROBE_STATE_SUCCEEDED},
+		observations: []*targetidentityv1.Observation{{Id: tiObsID, ProbeId: tiProbeID, EndpointRevision: 1, Evidence: []*targetidentityv1.Evidence{{Id: tiEvidID, Kind: targetidentityv1.EvidenceKind_EVIDENCE_KIND_SSH_HOST_KEY, Sha256Fingerprint: "SHA256:abc"}}}},
+	}
+	s := &stubAssets{ti: ti}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "ssh", "create", "box", "--folder", folderID, "--target", "h:22", "--expected-fingerprint", "SHA256:WRONG"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a mismatch error")
+	}
+	if s.gotCreateAsset == nil {
+		t.Fatal("asset is persisted before the probe even on a later mismatch")
+	}
+	if ti.gotApproveEvidence != nil {
+		t.Fatal("no approval on mismatch")
+	}
+}
+
+// TestAssetsSSHCreateMutualExclusion rejects an illegal flag combination before
+// creating anything.
+func TestAssetsSSHCreateMutualExclusion(t *testing.T) {
+	const folderID = "10101010-1010-1010-1010-101010101010"
+	s := &stubAssets{ti: &stubTargetIdentity{}}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "ssh", "create", "box", "--folder", folderID, "--auto-approve", "--expected-fingerprint", "SHA256:abc"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a mutual-exclusion error")
+	}
+	if s.gotCreateAsset != nil {
+		t.Fatal("nothing must be created when the flag contract is violated")
+	}
+}
+
+// TestAssetsSSHCreateNonTTYRefusal refuses --wait in a non-interactive context
+// with no automation mode, before creating anything.
+func TestAssetsSSHCreateNonTTYRefusal(t *testing.T) {
+	const folderID = "12121212-1212-1212-1212-121212121212"
+	s := &stubAssets{ti: &stubTargetIdentity{}}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "ssh", "create", "box", "--folder", folderID, "--wait"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected a refusal for --wait without an automation mode in a non-TTY")
+	}
+	if s.gotCreateAsset != nil {
+		t.Fatal("must refuse before creating")
+	}
+}
+
+// TestAssetsSSHCreateWaitTimeoutContinues proves a wait timeout returns a typed
+// error, prints that the durable probe was NOT cancelled, yet the asset was
+// created.
+func TestAssetsSSHCreateWaitTimeoutContinues(t *testing.T) {
+	const folderID = "13131313-1313-1313-1313-131313131313"
+	ti := &stubTargetIdentity{probeStates: []targetidentityv1.ProbeState{targetidentityv1.ProbeState_PROBE_STATE_QUEUED}}
+	s := &stubAssets{ti: ti}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("JUMPGATE_WARDEN_ADDR", newAssetsStub(t, s))
+	t.Setenv("JUMPGATE_TOKEN", "tok")
+	t.Cleanup(resetAssetsFlags)
+
+	var out, errb bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errb)
+	rootCmd.SetArgs([]string{"assets", "ssh", "create", "box", "--folder", folderID, "--auto-approve", "--wait-timeout", "1ms"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected a wait-timeout error")
+	}
+	var to *probeTimeoutError
+	if !errors.As(err, &to) {
+		t.Fatalf("want a typed probeTimeoutError, got %T: %v", err, err)
+	}
+	if s.gotCreateAsset == nil {
+		t.Fatal("asset must be created before the wait")
+	}
+	if !strings.Contains(errb.String(), "not cancelled") {
+		t.Fatalf("stderr must state the probe continues/was not cancelled: %s", errb.String())
 	}
 }
 
