@@ -34,6 +34,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
@@ -98,7 +99,8 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	arSvc := accessrequest.NewService(pool, auditLog, approvals.New(pool), authz.NewRoleResolver(pool), terminator, 8*time.Hour)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, "", false, time.Minute, dataplane.NewRegistry(), nil)
-	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, nil, auditLog, time.Hour)
+	identitySvc := targetidentity.NewService(pool, auditLog)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, identitySvc, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	// The user (bearer) services and the mesh (Dataplane/Gateway) services share one
@@ -245,20 +247,58 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 	}
 	waitConnected(t, registry, "w1", true)
 
-	// --- Step 3: SetupSession → target + SSH cert; live_sessions row exists. ---
-	ss, err := dpClient.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: token, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: clientPub, TargetPublicKey: workerPub,
+	// --- Step 3: two-phase PrepareSession + IssueSessionCredential → target + SSH
+	// cert; a live_sessions row exists. Seed an approved ssh_host_key anchor the
+	// worker "observes" so the identity gate at issue time passes. ---
+	_, hpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("gen host key: %v", err)
+	}
+	hpub, err := ssh.NewPublicKey(hpriv.Public())
+	if err != nil {
+		t.Fatalf("ssh host pub: %v", err)
+	}
+	hostFp := ssh.FingerprintSHA256(hpub)
+	hostLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hpub)))
+	anchor, err := q.ApproveTrustAnchor(ctx, sqlc.ApproveTrustAnchorParams{
+		AssetID:               asset.ID,
+		EndpointRevision:      asset.EndpointRevision,
+		Kind:                  "ssh_host_key",
+		Algorithm:             "ssh-ed25519",
+		Sha256Fingerprint:     hostFp,
+		PublicMaterial:        hostLine,
+		RequiredSshPrincipals: []string{},
+		RequiredDnsNames:      []string{},
+		RequiredIpAddresses:   []string{},
+		Source:                "manual",
+		ApprovedBy:            pgtype.UUID{Bytes: subject.ID, Valid: true},
+		ApprovedAt:            pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ApproveTrustAnchor: %v", err)
+	}
+
+	prep, err := dpClient.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
+		SessionToken: token, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: clientPub,
 	}))
 	if err != nil {
-		t.Fatalf("SetupSession: %v", err)
+		t.Fatalf("PrepareSession: %v", err)
 	}
-	if ss.Msg.TargetAddress != "10.0.0.9:22" {
-		t.Fatalf("TargetAddress = %q, want 10.0.0.9:22", ss.Msg.TargetAddress)
+	if prep.Msg.TargetAddress != "10.0.0.9:22" {
+		t.Fatalf("TargetAddress = %q, want 10.0.0.9:22", prep.Msg.TargetAddress)
 	}
-	if ss.Msg.SessionId == "" {
+	if prep.Msg.SessionId == "" {
 		t.Fatal("expected a non-empty session id")
 	}
-	pk, _, _, _, err := ssh.ParseAuthorizedKey(ss.Msg.GetSshCertificate())
+
+	iss, err := dpClient.IssueSessionCredential(ctx, connect.NewRequest(&dataplanev1.IssueSessionCredentialRequest{
+		SessionId: prep.Msg.SessionId, WorkerId: "w1", EndpointRevision: prep.Msg.EndpointRevision,
+		MatchedAnchorId: anchor.ID.String(), ObservedFingerprint: hostFp, TargetPublicKey: workerPub,
+	}))
+	if err != nil {
+		t.Fatalf("IssueSessionCredential: %v", err)
+	}
+	pk, _, _, _, err := ssh.ParseAuthorizedKey(iss.Msg.GetSshCertificate())
 	if err != nil {
 		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
 	}
@@ -283,8 +323,8 @@ func TestM4ASpineEndToEnd(t *testing.T) {
 		t.Fatalf("verify token: %v", err)
 	}
 	sid := claims.SessionID
-	if ss.Msg.SessionId != sid.String() {
-		t.Fatalf("SetupSession SessionId = %q, want %q", ss.Msg.SessionId, sid.String())
+	if prep.Msg.SessionId != sid.String() {
+		t.Fatalf("PrepareSession SessionId = %q, want %q", prep.Msg.SessionId, sid.String())
 	}
 	var n int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM live_sessions WHERE id = $1`, sid).Scan(&n); err != nil {
@@ -375,10 +415,11 @@ loop:
 	// Drain the outbox, then assert every expected event across the run is present.
 	drainOutbox(t, pool)
 	want := map[string]bool{
-		"session.started":      false,
-		"access_grant.revoked": false,
-		"session.terminated":   false,
-		"session.ended":        false,
+		"session.prepared":         false,
+		"target.identity_verified": false,
+		"access_grant.revoked":     false,
+		"session.terminated":       false,
+		"session.ended":            false,
 	}
 	entries, err := q.ListAuditEntries(ctx)
 	if err != nil {

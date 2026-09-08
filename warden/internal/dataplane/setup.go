@@ -1,14 +1,15 @@
 // Package dataplane holds the warden-side domain logic that backs the data-plane
 // (gateway/worker) RPCs: redeeming a session token to establish a live session.
 //
-// SetupSession is the session-setup authorization gate. A worker presents a
-// session token (minted by CreateSession) plus the client's ephemeral SSH key.
-// warden: verifies the token signature/time claims, checks the client key
-// matches the token's `cnf` binding, RE-CHECKS the login entitlement (defense in
-// depth — a grant revoked between mint and connect is caught here), records a
-// live_sessions row (PK = session_id = replay guard) and a session.started audit
-// event IN THE SAME TX, commits, then issues a short-lived JIT SSH certificate
-// via the credential broker.
+// The session-setup authorization gate runs in resolveSession + recordLiveSession.
+// A worker presents a session token (minted by CreateSession) plus the client's
+// ephemeral SSH key. warden verifies the token signature/time claims, checks the
+// client key matches the token's `cnf` binding, RE-CHECKS the login entitlement
+// (defense in depth — a grant revoked between mint and connect is caught here),
+// and records a live_sessions row (PK = session_id = replay guard) with a
+// session.prepared audit event IN THE SAME TX. Credentials are released only by
+// the two-phase PrepareSession + IssueSessionCredential flow, and only after the
+// worker's observed target identity is verified against a current trust anchor.
 package dataplane
 
 import (
@@ -69,38 +70,10 @@ type SetupService struct {
 }
 
 // NewSetupService builds the session-setup service. identity backs the enforced
-// two-phase flow (PrepareSession + IssueSessionCredential); it may be nil, which
-// leaves only the migration-window SetupSession compat path usable.
+// two-phase flow (PrepareSession + IssueSessionCredential); it must be non-nil for
+// credential issuance (a nil identity fails PrepareSession/IssueCredential closed).
 func NewSetupService(pool *pgxpool.Pool, v *sessiontoken.Verifier, a *authz.Authorizer, b credentialIssuer, identity *targetidentity.Service, log *audit.Logger, certMaxTTL time.Duration) *SetupService {
 	return &SetupService{pool: pool, verifier: v, authz: a, broker: b, identity: identity, audit: log, certMaxTTL: certMaxTTL}
-}
-
-// SetupResult is the successful outcome. The credential is discriminated by
-// CredentialKind ("ssh-cert" | "ssh-password" | "ssh-key" | "x509" |
-// "pg-password" | "rdp-password"); exactly one of the credential fields is
-// populated.
-type SetupResult struct {
-	TargetAddress      string
-	CredentialKind     string
-	SSHCertificate     []byte
-	Password           string
-	PrivateKey         []byte
-	SessionID          string
-	RecordingRequired  bool
-	RecordingObjectKey string
-	// TargetHostKey is the asset's configured host-key pin (an OpenSSH
-	// authorized_keys-style public-key line), or empty when unset. The worker
-	// fails closed on a mismatch when it is non-empty; empty = accept-and-log.
-	TargetHostKey string
-	// GrantID is the authorizing JIT grant when exactly one active grant covers
-	// (user, asset); empty for standing (zero grants) or ambiguous (multiple).
-	GrantID string
-
-	X509Certificate []byte // postgres mtls: client leaf cert PEM
-	X509PrivateKey  []byte // postgres mtls: client key PEM
-	TargetServerCA  string // postgres: target server CA PEM (mTLS verify-full)
-	DefaultDatabase string // postgres: default database
-	Login           string // the DB role warden authorized (the worker connects as this)
 }
 
 // capRecordExempt, when held on the asset, permits an unrecorded SSH session.
@@ -122,8 +95,6 @@ type sessionPrep struct {
 	login             string
 	protocol          string
 	targetAddress     string
-	targetHostKey     string
-	targetServerCA    string
 	defaultDB         string
 	recordingRequired bool
 	recordingKey      string
@@ -132,8 +103,7 @@ type sessionPrep struct {
 // resolveSession verifies the token, enforces the cnf binding (CLI) or reads the
 // ticket-bound login (web), re-checks authorization against the live held-closure,
 // and resolves the per-protocol endpoint + recording policy. It records NOTHING
-// and issues NOTHING — it is the shared front half of both the compat SetupSession
-// and the enforced PrepareSession.
+// and issues NOTHING — it is the shared front half of the enforced PrepareSession.
 func (s *SetupService) resolveSession(ctx context.Context, rawToken, login string, clientPub []byte) (sessionPrep, error) {
 	claims, err := s.verifier.Verify(rawToken)
 	if err != nil {
@@ -175,7 +145,7 @@ func (s *SetupService) resolveSession(ctx context.Context, rawToken, login strin
 		if cfg.TargetAddress == "" {
 			return sessionPrep{}, ErrNoTarget
 		}
-		prep.targetAddress, prep.targetServerCA, prep.defaultDB = cfg.TargetAddress, cfg.TargetServerCa, cfg.DefaultDatabase
+		prep.targetAddress, prep.defaultDB = cfg.TargetAddress, cfg.DefaultDatabase
 		rows, err := q0.ListPostgresAssetLogins(ctx, claims.AssetID)
 		if err != nil {
 			return sessionPrep{}, fmt.Errorf("list postgres asset logins: %w", err)
@@ -196,7 +166,7 @@ func (s *SetupService) resolveSession(ctx context.Context, rawToken, login strin
 		if cfg.TargetAddress == "" {
 			return sessionPrep{}, ErrNoTarget
 		}
-		prep.targetAddress, prep.targetServerCA = cfg.TargetAddress, cfg.TargetServerCa
+		prep.targetAddress = cfg.TargetAddress
 		rows, err := q0.ListRDPAssetLogins(ctx, claims.AssetID)
 		if err != nil {
 			return sessionPrep{}, fmt.Errorf("list rdp asset logins: %w", err)
@@ -218,7 +188,7 @@ func (s *SetupService) resolveSession(ctx context.Context, rawToken, login strin
 		if cfg.TargetAddress == "" {
 			return sessionPrep{}, ErrNoTarget
 		}
-		prep.targetAddress, prep.targetHostKey = cfg.TargetAddress, cfg.HostPublicKey
+		prep.targetAddress = cfg.TargetAddress
 		rows, err := q0.ListSSHAssetLogins(ctx, claims.AssetID)
 		if err != nil {
 			return sessionPrep{}, fmt.Errorf("list ssh asset logins: %w", err)
@@ -237,7 +207,7 @@ func (s *SetupService) resolveSession(ctx context.Context, rawToken, login strin
 
 // recordLiveSession inserts the live_sessions row (PK = session JTI = replay guard)
 // and enqueues eventType in the SAME tx, returning the resolved authorizing grant.
-// It is the shared recording step of both SetupSession and PrepareSession.
+// It is the shared recording step of PrepareSession.
 func (s *SetupService) recordLiveSession(ctx context.Context, prep sessionPrep, workerID, eventType string) (pgtype.UUID, error) {
 	claims := prep.claims
 	tx, err := s.pool.Begin(ctx)
@@ -337,53 +307,6 @@ func (s *SetupService) issueInternal(ctx context.Context, userID, assetID uuid.U
 		return IssueResult{}, fmt.Errorf("unexpected credential kind %q", cred.Kind)
 	}
 	return res, nil
-}
-
-// Setup is the MIGRATION-WINDOW compat path (removed once every protocol slice
-// enforces the two-phase PrepareSession + IssueSessionCredential flow). It
-// preserves today's exact behavior: it resolves + records the session and issues
-// the credential in one call, WITHOUT verifying the target's identity. Production
-// ssh/postgres/rdp/k8s workers still call this until their vertical slice migrates.
-// New enforcement lives in PrepareSession/IssueSessionCredential, not here.
-func (s *SetupService) Setup(ctx context.Context, rawToken, workerID, login string, clientPub, targetPub []byte) (SetupResult, error) {
-	prep, err := s.resolveSession(ctx, rawToken, login, clientPub)
-	if err != nil {
-		return SetupResult{}, err
-	}
-	// SSH certifies Kw for the target hop; reject a malformed worker key up front
-	// (preserves the pre-refactor ErrBadToken behavior before any row is written).
-	if prep.protocol == "ssh" {
-		if _, err := parseSSHPublicKey(targetPub); err != nil {
-			return SetupResult{}, ErrBadToken
-		}
-	}
-	grantID, err := s.recordLiveSession(ctx, prep, workerID, EventSessionStarted)
-	if err != nil {
-		return SetupResult{}, err
-	}
-	// Cert issuance is POST-COMMIT: the session is already recorded, so a cert-issue
-	// failure returns an error but leaves the recorded session in place.
-	iss, err := s.issueInternal(ctx, prep.claims.UserID, prep.claims.AssetID, prep.login, prep.claims.SessionID.String(), targetPub)
-	if err != nil {
-		return SetupResult{}, err
-	}
-	return SetupResult{
-		TargetAddress:      prep.targetAddress,
-		CredentialKind:     iss.CredentialKind,
-		SSHCertificate:     iss.SSHCertificate,
-		Password:           iss.Password,
-		PrivateKey:         iss.PrivateKey,
-		SessionID:          prep.claims.SessionID.String(),
-		RecordingRequired:  prep.recordingRequired,
-		RecordingObjectKey: prep.recordingKey,
-		TargetHostKey:      prep.targetHostKey,
-		GrantID:            grantIDString(grantID),
-		X509Certificate:    iss.X509Certificate,
-		X509PrivateKey:     iss.X509PrivateKey,
-		TargetServerCA:     prep.targetServerCA,
-		DefaultDatabase:    prep.defaultDB,
-		Login:              prep.login,
-	}, nil
 }
 
 // grantIDString renders a pgtype.UUID as its string form, empty when NULL/invalid.

@@ -186,7 +186,6 @@ type NotificationOutbox struct {
 type PostgresAssetConfig struct {
 	AssetID         uuid.UUID `json:"asset_id"`
 	TargetAddress   string    `json:"target_address"`
-	TargetServerCa  string    `json:"target_server_ca"`
 	DefaultDatabase string    `json:"default_database"`
 }
 
@@ -198,9 +197,8 @@ type PostgresAssetLogin struct {
 }
 
 type RdpAssetConfig struct {
-	AssetID        uuid.UUID `json:"asset_id"`
-	TargetAddress  string    `json:"target_address"`
-	TargetServerCa string    `json:"target_server_ca"`
+	AssetID       uuid.UUID `json:"asset_id"`
+	TargetAddress string    `json:"target_address"`
 }
 
 type RdpAssetLogin struct {
@@ -292,7 +290,6 @@ type SessionSigningKey struct {
 type SshAssetConfig struct {
 	AssetID       uuid.UUID `json:"asset_id"`
 	TargetAddress string    `json:"target_address"`
-	HostPublicKey string    `json:"host_public_key"`
 }
 
 type SshAssetLogin struct {

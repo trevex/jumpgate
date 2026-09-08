@@ -37,7 +37,6 @@ var (
 	sshCreateFolder      string
 	sshCreateTarget      string
 	sshCreateLogins      []string
-	sshCreateHostKey     string
 	sshCreateApproval    identityFlags
 	sshCreateWait        bool
 	sshCreateWaitTimeout time.Duration
@@ -231,7 +230,6 @@ func init() {
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateFolder, "folder", "", "folder id or name (required)")
 	assetsSSHCreateCmd.Flags().StringVar(&sshCreateTarget, "target", "", "target host:port")
 	assetsSSHCreateCmd.Flags().StringSliceVar(&sshCreateLogins, "login", nil, "ca login to allow (repeatable or comma-separated)")
-	assetsSSHCreateCmd.Flags().StringVar(&sshCreateHostKey, "host-key", "", "target host public key (authorized_keys line)")
 	addApprovalFlags(assetsSSHCreateCmd, &sshCreateApproval)
 	assetsSSHCreateCmd.Flags().BoolVar(&sshCreateWait, "wait", false, "probe the target's identity after creating and guide approval")
 	assetsSSHCreateCmd.Flags().DurationVar(&sshCreateWaitTimeout, "wait-timeout", 60*time.Second, "how long to wait for the identity probe to complete")
@@ -348,7 +346,6 @@ func runAssetsSSHCreate(cmd *cobra.Command, args []string) error {
 		Name:     args[0],
 		Config: &catalogv1.CreateAssetRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
 			Logins:        logins,
-			HostPublicKey: sshCreateHostKey,
 			TargetAddress: sshCreateTarget,
 		}},
 	})
@@ -465,7 +462,6 @@ func runAssetsSSHLoginSet(cmd *cobra.Command, args []string) error {
 	// existing login to its input arm and preserving its already-sealed secret.
 	input := &catalogv1.SSHConfigInput{}
 	if cur != nil {
-		input.HostPublicKey = cur.GetHostPublicKey()
 		input.TargetAddress = cur.GetTargetAddress()
 		for _, l := range cur.GetLogins() {
 			if l.GetLogin() == sshLoginName {
@@ -724,7 +720,6 @@ func runAssetsPGLoginSet(cmd *cobra.Command, args []string) error {
 	if cur != nil {
 		input.TargetAddress = cur.GetTargetAddress()
 		input.DefaultDatabase = cur.GetDefaultDatabase()
-		input.TargetServerCa = cur.GetTargetServerCa()
 		for _, l := range cur.GetLogins() {
 			if l.GetRole() == pgLoginRole {
 				continue // the target login is (re)built below
@@ -870,7 +865,6 @@ func runAssetsRDPLoginSet(cmd *cobra.Command, args []string) error {
 	input := &catalogv1.RDPConfigInput{}
 	if cur != nil {
 		input.TargetAddress = cur.GetTargetAddress()
-		input.TargetServerCa = cur.GetTargetServerCa()
 		for _, l := range cur.GetLogins() {
 			if l.GetLogin() == rdpLoginName {
 				continue // the target login is (re)built below

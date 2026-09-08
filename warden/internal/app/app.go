@@ -61,29 +61,6 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
-	// One-shot SSH trust migration: convert valid pinned host keys into approved
-	// migration-source trust anchors (idempotent). Runs in Go because fingerprinting
-	// OpenSSH material safely is not possible in SQL; the 0007 SQL migration queues the
-	// companion onboarding probes.
-	if err := migrate.BackfillSSHTrustAnchors(ctx, pool); err != nil {
-		return err
-	}
-
-	// One-shot Postgres trust migration: convert configured target_server_ca PEMs into
-	// approved migration-source tls_ca trust anchors (idempotent). Runs in Go because
-	// parsing/fingerprinting X.509 material safely is not possible in SQL; the 0008 SQL
-	// migration queues the companion onboarding probes.
-	if err := migrate.BackfillPostgresTrustAnchors(ctx, pool); err != nil {
-		return err
-	}
-
-	// One-shot RDP trust migration: convert configured target_server_ca PEMs into
-	// approved migration-source tls_ca trust anchors (idempotent), following the
-	// postgres migration exactly; the 0009 SQL migration queues the companion probes.
-	if err := migrate.BackfillRDPTrustAnchors(ctx, pool); err != nil {
-		return err
-	}
-
 	// Derive a cancellable lifecycle ctx and track every background worker in bg, so
 	// shutdown cancels them and waits for them to drain before the deferred
 	// pool.Close() fires. Without this, pool.Close races in-flight worker queries.
@@ -168,7 +145,8 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// unseal the signing key) and an initialized active session signing key; absent
 	// either, CreateSession is disabled (nil service → SessionService not mounted).
 	//
-	// setupSvc backs the data-plane worker RPCs (SetupSession + WorkerStream); it is
+	// setupSvc backs the data-plane worker RPCs (PrepareSession +
+	// IssueSessionCredential + WorkerStream); it is
 	// built alongside sessionSvc under the same preconditions and shares the active
 	// signing key (as a verifier). The worker registry is always created (it is
 	// rebuilt from reconnecting streams), but DataplaneService only mounts when
@@ -405,7 +383,7 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.
 	}
 	rpc.RegisterMeshServices(meshMux, meshServices)
 	// Enable HTTP/2 over TLS: the mesh RPCs (WorkerStream / WatchWorkers /
-	// SetupSession) are gRPC and require h2. Advertising h2 in NextProtos alone is
+	// PrepareSession) are gRPC and require h2. Advertising h2 in NextProtos alone is
 	// not enough — the server must also install the h2 handler, which the
 	// Protocols field does. HTTP/1.1 stays enabled as a fallback.
 	var protos http.Protocols

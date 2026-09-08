@@ -49,7 +49,6 @@ export interface LoginDraft {
 
 export interface ConfigDraft {
   targetAddress: string;
-  hostPublicKey: string;
   logins: LoginDraft[];
 }
 
@@ -67,7 +66,6 @@ const KIND_LABEL: Record<LoginKind, string> = {
 export function emptyDraft(): ConfigDraft {
   return {
     targetAddress: "",
-    hostPublicKey: "",
     logins: [{ login: "", kind: "ca", secret: "" }],
   };
 }
@@ -78,7 +76,6 @@ export function emptyDraft(): ConfigDraft {
 export function draftFromAsset(ssh: SSHConfig): ConfigDraft {
   return {
     targetAddress: ssh.targetAddress,
-    hostPublicKey: ssh.hostPublicKey,
     logins: ssh.logins.map((l) => {
       const kind = (l.kind as LoginKind) ?? "ca";
       return {
@@ -153,14 +150,13 @@ export function buildSSHConfigInput(
   return {
     config: {
       logins,
-      hostPublicKey: draft.hostPublicKey.trim(),
       targetAddress: draft.targetAddress.trim(),
     },
   };
 }
 
 function emptyInput(): SSHConfigInputInit {
-  return { logins: [], hostPublicKey: "", targetAddress: "" };
+  return { logins: [], targetAddress: "" };
 }
 
 // ─── The controlled editor ────────────────────────────────────────────────────
@@ -214,26 +210,6 @@ export function AssetConfigForm({ value, onChange }: AssetConfigFormProps) {
         />
         <p className={FIELD_HINT}>
           host:port the worker dials. Empty = worker default resolution.
-        </p>
-      </div>
-
-      {/* Host public key */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="asset-hostkey" className={FIELD_LABEL}>
-          Host public key
-        </label>
-        <textarea
-          id="asset-hostkey"
-          autoComplete="off"
-          value={value.hostPublicKey}
-          onChange={(e) => patch({ hostPublicKey: e.target.value })}
-          placeholder="ssh-ed25519 AAAA…"
-          rows={2}
-          className="min-h-[3.5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-micro shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-        <p className={FIELD_HINT}>
-          Optional OpenSSH authorized_keys line. Set = pin the host key; empty =
-          accept-and-log.
         </p>
       </div>
 

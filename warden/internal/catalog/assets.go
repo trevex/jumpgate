@@ -65,7 +65,7 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		if err != nil {
 			return AssetWithConfig{}, err
 		}
-		if err := writeSSHConfig(ctx, qtx, a.ID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
+		if err := writeSSHConfig(ctx, qtx, a.ID, in.SSH.TargetAddress, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
 		}
 		// Queue the onboarding identity probe in this same transaction so the asset is
@@ -87,7 +87,7 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		if err != nil {
 			return AssetWithConfig{}, err
 		}
-		if err := writePostgresConfig(ctx, qtx, a.ID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
+		if err := writePostgresConfig(ctx, qtx, a.ID, in.Postgres.TargetAddress, in.Postgres.DefaultDatabase, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
 		}
 		// Queue the onboarding identity probe in the same transaction (see the ssh arm).
@@ -108,7 +108,7 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		if err != nil {
 			return AssetWithConfig{}, err
 		}
-		if err := writeRDPConfig(ctx, qtx, a.ID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
+		if err := writeRDPConfig(ctx, qtx, a.ID, in.RDP.TargetAddress, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
 		}
 		// Queue the onboarding identity probe in the same transaction (see the ssh arm).
@@ -253,7 +253,7 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 		if err != nil {
 			return err
 		}
-		if err := writeSSHConfig(ctx, qtx, assetID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
+		if err := writeSSHConfig(ctx, qtx, assetID, in.SSH.TargetAddress, rows); err != nil {
 			return apierr.MapWrite(err)
 		}
 		if addressChanged {
@@ -278,7 +278,7 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 		if err != nil {
 			return err
 		}
-		if err := writePostgresConfig(ctx, qtx, assetID, in.Postgres.TargetAddress, in.Postgres.TargetServerCA, in.Postgres.DefaultDatabase, rows); err != nil {
+		if err := writePostgresConfig(ctx, qtx, assetID, in.Postgres.TargetAddress, in.Postgres.DefaultDatabase, rows); err != nil {
 			return apierr.MapWrite(err)
 		}
 		if addressChanged {
@@ -303,7 +303,7 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 		if err != nil {
 			return err
 		}
-		if err := writeRDPConfig(ctx, qtx, assetID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
+		if err := writeRDPConfig(ctx, qtx, assetID, in.RDP.TargetAddress, rows); err != nil {
 			return apierr.MapWrite(err)
 		}
 		if addressChanged {

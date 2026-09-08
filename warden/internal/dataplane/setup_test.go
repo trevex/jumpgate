@@ -268,19 +268,6 @@ func (f *fixture) liveSessionCount(t *testing.T) int {
 	return n
 }
 
-func (f *fixture) drainAudit(t *testing.T) {
-	t.Helper()
-	for {
-		n, err := audit.New(f.pool).DrainOnce(f.ctx, 256)
-		if err != nil {
-			t.Fatalf("DrainOnce: %v", err)
-		}
-		if n < 256 {
-			return
-		}
-	}
-}
-
 // insertActiveGrant seeds an active (unrevoked, unexpired) access_grant for the
 // fixture's (user, asset) via a minimal granted access_request, mirroring the
 // terminator test's seed. Returns the grant id.
@@ -334,7 +321,7 @@ func TestSetupAttributesSingleActiveGrant(t *testing.T) {
 	grantID := f.insertActiveGrant(t)
 	tok := f.mintToken(t, f.clientFp)
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -352,7 +339,7 @@ func TestSetupNoGrantForStandingSession(t *testing.T) {
 	f := setup(t)
 	tok := f.mintToken(t, f.clientFp)
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -372,7 +359,7 @@ func TestSetupAmbiguousGrantsNotAttributed(t *testing.T) {
 	f.insertActiveGrant(t) // two active → ambiguous
 	tok := f.mintToken(t, f.clientFp)
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -381,106 +368,6 @@ func TestSetupAmbiguousGrantsNotAttributed(t *testing.T) {
 	}
 	if got := f.liveSessionGrantID(t); got != "" {
 		t.Fatalf("live_sessions.grant_id = %q, want empty (ambiguous)", got)
-	}
-}
-
-func TestSetupSessionHappyPath(t *testing.T) {
-	f := setup(t)
-	tok := f.mintToken(t, f.clientFp)
-
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-	if res.TargetAddress != "10.0.0.5:22" {
-		t.Fatalf("TargetAddress = %q, want 10.0.0.5:22", res.TargetAddress)
-	}
-	if len(res.SSHCertificate) == 0 {
-		t.Fatal("expected a non-empty ssh certificate")
-	}
-	if res.SessionID == "" {
-		t.Fatal("expected a non-empty session id")
-	}
-
-	// A live_sessions row exists with principals == [deploy].
-	rows, err := f.q.ListLiveSessionsByUserAsset(f.ctx, sqlc.ListLiveSessionsByUserAssetParams{UserID: f.user, AssetID: f.asset})
-	if err != nil {
-		t.Fatalf("ListLiveSessionsByUserAsset: %v", err)
-	}
-	if len(rows) != 1 {
-		t.Fatalf("live_sessions rows = %d, want 1", len(rows))
-	}
-	if len(rows[0].Principals) != 1 || rows[0].Principals[0] != "deploy" {
-		t.Fatalf("Principals = %v, want [deploy]", rows[0].Principals)
-	}
-	if rows[0].GrantID.Valid {
-		t.Fatalf("GrantID = %v, want NULL", rows[0].GrantID)
-	}
-
-	// The cert carries host-scoped ValidPrincipals == [deploy@pg.prod, deploy@<asset-id>].
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(res.SSHCertificate)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
-	}
-	cert, ok := pub.(*ssh.Certificate)
-	if !ok {
-		t.Fatalf("parsed key is %T, want *ssh.Certificate", pub)
-	}
-	// Principals are [login@<path>, login@<uuid>]: two entries, both prefixed "deploy@".
-	if len(cert.ValidPrincipals) != 2 {
-		t.Fatalf("cert ValidPrincipals = %v, want 2 host-scoped principals", cert.ValidPrincipals)
-	}
-	if cert.ValidPrincipals[0] != "deploy@pg.prod" {
-		t.Fatalf("cert ValidPrincipals[0] = %q, want deploy@pg.prod", cert.ValidPrincipals[0])
-	}
-	if !strings.HasPrefix(cert.ValidPrincipals[1], "deploy@") {
-		t.Fatalf("cert ValidPrincipals[1] = %q, want deploy@<asset-id>", cert.ValidPrincipals[1])
-	}
-
-	// The cert is over Kw (the worker key), NOT Kc (the client key). This is the
-	// core M4c invariant: the client proves Kc via cnf, but the target hop is
-	// certified against the worker's own per-session key.
-	kwPub, _, _, _, err := ssh.ParseAuthorizedKey(f.workerPub)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(Kw): %v", err)
-	}
-	kcPub, _, _, _, err := ssh.ParseAuthorizedKey(f.clientPub)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(Kc): %v", err)
-	}
-	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
-		t.Fatal("cert.Key does not marshal to Kw (the worker key)")
-	}
-	if bytes.Equal(cert.Key.Marshal(), kcPub.Marshal()) {
-		t.Fatal("cert.Key marshals to Kc (the client key) — must be over Kw, not Kc")
-	}
-
-	// SessionID equals the token's session id.
-	claims, err := f.verifier.Verify(tok)
-	if err != nil {
-		t.Fatalf("verify token: %v", err)
-	}
-	if res.SessionID != claims.SessionID.String() {
-		t.Fatalf("SessionID = %q, want %q", res.SessionID, claims.SessionID.String())
-	}
-
-	// The session.started event is present after a drain and the chain verifies.
-	f.drainAudit(t)
-	entries, err := f.q.ListAuditEntries(f.ctx)
-	if err != nil {
-		t.Fatalf("ListAuditEntries: %v", err)
-	}
-	found := false
-	for _, e := range entries {
-		if e.EventType == dataplane.EventSessionStarted {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no %s audit entry found", dataplane.EventSessionStarted)
-	}
-	if err := audit.New(f.pool).Verify(f.ctx); err != nil {
-		t.Fatalf("audit Verify: %v", err)
 	}
 }
 
@@ -498,7 +385,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	}
 	sessionID := claims.SessionID.String()
 
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
+	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub)
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
@@ -525,7 +412,7 @@ func TestSetupComputesRecordingRequirement(t *testing.T) {
 	}
 
 	tok2 := f.mintToken(t, f.clientFp)
-	res2, err := f.svc.Setup(f.ctx, tok2, "worker-1", "deploy", f.clientPub, f.workerPub)
+	res2, err := f.svc.Prepare(f.ctx, tok2, "worker-1", "deploy", f.clientPub)
 	if err != nil {
 		t.Fatalf("Setup(exempt): %v", err)
 	}
@@ -542,15 +429,12 @@ func TestSetupWebMode(t *testing.T) {
 	tok := f.mintWebToken(t, "deploy")
 
 	// Web request: EMPTY client key, valid Kw.
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "", nil, f.workerPub)
+	res, err := f.svc.Prepare(f.ctx, tok, "worker-1", "", nil)
 	if err != nil {
 		t.Fatalf("Setup(web): %v", err)
 	}
 	if res.TargetAddress != "10.0.0.5:22" {
 		t.Fatalf("TargetAddress = %q, want 10.0.0.5:22", res.TargetAddress)
-	}
-	if len(res.SSHCertificate) == 0 {
-		t.Fatal("expected a non-empty ssh certificate")
 	}
 
 	// The live session records the ticket-bound login as its principal.
@@ -564,23 +448,6 @@ func TestSetupWebMode(t *testing.T) {
 	if len(rows[0].Principals) != 1 || rows[0].Principals[0] != "deploy" {
 		t.Fatalf("Principals = %v, want [deploy]", rows[0].Principals)
 	}
-
-	// The cert is over Kw, not Kc — same invariant as the CLI path.
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(res.SSHCertificate)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
-	}
-	cert, ok := pub.(*ssh.Certificate)
-	if !ok {
-		t.Fatalf("parsed key is %T, want *ssh.Certificate", pub)
-	}
-	kwPub, _, _, _, err := ssh.ParseAuthorizedKey(f.workerPub)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(Kw): %v", err)
-	}
-	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
-		t.Fatal("cert.Key != Kw — the web cert must be over the worker key")
-	}
 }
 
 // TestSetupWebModeUnentitled asserts a web token whose bound login is not entitled
@@ -590,7 +457,7 @@ func TestSetupWebModeUnentitled(t *testing.T) {
 	// The user holds ssh:login:deploy; bind the token to a login it lacks.
 	tok := f.mintWebToken(t, "root")
 
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "", nil, f.workerPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
+	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "", nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
 		t.Fatalf("Setup(web, unentitled) err = %v, want ErrNotAuthorized", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
@@ -612,7 +479,7 @@ func TestSetupSessionCnfMismatch(t *testing.T) {
 	tok := f.mintToken(t, ssh.FingerprintSHA256(otherPub))
 
 	// Present OUR client key, which does not match the token's cnf. Kw is arbitrary.
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrKeyMismatch) {
+	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub); !errors.Is(err, dataplane.ErrKeyMismatch) {
 		t.Fatalf("Setup err = %v, want ErrKeyMismatch", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
@@ -629,64 +496,11 @@ func TestSetupSessionRevokedBeforeConnect(t *testing.T) {
 		t.Fatalf("delete role binding: %v", err)
 	}
 
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
+	if _, err := f.svc.Prepare(f.ctx, tok, "worker-1", "deploy", f.clientPub); !errors.Is(err, dataplane.ErrNotAuthorized) {
 		t.Fatalf("Setup err = %v, want ErrNotAuthorized", err)
 	}
 	if n := f.liveSessionCount(t); n != 0 {
 		t.Fatalf("live_sessions rows = %d, want 0", n)
-	}
-}
-
-func TestSetupSessionReplay(t *testing.T) {
-	f := setup(t)
-	tok := f.mintToken(t, f.clientFp)
-
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); err != nil {
-		t.Fatalf("first Setup: %v", err)
-	}
-	// Replaying the same token+key → PK conflict → ErrReplay.
-	if _, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub); !errors.Is(err, dataplane.ErrReplay) {
-		t.Fatalf("second Setup err = %v, want ErrReplay", err)
-	}
-	if n := f.liveSessionCount(t); n != 1 {
-		t.Fatalf("live_sessions rows = %d, want exactly 1", n)
-	}
-}
-
-// TestSetupCertifiesWorkerKeyNotClient asserts the returned cert is over Kw (the
-// worker's per-session key) and NOT Kc (the cnf-bound client key). The cnf check
-// binds Kc; the certified key is Kw — the two must never be conflated.
-func TestSetupCertifiesWorkerKeyNotClient(t *testing.T) {
-	f := setup(t)
-	tok := f.mintToken(t, f.clientFp)
-
-	res, err := f.svc.Setup(f.ctx, tok, "worker-1", "deploy", f.clientPub, f.workerPub)
-	if err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
-
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(res.SSHCertificate)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(cert): %v", err)
-	}
-	cert, ok := pub.(*ssh.Certificate)
-	if !ok {
-		t.Fatalf("parsed key is %T, want *ssh.Certificate", pub)
-	}
-
-	kwPub, _, _, _, err := ssh.ParseAuthorizedKey(f.workerPub)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(Kw): %v", err)
-	}
-	kcPub, _, _, _, err := ssh.ParseAuthorizedKey(f.clientPub)
-	if err != nil {
-		t.Fatalf("ParseAuthorizedKey(Kc): %v", err)
-	}
-	if bytes.Equal(cert.Key.Marshal(), kcPub.Marshal()) {
-		t.Fatal("cert.Key == Kc — the cert must NOT be over the client key")
-	}
-	if !bytes.Equal(cert.Key.Marshal(), kwPub.Marshal()) {
-		t.Fatal("cert.Key != Kw — the cert must be over the worker key")
 	}
 }
 

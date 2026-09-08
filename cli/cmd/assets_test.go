@@ -193,7 +193,6 @@ func TestAssetsSSHCreate(t *testing.T) {
 		"--target", "10.0.0.5:22",
 		"--login", "root",
 		"--login", "deploy",
-		"--host-key", "ssh-ed25519 AAA",
 	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
@@ -223,9 +222,6 @@ func TestAssetsSSHCreate(t *testing.T) {
 	}
 	if ssh.GetTargetAddress() != "10.0.0.5:22" {
 		t.Fatalf("target=%q", ssh.GetTargetAddress())
-	}
-	if ssh.GetHostPublicKey() != "ssh-ed25519 AAA" {
-		t.Fatalf("host key=%q", ssh.GetHostPublicKey())
 	}
 
 	if !strings.Contains(out.String(), "a-123") {
@@ -597,7 +593,6 @@ func TestAssetsSSHLoginSetPassword(t *testing.T) {
 	// The asset already has a ca login; adding a password login must preserve it.
 	s := &stubAssets{getAssetSSH: &catalogv1.SSHConfig{
 		TargetAddress: "h:22",
-		HostPublicKey: "ssh-ed25519 AAA",
 		Logins:        []*catalogv1.SSHLogin{{Login: "root", Kind: "ca"}},
 	}}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -626,8 +621,8 @@ func TestAssetsSSHLoginSetPassword(t *testing.T) {
 		t.Fatal("UpdateAssetConfig was not called")
 	}
 	cfg := upd.GetSsh()
-	if cfg.GetTargetAddress() != "h:22" || cfg.GetHostPublicKey() != "ssh-ed25519 AAA" {
-		t.Fatalf("host/target not preserved: %v", cfg)
+	if cfg.GetTargetAddress() != "h:22" {
+		t.Fatalf("target not preserved: %v", cfg)
 	}
 	if len(cfg.GetLogins()) != 2 {
 		t.Fatalf("logins=%v", cfg.GetLogins())

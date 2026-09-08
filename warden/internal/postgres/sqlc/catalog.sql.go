@@ -306,29 +306,24 @@ func (q *Queries) GetFolder(ctx context.Context, id uuid.UUID) (Folder, error) {
 }
 
 const getPostgresAssetConfig = `-- name: GetPostgresAssetConfig :one
-SELECT asset_id, target_address, target_server_ca, default_database FROM postgres_asset_config WHERE asset_id = $1
+SELECT asset_id, target_address, default_database FROM postgres_asset_config WHERE asset_id = $1
 `
 
 func (q *Queries) GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID) (PostgresAssetConfig, error) {
 	row := q.db.QueryRow(ctx, getPostgresAssetConfig, assetID)
 	var i PostgresAssetConfig
-	err := row.Scan(
-		&i.AssetID,
-		&i.TargetAddress,
-		&i.TargetServerCa,
-		&i.DefaultDatabase,
-	)
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.DefaultDatabase)
 	return i, err
 }
 
 const getRDPAssetConfig = `-- name: GetRDPAssetConfig :one
-SELECT asset_id, target_address, target_server_ca FROM rdp_asset_config WHERE asset_id = $1
+SELECT asset_id, target_address FROM rdp_asset_config WHERE asset_id = $1
 `
 
 func (q *Queries) GetRDPAssetConfig(ctx context.Context, assetID uuid.UUID) (RdpAssetConfig, error) {
 	row := q.db.QueryRow(ctx, getRDPAssetConfig, assetID)
 	var i RdpAssetConfig
-	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.TargetServerCa)
+	err := row.Scan(&i.AssetID, &i.TargetAddress)
 	return i, err
 }
 
@@ -405,13 +400,13 @@ func (q *Queries) GetRoleByNameGlobal(ctx context.Context, name string) (Role, e
 }
 
 const getSSHAssetConfig = `-- name: GetSSHAssetConfig :one
-SELECT asset_id, target_address, host_public_key FROM ssh_asset_config WHERE asset_id = $1
+SELECT asset_id, target_address FROM ssh_asset_config WHERE asset_id = $1
 `
 
 func (q *Queries) GetSSHAssetConfig(ctx context.Context, assetID uuid.UUID) (SshAssetConfig, error) {
 	row := q.db.QueryRow(ctx, getSSHAssetConfig, assetID)
 	var i SshAssetConfig
-	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.HostPublicKey)
+	err := row.Scan(&i.AssetID, &i.TargetAddress)
 	return i, err
 }
 
@@ -1246,36 +1241,24 @@ func (q *Queries) SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsPara
 }
 
 const upsertPostgresAssetConfig = `-- name: UpsertPostgresAssetConfig :one
-INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database)
-VALUES ($1, $2, $3, $4)
+INSERT INTO postgres_asset_config (asset_id, target_address, default_database)
+VALUES ($1, $2, $3)
 ON CONFLICT (asset_id) DO UPDATE SET
   target_address = EXCLUDED.target_address,
-  target_server_ca = EXCLUDED.target_server_ca,
   default_database = EXCLUDED.default_database
-RETURNING asset_id, target_address, target_server_ca, default_database
+RETURNING asset_id, target_address, default_database
 `
 
 type UpsertPostgresAssetConfigParams struct {
 	AssetID         uuid.UUID `json:"asset_id"`
 	TargetAddress   string    `json:"target_address"`
-	TargetServerCa  string    `json:"target_server_ca"`
 	DefaultDatabase string    `json:"default_database"`
 }
 
 func (q *Queries) UpsertPostgresAssetConfig(ctx context.Context, arg UpsertPostgresAssetConfigParams) (PostgresAssetConfig, error) {
-	row := q.db.QueryRow(ctx, upsertPostgresAssetConfig,
-		arg.AssetID,
-		arg.TargetAddress,
-		arg.TargetServerCa,
-		arg.DefaultDatabase,
-	)
+	row := q.db.QueryRow(ctx, upsertPostgresAssetConfig, arg.AssetID, arg.TargetAddress, arg.DefaultDatabase)
 	var i PostgresAssetConfig
-	err := row.Scan(
-		&i.AssetID,
-		&i.TargetAddress,
-		&i.TargetServerCa,
-		&i.DefaultDatabase,
-	)
+	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.DefaultDatabase)
 	return i, err
 }
 
@@ -1313,24 +1296,22 @@ func (q *Queries) UpsertPostgresAssetLogin(ctx context.Context, arg UpsertPostgr
 }
 
 const upsertRDPAssetConfig = `-- name: UpsertRDPAssetConfig :one
-INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca)
-VALUES ($1, $2, $3)
+INSERT INTO rdp_asset_config (asset_id, target_address)
+VALUES ($1, $2)
 ON CONFLICT (asset_id) DO UPDATE SET
-  target_address = EXCLUDED.target_address,
-  target_server_ca = EXCLUDED.target_server_ca
-RETURNING asset_id, target_address, target_server_ca
+  target_address = EXCLUDED.target_address
+RETURNING asset_id, target_address
 `
 
 type UpsertRDPAssetConfigParams struct {
-	AssetID        uuid.UUID `json:"asset_id"`
-	TargetAddress  string    `json:"target_address"`
-	TargetServerCa string    `json:"target_server_ca"`
+	AssetID       uuid.UUID `json:"asset_id"`
+	TargetAddress string    `json:"target_address"`
 }
 
 func (q *Queries) UpsertRDPAssetConfig(ctx context.Context, arg UpsertRDPAssetConfigParams) (RdpAssetConfig, error) {
-	row := q.db.QueryRow(ctx, upsertRDPAssetConfig, arg.AssetID, arg.TargetAddress, arg.TargetServerCa)
+	row := q.db.QueryRow(ctx, upsertRDPAssetConfig, arg.AssetID, arg.TargetAddress)
 	var i RdpAssetConfig
-	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.TargetServerCa)
+	err := row.Scan(&i.AssetID, &i.TargetAddress)
 	return i, err
 }
 
@@ -1368,24 +1349,22 @@ func (q *Queries) UpsertRDPAssetLogin(ctx context.Context, arg UpsertRDPAssetLog
 }
 
 const upsertSSHAssetConfig = `-- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, host_public_key, target_address)
-VALUES ($1, $2, $3)
+INSERT INTO ssh_asset_config (asset_id, target_address)
+VALUES ($1, $2)
 ON CONFLICT (asset_id) DO UPDATE SET
-  host_public_key = EXCLUDED.host_public_key,
   target_address = EXCLUDED.target_address
-RETURNING asset_id, target_address, host_public_key
+RETURNING asset_id, target_address
 `
 
 type UpsertSSHAssetConfigParams struct {
 	AssetID       uuid.UUID `json:"asset_id"`
-	HostPublicKey string    `json:"host_public_key"`
 	TargetAddress string    `json:"target_address"`
 }
 
 func (q *Queries) UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error) {
-	row := q.db.QueryRow(ctx, upsertSSHAssetConfig, arg.AssetID, arg.HostPublicKey, arg.TargetAddress)
+	row := q.db.QueryRow(ctx, upsertSSHAssetConfig, arg.AssetID, arg.TargetAddress)
 	var i SshAssetConfig
-	err := row.Scan(&i.AssetID, &i.TargetAddress, &i.HostPublicKey)
+	err := row.Scan(&i.AssetID, &i.TargetAddress)
 	return i, err
 }
 

@@ -123,10 +123,9 @@ DELETE FROM role_bindings WHERE role_id = $1;
 SELECT * FROM role_bindings WHERE id = $1;
 
 -- name: UpsertSSHAssetConfig :one
-INSERT INTO ssh_asset_config (asset_id, host_public_key, target_address)
-VALUES ($1, $2, $3)
+INSERT INTO ssh_asset_config (asset_id, target_address)
+VALUES ($1, $2)
 ON CONFLICT (asset_id) DO UPDATE SET
-  host_public_key = EXCLUDED.host_public_key,
   target_address = EXCLUDED.target_address
 RETURNING *;
 
@@ -151,11 +150,10 @@ RETURNING *;
 DELETE FROM ssh_asset_login WHERE asset_id = $1;
 
 -- name: UpsertPostgresAssetConfig :one
-INSERT INTO postgres_asset_config (asset_id, target_address, target_server_ca, default_database)
-VALUES ($1, $2, $3, $4)
+INSERT INTO postgres_asset_config (asset_id, target_address, default_database)
+VALUES ($1, $2, $3)
 ON CONFLICT (asset_id) DO UPDATE SET
   target_address = EXCLUDED.target_address,
-  target_server_ca = EXCLUDED.target_server_ca,
   default_database = EXCLUDED.default_database
 RETURNING *;
 
@@ -177,11 +175,10 @@ RETURNING *;
 DELETE FROM postgres_asset_login WHERE asset_id = $1;
 
 -- name: UpsertRDPAssetConfig :one
-INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca)
-VALUES ($1, $2, $3)
+INSERT INTO rdp_asset_config (asset_id, target_address)
+VALUES ($1, $2)
 ON CONFLICT (asset_id) DO UPDATE SET
-  target_address = EXCLUDED.target_address,
-  target_server_ca = EXCLUDED.target_server_ca
+  target_address = EXCLUDED.target_address
 RETURNING *;
 
 -- name: GetRDPAssetConfig :one

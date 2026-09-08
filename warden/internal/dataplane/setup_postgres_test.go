@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
@@ -75,7 +76,7 @@ func newPGFixture(t *testing.T) *pgFixture {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 	if _, err := q.UpsertPostgresAssetConfig(ctx, sqlc.UpsertPostgresAssetConfigParams{
-		AssetID: asset.ID, TargetAddress: "pg:5432", TargetServerCa: "", DefaultDatabase: "appdb",
+		AssetID: asset.ID, TargetAddress: "pg:5432", DefaultDatabase: "appdb",
 	}); err != nil {
 		t.Fatalf("UpsertPostgresAssetConfig: %v", err)
 	}
@@ -88,7 +89,8 @@ func newPGFixture(t *testing.T) *pgFixture {
 	verifier := sessiontoken.NewVerifier(pub)
 
 	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
-	setupSvc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, nil, audit.New(pool), time.Hour)
+	identity := targetidentity.NewService(pool, audit.New(pool))
+	setupSvc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, identity, audit.New(pool), time.Hour)
 	sessSvc := session.NewService(q, authz.New(pool), minter, "gw:443", "", false, time.Hour, dataplane.NewRegistry(), nil)
 
 	return &pgFixture{
@@ -146,6 +148,37 @@ func (f *pgFixture) liveSessionProtocol(t *testing.T, sessionID string) string {
 	return proto
 }
 
+// approveTLSLeaf seeds an active tls_leaf trust anchor for the asset at its current
+// endpoint revision and returns its id + fingerprint. A tls_leaf anchor is proven at
+// session time by exact fingerprint equality, so a matching observed fingerprint at
+// IssueCredential releases the credential.
+func (f *pgFixture) approveTLSLeaf(t *testing.T) (uuid.UUID, string) {
+	t.Helper()
+	asset, err := f.q.GetAsset(f.ctx, f.asset)
+	if err != nil {
+		t.Fatalf("GetAsset: %v", err)
+	}
+	fp := "SHA256:" + uuid.NewString()
+	row, err := f.q.ApproveTrustAnchor(f.ctx, sqlc.ApproveTrustAnchorParams{
+		AssetID:               f.asset,
+		EndpointRevision:      asset.EndpointRevision,
+		Kind:                  "tls_leaf",
+		Algorithm:             "rsa",
+		Sha256Fingerprint:     fp,
+		PublicMaterial:        "-----BEGIN CERTIFICATE-----\nMIIBLEAF\n-----END CERTIFICATE-----",
+		RequiredSshPrincipals: []string{},
+		RequiredDnsNames:      []string{},
+		RequiredIpAddresses:   []string{},
+		Source:                "manual",
+		ApprovedBy:            pgtype.UUID{Bytes: f.user, Valid: true},
+		ApprovedAt:            pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ApproveTrustAnchor: %v", err)
+	}
+	return row.ID, fp
+}
+
 // TestSetupPostgresMTLS drives the happy path for an mtls login: mint a postgres
 // bearer ticket, redeem it, and assert an x509 credential + postgres live session.
 func TestSetupPostgresMTLS(t *testing.T) {
@@ -153,14 +186,36 @@ func TestSetupPostgresMTLS(t *testing.T) {
 	f.login(t, "readonly", "mtls", pgtype.UUID{})
 	f.grantCap(t, "db-ro", "db:login:readonly")
 
+	anchorID, fp := f.approveTLSLeaf(t)
 	created, err := f.sessSvc.CreatePostgresSession(f.ctx, f.user, f.asset, "readonly")
 	if err != nil {
 		t.Fatalf("CreatePostgresSession: %v", err)
 	}
 
-	res, err := f.setupSvc.Setup(f.ctx, created.Token, "worker-1", "readonly", nil, nil)
+	prep, err := f.setupSvc.Prepare(f.ctx, created.Token, "worker-1", "readonly", nil)
 	if err != nil {
-		t.Fatalf("Setup: %v", err)
+		t.Fatalf("Prepare: %v", err)
+	}
+	if prep.TargetAddress != "pg:5432" {
+		t.Fatalf("TargetAddress = %q, want pg:5432", prep.TargetAddress)
+	}
+	if prep.DefaultDatabase != "appdb" {
+		t.Fatalf("DefaultDatabase = %q, want appdb", prep.DefaultDatabase)
+	}
+	if !prep.RecordingRequired {
+		t.Error("postgres prepare: RecordingRequired = false, want true")
+	}
+	if !strings.HasPrefix(prep.RecordingObjectKey, "recordings/postgres/") ||
+		!strings.HasSuffix(prep.RecordingObjectKey, ".ndjson") {
+		t.Errorf("postgres prepare: RecordingObjectKey = %q, want recordings/postgres/....ndjson", prep.RecordingObjectKey)
+	}
+	if got := f.liveSessionProtocol(t, prep.SessionID); got != "postgres" {
+		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
+	}
+
+	res, err := f.setupSvc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), fp, nil)
+	if err != nil {
+		t.Fatalf("IssueCredential: %v", err)
 	}
 	if res.CredentialKind != "x509" {
 		t.Fatalf("CredentialKind = %q, want x509", res.CredentialKind)
@@ -168,24 +223,8 @@ func TestSetupPostgresMTLS(t *testing.T) {
 	if len(res.X509Certificate) == 0 || len(res.X509PrivateKey) == 0 {
 		t.Fatalf("x509 cert/key empty: cert=%d key=%d", len(res.X509Certificate), len(res.X509PrivateKey))
 	}
-	if res.TargetAddress != "pg:5432" {
-		t.Fatalf("TargetAddress = %q, want pg:5432", res.TargetAddress)
-	}
-	if res.DefaultDatabase != "appdb" {
-		t.Fatalf("DefaultDatabase = %q, want appdb", res.DefaultDatabase)
-	}
 	if res.Login != "readonly" {
 		t.Fatalf("Login = %q, want readonly", res.Login)
-	}
-	if !res.RecordingRequired {
-		t.Error("postgres setup: RecordingRequired = false, want true")
-	}
-	if !strings.HasPrefix(res.RecordingObjectKey, "recordings/postgres/") ||
-		!strings.HasSuffix(res.RecordingObjectKey, ".ndjson") {
-		t.Errorf("postgres setup: RecordingObjectKey = %q, want recordings/postgres/....ndjson", res.RecordingObjectKey)
-	}
-	if got := f.liveSessionProtocol(t, res.SessionID); got != "postgres" {
-		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
 	}
 }
 
@@ -197,14 +236,23 @@ func TestSetupPostgresPassword(t *testing.T) {
 	f.login(t, "app", "password", pgtype.UUID{Bytes: secID, Valid: true})
 	f.grantCap(t, "db-app", "db:login:app")
 
+	anchorID, fp := f.approveTLSLeaf(t)
 	created, err := f.sessSvc.CreatePostgresSession(f.ctx, f.user, f.asset, "app")
 	if err != nil {
 		t.Fatalf("CreatePostgresSession: %v", err)
 	}
 
-	res, err := f.setupSvc.Setup(f.ctx, created.Token, "worker-1", "app", nil, nil)
+	prep, err := f.setupSvc.Prepare(f.ctx, created.Token, "worker-1", "app", nil)
 	if err != nil {
-		t.Fatalf("Setup: %v", err)
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got := f.liveSessionProtocol(t, prep.SessionID); got != "postgres" {
+		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
+	}
+
+	res, err := f.setupSvc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), fp, nil)
+	if err != nil {
+		t.Fatalf("IssueCredential: %v", err)
 	}
 	if res.CredentialKind != "pg-password" {
 		t.Fatalf("CredentialKind = %q, want pg-password", res.CredentialKind)
@@ -214,9 +262,6 @@ func TestSetupPostgresPassword(t *testing.T) {
 	}
 	if res.Login != "app" {
 		t.Fatalf("Login = %q, want app", res.Login)
-	}
-	if got := f.liveSessionProtocol(t, res.SessionID); got != "postgres" {
-		t.Fatalf("live_sessions.protocol = %q, want postgres", got)
 	}
 }
 
@@ -241,7 +286,7 @@ func TestSetupPostgresUnentitled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
-	if _, err := f.setupSvc.Setup(f.ctx, tok, "worker-1", "readonly", nil, nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
-		t.Fatalf("Setup err = %v, want ErrNotAuthorized", err)
+	if _, err := f.setupSvc.Prepare(f.ctx, tok, "worker-1", "readonly", nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
+		t.Fatalf("Prepare err = %v, want ErrNotAuthorized", err)
 	}
 }

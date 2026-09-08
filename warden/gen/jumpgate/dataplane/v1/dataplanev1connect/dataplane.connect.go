@@ -36,9 +36,6 @@ const (
 	// DataplaneServiceWorkerStreamProcedure is the fully-qualified name of the DataplaneService's
 	// WorkerStream RPC.
 	DataplaneServiceWorkerStreamProcedure = "/jumpgate.dataplane.v1.DataplaneService/WorkerStream"
-	// DataplaneServiceSetupSessionProcedure is the fully-qualified name of the DataplaneService's
-	// SetupSession RPC.
-	DataplaneServiceSetupSessionProcedure = "/jumpgate.dataplane.v1.DataplaneService/SetupSession"
 	// DataplaneServicePrepareSessionProcedure is the fully-qualified name of the DataplaneService's
 	// PrepareSession RPC.
 	DataplaneServicePrepareSessionProcedure = "/jumpgate.dataplane.v1.DataplaneService/PrepareSession"
@@ -53,15 +50,6 @@ type DataplaneServiceClient interface {
 	// session ends (client→server); warden pushes teardown signals (server→client).
 	// The stream's lifetime is the worker's liveness.
 	WorkerStream(context.Context) *connect.BidiStreamForClient[v1.WorkerMessage, v1.ServerMessage]
-	// SetupSession redeems a session token: warden re-checks authorization, records
-	// the live session, and returns the target address + a JIT SSH certificate.
-	//
-	// DEPRECATED (migration window): SetupSession issues a credential in the same
-	// call, BEFORE the target's identity is verified. It survives only so existing
-	// ssh/postgres/rdp/k8s workers keep working until each protocol slice migrates
-	// to the PrepareSession + IssueSessionCredential two-phase flow below. Removed
-	// once every protocol enforces two-phase (see the target-identity roadmap).
-	SetupSession(context.Context, *connect.Request[v1.SetupSessionRequest]) (*connect.Response[v1.SetupSessionResponse], error)
 	// PrepareSession redeems a session token and records the live session, returning
 	// the endpoint, protocol/recording policy, current endpoint revision, and the
 	// asset's active trust anchors — but NEVER a credential. The worker connects and
@@ -93,12 +81,6 @@ func NewDataplaneServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(dataplaneServiceMethods.ByName("WorkerStream")),
 			connect.WithClientOptions(opts...),
 		),
-		setupSession: connect.NewClient[v1.SetupSessionRequest, v1.SetupSessionResponse](
-			httpClient,
-			baseURL+DataplaneServiceSetupSessionProcedure,
-			connect.WithSchema(dataplaneServiceMethods.ByName("SetupSession")),
-			connect.WithClientOptions(opts...),
-		),
 		prepareSession: connect.NewClient[v1.PrepareSessionRequest, v1.PrepareSessionResponse](
 			httpClient,
 			baseURL+DataplaneServicePrepareSessionProcedure,
@@ -117,7 +99,6 @@ func NewDataplaneServiceClient(httpClient connect.HTTPClient, baseURL string, op
 // dataplaneServiceClient implements DataplaneServiceClient.
 type dataplaneServiceClient struct {
 	workerStream           *connect.Client[v1.WorkerMessage, v1.ServerMessage]
-	setupSession           *connect.Client[v1.SetupSessionRequest, v1.SetupSessionResponse]
 	prepareSession         *connect.Client[v1.PrepareSessionRequest, v1.PrepareSessionResponse]
 	issueSessionCredential *connect.Client[v1.IssueSessionCredentialRequest, v1.IssueSessionCredentialResponse]
 }
@@ -125,11 +106,6 @@ type dataplaneServiceClient struct {
 // WorkerStream calls jumpgate.dataplane.v1.DataplaneService.WorkerStream.
 func (c *dataplaneServiceClient) WorkerStream(ctx context.Context) *connect.BidiStreamForClient[v1.WorkerMessage, v1.ServerMessage] {
 	return c.workerStream.CallBidiStream(ctx)
-}
-
-// SetupSession calls jumpgate.dataplane.v1.DataplaneService.SetupSession.
-func (c *dataplaneServiceClient) SetupSession(ctx context.Context, req *connect.Request[v1.SetupSessionRequest]) (*connect.Response[v1.SetupSessionResponse], error) {
-	return c.setupSession.CallUnary(ctx, req)
 }
 
 // PrepareSession calls jumpgate.dataplane.v1.DataplaneService.PrepareSession.
@@ -149,15 +125,6 @@ type DataplaneServiceHandler interface {
 	// session ends (client→server); warden pushes teardown signals (server→client).
 	// The stream's lifetime is the worker's liveness.
 	WorkerStream(context.Context, *connect.BidiStream[v1.WorkerMessage, v1.ServerMessage]) error
-	// SetupSession redeems a session token: warden re-checks authorization, records
-	// the live session, and returns the target address + a JIT SSH certificate.
-	//
-	// DEPRECATED (migration window): SetupSession issues a credential in the same
-	// call, BEFORE the target's identity is verified. It survives only so existing
-	// ssh/postgres/rdp/k8s workers keep working until each protocol slice migrates
-	// to the PrepareSession + IssueSessionCredential two-phase flow below. Removed
-	// once every protocol enforces two-phase (see the target-identity roadmap).
-	SetupSession(context.Context, *connect.Request[v1.SetupSessionRequest]) (*connect.Response[v1.SetupSessionResponse], error)
 	// PrepareSession redeems a session token and records the live session, returning
 	// the endpoint, protocol/recording policy, current endpoint revision, and the
 	// asset's active trust anchors — but NEVER a credential. The worker connects and
@@ -185,12 +152,6 @@ func NewDataplaneServiceHandler(svc DataplaneServiceHandler, opts ...connect.Han
 		connect.WithSchema(dataplaneServiceMethods.ByName("WorkerStream")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dataplaneServiceSetupSessionHandler := connect.NewUnaryHandler(
-		DataplaneServiceSetupSessionProcedure,
-		svc.SetupSession,
-		connect.WithSchema(dataplaneServiceMethods.ByName("SetupSession")),
-		connect.WithHandlerOptions(opts...),
-	)
 	dataplaneServicePrepareSessionHandler := connect.NewUnaryHandler(
 		DataplaneServicePrepareSessionProcedure,
 		svc.PrepareSession,
@@ -207,8 +168,6 @@ func NewDataplaneServiceHandler(svc DataplaneServiceHandler, opts ...connect.Han
 		switch r.URL.Path {
 		case DataplaneServiceWorkerStreamProcedure:
 			dataplaneServiceWorkerStreamHandler.ServeHTTP(w, r)
-		case DataplaneServiceSetupSessionProcedure:
-			dataplaneServiceSetupSessionHandler.ServeHTTP(w, r)
 		case DataplaneServicePrepareSessionProcedure:
 			dataplaneServicePrepareSessionHandler.ServeHTTP(w, r)
 		case DataplaneServiceIssueSessionCredentialProcedure:
@@ -224,10 +183,6 @@ type UnimplementedDataplaneServiceHandler struct{}
 
 func (UnimplementedDataplaneServiceHandler) WorkerStream(context.Context, *connect.BidiStream[v1.WorkerMessage, v1.ServerMessage]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.dataplane.v1.DataplaneService.WorkerStream is not implemented"))
-}
-
-func (UnimplementedDataplaneServiceHandler) SetupSession(context.Context, *connect.Request[v1.SetupSessionRequest]) (*connect.Response[v1.SetupSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.dataplane.v1.DataplaneService.SetupSession is not implemented"))
 }
 
 func (UnimplementedDataplaneServiceHandler) PrepareSession(context.Context, *connect.Request[v1.PrepareSessionRequest]) (*connect.Response[v1.PrepareSessionResponse], error) {

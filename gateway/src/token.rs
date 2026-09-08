@@ -1,6 +1,6 @@
 //! Offline verification of PASETO v4.public session tokens. The gateway verifies
 //! the Ed25519 signature + time claims and reads `proto` for routing; it does NOT
-//! check `cnf` (the worker re-checks the client key at SetupSession). Fail closed.
+//! check `cnf` (the worker re-checks the client key at PrepareSession). Fail closed.
 //!
 //! Tokens are minted by warden's Go `sessiontoken` package (PASETO v4.public,
 //! `aidanwoods.dev/go-paseto`) with registered claims `jti` (session id), `sub`

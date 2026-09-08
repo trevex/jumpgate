@@ -31,8 +31,6 @@ type PrepareResult struct {
 	TargetAddress      string
 	RecordingRequired  bool
 	RecordingObjectKey string
-	TargetHostKey      string
-	TargetServerCA     string
 	DefaultDatabase    string
 	GrantID            string
 	Login              string
@@ -79,8 +77,6 @@ func (s *SetupService) Prepare(ctx context.Context, rawToken, workerID, login st
 		TargetAddress:      prep.targetAddress,
 		RecordingRequired:  prep.recordingRequired,
 		RecordingObjectKey: prep.recordingKey,
-		TargetHostKey:      prep.targetHostKey,
-		TargetServerCA:     prep.targetServerCA,
 		DefaultDatabase:    prep.defaultDB,
 		GrantID:            grantIDString(grantID),
 		Login:              prep.login,

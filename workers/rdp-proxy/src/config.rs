@@ -2,7 +2,7 @@
 //!
 //! The same `WORKER_*` / `WARDEN_*` / `*_SPIFFE` / `RECORDING_*` vars ssh-proxy
 //! reads, minus the host-key-pin knob (RDP pins the target's server CA
-//! per-session via SetupSession, not a deploy-time toggle).
+//! per-session via the PrepareSession trust anchors, not a deploy-time toggle).
 use std::env;
 
 #[derive(Clone, Debug)]

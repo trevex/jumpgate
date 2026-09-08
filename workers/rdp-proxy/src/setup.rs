@@ -37,9 +37,6 @@ pub struct PrepareOutcome {
     pub endpoint_revision: i64,
     /// The target host:port the worker dials for the RDP hop.
     pub target_address: String,
-    /// The asset's configured target-server CA (PEM). Delivered so the worker can
-    /// build the `tls_ca` chain during the anchor match. Empty for `tls_leaf`-only.
-    pub target_server_ca: String,
     /// The access grant that authorized this session (empty for standing-only
     /// access). Carried through for session attribution.
     pub grant_id: String,
@@ -103,7 +100,6 @@ pub async fn prepare_session(
         session_id: resp.session_id,
         endpoint_revision: resp.endpoint_revision,
         target_address: resp.target_address,
-        target_server_ca: resp.target_server_ca,
         grant_id: resp.grant_id,
         recording_required: resp.recording_required,
         recording_object_key: resp.recording_object_key,

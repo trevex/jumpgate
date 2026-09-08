@@ -2142,301 +2142,9 @@ func (*ProbeResult_Tls) isProbeResult_ProtocolMetadata() {}
 
 func (*ProbeResult_Kubernetes) isProbeResult_ProtocolMetadata() {}
 
-type SetupSessionRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	WorkerId           string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	ClientSshPublicKey []byte                 `protobuf:"bytes,3,opt,name=client_ssh_public_key,json=clientSshPublicKey,proto3" json:"client_ssh_public_key,omitempty"` // Kc — cnf-bound for SSH; empty for mode=web browser terminals (warden enforces cnf only on the SSH path)
-	TargetPublicKey    []byte                 `protobuf:"bytes,4,opt,name=target_public_key,json=targetPublicKey,proto3" json:"target_public_key,omitempty"`            // Kw — certified for the target (SSH ca path); empty for postgres
-	Login              string                 `protobuf:"bytes,6,opt,name=login,proto3" json:"login,omitempty"`                                                         // requested target login; warden picks the credential
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *SetupSessionRequest) Reset() {
-	*x = SetupSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetupSessionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetupSessionRequest) ProtoMessage() {}
-
-func (x *SetupSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetupSessionRequest.ProtoReflect.Descriptor instead.
-func (*SetupSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *SetupSessionRequest) GetSessionToken() string {
-	if x != nil {
-		return x.SessionToken
-	}
-	return ""
-}
-
-func (x *SetupSessionRequest) GetWorkerId() string {
-	if x != nil {
-		return x.WorkerId
-	}
-	return ""
-}
-
-func (x *SetupSessionRequest) GetClientSshPublicKey() []byte {
-	if x != nil {
-		return x.ClientSshPublicKey
-	}
-	return nil
-}
-
-func (x *SetupSessionRequest) GetTargetPublicKey() []byte {
-	if x != nil {
-		return x.TargetPublicKey
-	}
-	return nil
-}
-
-func (x *SetupSessionRequest) GetLogin() string {
-	if x != nil {
-		return x.Login
-	}
-	return ""
-}
-
-type SetupSessionResponse struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	TargetAddress      string                 `protobuf:"bytes,1,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	SessionId          string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                              // token jti / live_sessions PK
-	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`     // worker MUST record or refuse the session
-	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"` // object key warden assigns for this session's recording
-	// The asset's configured target host-key pin (an OpenSSH authorized_keys-style
-	// public-key line). When non-empty the worker MUST reject a target whose
-	// presented host key does not match (fail closed / MITM protection). Empty =
-	// no pin: the worker accepts and logs the presented key (TOFU-off).
-	TargetHostKey   string `protobuf:"bytes,8,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`
-	GrantId         string `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`                          // authorizing JIT grant for this session; empty = standing/unattributed
-	TargetServerCa  string `protobuf:"bytes,10,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`  // postgres: PEM of the target server's CA (mTLS verify-full); empty = no pin
-	DefaultDatabase string `protobuf:"bytes,11,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"` // postgres: default DB when the client omits one
-	X509PrivateKey  []byte `protobuf:"bytes,13,opt,name=x509_private_key,json=x509PrivateKey,proto3" json:"x509_private_key,omitempty"`  // postgres mtls: client private key PEM (paired with the x509_certificate credential)
-	Login           string `protobuf:"bytes,15,opt,name=login,proto3" json:"login,omitempty"`                                            // the DB role warden authorized (the worker connects as this)
-	// The credential the worker uses to authenticate to the target as the login.
-	//
-	// Types that are valid to be assigned to Credential:
-	//
-	//	*SetupSessionResponse_SshCertificate
-	//	*SetupSessionResponse_Password
-	//	*SetupSessionResponse_PrivateKey
-	//	*SetupSessionResponse_X509Certificate
-	//	*SetupSessionResponse_PgPassword
-	Credential    isSetupSessionResponse_Credential `protobuf_oneof:"credential"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetupSessionResponse) Reset() {
-	*x = SetupSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetupSessionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetupSessionResponse) ProtoMessage() {}
-
-func (x *SetupSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetupSessionResponse.ProtoReflect.Descriptor instead.
-func (*SetupSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *SetupSessionResponse) GetTargetAddress() string {
-	if x != nil {
-		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetRecordingRequired() bool {
-	if x != nil {
-		return x.RecordingRequired
-	}
-	return false
-}
-
-func (x *SetupSessionResponse) GetRecordingObjectKey() string {
-	if x != nil {
-		return x.RecordingObjectKey
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetTargetHostKey() string {
-	if x != nil {
-		return x.TargetHostKey
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetGrantId() string {
-	if x != nil {
-		return x.GrantId
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetDefaultDatabase() string {
-	if x != nil {
-		return x.DefaultDatabase
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetX509PrivateKey() []byte {
-	if x != nil {
-		return x.X509PrivateKey
-	}
-	return nil
-}
-
-func (x *SetupSessionResponse) GetLogin() string {
-	if x != nil {
-		return x.Login
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetCredential() isSetupSessionResponse_Credential {
-	if x != nil {
-		return x.Credential
-	}
-	return nil
-}
-
-func (x *SetupSessionResponse) GetSshCertificate() []byte {
-	if x != nil {
-		if x, ok := x.Credential.(*SetupSessionResponse_SshCertificate); ok {
-			return x.SshCertificate
-		}
-	}
-	return nil
-}
-
-func (x *SetupSessionResponse) GetPassword() string {
-	if x != nil {
-		if x, ok := x.Credential.(*SetupSessionResponse_Password); ok {
-			return x.Password
-		}
-	}
-	return ""
-}
-
-func (x *SetupSessionResponse) GetPrivateKey() []byte {
-	if x != nil {
-		if x, ok := x.Credential.(*SetupSessionResponse_PrivateKey); ok {
-			return x.PrivateKey
-		}
-	}
-	return nil
-}
-
-func (x *SetupSessionResponse) GetX509Certificate() []byte {
-	if x != nil {
-		if x, ok := x.Credential.(*SetupSessionResponse_X509Certificate); ok {
-			return x.X509Certificate
-		}
-	}
-	return nil
-}
-
-func (x *SetupSessionResponse) GetPgPassword() string {
-	if x != nil {
-		if x, ok := x.Credential.(*SetupSessionResponse_PgPassword); ok {
-			return x.PgPassword
-		}
-	}
-	return ""
-}
-
-type isSetupSessionResponse_Credential interface {
-	isSetupSessionResponse_Credential()
-}
-
-type SetupSessionResponse_SshCertificate struct {
-	SshCertificate []byte `protobuf:"bytes,2,opt,name=ssh_certificate,json=sshCertificate,proto3,oneof"` // ca: OpenSSH cert over Kw
-}
-
-type SetupSessionResponse_Password struct {
-	Password string `protobuf:"bytes,6,opt,name=password,proto3,oneof"` // password auth (ssh)
-}
-
-type SetupSessionResponse_PrivateKey struct {
-	PrivateKey []byte `protobuf:"bytes,7,opt,name=private_key,json=privateKey,proto3,oneof"` // key auth: OpenSSH private key PEM
-}
-
-type SetupSessionResponse_X509Certificate struct {
-	X509Certificate []byte `protobuf:"bytes,12,opt,name=x509_certificate,json=x509Certificate,proto3,oneof"` // postgres mtls: leaf cert PEM (client key in x509_private_key)
-}
-
-type SetupSessionResponse_PgPassword struct {
-	PgPassword string `protobuf:"bytes,14,opt,name=pg_password,json=pgPassword,proto3,oneof"` // postgres password auth
-}
-
-func (*SetupSessionResponse_SshCertificate) isSetupSessionResponse_Credential() {}
-
-func (*SetupSessionResponse_Password) isSetupSessionResponse_Credential() {}
-
-func (*SetupSessionResponse_PrivateKey) isSetupSessionResponse_Credential() {}
-
-func (*SetupSessionResponse_X509Certificate) isSetupSessionResponse_Credential() {}
-
-func (*SetupSessionResponse_PgPassword) isSetupSessionResponse_Credential() {}
-
 // PrepareSessionRequest opens the credential-free first phase of a session. It
-// carries the same admission inputs as SetupSession minus the target key (Kw),
-// which is only needed at credential-issue time.
+// carries the admission inputs (token, worker id, client key, login); the target
+// key (Kw) is not needed until credential-issue time.
 type PrepareSessionRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	SessionToken       string                 `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
@@ -2449,7 +2157,7 @@ type PrepareSessionRequest struct {
 
 func (x *PrepareSessionRequest) Reset() {
 	*x = PrepareSessionRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2461,7 +2169,7 @@ func (x *PrepareSessionRequest) String() string {
 func (*PrepareSessionRequest) ProtoMessage() {}
 
 func (x *PrepareSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2474,7 +2182,7 @@ func (x *PrepareSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionRequest.ProtoReflect.Descriptor instead.
 func (*PrepareSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{25}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PrepareSessionRequest) GetSessionToken() string {
@@ -2528,7 +2236,7 @@ type SessionTrustAnchor struct {
 
 func (x *SessionTrustAnchor) Reset() {
 	*x = SessionTrustAnchor{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2540,7 +2248,7 @@ func (x *SessionTrustAnchor) String() string {
 func (*SessionTrustAnchor) ProtoMessage() {}
 
 func (x *SessionTrustAnchor) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2553,7 +2261,7 @@ func (x *SessionTrustAnchor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionTrustAnchor.ProtoReflect.Descriptor instead.
 func (*SessionTrustAnchor) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{26}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SessionTrustAnchor) GetId() string {
@@ -2621,8 +2329,6 @@ type PrepareSessionResponse struct {
 	TargetAddress      string                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
 	RecordingRequired  bool                   `protobuf:"varint,4,opt,name=recording_required,json=recordingRequired,proto3" json:"recording_required,omitempty"`
 	RecordingObjectKey string                 `protobuf:"bytes,5,opt,name=recording_object_key,json=recordingObjectKey,proto3" json:"recording_object_key,omitempty"`
-	TargetHostKey      string                 `protobuf:"bytes,6,opt,name=target_host_key,json=targetHostKey,proto3" json:"target_host_key,omitempty"`     // ssh: configured host-key pin (may be empty)
-	TargetServerCa     string                 `protobuf:"bytes,7,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`  // postgres: target server CA PEM (may be empty)
 	DefaultDatabase    string                 `protobuf:"bytes,8,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"` // postgres: default DB
 	GrantId            string                 `protobuf:"bytes,9,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`                         // authorizing JIT grant; empty = standing/unattributed
 	Login              string                 `protobuf:"bytes,10,opt,name=login,proto3" json:"login,omitempty"`                                           // the login/role warden authorized
@@ -2633,7 +2339,7 @@ type PrepareSessionResponse struct {
 
 func (x *PrepareSessionResponse) Reset() {
 	*x = PrepareSessionResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2645,7 +2351,7 @@ func (x *PrepareSessionResponse) String() string {
 func (*PrepareSessionResponse) ProtoMessage() {}
 
 func (x *PrepareSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2658,7 +2364,7 @@ func (x *PrepareSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareSessionResponse.ProtoReflect.Descriptor instead.
 func (*PrepareSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{27}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PrepareSessionResponse) GetSessionId() string {
@@ -2692,20 +2398,6 @@ func (x *PrepareSessionResponse) GetRecordingRequired() bool {
 func (x *PrepareSessionResponse) GetRecordingObjectKey() string {
 	if x != nil {
 		return x.RecordingObjectKey
-	}
-	return ""
-}
-
-func (x *PrepareSessionResponse) GetTargetHostKey() string {
-	if x != nil {
-		return x.TargetHostKey
-	}
-	return ""
-}
-
-func (x *PrepareSessionResponse) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -2754,7 +2446,7 @@ type IssueSessionCredentialRequest struct {
 
 func (x *IssueSessionCredentialRequest) Reset() {
 	*x = IssueSessionCredentialRequest{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[28]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +2458,7 @@ func (x *IssueSessionCredentialRequest) String() string {
 func (*IssueSessionCredentialRequest) ProtoMessage() {}
 
 func (x *IssueSessionCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[28]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +2471,7 @@ func (x *IssueSessionCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueSessionCredentialRequest.ProtoReflect.Descriptor instead.
 func (*IssueSessionCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{28}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *IssueSessionCredentialRequest) GetSessionId() string {
@@ -2825,7 +2517,7 @@ func (x *IssueSessionCredentialRequest) GetTargetPublicKey() []byte {
 }
 
 // IssueSessionCredentialResponse carries the credential oneof released only after
-// a successful identity match — the same shapes SetupSessionResponse returns.
+// a successful identity match.
 type IssueSessionCredentialResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SessionId      string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -2845,7 +2537,7 @@ type IssueSessionCredentialResponse struct {
 
 func (x *IssueSessionCredentialResponse) Reset() {
 	*x = IssueSessionCredentialResponse{}
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2857,7 +2549,7 @@ func (x *IssueSessionCredentialResponse) String() string {
 func (*IssueSessionCredentialResponse) ProtoMessage() {}
 
 func (x *IssueSessionCredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29]
+	mi := &file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2870,7 +2562,7 @@ func (x *IssueSessionCredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueSessionCredentialResponse.ProtoReflect.Descriptor instead.
 func (*IssueSessionCredentialResponse) Descriptor() ([]byte, []int) {
-	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{29}
+	return file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *IssueSessionCredentialResponse) GetSessionId() string {
@@ -3140,35 +2832,7 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\n" +
 	"kubernetes\x18\x0e \x01(\v2..jumpgate.dataplane.v1.ProbeKubernetesMetadataH\x00R\n" +
 	"kubernetesB\x13\n" +
-	"\x11protocol_metadata\"\xe7\x01\n" +
-	"\x13SetupSessionRequest\x12,\n" +
-	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
-	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
-	"\x15client_ssh_public_key\x18\x03 \x01(\fR\x12clientSshPublicKey\x12*\n" +
-	"\x11target_public_key\x18\x04 \x01(\fR\x0ftargetPublicKey\x12\x1d\n" +
-	"\x05login\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\"\xdf\x04\n" +
-	"\x14SetupSessionResponse\x12%\n" +
-	"\x0etarget_address\x18\x01 \x01(\tR\rtargetAddress\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\x12-\n" +
-	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
-	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
-	"\x0ftarget_host_key\x18\b \x01(\tR\rtargetHostKey\x12\x19\n" +
-	"\bgrant_id\x18\t \x01(\tR\agrantId\x12(\n" +
-	"\x10target_server_ca\x18\n" +
-	" \x01(\tR\x0etargetServerCa\x12)\n" +
-	"\x10default_database\x18\v \x01(\tR\x0fdefaultDatabase\x12(\n" +
-	"\x10x509_private_key\x18\r \x01(\fR\x0ex509PrivateKey\x12\x14\n" +
-	"\x05login\x18\x0f \x01(\tR\x05login\x12)\n" +
-	"\x0fssh_certificate\x18\x02 \x01(\fH\x00R\x0esshCertificate\x12\x1c\n" +
-	"\bpassword\x18\x06 \x01(\tH\x00R\bpassword\x12!\n" +
-	"\vprivate_key\x18\a \x01(\fH\x00R\n" +
-	"privateKey\x12+\n" +
-	"\x10x509_certificate\x18\f \x01(\fH\x00R\x0fx509Certificate\x12!\n" +
-	"\vpg_password\x18\x0e \x01(\tH\x00R\n" +
-	"pgPasswordB\f\n" +
-	"\n" +
-	"credential\"\xbd\x01\n" +
+	"\x11protocol_metadata\"\xbd\x01\n" +
 	"\x15PrepareSessionRequest\x12,\n" +
 	"\rsession_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fsessionToken\x12$\n" +
 	"\tworker_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bworkerId\x121\n" +
@@ -3182,16 +2846,14 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"\x17required_ssh_principals\x18\x05 \x03(\tR\x15requiredSshPrincipals\x12,\n" +
 	"\x12required_dns_names\x18\x06 \x03(\tR\x10requiredDnsNames\x122\n" +
 	"\x15required_ip_addresses\x18\a \x03(\tR\x13requiredIpAddresses\x122\n" +
-	"\x0fpublic_material\x18\b \x01(\tB\t\xbaH\x06r\x04(\x80\x80\x04R\x0epublicMaterial\"\xea\x03\n" +
+	"\x0fpublic_material\x18\b \x01(\tB\t\xbaH\x06r\x04(\x80\x80\x04R\x0epublicMaterial\"\x98\x03\n" +
 	"\x16PrepareSessionResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12+\n" +
 	"\x11endpoint_revision\x18\x02 \x01(\x03R\x10endpointRevision\x12%\n" +
 	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\x12-\n" +
 	"\x12recording_required\x18\x04 \x01(\bR\x11recordingRequired\x120\n" +
-	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12&\n" +
-	"\x0ftarget_host_key\x18\x06 \x01(\tR\rtargetHostKey\x12(\n" +
-	"\x10target_server_ca\x18\a \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x14recording_object_key\x18\x05 \x01(\tR\x12recordingObjectKey\x12)\n" +
 	"\x10default_database\x18\b \x01(\tR\x0fdefaultDatabase\x12\x19\n" +
 	"\bgrant_id\x18\t \x01(\tR\agrantId\x12\x14\n" +
 	"\x05login\x18\n" +
@@ -3255,10 +2917,9 @@ const file_jumpgate_dataplane_v1_dataplane_proto_rawDesc = "" +
 	"(PROBE_EVIDENCE_KIND_SSH_HOST_CERTIFICATE\x10\x02\x12 \n" +
 	"\x1cPROBE_EVIDENCE_KIND_TLS_LEAF\x10\x03\x12(\n" +
 	"$PROBE_EVIDENCE_KIND_TLS_INTERMEDIATE\x10\x04\x12*\n" +
-	"&PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT\x10\x052\xda\x03\n" +
+	"&PROBE_EVIDENCE_KIND_TLS_PRESENTED_ROOT\x10\x052\xef\x02\n" +
 	"\x10DataplaneService\x12`\n" +
-	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12i\n" +
-	"\fSetupSession\x12*.jumpgate.dataplane.v1.SetupSessionRequest\x1a+.jumpgate.dataplane.v1.SetupSessionResponse\"\x00\x12o\n" +
+	"\fWorkerStream\x12$.jumpgate.dataplane.v1.WorkerMessage\x1a$.jumpgate.dataplane.v1.ServerMessage\"\x00(\x010\x01\x12o\n" +
 	"\x0ePrepareSession\x12,.jumpgate.dataplane.v1.PrepareSessionRequest\x1a-.jumpgate.dataplane.v1.PrepareSessionResponse\"\x00\x12\x87\x01\n" +
 	"\x16IssueSessionCredential\x124.jumpgate.dataplane.v1.IssueSessionCredentialRequest\x1a5.jumpgate.dataplane.v1.IssueSessionCredentialResponse\"\x00BIZGgithub.com/trevex/jumpgate/warden/gen/jumpgate/dataplane/v1;dataplanev1b\x06proto3"
 
@@ -3275,7 +2936,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_rawDescGZIP() []byte {
 }
 
 var file_jumpgate_dataplane_v1_dataplane_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_jumpgate_dataplane_v1_dataplane_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(ProbeProtocol)(0),                     // 0: jumpgate.dataplane.v1.ProbeProtocol
 	(ProbeOutcome)(0),                      // 1: jumpgate.dataplane.v1.ProbeOutcome
@@ -3304,13 +2965,11 @@ var file_jumpgate_dataplane_v1_dataplane_proto_goTypes = []any{
 	(*ProbeTLSMetadata)(nil),               // 24: jumpgate.dataplane.v1.ProbeTLSMetadata
 	(*ProbeKubernetesMetadata)(nil),        // 25: jumpgate.dataplane.v1.ProbeKubernetesMetadata
 	(*ProbeResult)(nil),                    // 26: jumpgate.dataplane.v1.ProbeResult
-	(*SetupSessionRequest)(nil),            // 27: jumpgate.dataplane.v1.SetupSessionRequest
-	(*SetupSessionResponse)(nil),           // 28: jumpgate.dataplane.v1.SetupSessionResponse
-	(*PrepareSessionRequest)(nil),          // 29: jumpgate.dataplane.v1.PrepareSessionRequest
-	(*SessionTrustAnchor)(nil),             // 30: jumpgate.dataplane.v1.SessionTrustAnchor
-	(*PrepareSessionResponse)(nil),         // 31: jumpgate.dataplane.v1.PrepareSessionResponse
-	(*IssueSessionCredentialRequest)(nil),  // 32: jumpgate.dataplane.v1.IssueSessionCredentialRequest
-	(*IssueSessionCredentialResponse)(nil), // 33: jumpgate.dataplane.v1.IssueSessionCredentialResponse
+	(*PrepareSessionRequest)(nil),          // 27: jumpgate.dataplane.v1.PrepareSessionRequest
+	(*SessionTrustAnchor)(nil),             // 28: jumpgate.dataplane.v1.SessionTrustAnchor
+	(*PrepareSessionResponse)(nil),         // 29: jumpgate.dataplane.v1.PrepareSessionResponse
+	(*IssueSessionCredentialRequest)(nil),  // 30: jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	(*IssueSessionCredentialResponse)(nil), // 31: jumpgate.dataplane.v1.IssueSessionCredentialResponse
 }
 var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	8,  // 0: jumpgate.dataplane.v1.WorkerMessage.register:type_name -> jumpgate.dataplane.v1.Register
@@ -3339,17 +2998,15 @@ var file_jumpgate_dataplane_v1_dataplane_proto_depIdxs = []int32{
 	23, // 23: jumpgate.dataplane.v1.ProbeResult.ssh:type_name -> jumpgate.dataplane.v1.ProbeSSHMetadata
 	24, // 24: jumpgate.dataplane.v1.ProbeResult.tls:type_name -> jumpgate.dataplane.v1.ProbeTLSMetadata
 	25, // 25: jumpgate.dataplane.v1.ProbeResult.kubernetes:type_name -> jumpgate.dataplane.v1.ProbeKubernetesMetadata
-	30, // 26: jumpgate.dataplane.v1.PrepareSessionResponse.trust_anchors:type_name -> jumpgate.dataplane.v1.SessionTrustAnchor
+	28, // 26: jumpgate.dataplane.v1.PrepareSessionResponse.trust_anchors:type_name -> jumpgate.dataplane.v1.SessionTrustAnchor
 	4,  // 27: jumpgate.dataplane.v1.DataplaneService.WorkerStream:input_type -> jumpgate.dataplane.v1.WorkerMessage
-	27, // 28: jumpgate.dataplane.v1.DataplaneService.SetupSession:input_type -> jumpgate.dataplane.v1.SetupSessionRequest
-	29, // 29: jumpgate.dataplane.v1.DataplaneService.PrepareSession:input_type -> jumpgate.dataplane.v1.PrepareSessionRequest
-	32, // 30: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:input_type -> jumpgate.dataplane.v1.IssueSessionCredentialRequest
-	12, // 31: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
-	28, // 32: jumpgate.dataplane.v1.DataplaneService.SetupSession:output_type -> jumpgate.dataplane.v1.SetupSessionResponse
-	31, // 33: jumpgate.dataplane.v1.DataplaneService.PrepareSession:output_type -> jumpgate.dataplane.v1.PrepareSessionResponse
-	33, // 34: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:output_type -> jumpgate.dataplane.v1.IssueSessionCredentialResponse
-	31, // [31:35] is the sub-list for method output_type
-	27, // [27:31] is the sub-list for method input_type
+	27, // 28: jumpgate.dataplane.v1.DataplaneService.PrepareSession:input_type -> jumpgate.dataplane.v1.PrepareSessionRequest
+	30, // 29: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:input_type -> jumpgate.dataplane.v1.IssueSessionCredentialRequest
+	12, // 30: jumpgate.dataplane.v1.DataplaneService.WorkerStream:output_type -> jumpgate.dataplane.v1.ServerMessage
+	29, // 31: jumpgate.dataplane.v1.DataplaneService.PrepareSession:output_type -> jumpgate.dataplane.v1.PrepareSessionResponse
+	31, // 32: jumpgate.dataplane.v1.DataplaneService.IssueSessionCredential:output_type -> jumpgate.dataplane.v1.IssueSessionCredentialResponse
+	30, // [30:33] is the sub-list for method output_type
+	27, // [27:30] is the sub-list for method input_type
 	27, // [27:27] is the sub-list for extension type_name
 	27, // [27:27] is the sub-list for extension extendee
 	0,  // [0:27] is the sub-list for field type_name
@@ -3384,14 +3041,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 		(*ProbeResult_Tls)(nil),
 		(*ProbeResult_Kubernetes)(nil),
 	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[24].OneofWrappers = []any{
-		(*SetupSessionResponse_SshCertificate)(nil),
-		(*SetupSessionResponse_Password)(nil),
-		(*SetupSessionResponse_PrivateKey)(nil),
-		(*SetupSessionResponse_X509Certificate)(nil),
-		(*SetupSessionResponse_PgPassword)(nil),
-	}
-	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[29].OneofWrappers = []any{
+	file_jumpgate_dataplane_v1_dataplane_proto_msgTypes[27].OneofWrappers = []any{
 		(*IssueSessionCredentialResponse_SshCertificate)(nil),
 		(*IssueSessionCredentialResponse_Password)(nil),
 		(*IssueSessionCredentialResponse_PrivateKey)(nil),
@@ -3404,7 +3054,7 @@ func file_jumpgate_dataplane_v1_dataplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc), len(file_jumpgate_dataplane_v1_dataplane_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   30,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

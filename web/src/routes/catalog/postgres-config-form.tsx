@@ -40,7 +40,6 @@ export interface PgLoginDraft {
 export interface PgConfigDraft {
   targetAddress: string;
   defaultDatabase: string;
-  targetServerCa: string;
   logins: PgLoginDraft[];
 }
 
@@ -55,7 +54,6 @@ export function emptyPgDraft(): PgConfigDraft {
   return {
     targetAddress: "",
     defaultDatabase: "",
-    targetServerCa: "",
     logins: [{ role: "", kind: "mtls", secret: "" }],
   };
 }
@@ -66,7 +64,6 @@ export function pgDraftFromAsset(pg: PostgresConfig): PgConfigDraft {
   return {
     targetAddress: pg.targetAddress,
     defaultDatabase: pg.defaultDatabase,
-    targetServerCa: pg.targetServerCa,
     logins: pg.logins.map((l) => {
       const kind = (l.kind as PgLoginKind) ?? "mtls";
       return {
@@ -125,14 +122,13 @@ export function buildPostgresConfigInput(
     config: {
       logins,
       targetAddress: draft.targetAddress.trim(),
-      targetServerCa: draft.targetServerCa.trim(),
       defaultDatabase: draft.defaultDatabase.trim(),
     },
   };
 }
 
 function emptyInput(): PostgresConfigInputInit {
-  return { logins: [], targetAddress: "", targetServerCa: "", defaultDatabase: "" };
+  return { logins: [], targetAddress: "", defaultDatabase: "" };
 }
 
 interface PostgresConfigFormProps {
@@ -189,21 +185,6 @@ export function PostgresConfigForm({ value, onChange }: PostgresConfigFormProps)
           className="h-9 font-mono text-body"
         />
         <p className={FIELD_HINT}>Database used when the client omits one.</p>
-      </div>
-
-      {/* Target server CA */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="pg-ca" className={FIELD_LABEL}>Target server CA</label>
-        <textarea
-          id="pg-ca"
-          autoComplete="off"
-          value={value.targetServerCa}
-          onChange={(e) => patch({ targetServerCa: e.target.value })}
-          placeholder="-----BEGIN CERTIFICATE-----\n…"
-          rows={2}
-          className="min-h-[3.5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-micro shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-        <p className={FIELD_HINT}>Optional PEM to pin the target's TLS cert (verify-full); empty = encryption-only.</p>
       </div>
 
       {/* Logins */}

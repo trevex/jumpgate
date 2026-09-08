@@ -2,17 +2,13 @@ package catalog_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"net/http"
-	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	gossh "golang.org/x/crypto/ssh"
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
@@ -244,8 +240,9 @@ func TestCatalogUpdateAssetConfigForeignSecret(t *testing.T) {
 	}
 }
 
-// TestCatalogUpdateAssetConfig covers UpdateAssetConfig upsert + the optional
-// host_public_key contract (valid round-trips, empty clears, garbage rejected).
+// TestCatalogUpdateAssetConfig covers UpdateAssetConfig upsert of the SSH config's
+// target_address + login set (valid round-trip, empty clears). Target trust is no
+// longer a config field — it lives in target_trust_anchors via the probe flow.
 func TestCatalogUpdateAssetConfig(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
@@ -253,16 +250,6 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 	asset := newAsset(t, url, tok, "ssh")
 	c := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
-
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("keygen: %v", err)
-	}
-	signer, err := gossh.NewSignerFromKey(priv)
-	if err != nil {
-		t.Fatalf("signer: %v", err)
-	}
-	hostKey := strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey())))
 
 	caLogin := func() []*catalogv1.SSHLoginInput {
 		return []*catalogv1.SSHLoginInput{{Login: "root", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}}}
@@ -276,19 +263,19 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 
 	if err := upd(&catalogv1.SSHConfigInput{
 		Logins:        caLogin(),
-		HostPublicKey: hostKey, TargetAddress: "10.0.0.9:22",
+		TargetAddress: "10.0.0.9:22",
 	}); err != nil {
-		t.Fatalf("update with host key: %v", err)
+		t.Fatalf("update with target: %v", err)
 	}
 	got, err := c.GetAsset(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetRequest{AssetId: asset.Id}), tok))
 	if err != nil {
 		t.Fatalf("GetAsset: %v", err)
 	}
-	if s := got.Msg.Asset.GetSsh(); s == nil || s.HostPublicKey != hostKey || s.TargetAddress != "10.0.0.9:22" || len(s.GetLogins()) != 1 {
+	if s := got.Msg.Asset.GetSsh(); s == nil || s.TargetAddress != "10.0.0.9:22" || len(s.GetLogins()) != 1 {
 		t.Fatalf("roundtrip mismatch: %+v", got.Msg.Asset)
 	}
 
-	// Clearing host/target and replacing the login set.
+	// Clearing target and replacing the login set.
 	if err := upd(&catalogv1.SSHConfigInput{Logins: caLogin()}); err != nil {
 		t.Fatalf("update clear: %v", err)
 	}
@@ -296,15 +283,8 @@ func TestCatalogUpdateAssetConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAsset (post-clear): %v", err)
 	}
-	if s := got2.Msg.Asset.GetSsh(); s == nil || s.HostPublicKey != "" || s.TargetAddress != "" {
+	if s := got2.Msg.Asset.GetSsh(); s == nil || s.TargetAddress != "" {
 		t.Fatalf("not cleared: %+v", got2.Msg.Asset)
-	}
-
-	if connect.CodeOf(upd(&catalogv1.SSHConfigInput{
-		Logins:        caLogin(),
-		HostPublicKey: "not a key",
-	})) != connect.CodeInvalidArgument {
-		t.Fatal("bad host key not rejected InvalidArgument")
 	}
 }
 

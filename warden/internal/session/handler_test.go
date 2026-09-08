@@ -61,7 +61,7 @@ func seedPostgresAsset(t *testing.T, q *sqlc.Queries, defaultDatabase string, al
 		t.Fatalf("CreateAsset: %v", err)
 	}
 	if _, err := q.UpsertPostgresAssetConfig(ctx, sqlc.UpsertPostgresAssetConfigParams{
-		AssetID: asset.ID, TargetAddress: "pg:5432", TargetServerCa: "", DefaultDatabase: defaultDatabase,
+		AssetID: asset.ID, TargetAddress: "pg:5432", DefaultDatabase: defaultDatabase,
 	}); err != nil {
 		t.Fatalf("UpsertPostgresAssetConfig: %v", err)
 	}

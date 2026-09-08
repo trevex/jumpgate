@@ -15,7 +15,6 @@ import (
 // before calling the service.
 type PostgresConfigInput struct {
 	TargetAddress   string
-	TargetServerCA  string
 	DefaultDatabase string
 	Logins          []PostgresLoginInput
 }
@@ -59,11 +58,10 @@ func (s *Service) resolvePostgresConfigInput(ctx context.Context, q *sqlc.Querie
 // writePostgresConfig upserts the asset's connection config and replaces its login
 // set with rows. A CHECK / composite-FK violation surfaces via the caller's
 // apierr.MapWrite as InvalidArgument.
-func writePostgresConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, target, serverCA, defaultDB string, rows []pgLoginRow) error {
+func writePostgresConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, target, defaultDB string, rows []pgLoginRow) error {
 	if _, err := q.UpsertPostgresAssetConfig(ctx, sqlc.UpsertPostgresAssetConfigParams{
 		AssetID:         assetID,
 		TargetAddress:   target,
-		TargetServerCa:  serverCA,
 		DefaultDatabase: defaultDB,
 	}); err != nil {
 		return err

@@ -161,7 +161,7 @@ func bindRole(t *testing.T, q *sqlc.Queries, user, asset uuid.UUID, name string,
 func setSSHConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 	t.Helper()
 	if _, err := q.UpsertSSHAssetConfig(context.Background(), sqlc.UpsertSSHAssetConfigParams{
-		AssetID: asset, HostPublicKey: "", TargetAddress: "target:22",
+		AssetID: asset, TargetAddress: "target:22",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func setSSHConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 func setPGConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 	t.Helper()
 	if _, err := q.UpsertPostgresAssetConfig(context.Background(), sqlc.UpsertPostgresAssetConfigParams{
-		AssetID: asset, TargetAddress: "target:5432", TargetServerCa: "", DefaultDatabase: "appdb",
+		AssetID: asset, TargetAddress: "target:5432", DefaultDatabase: "appdb",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func setPGLogin(t *testing.T, q *sqlc.Queries, asset uuid.UUID, role, kind strin
 func setRDPConfig(t *testing.T, q *sqlc.Queries, asset uuid.UUID) {
 	t.Helper()
 	if _, err := q.UpsertRDPAssetConfig(context.Background(), sqlc.UpsertRDPAssetConfigParams{
-		AssetID: asset, TargetAddress: "target:3389", TargetServerCa: "",
+		AssetID: asset, TargetAddress: "target:3389",
 	}); err != nil {
 		t.Fatal(err)
 	}

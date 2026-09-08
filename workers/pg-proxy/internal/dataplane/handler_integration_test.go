@@ -62,10 +62,6 @@ func (f *fakeDataplaneClient) IssueSessionCredential(_ context.Context, req *con
 	}), nil
 }
 
-func (f *fakeDataplaneClient) SetupSession(_ context.Context, _ *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
-	panic("SetupSession is not used by the enforced two-phase handler")
-}
-
 func (f *fakeDataplaneClient) WorkerStream(context.Context) *connect.BidiStreamForClient[dataplanev1.WorkerMessage, dataplanev1.ServerMessage] {
 	panic("unused")
 }

@@ -14,9 +14,8 @@ import (
 // oneof arm and its secret source from the SecretAuth oneof) before calling the
 // service.
 type RDPConfigInput struct {
-	TargetAddress  string
-	TargetServerCA string
-	Logins         []RDPLoginInput
+	TargetAddress string
+	Logins        []RDPLoginInput
 }
 
 // RDPLoginInput is one persisted login write: its account name, derived kind
@@ -58,11 +57,10 @@ func (s *Service) resolveRDPConfigInput(ctx context.Context, q *sqlc.Queries, as
 // writeRDPConfig upserts the asset's connection config and replaces its login set
 // with rows. A CHECK / composite-FK violation surfaces via the caller's
 // apierr.MapWrite as InvalidArgument.
-func writeRDPConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, target, serverCA string, rows []rdpLoginRow) error {
+func writeRDPConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, target string, rows []rdpLoginRow) error {
 	if _, err := q.UpsertRDPAssetConfig(ctx, sqlc.UpsertRDPAssetConfigParams{
-		AssetID:        assetID,
-		TargetAddress:  target,
-		TargetServerCa: serverCA,
+		AssetID:       assetID,
+		TargetAddress: target,
 	}); err != nil {
 		return err
 	}

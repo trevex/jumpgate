@@ -5,20 +5,6 @@
 import { DataplaneService } from "./dataplane_pb";
 
 /**
- * SetupSession redeems a session token: warden re-checks authorization, records
- * the live session, and returns the target address + a JIT SSH certificate.
- *
- * DEPRECATED (migration window): SetupSession issues a credential in the same
- * call, BEFORE the target's identity is verified. It survives only so existing
- * ssh/postgres/rdp/k8s workers keep working until each protocol slice migrates
- * to the PrepareSession + IssueSessionCredential two-phase flow below. Removed
- * once every protocol enforces two-phase (see the target-identity roadmap).
- *
- * @generated from rpc jumpgate.dataplane.v1.DataplaneService.SetupSession
- */
-export const setupSession = DataplaneService.method.setupSession;
-
-/**
  * PrepareSession redeems a session token and records the live session, returning
  * the endpoint, protocol/recording policy, current endpoint revision, and the
  * asset's active trust anchors — but NEVER a credential. The worker connects and

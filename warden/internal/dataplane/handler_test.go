@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
@@ -57,7 +58,8 @@ func newDataplaneServer(t *testing.T) (pool *pgxpool.Pool, url string, reg *data
 	auditLog := audit.New(p)
 	broker := vault.NewBroker(p, sealer, authorizer, auditLog)
 	verifier := sessiontoken.NewVerifier(pub)
-	setupSvc := dataplane.NewSetupService(p, verifier, authorizer, broker, nil, auditLog, time.Hour)
+	identity := targetidentity.NewService(p, auditLog)
+	setupSvc := dataplane.NewSetupService(p, verifier, authorizer, broker, identity, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
@@ -178,28 +180,27 @@ func TestWorkerStreamTeardownPush(t *testing.T) {
 	waitConnected(t, reg, "w1", false)
 }
 
-func TestSetupSessionRPCUnauthenticated(t *testing.T) {
+func TestPrepareSessionRPCUnauthenticated(t *testing.T) {
 	_, url, _ := newDataplaneServer(t)
 	ctx := context.Background()
 
 	client := dataplanev1connect.NewDataplaneServiceClient(http.DefaultClient, url)
-	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
+	_, err := client.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
 		SessionToken:       "not-a-real-token",
 		WorkerId:           "w1",
 		Login:              "deploy",
 		ClientSshPublicKey: []byte("bogus"),
-		TargetPublicKey:    []byte("bogus"),
 	}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Fatalf("bogus-token SetupSession = %v, want Unauthenticated", connect.CodeOf(err))
+		t.Fatalf("bogus-token PrepareSession = %v, want Unauthenticated", connect.CodeOf(err))
 	}
 }
 
-// TestSetupSessionRPCSurfacesRecording drives a full happy-path SetupSession over
+// TestPrepareSessionRPCSurfacesRecording drives a happy-path PrepareSession over
 // the RPC surface and asserts the response carries the recording requirement the
 // SetupService computed: recording is mandatory by default (no exemption seeded),
 // with a well-formed, session-scoped object key.
-func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
+func TestPrepareSessionRPCSurfacesRecording(t *testing.T) {
 	ctx := context.Background()
 	dsn := testsupport.StartPostgres(t)
 	if err := migrate.Up(dsn); err != nil {
@@ -242,7 +243,8 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	authorizer := authz.New(pool)
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
-	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, nil, auditLog, time.Hour)
+	identity := targetidentity.NewService(pool, auditLog)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, identity, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 	mux := http.NewServeMux()
@@ -300,16 +302,6 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	clientPub := ssh.MarshalAuthorizedKey(cpub)
 	clientFp := ssh.FingerprintSHA256(cpub)
 
-	_, wpriv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("gen worker key: %v", err)
-	}
-	wpub, err := ssh.NewPublicKey(wpriv.Public())
-	if err != nil {
-		t.Fatalf("ssh worker pub: %v", err)
-	}
-	workerPub := ssh.MarshalAuthorizedKey(wpub)
-
 	sessionID := uuid.New()
 	tok, err := minter.Mint(sessiontoken.Claims{
 		SessionID:            sessionID,
@@ -323,11 +315,11 @@ func TestSetupSessionRPCSurfacesRecording(t *testing.T) {
 	}
 
 	client := dataplanev1connect.NewDataplaneServiceClient(h2cClient(), srv.URL)
-	resp, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: tok, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: clientPub, TargetPublicKey: workerPub,
+	resp, err := client.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
+		SessionToken: tok, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: clientPub,
 	}))
 	if err != nil {
-		t.Fatalf("SetupSession: %v", err)
+		t.Fatalf("PrepareSession: %v", err)
 	}
 	if resp.Msg.GetSessionId() != sessionID.String() {
 		t.Fatalf("SessionId = %q, want %q", resp.Msg.GetSessionId(), sessionID.String())

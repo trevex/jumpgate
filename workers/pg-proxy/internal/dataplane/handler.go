@@ -19,7 +19,7 @@ import (
 	"github.com/trevex/jumpgate/workers/pg-proxy/internal/record"
 )
 
-// sessionSetupTimeout bounds SetupSession + DialTarget so a hung warden RPC or a
+// sessionSetupTimeout bounds PrepareSession + DialTarget so a hung warden RPC or a
 // stalled target handshake cannot wedge the handler goroutine indefinitely.
 const sessionSetupTimeout = 10 * time.Second
 
@@ -28,7 +28,8 @@ const sessionSetupTimeout = 10 * time.Second
 var errNoAnchors = errors.New("no current trust anchors for asset")
 
 // handleConn runs one gateway connection end-to-end: CONNECT → pgwire startup →
-// SetupSession redeem → validate role → complete auth → dial target → splice.
+// PrepareSession redeem → validate role → dial target → match identity →
+// IssueSessionCredential → complete auth → splice.
 // raw is the accepted (already TLS-terminated) connection.
 func handleConn(ctx context.Context, raw net.Conn, workerID string, client dataplanev1connect.DataplaneServiceClient, reg *control.Registry, ended chan<- control.SessionEnd, uploader record.Uploader) {
 	defer func() { _ = raw.Close() }()

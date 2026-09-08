@@ -251,9 +251,6 @@ func (*Asset_Rdp) isAsset_Config() {}
 type SSHConfig struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Logins []*SSHLogin            `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
-	// Optional OpenSSH authorized_keys line; when set the ssh-proxy worker pins the
-	// target host key, empty = accept-and-log.
-	HostPublicKey string `protobuf:"bytes,2,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
 	// Optional host:port the ssh-proxy worker dials; empty = worker default resolution.
 	TargetAddress string `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -295,13 +292,6 @@ func (x *SSHConfig) GetLogins() []*SSHLogin {
 		return x.Logins
 	}
 	return nil
-}
-
-func (x *SSHConfig) GetHostPublicKey() string {
-	if x != nil {
-		return x.HostPublicKey
-	}
-	return ""
 }
 
 func (x *SSHConfig) GetTargetAddress() string {
@@ -383,9 +373,6 @@ type PostgresConfig struct {
 	Logins []*PostgresLogin       `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
 	// host:port the pg-proxy worker dials.
 	TargetAddress string `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	// Optional PEM of the target server's CA/cert; when set the worker verifies the
-	// target's TLS cert against it (verify-full), empty = require-TLS without pin.
-	TargetServerCa string `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
 	// Optional default database the session connects to when the client omits one.
 	DefaultDatabase string `protobuf:"bytes,4,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -432,13 +419,6 @@ func (x *PostgresConfig) GetLogins() []*PostgresLogin {
 func (x *PostgresConfig) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *PostgresConfig) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -521,10 +501,8 @@ type RDPConfig struct {
 	Logins []*RDPLogin            `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
 	// host:port the rdp-proxy worker dials (RDP default 3389).
 	TargetAddress string `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	// Optional PEM of the target's TLS CA/cert; set = verify, empty = require-TLS without pin.
-	TargetServerCa string `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RDPConfig) Reset() {
@@ -567,13 +545,6 @@ func (x *RDPConfig) GetLogins() []*RDPLogin {
 func (x *RDPConfig) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *RDPConfig) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -644,7 +615,6 @@ func (x *RDPLogin) GetSecretId() string {
 type SSHConfigInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Logins        []*SSHLoginInput       `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
-	HostPublicKey string                 `protobuf:"bytes,2,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
 	TargetAddress string                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -685,13 +655,6 @@ func (x *SSHConfigInput) GetLogins() []*SSHLoginInput {
 		return x.Logins
 	}
 	return nil
-}
-
-func (x *SSHConfigInput) GetHostPublicKey() string {
-	if x != nil {
-		return x.HostPublicKey
-	}
-	return ""
 }
 
 func (x *SSHConfigInput) GetTargetAddress() string {
@@ -932,7 +895,6 @@ type PostgresConfigInput struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Logins          []*PostgresLoginInput  `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
 	TargetAddress   string                 `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	TargetServerCa  string                 `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
 	DefaultDatabase string                 `protobuf:"bytes,4,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -978,13 +940,6 @@ func (x *PostgresConfigInput) GetLogins() []*PostgresLoginInput {
 func (x *PostgresConfigInput) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *PostgresConfigInput) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -1125,12 +1080,11 @@ func (*MtlsAuth) Descriptor() ([]byte, []int) {
 
 // ── Write-only RDP config input. Reads still return RDPConfig. ──
 type RDPConfigInput struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Logins         []*RDPLoginInput       `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
-	TargetAddress  string                 `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	TargetServerCa string                 `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Logins        []*RDPLoginInput       `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
+	TargetAddress string                 `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RDPConfigInput) Reset() {
@@ -1173,13 +1127,6 @@ func (x *RDPConfigInput) GetLogins() []*RDPLoginInput {
 func (x *RDPConfigInput) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *RDPConfigInput) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -2021,7 +1968,6 @@ func (*AssetDisplay_Rdp) isAssetDisplay_Config() {}
 type SSHConfigDisplay struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Logins        []*SSHLoginDisplay     `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
-	HostPublicKey string                 `protobuf:"bytes,2,opt,name=host_public_key,json=hostPublicKey,proto3" json:"host_public_key,omitempty"`
 	TargetAddress string                 `protobuf:"bytes,3,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2062,13 +2008,6 @@ func (x *SSHConfigDisplay) GetLogins() []*SSHLoginDisplay {
 		return x.Logins
 	}
 	return nil
-}
-
-func (x *SSHConfigDisplay) GetHostPublicKey() string {
-	if x != nil {
-		return x.HostPublicKey
-	}
-	return ""
 }
 
 func (x *SSHConfigDisplay) GetTargetAddress() string {
@@ -2134,7 +2073,6 @@ type PostgresConfigDisplay struct {
 	state           protoimpl.MessageState  `protogen:"open.v1"`
 	Logins          []*PostgresLoginDisplay `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
 	TargetAddress   string                  `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	TargetServerCa  string                  `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
 	DefaultDatabase string                  `protobuf:"bytes,4,opt,name=default_database,json=defaultDatabase,proto3" json:"default_database,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -2180,13 +2118,6 @@ func (x *PostgresConfigDisplay) GetLogins() []*PostgresLoginDisplay {
 func (x *PostgresConfigDisplay) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *PostgresConfigDisplay) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -2251,12 +2182,11 @@ func (x *PostgresLoginDisplay) GetKind() string {
 }
 
 type RDPConfigDisplay struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Logins         []*RDPLoginDisplay     `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
-	TargetAddress  string                 `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	TargetServerCa string                 `protobuf:"bytes,3,opt,name=target_server_ca,json=targetServerCa,proto3" json:"target_server_ca,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Logins        []*RDPLoginDisplay     `protobuf:"bytes,1,rep,name=logins,proto3" json:"logins,omitempty"`
+	TargetAddress string                 `protobuf:"bytes,2,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RDPConfigDisplay) Reset() {
@@ -2299,13 +2229,6 @@ func (x *RDPConfigDisplay) GetLogins() []*RDPLoginDisplay {
 func (x *RDPConfigDisplay) GetTargetAddress() string {
 	if x != nil {
 		return x.TargetAddress
-	}
-	return ""
-}
-
-func (x *RDPConfigDisplay) GetTargetServerCa() string {
-	if x != nil {
-		return x.TargetServerCa
 	}
 	return ""
 }
@@ -3849,36 +3772,32 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\bpostgres\x18\a \x01(\v2#.jumpgate.catalog.v1.PostgresConfigH\x00R\bpostgres\x122\n" +
 	"\x03rdp\x18\b \x01(\v2\x1e.jumpgate.catalog.v1.RDPConfigH\x00R\x03rdp\x12\x12\n" +
 	"\x04path\x18\x06 \x01(\tR\x04pathB\b\n" +
-	"\x06config\"\x91\x01\n" +
+	"\x06config\"i\n" +
 	"\tSSHConfig\x125\n" +
-	"\x06logins\x18\x01 \x03(\v2\x1d.jumpgate.catalog.v1.SSHLoginR\x06logins\x12&\n" +
-	"\x0fhost_public_key\x18\x02 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x06logins\x18\x01 \x03(\v2\x1d.jumpgate.catalog.v1.SSHLoginR\x06logins\x12%\n" +
 	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\"t\n" +
 	"\bSSHLogin\x12\x1d\n" +
 	"\x05login\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12,\n" +
 	"\x04kind\x18\x02 \x01(\tB\x18\xbaH\x15r\x13R\x02caR\bpasswordR\x03keyR\x04kind\x12\x1b\n" +
-	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"\xc8\x01\n" +
+	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"\x9e\x01\n" +
 	"\x0ePostgresConfig\x12:\n" +
 	"\x06logins\x18\x01 \x03(\v2\".jumpgate.catalog.v1.PostgresLoginR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12)\n" +
 	"\x10default_database\x18\x04 \x01(\tR\x0fdefaultDatabase\"t\n" +
 	"\rPostgresLogin\x12\x1b\n" +
 	"\x04role\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04role\x12)\n" +
 	"\x04kind\x18\x02 \x01(\tB\x15\xbaH\x12r\x10R\x04mtlsR\bpasswordR\x04kind\x12\x1b\n" +
-	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"\x93\x01\n" +
+	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"i\n" +
 	"\tRDPConfig\x125\n" +
 	"\x06logins\x18\x01 \x03(\v2\x1d.jumpgate.catalog.v1.RDPLoginR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\"k\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\"k\n" +
 	"\bRDPLogin\x12\x1d\n" +
 	"\x05login\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12#\n" +
 	"\x04kind\x18\x02 \x01(\tB\x0f\xbaH\fr\n" +
 	"R\bpasswordR\x04kind\x12\x1b\n" +
-	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"\x9b\x01\n" +
+	"\tsecret_id\x18\x03 \x01(\tR\bsecretId\"s\n" +
 	"\x0eSSHConfigInput\x12:\n" +
-	"\x06logins\x18\x01 \x03(\v2\".jumpgate.catalog.v1.SSHLoginInputR\x06logins\x12&\n" +
-	"\x0fhost_public_key\x18\x02 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x06logins\x18\x01 \x03(\v2\".jumpgate.catalog.v1.SSHLoginInputR\x06logins\x12%\n" +
 	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\"\xe0\x01\n" +
 	"\rSSHLoginInput\x12\x1d\n" +
 	"\x05login\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12-\n" +
@@ -3891,11 +3810,10 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"SecretAuth\x12&\n" +
 	"\tnew_value\x18\x01 \x01(\fB\a\xbaH\x04z\x02\x10\x01H\x00R\bnewValue\x128\n" +
 	"\x12existing_secret_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x10existingSecretIdB\x0f\n" +
-	"\x06source\x12\x05\xbaH\x02\b\x01\"\xd2\x01\n" +
+	"\x06source\x12\x05\xbaH\x02\b\x01\"\xa8\x01\n" +
 	"\x13PostgresConfigInput\x12?\n" +
 	"\x06logins\x18\x01 \x03(\v2'.jumpgate.catalog.v1.PostgresLoginInputR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12)\n" +
 	"\x10default_database\x18\x04 \x01(\tR\x0fdefaultDatabase\"\xb4\x01\n" +
 	"\x12PostgresLoginInput\x12\x1b\n" +
 	"\x04role\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04role\x123\n" +
@@ -3903,11 +3821,10 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\bpassword\x18\x03 \x01(\v2\x1f.jumpgate.catalog.v1.SecretAuthH\x00R\bpasswordB\r\n" +
 	"\x04auth\x12\x05\xbaH\x02\b\x01\"\n" +
 	"\n" +
-	"\bMtlsAuth\"\x9d\x01\n" +
+	"\bMtlsAuth\"s\n" +
 	"\x0eRDPConfigInput\x12:\n" +
 	"\x06logins\x18\x01 \x03(\v2\".jumpgate.catalog.v1.RDPLoginInputR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\"|\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\"|\n" +
 	"\rRDPLoginInput\x12\x1d\n" +
 	"\x05login\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05login\x12=\n" +
 	"\bpassword\x18\x02 \x01(\v2\x1f.jumpgate.catalog.v1.SecretAuthH\x00R\bpasswordB\r\n" +
@@ -3958,26 +3875,23 @@ const file_jumpgate_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x04path\x18\x06 \x01(\tR\x04path\x12\x1f\n" +
 	"\vfolder_path\x18\a \x01(\tR\n" +
 	"folderPathB\b\n" +
-	"\x06config\"\x9f\x01\n" +
+	"\x06config\"w\n" +
 	"\x10SSHConfigDisplay\x12<\n" +
-	"\x06logins\x18\x01 \x03(\v2$.jumpgate.catalog.v1.SSHLoginDisplayR\x06logins\x12&\n" +
-	"\x0fhost_public_key\x18\x02 \x01(\tR\rhostPublicKey\x12%\n" +
+	"\x06logins\x18\x01 \x03(\v2$.jumpgate.catalog.v1.SSHLoginDisplayR\x06logins\x12%\n" +
 	"\x0etarget_address\x18\x03 \x01(\tR\rtargetAddress\";\n" +
 	"\x0fSSHLoginDisplay\x12\x14\n" +
 	"\x05login\x18\x01 \x01(\tR\x05login\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xd6\x01\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xac\x01\n" +
 	"\x15PostgresConfigDisplay\x12A\n" +
 	"\x06logins\x18\x01 \x03(\v2).jumpgate.catalog.v1.PostgresLoginDisplayR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\x12)\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12)\n" +
 	"\x10default_database\x18\x04 \x01(\tR\x0fdefaultDatabase\">\n" +
 	"\x14PostgresLoginDisplay\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xa1\x01\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"w\n" +
 	"\x10RDPConfigDisplay\x12<\n" +
 	"\x06logins\x18\x01 \x03(\v2$.jumpgate.catalog.v1.RDPLoginDisplayR\x06logins\x12%\n" +
-	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\x12(\n" +
-	"\x10target_server_ca\x18\x03 \x01(\tR\x0etargetServerCa\";\n" +
+	"\x0etarget_address\x18\x02 \x01(\tR\rtargetAddress\";\n" +
 	"\x0fRDPLoginDisplay\x12\x14\n" +
 	"\x05login\x18\x01 \x01(\tR\x05login\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\"\x8a\x02\n" +

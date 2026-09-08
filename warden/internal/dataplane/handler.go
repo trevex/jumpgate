@@ -73,62 +73,6 @@ func NewHandler(setup *SetupService, registry *Registry, pool *pgxpool.Pool, ter
 	return &Handler{setup: setup, registry: registry, pool: pool, terminator: terminator, probes: probes, identity: identity, meshRoots: roots}
 }
 
-// SetupSession redeems a session token: it re-checks authorization, records the
-// live session, and issues a JIT SSH certificate. Domain sentinels are mapped to
-// Connect codes here; the domain layer stays transport-agnostic.
-func (s *Handler) SetupSession(ctx context.Context, req *connect.Request[dataplanev1.SetupSessionRequest]) (*connect.Response[dataplanev1.SetupSessionResponse], error) {
-	// Derive the authoritative worker id from the mTLS cert SAN; the request must
-	// not claim a different worker than its certificate (else PermissionDenied).
-	workerID, err := workerIdentity(ctx, req.Msg.WorkerId)
-	if err != nil {
-		return nil, err
-	}
-	out, err := s.setup.Setup(ctx, req.Msg.SessionToken, workerID, req.Msg.Login, req.Msg.ClientSshPublicKey, req.Msg.TargetPublicKey)
-	switch {
-	case errors.Is(err, ErrBadToken), errors.Is(err, ErrKeyMismatch):
-		return nil, connect.NewError(connect.CodeUnauthenticated, err)
-	case errors.Is(err, ErrNotAuthorized):
-		return nil, connect.NewError(connect.CodePermissionDenied, err)
-	case errors.Is(err, ErrReplay):
-		return nil, connect.NewError(connect.CodeAlreadyExists, err)
-	case errors.Is(err, ErrNoTarget):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-	case err != nil:
-		return nil, connect.NewError(connect.CodeInternal, err)
-	}
-	resp := &dataplanev1.SetupSessionResponse{
-		TargetAddress:      out.TargetAddress,
-		SessionId:          out.SessionID,
-		RecordingRequired:  out.RecordingRequired,
-		RecordingObjectKey: out.RecordingObjectKey,
-		TargetHostKey:      out.TargetHostKey,
-		TargetServerCa:     out.TargetServerCA,
-		DefaultDatabase:    out.DefaultDatabase,
-		GrantId:            out.GrantID,
-		Login:              out.Login,
-	}
-	switch out.CredentialKind {
-	case "ssh-cert":
-		resp.Credential = &dataplanev1.SetupSessionResponse_SshCertificate{SshCertificate: out.SSHCertificate}
-	case "ssh-password":
-		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
-	case "ssh-key":
-		resp.Credential = &dataplanev1.SetupSessionResponse_PrivateKey{PrivateKey: out.PrivateKey}
-	case "x509":
-		resp.Credential = &dataplanev1.SetupSessionResponse_X509Certificate{X509Certificate: out.X509Certificate}
-		resp.X509PrivateKey = out.X509PrivateKey
-	case "pg-password":
-		resp.Credential = &dataplanev1.SetupSessionResponse_PgPassword{PgPassword: out.Password}
-	case "rdp-password":
-		// No dedicated proto oneof for rdp: the password rides the generic
-		// Password arm, same as ssh-password.
-		resp.Credential = &dataplanev1.SetupSessionResponse_Password{Password: out.Password}
-	default:
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unexpected credential kind %q", out.CredentialKind))
-	}
-	return connect.NewResponse(resp), nil
-}
-
 // PrepareSession is the credential-free first phase of the two-phase session flow:
 // it redeems the token, records the live session, and returns the endpoint, policy,
 // current endpoint revision, and the asset's active trust anchors — never a
@@ -159,8 +103,6 @@ func (s *Handler) PrepareSession(ctx context.Context, req *connect.Request[datap
 		TargetAddress:      out.TargetAddress,
 		RecordingRequired:  out.RecordingRequired,
 		RecordingObjectKey: out.RecordingObjectKey,
-		TargetHostKey:      out.TargetHostKey,
-		TargetServerCa:     out.TargetServerCA,
 		DefaultDatabase:    out.DefaultDatabase,
 		GrantId:            out.GrantID,
 		Login:              out.Login,

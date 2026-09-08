@@ -6,27 +6,27 @@
 //! tunnel. The client authenticates with **publickey** using its ephemeral key
 //! `Kc` (whose fingerprint is the token's `cnf`).
 //!
-//! On the offered key + requested login the worker:
-//! 1. generates a fresh per-session key `Kw` (ed25519),
-//! 2. calls `SetupSession(token, worker_id, Kc.pub, Kw.pub)` on warden,
-//! 3. warden verifies `cnf == fp(Kc)`, re-checks the entitlement, and returns
-//!    `{session_id, target_address, cert-over-Kw}`,
-//! 4. the worker requires every cert principal to be `<login>@<scope>`
-//!    (host-scoped), that the cert is over `Kw`, caches the session, and
-//!    **Accepts** (russh then verifies the client's signature over `Kc` —
-//!    proof-of-possession). The host binding is enforced by the target's
-//!    `AuthorizedPrincipalsFile`.
+//! Session setup is two-phase (credential-free until the target's identity is
+//! verified). On the offered key + requested login the worker:
+//! 1. calls `PrepareSession(token, worker_id, Kc.pub, login)` on warden, which
+//!    verifies `cnf == fp(Kc)`, re-checks the entitlement, records the live
+//!    session, and returns `{session_id, target_address, trust_anchors}` — NEVER
+//!    a credential,
+//! 2. caches the prepared session and **Accepts** (russh then verifies the
+//!    client's signature over `Kc` — proof-of-possession).
 //!
-//! Any failure — SetupSession error, cert parse failure, cert not over `Kw`,
-//! principals not scoped to the requested login — is a hard **Reject**. We NEVER
-//! accept on error.
+//! Any failure — PrepareSession error, missing entitlement — is a hard **Reject**.
+//! We NEVER accept on error.
 //!
-//! The security decision is isolated in [`authorize`] (a pure async fn over an
-//! injected [`SetupFn`]) so it is unit-testable without a real warden or a live
+//! The security decision is isolated in [`prepare`] (a pure async fn over an
+//! injected [`PrepareFn`]) so it is unit-testable without a real warden or a live
 //! russh handshake. The russh [`Handler::auth_publickey`] is a thin wrapper that
 //! calls it. Once auth succeeds, the client's session/pty/shell (or exec)
-//! requests drive the second hop: the worker dials the target with `Kw` + the
-//! certificate, opens a matching channel, and bridges the two.
+//! requests drive the second hop: the worker generates a fresh per-session key
+//! `Kw` (ed25519), dials the target, matches the presented host identity against
+//! the prepared trust anchors, then calls `IssueSessionCredential` to obtain the
+//! cert-over-`Kw` (host-scoped principals enforced by the target's
+//! `AuthorizedPrincipalsFile`) and bridges the two hops.
 
 use std::fs;
 use std::future::Future;
@@ -1095,7 +1095,7 @@ impl Handler for SshHandler {
 
 /// Bind the data-plane mTLS listener and dispatch each accepted gateway
 /// connection: TLS-accept (gateway mTLS) → read CONNECT → run the SSH server
-/// over the tunnel (publickey auth drives SetupSession).
+/// over the tunnel (publickey auth drives PrepareSession).
 ///
 /// `registry` and `session_ended_tx` are the control-plane seam shared with
 /// [`crate::control`]: each live session is registered in `registry` (so
@@ -1118,10 +1118,10 @@ pub async fn run_dataplane_server(
     let ca_pem =
         fs::read(&config.mesh_ca).with_context(|| format!("read mesh CA {}", config.mesh_ca))?;
 
-    // The worker's mesh identity, reused for every SetupSession call.
+    // The worker's mesh identity, reused for every session RPC.
     let mesh_certs = Arc::new(
         MeshClientCerts::from_files(&config.mesh_cert, &config.mesh_key, &config.mesh_ca)
-            .context("load worker mesh certs for SetupSession")?,
+            .context("load worker mesh certs for session RPCs")?,
     );
 
     let server_config = jumpgate_mesh::tls::server_config_mtls(
@@ -1305,7 +1305,7 @@ async fn handle_conn(
     );
 
     // Run the SSH server over the already-authenticated tunnel. `run_stream`
-    // drives the handshake + auth; the publickey callback performs SetupSession.
+    // drives the handshake + auth; the publickey callback performs PrepareSession.
     // Session/pty/shell (or exec) requests then drive the target hop + bridge.
     let running = russh::server::run_stream(ssh_config, tls, handler)
         .await

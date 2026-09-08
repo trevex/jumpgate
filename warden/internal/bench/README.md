@@ -69,7 +69,7 @@ count independently.
 
 ## Not yet covered
 
-`SetupSession` (the worker↔gateway/proxy data-plane admission) is not yet benched.
+`PrepareSession`/`IssueSessionCredential` (the worker↔gateway/proxy data-plane admission) is not yet benched.
 Its fixture is heavy (SSH-CA/broker/minted-token/active-grant) and it also performs
 CA key-signing work that is better benched in isolation than folded into the RPC
 timing; the intent is to bench the warden↔worker RPC specifically. The

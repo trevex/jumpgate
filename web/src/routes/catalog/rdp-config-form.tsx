@@ -28,7 +28,6 @@ export interface RdpLoginDraft {
 
 export interface RdpConfigDraft {
   targetAddress: string;
-  targetServerCa: string;
   logins: RdpLoginDraft[];
 }
 
@@ -36,7 +35,6 @@ export interface RdpConfigDraft {
 export function emptyRdpDraft(): RdpConfigDraft {
   return {
     targetAddress: "",
-    targetServerCa: "",
     logins: [{ login: "", secret: "" }],
   };
 }
@@ -46,7 +44,6 @@ export function emptyRdpDraft(): RdpConfigDraft {
 export function rdpDraftFromAsset(rdp: RDPConfig): RdpConfigDraft {
   return {
     targetAddress: rdp.targetAddress,
-    targetServerCa: rdp.targetServerCa,
     logins: rdp.logins.map((l) => ({
       login: l.login,
       secret: "",
@@ -95,13 +92,12 @@ export function buildRdpConfigInput(
     config: {
       logins,
       targetAddress: draft.targetAddress.trim(),
-      targetServerCa: draft.targetServerCa.trim(),
     },
   };
 }
 
 function emptyInput(): RDPConfigInputInit {
-  return { logins: [], targetAddress: "", targetServerCa: "" };
+  return { logins: [], targetAddress: "" };
 }
 
 interface RdpConfigFormProps {
@@ -143,21 +139,6 @@ export function RdpConfigForm({ value, onChange }: RdpConfigFormProps) {
           className="h-9 font-mono text-body"
         />
         <p className={FIELD_HINT}>host:port the worker dials (RDP default 3389).</p>
-      </div>
-
-      {/* Target server CA */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="rdp-ca" className={FIELD_LABEL}>Target server CA</label>
-        <textarea
-          id="rdp-ca"
-          autoComplete="off"
-          value={value.targetServerCa}
-          onChange={(e) => patch({ targetServerCa: e.target.value })}
-          placeholder="-----BEGIN CERTIFICATE-----\n…"
-          rows={2}
-          className="min-h-[3.5rem] w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-micro shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-        <p className={FIELD_HINT}>Optional PEM to pin the target's TLS cert; empty = require-TLS without pin.</p>
       </div>
 
       {/* Logins */}

@@ -172,7 +172,7 @@ func (s *Handler) IssueMeshCert(ctx context.Context, req *connect.Request[vaultv
 // key, returning its public half. A second init hits the unique-active index and
 // surfaces as AlreadyExists. The running server loads the signing key once at
 // boot, so a fresh deploy must restart warden after InitSessionKey to enable
-// CreateSession/SetupSession.
+// CreateSession/PrepareSession.
 func (s *Handler) InitSessionKey(ctx context.Context, _ *connect.Request[vaultv1.InitSessionKeyRequest]) (*connect.Response[vaultv1.InitSessionKeyResponse], error) {
 	if err := s.requireCap(ctx, "vault:key:init", authz.GlobalScope()); err != nil {
 		return nil, err

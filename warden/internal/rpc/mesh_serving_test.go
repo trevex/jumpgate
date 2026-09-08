@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/testsupport"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
@@ -97,7 +98,8 @@ func newMeshServingServer(t *testing.T) *meshServingHarness {
 	auditLog := audit.New(pool)
 	broker := vault.NewBroker(pool, sealer, authorizer, auditLog)
 	sessionSvc := session.NewService(sqlc.New(pool), authorizer, minter, testGatewayEndpoint, "", false, time.Minute, dataplane.NewRegistry(), nil)
-	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, nil, auditLog, time.Hour)
+	identity := targetidentity.NewService(pool, auditLog)
+	setupSvc := dataplane.NewSetupService(pool, verifier, authorizer, broker, identity, auditLog, time.Hour)
 
 	registry := dataplane.NewRegistry()
 
@@ -235,8 +237,8 @@ func TestMeshSetupSessionCertIdentityMatches(t *testing.T) {
 	defer cancel()
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/worker/w1")
-	resp, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
+	resp, err := client.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
+		SessionToken: h.token, WorkerId: "w1", Login: "deploy", ClientSshPublicKey: h.clientPub,
 	}))
 	if err != nil {
 		t.Fatalf("SetupSession: %v", err)
@@ -265,8 +267,8 @@ func TestMeshSetupSessionCertIdentityMismatch(t *testing.T) {
 	defer cancel()
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/worker/w1")
-	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "w2", Login: "deploy", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
+	_, err := client.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
+		SessionToken: h.token, WorkerId: "w2", Login: "deploy", ClientSshPublicKey: h.clientPub,
 	}))
 	assertPermissionDenied(t, err)
 }
@@ -278,8 +280,8 @@ func TestMeshSetupSessionGatewayRoleDenied(t *testing.T) {
 	defer cancel()
 
 	client := meshDataplaneClient(t, h.mca, h.url, "spiffe://jumpgate/gateway/g1")
-	_, err := client.SetupSession(ctx, connect.NewRequest(&dataplanev1.SetupSessionRequest{
-		SessionToken: h.token, WorkerId: "g1", Login: "deploy", ClientSshPublicKey: h.clientPub, TargetPublicKey: h.workerPub,
+	_, err := client.PrepareSession(ctx, connect.NewRequest(&dataplanev1.PrepareSessionRequest{
+		SessionToken: h.token, WorkerId: "g1", Login: "deploy", ClientSshPublicKey: h.clientPub,
 	}))
 	assertPermissionDenied(t, err)
 }

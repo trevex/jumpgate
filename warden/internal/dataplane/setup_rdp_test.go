@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/secrets"
 	"github.com/trevex/jumpgate/warden/internal/session"
 	"github.com/trevex/jumpgate/warden/internal/sessiontoken"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 	"github.com/trevex/jumpgate/warden/internal/vault"
 )
 
@@ -61,7 +62,7 @@ func newRDPFixture(t *testing.T) *rdpFixture {
 		t.Fatalf("CreateAsset: %v", err)
 	}
 	if _, err := q.UpsertRDPAssetConfig(ctx, sqlc.UpsertRDPAssetConfigParams{
-		AssetID: asset.ID, TargetAddress: "rdp-host:3389", TargetServerCa: "",
+		AssetID: asset.ID, TargetAddress: "rdp-host:3389",
 	}); err != nil {
 		t.Fatalf("UpsertRDPAssetConfig: %v", err)
 	}
@@ -74,7 +75,8 @@ func newRDPFixture(t *testing.T) *rdpFixture {
 	verifier := sessiontoken.NewVerifier(pub)
 
 	broker := vault.NewBroker(pool, sealer, authz.New(pool), audit.New(pool))
-	setupSvc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, nil, audit.New(pool), time.Hour)
+	identity := targetidentity.NewService(pool, audit.New(pool))
+	setupSvc := dataplane.NewSetupService(pool, verifier, authz.New(pool), broker, identity, audit.New(pool), time.Hour)
 	sessSvc := session.NewService(q, authz.New(pool), minter, "gw:443", "", false, time.Hour, dataplane.NewRegistry(), nil)
 
 	return &rdpFixture{
@@ -118,6 +120,35 @@ func (f *rdpFixture) liveSessionProtocol(t *testing.T, sessionID string) string 
 	return proto
 }
 
+// approveTLSLeaf seeds an active tls_leaf trust anchor for the asset at its current
+// endpoint revision and returns its id + fingerprint (exact-match at issue time).
+func (f *rdpFixture) approveTLSLeaf(t *testing.T) (uuid.UUID, string) {
+	t.Helper()
+	asset, err := f.q.GetAsset(f.ctx, f.asset)
+	if err != nil {
+		t.Fatalf("GetAsset: %v", err)
+	}
+	fp := "SHA256:" + uuid.NewString()
+	row, err := f.q.ApproveTrustAnchor(f.ctx, sqlc.ApproveTrustAnchorParams{
+		AssetID:               f.asset,
+		EndpointRevision:      asset.EndpointRevision,
+		Kind:                  "tls_leaf",
+		Algorithm:             "rsa",
+		Sha256Fingerprint:     fp,
+		PublicMaterial:        "-----BEGIN CERTIFICATE-----\nMIIBLEAF\n-----END CERTIFICATE-----",
+		RequiredSshPrincipals: []string{},
+		RequiredDnsNames:      []string{},
+		RequiredIpAddresses:   []string{},
+		Source:                "manual",
+		ApprovedBy:            pgtype.UUID{Bytes: f.user, Valid: true},
+		ApprovedAt:            pgtype.Timestamptz{Time: time.Now().Add(-time.Minute), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ApproveTrustAnchor: %v", err)
+	}
+	return row.ID, fp
+}
+
 // TestSetupRDPPassword drives the happy path for a password login: mint an rdp
 // bearer ticket, redeem it, and assert the credential surfaces through the
 // generic Password arm (rdp has no dedicated proto oneof), and that the session
@@ -128,14 +159,32 @@ func TestSetupRDPPassword(t *testing.T) {
 	f.login(t, "admin", "password", pgtype.UUID{Bytes: secID, Valid: true})
 	f.grantCap(t, "rdp-admin", "rdp:login:admin")
 
+	anchorID, fp := f.approveTLSLeaf(t)
 	created, err := f.sessSvc.CreateRDPSession(f.ctx, f.user, f.asset, "admin", false)
 	if err != nil {
 		t.Fatalf("CreateRDPSession: %v", err)
 	}
 
-	res, err := f.setupSvc.Setup(f.ctx, created.Token, "worker-1", "admin", nil, nil)
+	prep, err := f.setupSvc.Prepare(f.ctx, created.Token, "worker-1", "admin", nil)
 	if err != nil {
-		t.Fatalf("Setup: %v", err)
+		t.Fatalf("Prepare: %v", err)
+	}
+	if prep.TargetAddress != "rdp-host:3389" {
+		t.Fatalf("TargetAddress = %q, want rdp-host:3389", prep.TargetAddress)
+	}
+	if !prep.RecordingRequired {
+		t.Error("rdp prepare: RecordingRequired = false, want true (rdp-graphics-v1 is always recorded)")
+	}
+	if !strings.HasSuffix(prep.RecordingObjectKey, ".rdpg") {
+		t.Errorf("rdp prepare: RecordingObjectKey = %q, want a .rdpg key", prep.RecordingObjectKey)
+	}
+	if got := f.liveSessionProtocol(t, prep.SessionID); got != "rdp" {
+		t.Fatalf("live_sessions.protocol = %q, want rdp", got)
+	}
+
+	res, err := f.setupSvc.IssueCredential(f.ctx, prep.SessionID, "worker-1", prep.EndpointRevision, anchorID.String(), fp, nil)
+	if err != nil {
+		t.Fatalf("IssueCredential: %v", err)
 	}
 	if res.CredentialKind != "rdp-password" {
 		t.Fatalf("CredentialKind = %q, want rdp-password", res.CredentialKind)
@@ -145,20 +194,8 @@ func TestSetupRDPPassword(t *testing.T) {
 	if res.Password != "s3cr3t" {
 		t.Fatalf("Password = %q, want s3cr3t", res.Password)
 	}
-	if res.TargetAddress != "rdp-host:3389" {
-		t.Fatalf("TargetAddress = %q, want rdp-host:3389", res.TargetAddress)
-	}
 	if res.Login != "admin" {
 		t.Fatalf("Login = %q, want admin", res.Login)
-	}
-	if !res.RecordingRequired {
-		t.Error("rdp setup: RecordingRequired = false, want true (rdp-graphics-v1 is always recorded)")
-	}
-	if !strings.HasSuffix(res.RecordingObjectKey, ".rdpg") {
-		t.Errorf("rdp setup: RecordingObjectKey = %q, want a .rdpg key", res.RecordingObjectKey)
-	}
-	if got := f.liveSessionProtocol(t, res.SessionID); got != "rdp" {
-		t.Fatalf("live_sessions.protocol = %q, want rdp", got)
 	}
 }
 
@@ -184,7 +221,7 @@ func TestSetupRDPUnentitled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
-	if _, err := f.setupSvc.Setup(f.ctx, tok, "worker-1", "admin", nil, nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
-		t.Fatalf("Setup err = %v, want ErrNotAuthorized", err)
+	if _, err := f.setupSvc.Prepare(f.ctx, tok, "worker-1", "admin", nil); !errors.Is(err, dataplane.ErrNotAuthorized) {
+		t.Fatalf("Prepare err = %v, want ErrNotAuthorized", err)
 	}
 }

@@ -103,10 +103,10 @@ pub async fn run_dataplane_server(
     let ca_pem =
         fs::read(&config.mesh_ca).with_context(|| format!("read mesh CA {}", config.mesh_ca))?;
 
-    // The worker's mesh identity, reused for every SetupSession call.
+    // The worker's mesh identity, reused for every session RPC.
     let mesh_certs = Arc::new(
         MeshClientCerts::from_files(&config.mesh_cert, &config.mesh_key, &config.mesh_ca)
-            .context("load worker mesh certs for SetupSession")?,
+            .context("load worker mesh certs for session RPCs")?,
     );
 
     let server_config = jumpgate_mesh::tls::server_config_mtls(

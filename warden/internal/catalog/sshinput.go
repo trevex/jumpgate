@@ -18,7 +18,6 @@ import (
 // from its auth oneof arm and its secret source from the SecretAuth oneof) before
 // calling the service.
 type SSHConfigInput struct {
-	HostPublicKey string
 	TargetAddress string
 	Logins        []SSHLoginInput
 }
@@ -121,11 +120,11 @@ func (s *Service) resolveSecretSource(ctx context.Context, q *sqlc.Queries, asse
 	}
 }
 
-// writeSSHConfig upserts the asset's connection config (host/target) and replaces
-// its login set with rows. A CHECK / composite-FK violation surfaces via the
-// caller's apierr.MapWrite as InvalidArgument.
-func writeSSHConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, hostKey, target string, rows []sshLoginRow) error {
-	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{AssetID: assetID, HostPublicKey: hostKey, TargetAddress: target}); err != nil {
+// writeSSHConfig upserts the asset's connection config (target) and replaces its
+// login set with rows. A CHECK / composite-FK violation surfaces via the caller's
+// apierr.MapWrite as InvalidArgument.
+func writeSSHConfig(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, target string, rows []sshLoginRow) error {
+	if _, err := q.UpsertSSHAssetConfig(ctx, sqlc.UpsertSSHAssetConfigParams{AssetID: assetID, TargetAddress: target}); err != nil {
 		return err
 	}
 	if err := q.DeleteSSHAssetLoginsForAsset(ctx, assetID); err != nil {

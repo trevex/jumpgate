@@ -4,7 +4,7 @@ import { buildPostgresConfigInput, emptyPgDraft, type PgConfigDraft } from "./po
 describe("buildPostgresConfigInput", () => {
   it("emits mtls (no secret) and password (newValue) arms", () => {
     const draft: PgConfigDraft = {
-      targetAddress: "db:5432", defaultDatabase: "appdb", targetServerCa: "",
+      targetAddress: "db:5432", defaultDatabase: "appdb",
       logins: [
         { role: "mtlsuser", kind: "mtls", secret: "" },
         { role: "app", kind: "password", secret: "pw" },
@@ -23,14 +23,14 @@ describe("buildPostgresConfigInput", () => {
   });
   it("errors on a password login with no secret (create)", () => {
     const draft: PgConfigDraft = {
-      targetAddress: "db:5432", defaultDatabase: "appdb", targetServerCa: "",
+      targetAddress: "db:5432", defaultDatabase: "appdb",
       logins: [{ role: "app", kind: "password", secret: "" }],
     };
     expect(buildPostgresConfigInput(draft, "create").error).toMatch(/password is required/);
   });
   it("keeps an existing secret on edit when the field is blank", () => {
     const draft: PgConfigDraft = {
-      targetAddress: "db:5432", defaultDatabase: "appdb", targetServerCa: "",
+      targetAddress: "db:5432", defaultDatabase: "appdb",
       logins: [{ role: "app", kind: "password", secret: "", existingSecretId: "sid-1" }],
     };
     const { config } = buildPostgresConfigInput(draft, "edit");

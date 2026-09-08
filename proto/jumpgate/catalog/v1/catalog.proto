@@ -71,9 +71,6 @@ message Asset {
 // the login and the kind lives here.
 message SSHConfig {
   repeated SSHLogin logins = 1;
-  // Optional OpenSSH authorized_keys line; when set the ssh-proxy worker pins the
-  // target host key, empty = accept-and-log.
-  string host_public_key = 2;
   // Optional host:port the ssh-proxy worker dials; empty = worker default resolution.
   string target_address = 3;
 }
@@ -95,9 +92,6 @@ message PostgresConfig {
   repeated PostgresLogin logins = 1;
   // host:port the pg-proxy worker dials.
   string target_address = 2;
-  // Optional PEM of the target server's CA/cert; when set the worker verifies the
-  // target's TLS cert against it (verify-full), empty = require-TLS without pin.
-  string target_server_ca = 3;
   // Optional default database the session connects to when the client omits one.
   string default_database = 4;
 }
@@ -118,8 +112,6 @@ message RDPConfig {
   repeated RDPLogin logins = 1;
   // host:port the rdp-proxy worker dials (RDP default 3389).
   string target_address = 2;
-  // Optional PEM of the target's TLS CA/cert; set = verify, empty = require-TLS without pin.
-  string target_server_ca = 3;
 }
 
 // RDPLogin is one target account and how the worker authenticates as it.
@@ -133,7 +125,6 @@ message RDPLogin {
 // ── Write-only SSH config input. Reads still return SSHConfig/SSHLogin. ──
 message SSHConfigInput {
   repeated SSHLoginInput logins = 1;
-  string host_public_key = 2;
   string target_address  = 3;
 }
 
@@ -162,7 +153,6 @@ message SecretAuth {
 message PostgresConfigInput {
   repeated PostgresLoginInput logins = 1;
   string target_address = 2;
-  string target_server_ca = 3;
   string default_database = 4;
 }
 
@@ -181,7 +171,6 @@ message MtlsAuth {}
 message RDPConfigInput {
   repeated RDPLoginInput logins = 1;
   string target_address = 2;
-  string target_server_ca = 3;
 }
 
 // RDPLoginInput: the auth oneof arm IS the kind. Single arm today (password);
@@ -248,7 +237,6 @@ message AssetDisplay {
 }
 message SSHConfigDisplay {
   repeated SSHLoginDisplay logins = 1;
-  string host_public_key = 2;
   string target_address = 3;
 }
 message SSHLoginDisplay {
@@ -258,7 +246,6 @@ message SSHLoginDisplay {
 message PostgresConfigDisplay {
   repeated PostgresLoginDisplay logins = 1;
   string target_address = 2;
-  string target_server_ca = 3;
   string default_database = 4;
 }
 message PostgresLoginDisplay {
@@ -268,7 +255,6 @@ message PostgresLoginDisplay {
 message RDPConfigDisplay {
   repeated RDPLoginDisplay logins = 1;
   string target_address = 2;
-  string target_server_ca = 3;
 }
 message RDPLoginDisplay {
   string login = 1;

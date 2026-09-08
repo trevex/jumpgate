@@ -2,14 +2,12 @@ package catalog
 
 import (
 	"context"
-	"encoding/pem"
 	"errors"
 	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	gossh "golang.org/x/crypto/ssh"
 
 	accessv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
@@ -70,7 +68,7 @@ func toAssetMsgWithSSHConfig(a sqlc.Asset, cfg sqlc.SshAssetConfig, logins []sql
 		out = append(out, &catalogv1.SSHLogin{Login: l.Login, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
 	}
 	msg.Config = &catalogv1.Asset_Ssh{Ssh: &catalogv1.SSHConfig{
-		Logins: out, HostPublicKey: cfg.HostPublicKey, TargetAddress: cfg.TargetAddress,
+		Logins: out, TargetAddress: cfg.TargetAddress,
 	}}
 	return msg
 }
@@ -83,7 +81,7 @@ func toAssetMsgWithPGConfig(a sqlc.Asset, cfg sqlc.PostgresAssetConfig, logins [
 		out = append(out, &catalogv1.PostgresLogin{Role: l.Role, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
 	}
 	msg.Config = &catalogv1.Asset_Postgres{Postgres: &catalogv1.PostgresConfig{
-		Logins: out, TargetAddress: cfg.TargetAddress, TargetServerCa: cfg.TargetServerCa, DefaultDatabase: cfg.DefaultDatabase,
+		Logins: out, TargetAddress: cfg.TargetAddress, DefaultDatabase: cfg.DefaultDatabase,
 	}}
 	return msg
 }
@@ -96,7 +94,7 @@ func toAssetMsgWithRDPConfig(a sqlc.Asset, cfg sqlc.RdpAssetConfig, logins []sql
 		out = append(out, &catalogv1.RDPLogin{Login: l.Login, Kind: l.Kind, SecretId: pgconv.UUIDString(l.SecretID)})
 	}
 	msg.Config = &catalogv1.Asset_Rdp{Rdp: &catalogv1.RDPConfig{
-		Logins: out, TargetAddress: cfg.TargetAddress, TargetServerCa: cfg.TargetServerCa,
+		Logins: out, TargetAddress: cfg.TargetAddress,
 	}}
 	return msg
 }
@@ -156,16 +154,10 @@ func toRoleRefMsgs(refs []RoleRef) []*catalogv1.RoleRef {
 	return out
 }
 
-// validateSSHConfigInput checks the parts protovalidate can't: an optional
-// host_public_key must be a parseable authorized_keys line, and login names must be
+// validateSSHConfigInput checks the parts protovalidate can't: login names must be
 // unique within the config (a duplicate would silently collapse under the
 // (asset_id, login) upsert conflict).
 func validateSSHConfigInput(in *catalogv1.SSHConfigInput) error {
-	if in.GetHostPublicKey() != "" {
-		if _, _, _, _, err := gossh.ParseAuthorizedKey([]byte(in.GetHostPublicKey())); err != nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad host_public_key"))
-		}
-	}
 	seen := make(map[string]struct{}, len(in.GetLogins()))
 	for _, l := range in.GetLogins() {
 		if _, dup := seen[l.GetLogin()]; dup {
@@ -180,7 +172,7 @@ func validateSSHConfigInput(in *catalogv1.SSHConfigInput) error {
 // deriving each login's kind from its auth oneof arm and its secret source from the
 // SecretAuth oneof.
 func toDomainSSHConfig(in *catalogv1.SSHConfigInput) (SSHConfigInput, error) {
-	out := SSHConfigInput{HostPublicKey: in.GetHostPublicKey(), TargetAddress: in.GetTargetAddress()}
+	out := SSHConfigInput{TargetAddress: in.GetTargetAddress()}
 	for _, l := range in.GetLogins() {
 		li := SSHLoginInput{Login: l.GetLogin()}
 		switch a := l.GetAuth().(type) {
@@ -220,17 +212,11 @@ func toSecretSource(sa *catalogv1.SecretAuth, login string) (*SecretSource, erro
 }
 
 // validatePostgresConfigInput checks the parts protovalidate can't: target_address
-// must be present, an optional target_server_ca must be PEM-decodable, and role
-// names must be unique within the config (a duplicate would collapse under the
-// (asset_id, role) upsert conflict).
+// must be present, and role names must be unique within the config (a duplicate
+// would collapse under the (asset_id, role) upsert conflict).
 func validatePostgresConfigInput(in *catalogv1.PostgresConfigInput) error {
 	if in.GetTargetAddress() == "" {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("target_address required"))
-	}
-	if ca := in.GetTargetServerCa(); ca != "" {
-		if block, _ := pem.Decode([]byte(ca)); block == nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad target_server_ca"))
-		}
 	}
 	seen := make(map[string]struct{}, len(in.GetLogins()))
 	for _, l := range in.GetLogins() {
@@ -247,7 +233,6 @@ func validatePostgresConfigInput(in *catalogv1.PostgresConfigInput) error {
 func toDomainPostgresConfig(in *catalogv1.PostgresConfigInput) (PostgresConfigInput, error) {
 	out := PostgresConfigInput{
 		TargetAddress:   in.GetTargetAddress(),
-		TargetServerCA:  in.GetTargetServerCa(),
 		DefaultDatabase: in.GetDefaultDatabase(),
 	}
 	for _, l := range in.GetLogins() {
@@ -271,17 +256,11 @@ func toDomainPostgresConfig(in *catalogv1.PostgresConfigInput) (PostgresConfigIn
 }
 
 // validateRDPConfigInput checks the parts protovalidate can't: target_address must
-// be present, an optional target_server_ca must be PEM-decodable, and login names
-// must be unique within the config (a duplicate would collapse under the
-// (asset_id, login) upsert conflict).
+// be present, and login names must be unique within the config (a duplicate would
+// collapse under the (asset_id, login) upsert conflict).
 func validateRDPConfigInput(in *catalogv1.RDPConfigInput) error {
 	if in.GetTargetAddress() == "" {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("target_address required"))
-	}
-	if ca := in.GetTargetServerCa(); ca != "" {
-		if block, _ := pem.Decode([]byte(ca)); block == nil {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("bad target_server_ca"))
-		}
 	}
 	seen := make(map[string]struct{}, len(in.GetLogins()))
 	for _, l := range in.GetLogins() {
@@ -297,8 +276,7 @@ func validateRDPConfigInput(in *catalogv1.RDPConfigInput) error {
 // deriving each login's kind from its auth oneof arm.
 func toDomainRDPConfig(in *catalogv1.RDPConfigInput) (RDPConfigInput, error) {
 	out := RDPConfigInput{
-		TargetAddress:  in.GetTargetAddress(),
-		TargetServerCA: in.GetTargetServerCa(),
+		TargetAddress: in.GetTargetAddress(),
 	}
 	for _, l := range in.GetLogins() {
 		li := RDPLoginInput{Login: l.GetLogin()}
@@ -609,7 +587,6 @@ func (h *Handler) GetAssetDisplay(ctx context.Context, req *connect.Request[cata
 	}
 	if res.Config != nil {
 		ssh := &catalogv1.SSHConfigDisplay{
-			HostPublicKey: res.Config.HostPublicKey,
 			TargetAddress: res.Config.TargetAddress,
 		}
 		for _, l := range res.Logins {
@@ -621,7 +598,6 @@ func (h *Handler) GetAssetDisplay(ctx context.Context, req *connect.Request[cata
 	if res.PGConfig != nil {
 		pg := &catalogv1.PostgresConfigDisplay{
 			TargetAddress:   res.PGConfig.TargetAddress,
-			TargetServerCa:  res.PGConfig.TargetServerCa,
 			DefaultDatabase: res.PGConfig.DefaultDatabase,
 		}
 		for _, l := range res.PGLogins {
@@ -632,8 +608,7 @@ func (h *Handler) GetAssetDisplay(ctx context.Context, req *connect.Request[cata
 	}
 	if res.RDPConfig != nil {
 		rdp := &catalogv1.RDPConfigDisplay{
-			TargetAddress:  res.RDPConfig.TargetAddress,
-			TargetServerCa: res.RDPConfig.TargetServerCa,
+			TargetAddress: res.RDPConfig.TargetAddress,
 		}
 		for _, l := range res.RDPLogins {
 			// Copy ONLY login + kind — never a secret id.

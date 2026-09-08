@@ -100,9 +100,9 @@ func newTargetIdentityEnvForProtocol(t *testing.T, protocol targetidentity.Proto
 	}
 	switch protocol {
 	case targetidentity.ProtocolSSH:
-		_, err = testPool.Exec(ctx, `INSERT INTO ssh_asset_config (asset_id,target_address,host_public_key) VALUES ($1,'host.test:22','')`, asset.ID)
+		_, err = testPool.Exec(ctx, `INSERT INTO ssh_asset_config (asset_id,target_address) VALUES ($1,'host.test:22')`, asset.ID)
 	case targetidentity.ProtocolPostgres:
-		_, err = testPool.Exec(ctx, `INSERT INTO postgres_asset_config (asset_id,target_address,target_server_ca,default_database) VALUES ($1,'db.test:5432','','postgres')`, asset.ID)
+		_, err = testPool.Exec(ctx, `INSERT INTO postgres_asset_config (asset_id,target_address,default_database) VALUES ($1,'db.test:5432','postgres')`, asset.ID)
 	case targetidentity.ProtocolKubernetes:
 		// Kubernetes API-server endpoint configuration is owned by its bound
 		// in-cluster agent; the durable asset itself has no config child row.
