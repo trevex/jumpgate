@@ -29,6 +29,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/httpapi"
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
+	"github.com/trevex/jumpgate/warden/internal/notification"
 	"github.com/trevex/jumpgate/warden/internal/postgres"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -210,6 +211,24 @@ func Run(ctx context.Context, cfg config.Config) error {
 		MaxPerWorker:     cfg.ProbeMaxPerWorker,
 	})
 	spawn(probeDispatcher.Run)
+
+	// Continuous target-identity monitoring (DISABLED by default). When enabled,
+	// the scheduler queues jittered periodic probes for opted-in assets (reusing the
+	// dispatcher above to execute them) and enqueues durable notifications for
+	// identity mismatch, repeated probe failure, and approaching expiry; the outbox
+	// drainer delivers them best-effort via the log adapter. Neither ever changes
+	// authorization state — a stuck outbox cannot block or weaken enforcement — so
+	// when disabled they simply do not run and verification stays mandatory.
+	notificationOutbox := notification.NewOutbox(pool, notification.NewLogDeliverer(nil))
+	if cfg.PeriodicProbeEnabled {
+		scheduler := targetidentity.NewScheduler(pool, targetIdentitySvc, notificationOutbox,
+			cfg.PeriodicProbeInterval, cfg.PeriodicProbeJitter, cfg.PeriodicProbeConcurrency)
+		spawn(scheduler.Run)
+		spawn(func(ctx context.Context) { notificationOutbox.Run(ctx, cfg.NotificationDrainInterval) })
+	} else {
+		slog.Info("periodic target-identity probing disabled (set PERIODIC_PROBE_ENABLED=true to enable)")
+	}
+
 	var sessionSvc *session.Service
 	var setupSvc *dataplane.SetupService
 	var sessionPubKey ed25519.PublicKey

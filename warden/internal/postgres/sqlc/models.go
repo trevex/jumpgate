@@ -167,6 +167,22 @@ type LiveSession struct {
 	TerminateRequestedAt pgtype.Timestamptz `json:"terminate_requested_at"`
 }
 
+type NotificationOutbox struct {
+	ID             uuid.UUID          `json:"id"`
+	Seq            pgtype.Int8        `json:"seq"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Kind           string             `json:"kind"`
+	Subject        string             `json:"subject"`
+	Payload        []byte             `json:"payload"`
+	Attempts       int32              `json:"attempts"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	NextDeliveryAt time.Time          `json:"next_delivery_at"`
+	State          string             `json:"state"`
+	LastError      pgtype.Text        `json:"last_error"`
+	CreatedAt      time.Time          `json:"created_at"`
+	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
+}
+
 type PostgresAssetConfig struct {
 	AssetID         uuid.UUID `json:"asset_id"`
 	TargetAddress   string    `json:"target_address"`
@@ -331,6 +347,15 @@ type TargetIdentityObservation struct {
 	ValidationState   string      `json:"validation_state"`
 	FailureCategory   pgtype.Text `json:"failure_category"`
 	FailureDetail     pgtype.Text `json:"failure_detail"`
+}
+
+type TargetIdentityProbeSchedule struct {
+	AssetID              uuid.UUID   `json:"asset_id"`
+	ProbeIntervalSeconds int64       `json:"probe_interval_seconds"`
+	FreshnessSeconds     pgtype.Int8 `json:"freshness_seconds"`
+	Enabled              bool        `json:"enabled"`
+	CreatedAt            time.Time   `json:"created_at"`
+	UpdatedAt            time.Time   `json:"updated_at"`
 }
 
 type TargetIdentityValidationFact struct {

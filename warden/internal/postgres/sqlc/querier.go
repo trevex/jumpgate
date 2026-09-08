@@ -66,6 +66,7 @@ type Querier interface {
 	CountGroupMembers(ctx context.Context, groupID uuid.UUID) (int32, error)
 	CountGroupsHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountOutbox(ctx context.Context) (int64, error)
+	CountPendingNotifications(ctx context.Context) (int64, error)
 	CountPoliciesScopedToFolder(ctx context.Context, scopeFolderID pgtype.UUID) (int64, error)
 	CountRolesHomedInFolder(ctx context.Context, folderID pgtype.UUID) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
@@ -132,6 +133,7 @@ type Querier interface {
 	// approvals.EffectiveRule.
 	EffectiveRequestPolicy(ctx context.Context, arg EffectiveRequestPolicyParams) (EffectiveRequestPolicyRow, error)
 	EnqueueAuditEvent(ctx context.Context, arg EnqueueAuditEventParams) (uuid.UUID, error)
+	EnqueueNotification(ctx context.Context, arg EnqueueNotificationParams) error
 	ExpireGrants(ctx context.Context) ([]AccessGrant, error)
 	// ExplainRole.
 	ExplainRolePaths(ctx context.Context, arg ExplainRolePathsParams) ([]ExplainRolePathsRow, error)
@@ -186,6 +188,7 @@ type Querier interface {
 	GetPolicySubject(ctx context.Context, id uuid.UUID) (RequestPolicySubject, error)
 	GetPostgresAssetConfig(ctx context.Context, assetID uuid.UUID) (PostgresAssetConfig, error)
 	GetPreviousProbeJobState(ctx context.Context, arg GetPreviousProbeJobStateParams) (string, error)
+	GetProbeSchedule(ctx context.Context, assetID uuid.UUID) (TargetIdentityProbeSchedule, error)
 	GetRDPAssetConfig(ctx context.Context, assetID uuid.UUID) (RdpAssetConfig, error)
 	GetRequestPolicy(ctx context.Context, id uuid.UUID) (RequestPolicy, error)
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
@@ -243,6 +246,13 @@ type Querier interface {
 	// Keyset pagination for (created_at DESC, id ASC). A row-comparison
 	// `(created_at,id) < (…)` is WRONG for DESC+ASC — use the explicit predicate.
 	ListAccessRequestsByRequesterPaged(ctx context.Context, arg ListAccessRequestsByRequesterPagedParams) ([]AccessRequest, error)
+	// ListApproachingAnchorExpiry returns active anchors on enabled schedules whose
+	// expires_at falls inside the warning window ahead of the reference time.
+	ListApproachingAnchorExpiry(ctx context.Context, arg ListApproachingAnchorExpiryParams) ([]ListApproachingAnchorExpiryRow, error)
+	// ListApproachingFreshnessExpiry returns enabled schedules with a freshness policy
+	// whose latest successful observation is about to age past the freshness window
+	// (its derived expiry falls inside the warning window ahead of the reference time).
+	ListApproachingFreshnessExpiry(ctx context.Context, arg ListApproachingFreshnessExpiryParams) ([]ListApproachingFreshnessExpiryRow, error)
 	ListAssetIdentityEvidence(ctx context.Context, assetID uuid.UUID) ([]TargetIdentityEvidence, error)
 	ListAssetSecrets(ctx context.Context, arg ListAssetSecretsParams) ([]ListAssetSecretsRow, error)
 	ListAssetsByIDs(ctx context.Context, dollar_1 []uuid.UUID) ([]Asset, error)
@@ -253,6 +263,15 @@ type Querier interface {
 	ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
+	ListDueNotifications(ctx context.Context, arg ListDueNotificationsParams) ([]ListDueNotificationsRow, error)
+	// ListDuePeriodicProbes selects assets whose enabled schedule is due for a fresh
+	// periodic probe against their CURRENT endpoint revision: no active (queued/leased)
+	// periodic probe exists, and the most recent observation for that revision (if any)
+	// is older than the per-asset probe interval measured from the supplied reference
+	// time. FOR UPDATE SKIP LOCKED partitions due rows across concurrent schedulers so
+	// replicas claim disjoint batches; the partial unique index is the correctness
+	// backstop against duplicate current-revision jobs.
+	ListDuePeriodicProbes(ctx context.Context, arg ListDuePeriodicProbesParams) ([]ListDuePeriodicProbesRow, error)
 	ListFolders(ctx context.Context, arg ListFoldersParams) ([]Folder, error)
 	// Folders by id, keyset-paged, each with its own leaf->root dotted path resolved in
 	// SQL via folder_path() (no per-row Go resolution).
@@ -300,6 +319,11 @@ type Querier interface {
 	ListPolicySubjects(ctx context.Context, arg ListPolicySubjectsParams) ([]ListPolicySubjectsRow, error)
 	ListPostgresAssetLogins(ctx context.Context, assetID uuid.UUID) ([]PostgresAssetLogin, error)
 	ListRDPAssetLogins(ctx context.Context, assetID uuid.UUID) ([]RdpAssetLogin, error)
+	// ListRepeatedProbeFailures returns enabled schedules whose current revision has
+	// accumulated at least the threshold of failed probe jobs since the last successful
+	// observation. This is the connectivity-degraded signal: it drives a notification
+	// but never a trust change.
+	ListRepeatedProbeFailures(ctx context.Context, threshold int64) ([]ListRepeatedProbeFailuresRow, error)
 	ListRequestPolicies(ctx context.Context, arg ListRequestPoliciesParams) ([]RequestPolicy, error)
 	ListRequestPoliciesByAsset(ctx context.Context, scopeAssetID pgtype.UUID) ([]RequestPolicy, error)
 	// Bindings matching the (all-optional) filters, fully resolved for display in SQL:
@@ -328,12 +352,17 @@ type Querier interface {
 	ListTrustAnchorPage(ctx context.Context, arg ListTrustAnchorPageParams) ([]TargetTrustAnchor, error)
 	ListTrustAnchors(ctx context.Context, assetID uuid.UUID) ([]TargetTrustAnchor, error)
 	ListUndrainedOutbox(ctx context.Context, limit int64) ([]ListUndrainedOutboxRow, error)
+	// ListUnresolvedMismatches returns current-revision mismatch observations for
+	// enabled schedules that are neither approved (an active anchor tied to the exact
+	// observation) nor explicitly rejected (an observation_rejected audit event).
+	ListUnresolvedMismatches(ctx context.Context, atTime time.Time) ([]ListUnresolvedMismatchesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	LockLastAuditEntry(ctx context.Context) ([]byte, error)
 	LockProbeCompletion(ctx context.Context, jobID uuid.UUID) (LockProbeCompletionRow, error)
 	LockTargetIdentityAsset(ctx context.Context, assetID uuid.UUID) (LockTargetIdentityAssetRow, error)
 	LockTargetIdentityObservation(ctx context.Context, arg LockTargetIdentityObservationParams) (string, error)
 	MarkLiveSessionTerminating(ctx context.Context, id uuid.UUID) (int64, error)
+	MarkNotificationDelivered(ctx context.Context, arg MarkNotificationDeliveredParams) error
 	// memberGroupIDs.
 	MemberGroupIDs(ctx context.Context, user uuid.UUID) ([]pgtype.UUID, error)
 	NormalizeJSON(ctx context.Context, dollar_1 []byte) ([]byte, error)
@@ -360,6 +389,10 @@ type Querier interface {
 	// (requester_role held STANDING on the asset OR an explicit kind='requester'
 	// subject) AND the user does not already hold it Active on the asset (grants count).
 	RequestableRolesOnAsset(ctx context.Context, arg RequestableRolesOnAssetParams) ([]uuid.UUID, error)
+	// RescheduleNotification records one failed delivery attempt. It goes terminal
+	// ('failed') once attempts reach max_attempts, otherwise stays 'pending' with a
+	// caller-computed backoff deadline. It NEVER touches authorization or identity state.
+	RescheduleNotification(ctx context.Context, arg RescheduleNotificationParams) error
 	// [23] accessrequest.reviewableGrants: the grants the caller may review, resolved
 	// set-based (reproducing CanReviewGrant over the whole candidate set). A grant is
 	// reviewable when the caller is its subject OR (the caller is active AND, for the
@@ -418,6 +451,8 @@ type Querier interface {
 	UpdateRequestPolicy(ctx context.Context, arg UpdateRequestPolicyParams) (RequestPolicy, error)
 	UpsertPostgresAssetConfig(ctx context.Context, arg UpsertPostgresAssetConfigParams) (PostgresAssetConfig, error)
 	UpsertPostgresAssetLogin(ctx context.Context, arg UpsertPostgresAssetLoginParams) (PostgresAssetLogin, error)
+	// Periodic-probe scheduling and the durable notification outbox.
+	UpsertProbeSchedule(ctx context.Context, arg UpsertProbeScheduleParams) (TargetIdentityProbeSchedule, error)
 	UpsertRDPAssetConfig(ctx context.Context, arg UpsertRDPAssetConfigParams) (RdpAssetConfig, error)
 	UpsertRDPAssetLogin(ctx context.Context, arg UpsertRDPAssetLoginParams) (RdpAssetLogin, error)
 	UpsertSSHAssetConfig(ctx context.Context, arg UpsertSSHAssetConfigParams) (SshAssetConfig, error)

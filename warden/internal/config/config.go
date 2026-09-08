@@ -91,6 +91,22 @@ type Config struct {
 	ProbeMaxAttempts      int           `env:"PROBE_MAX_ATTEMPTS" envDefault:"3"`
 	ProbeMaxPerWorker     int           `env:"PROBE_MAX_PER_WORKER" envDefault:"2"`
 
+	// Continuous target-identity monitoring. Periodic probing is DISABLED by
+	// default: with PeriodicProbeEnabled=false the scheduler and notification
+	// drainer are never started, so no periodic probe is queued and no operational
+	// notification is produced until an operator opts in. Identity verification
+	// itself is unaffected and stays mandatory — this flag only governs the
+	// background re-probing cadence, not the enforcement gates.
+	PeriodicProbeEnabled     bool          `env:"PERIODIC_PROBE_ENABLED" envDefault:"false"`
+	PeriodicProbeInterval    time.Duration `env:"PERIODIC_PROBE_INTERVAL" envDefault:"5m"`
+	PeriodicProbeJitter      time.Duration `env:"PERIODIC_PROBE_JITTER" envDefault:"1m"`
+	PeriodicProbeConcurrency int           `env:"PERIODIC_PROBE_CONCURRENCY" envDefault:"32"`
+	// NotificationDrainInterval is how often the notification outbox drainer
+	// delivers enqueued events (mismatch, repeated failure, approaching expiry)
+	// via the configured delivery adapter. Delivery is best-effort and retried;
+	// it never changes authorization state.
+	NotificationDrainInterval time.Duration `env:"NOTIFICATION_DRAIN_INTERVAL" envDefault:"5s"`
+
 	// MeshListenAddr is the address of warden's second, mTLS "mesh" listener that
 	// serves the worker/gateway-facing services (Dataplane + Gateway). Empty means
 	// the mesh listener is disabled (workers/gateway cannot connect — a degraded but
@@ -175,10 +191,18 @@ func (c Config) Validate() error {
 		{"PROBE_HANDSHAKE_TIMEOUT", c.ProbeHandshakeTimeout},
 		{"PROBE_TOTAL_TIMEOUT", c.ProbeTotalTimeout},
 		{"PROBE_LEASE_DURATION", c.ProbeLeaseDuration},
+		{"PERIODIC_PROBE_INTERVAL", c.PeriodicProbeInterval},
+		{"NOTIFICATION_DRAIN_INTERVAL", c.NotificationDrainInterval},
 	} {
 		if d.val <= 0 {
 			return fmt.Errorf("%s must be a positive duration, got %s", d.name, d.val)
 		}
+	}
+	if c.PeriodicProbeJitter < 0 {
+		return fmt.Errorf("PERIODIC_PROBE_JITTER must not be negative, got %s", c.PeriodicProbeJitter)
+	}
+	if c.PeriodicProbeConcurrency < 1 {
+		return fmt.Errorf("PERIODIC_PROBE_CONCURRENCY must be positive, got %d", c.PeriodicProbeConcurrency)
 	}
 	if c.ProbeTotalTimeout < c.ProbeDNSTimeout || c.ProbeTotalTimeout < c.ProbeConnectTimeout || c.ProbeTotalTimeout < c.ProbeHandshakeTimeout {
 		return fmt.Errorf("PROBE_TOTAL_TIMEOUT must not be shorter than any probe stage")

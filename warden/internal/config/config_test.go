@@ -29,6 +29,11 @@ func valid() Config {
 		ProbeLeaseDuration:    30 * time.Second,
 		ProbeMaxAttempts:      3,
 		ProbeMaxPerWorker:     2,
+
+		PeriodicProbeInterval:     5 * time.Minute,
+		PeriodicProbeJitter:       time.Minute,
+		PeriodicProbeConcurrency:  32,
+		NotificationDrainInterval: 5 * time.Second,
 	}
 }
 
@@ -61,6 +66,19 @@ func TestValidate(t *testing.T) {
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "PROBE_MAX_PER_WORKER") {
 		t.Fatalf("zero probe worker capacity = %v, want named error", err)
 	}
+
+	c = valid()
+	c.PeriodicProbeConcurrency = 0
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "PERIODIC_PROBE_CONCURRENCY") {
+		t.Fatalf("zero periodic concurrency = %v, want named error", err)
+	}
+
+	// Zero jitter is legitimate (no spread); it must be accepted.
+	c = valid()
+	c.PeriodicProbeJitter = 0
+	if err := c.Validate(); err != nil {
+		t.Fatalf("zero jitter rejected: %v", err)
+	}
 }
 
 func TestProbeDefaults(t *testing.T) {
@@ -71,5 +89,19 @@ func TestProbeDefaults(t *testing.T) {
 	}
 	if cfg.ProbeDNSTimeout != 10*time.Second || cfg.ProbeConnectTimeout != 10*time.Second || cfg.ProbeHandshakeTimeout != 15*time.Second || cfg.ProbeTotalTimeout != 30*time.Second || cfg.ProbeLeaseDuration != 30*time.Second || cfg.ProbeMaxAttempts != 3 || cfg.ProbeMaxPerWorker != 2 {
 		t.Fatalf("probe defaults = %#v", cfg)
+	}
+}
+
+func TestPeriodicProbeDisabledByDefault(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PeriodicProbeEnabled {
+		t.Fatal("periodic probing must be disabled by default")
+	}
+	if cfg.PeriodicProbeInterval != 5*time.Minute || cfg.PeriodicProbeJitter != time.Minute || cfg.PeriodicProbeConcurrency != 32 || cfg.NotificationDrainInterval != 5*time.Second {
+		t.Fatalf("periodic defaults = %#v", cfg)
 	}
 }
