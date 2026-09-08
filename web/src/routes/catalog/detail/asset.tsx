@@ -77,6 +77,7 @@ import {
 } from "../rdp-config-form";
 import { assetKindIcon } from "../asset-kind-icon";
 import { EnrollmentTokenReveal } from "../enrollment-token-dialog";
+import { TargetIdentityCard } from "./target-identity-card";
 import {
   CapList,
   DetailSection,
@@ -527,6 +528,10 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
   const canViewRecordings =
     capsCover(data.capabilities, "recording:read") ||
     capsCover(data.managementCapabilities, "recording:read");
+  // Target-identity verification is a MANAGEMENT concern (identity:read), so
+  // gate on the asset's management capability set. The card self-guards too and
+  // the server enforces every read/mutation.
+  const canReadIdentity = capsCover(data.managementCapabilities, "catalog:asset:identity:read");
   const KindIcon = assetKindIcon(assetKind);
 
   return (
@@ -663,6 +668,14 @@ export function AssetDetail({ id, name, path, assetKind, onCleared }: AssetDetai
             </InfoHint>
             <span>Your admin role doesn't grant SSH connect to this asset.</span>
           </p>
+          <div className="h-px bg-border" role="separator" />
+        </>
+      )}
+
+      {/* Target identity verification (management concern; card self-guards) */}
+      {canReadIdentity && assetKind !== "k8s" && (
+        <>
+          <TargetIdentityCard assetId={id} managementCaps={data.managementCapabilities} />
           <div className="h-px bg-border" role="separator" />
         </>
       )}

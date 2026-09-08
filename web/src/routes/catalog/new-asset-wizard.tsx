@@ -54,6 +54,7 @@ import {
   type RdpConfigDraft,
 } from "./rdp-config-form";
 import { EnrollmentTokenReveal } from "./enrollment-token-dialog";
+import { TargetVerificationStep } from "./target-verification-step";
 
 interface NewAssetWizardProps {
   open: boolean;
@@ -88,6 +89,10 @@ export function NewAssetWizard({
   // enrollment-token reveal (the wizard unmounts on close, so we can't render
   // the reveal as a sibling of a closed form dialog).
   const [minted, setMinted] = useState<{ id: string; name: string } | null>(null);
+  // Set once a connectable asset (ssh/postgres/rdp) is created — swaps the form
+  // for the guided identity-verification step, which keys off the durable asset
+  // id (the probe/status are re-fetched, never held only here).
+  const [verifying, setVerifying] = useState<{ id: string; name: string } | null>(null);
 
   function reset() {
     setName("");
@@ -114,6 +119,17 @@ export function NewAssetWizard({
           return;
         }
         // No id (shouldn't happen) — nothing to enrol against; fall through.
+      }
+      // ssh/postgres/rdp: the asset exists but is non-connectable until its
+      // target identity is verified. Keep the wizard mounted and swap to the
+      // guided verification step rather than closing.
+      const id = res.asset?.id;
+      if (id) {
+        toast.success("Asset created", {
+          description: `${name.trim()} created — verify its identity.`,
+        });
+        setVerifying({ id, name: name.trim() });
+        return;
       }
       toast.success("Asset onboarded", {
         description: `${name.trim()} is ready.`,
@@ -188,6 +204,25 @@ export function NewAssetWizard({
         onOpenChange={(next) => {
           if (!next) {
             setMinted(null);
+            reset();
+            onOpenChange(false);
+          }
+        }}
+      />
+    );
+  }
+
+  // ssh/postgres/rdp: the asset is created; guide identity verification in
+  // place of the form. Closing (approve/finish-later) tears down the wizard.
+  if (verifying) {
+    return (
+      <TargetVerificationStep
+        assetId={verifying.id}
+        assetName={verifying.name}
+        open
+        onOpenChange={(next) => {
+          if (!next) {
+            setVerifying(null);
             reset();
             onOpenChange(false);
           }
