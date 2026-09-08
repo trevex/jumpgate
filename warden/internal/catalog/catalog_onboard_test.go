@@ -10,10 +10,12 @@ import (
 
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/catalog"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
 
 // catalogTestEnv is an in-process catalog Handler wired with a real pgx pool, a real
@@ -38,7 +40,8 @@ func newCatalogTestEnv(t *testing.T) *catalogTestEnv {
 
 	q := sqlc.New(pool)
 	authorizer := authz.New(pool)
-	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
+	probes := targetidentity.NewService(pool, audit.New(pool))
+	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil, probes), apiguard.New(authorizer, q))
 
 	adminID := userID(t, pool, "admin@x")
 	adminCtx := auth.WithUser(context.Background(), auth.CurrentUser{ID: adminID, Email: "admin@x"})
@@ -155,6 +158,141 @@ func TestCreateAssetInlineSecretsAtomic(t *testing.T) {
 	}
 	if app == nil || app.Kind != "password" || app.SecretId == "" {
 		t.Fatalf("app login = %+v, want kind=password with a secret_id", app)
+	}
+}
+
+// endpointRevision reads an asset's current endpoint revision.
+func (e *catalogTestEnv) endpointRevision(t *testing.T, assetID string) int64 {
+	t.Helper()
+	var rev int64
+	if err := e.pool.QueryRow(context.Background(), `SELECT endpoint_revision FROM assets WHERE id = $1`, assetID).Scan(&rev); err != nil {
+		t.Fatalf("read endpoint revision: %v", err)
+	}
+	return rev
+}
+
+// updateSSHConfig drives the handler's UpdateAssetConfig with a single ca login and
+// the given target address, exercising the create/update probe + revision hooks.
+func (e *catalogTestEnv) updateSSHConfig(t *testing.T, assetID, targetAddress string, secret []byte) {
+	t.Helper()
+	_, err := e.catalog.UpdateAssetConfig(e.adminCtx, connect.NewRequest(&catalogv1.UpdateAssetConfigRequest{
+		AssetId: assetID,
+		Config: &catalogv1.UpdateAssetConfigRequest_Ssh{Ssh: &catalogv1.SSHConfigInput{
+			TargetAddress: targetAddress,
+			Logins: []*catalogv1.SSHLoginInput{
+				{Login: "deploy", Auth: &catalogv1.SSHLoginInput_Ca{Ca: &catalogv1.CaAuth{}}},
+				{Login: "app", Auth: &catalogv1.SSHLoginInput_Password{Password: &catalogv1.SecretAuth{
+					Source: &catalogv1.SecretAuth_NewValue{NewValue: secret}}}},
+			},
+		}},
+	}))
+	if err != nil {
+		t.Fatalf("UpdateAssetConfig: %v", err)
+	}
+}
+
+// seedMigrationAnchor inserts an approved migration-source anchor at the asset's
+// current revision, standing in for trust the migration established.
+func (e *catalogTestEnv) seedMigrationAnchor(t *testing.T, assetID string) {
+	t.Helper()
+	if _, err := e.pool.Exec(context.Background(), `
+		INSERT INTO target_trust_anchors (asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source)
+		SELECT id, endpoint_revision, 'ssh_host_key', 'ssh-ed25519', 'SHA256:seeded', 'ssh-ed25519 AAAA', 'migration'
+		FROM assets WHERE id = $1`, assetID); err != nil {
+		t.Fatalf("seed migration anchor: %v", err)
+	}
+}
+
+// currentAnchorCount counts anchors that are current (matching the asset's live
+// endpoint revision) and not revoked — the set a session would verify against.
+func (e *catalogTestEnv) currentAnchorCount(t *testing.T, assetID string) int {
+	t.Helper()
+	return e.count(t, `
+		SELECT count(*) FROM target_trust_anchors a
+		JOIN assets s ON s.id = a.asset_id AND s.endpoint_revision = a.endpoint_revision
+		WHERE a.asset_id = $1 AND a.revoked_at IS NULL`, assetID)
+}
+
+// TestCreateSSHAssetQueuesOnboardingProbe covers correctness req 5: a created SSH
+// asset persists at revision 1 and gets exactly one queued onboarding probe at that
+// same revision, in one logical operation.
+func TestCreateSSHAssetQueuesOnboardingProbe(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	folderID := env.createFolder(t, "prod")
+	assetID := env.createSSHAsset(t, folderID, "h", "app", []byte("s3cr3t"))
+
+	if rev := env.endpointRevision(t, assetID); rev != 1 {
+		t.Fatalf("endpoint revision = %d; want 1", rev)
+	}
+	var rev int64
+	var reason, state string
+	if err := env.pool.QueryRow(context.Background(),
+		`SELECT endpoint_revision, reason, state FROM target_probe_jobs WHERE asset_id = $1`, assetID).Scan(&rev, &reason, &state); err != nil {
+		t.Fatalf("read probe job: %v", err)
+	}
+	if rev != 1 || reason != "onboarding" || state != "queued" {
+		t.Fatalf("probe job rev=%d reason=%q state=%q; want 1/onboarding/queued", rev, reason, state)
+	}
+	if n := env.count(t, `SELECT count(*) FROM target_probe_jobs WHERE asset_id = $1`, assetID); n != 1 {
+		t.Fatalf("probe jobs = %d; want exactly 1", n)
+	}
+}
+
+// TestUpdateSSHAssetAddressChangeIncrementsRevisionAndQueuesProbe covers req 3: a
+// target-address change increments the endpoint revision (invalidating old anchors)
+// and queues a fresh probe at the new revision.
+func TestUpdateSSHAssetAddressChangeIncrementsRevisionAndQueuesProbe(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	folderID := env.createFolder(t, "prod")
+	assetID := env.createSSHAsset(t, folderID, "h", "app", []byte("s3cr3t")) // 10.0.0.5:22, rev 1, onboarding probe
+	env.seedMigrationAnchor(t, assetID)
+	if n := env.currentAnchorCount(t, assetID); n != 1 {
+		t.Fatalf("seeded current anchors = %d; want 1", n)
+	}
+
+	env.updateSSHConfig(t, assetID, "10.0.0.9:22", []byte("s3cr3t"))
+
+	if rev := env.endpointRevision(t, assetID); rev != 2 {
+		t.Fatalf("endpoint revision = %d; want 2 after target-address change", rev)
+	}
+	// The old anchor is stranded at revision 1 and is no longer current.
+	if n := env.currentAnchorCount(t, assetID); n != 0 {
+		t.Fatalf("current anchors after endpoint change = %d; want 0 (old anchors invalidated)", n)
+	}
+	var rev int64
+	var reason string
+	if err := env.pool.QueryRow(context.Background(),
+		`SELECT endpoint_revision, reason FROM target_probe_jobs WHERE asset_id = $1 AND reason = 'endpoint_changed'`, assetID).Scan(&rev, &reason); err != nil {
+		t.Fatalf("read endpoint_changed probe: %v", err)
+	}
+	if rev != 2 {
+		t.Fatalf("endpoint_changed probe revision = %d; want 2", rev)
+	}
+	if n := env.count(t, `SELECT count(*) FROM target_probe_jobs WHERE asset_id = $1`, assetID); n != 2 {
+		t.Fatalf("probe jobs = %d; want 2 (onboarding + endpoint_changed)", n)
+	}
+}
+
+// TestUpdateSSHAssetLoginOnlyPreservesRevision covers req 4: a login/secret-only
+// change (same target address) leaves the endpoint revision untouched, queues no new
+// probe, and keeps existing anchors current.
+func TestUpdateSSHAssetLoginOnlyPreservesRevision(t *testing.T) {
+	env := newCatalogTestEnv(t)
+	folderID := env.createFolder(t, "prod")
+	assetID := env.createSSHAsset(t, folderID, "h", "app", []byte("s3cr3t")) // 10.0.0.5:22, rev 1
+	env.seedMigrationAnchor(t, assetID)
+
+	// Same target address, rotated login secret only.
+	env.updateSSHConfig(t, assetID, "10.0.0.5:22", []byte("rotated"))
+
+	if rev := env.endpointRevision(t, assetID); rev != 1 {
+		t.Fatalf("endpoint revision = %d; want 1 preserved on a login-only change", rev)
+	}
+	if n := env.currentAnchorCount(t, assetID); n != 1 {
+		t.Fatalf("current anchors = %d; want 1 (unchanged endpoint keeps anchors valid)", n)
+	}
+	if n := env.count(t, `SELECT count(*) FROM target_probe_jobs WHERE asset_id = $1`, assetID); n != 1 {
+		t.Fatalf("probe jobs = %d; want 1 (no new probe on a login-only change)", n)
 	}
 }
 

@@ -60,8 +60,18 @@ jumpgate --context admin folders create demo
 jumpgate --context admin assets ssh create demo-box \
   --folder demo \
   --target ssh-target.default.svc.cluster.local:22 \
-  --login deploy -o json      # "path" = demo-box.demo
+  --login deploy \
+  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
+  --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk \
+  -o json      # "path" = demo-box.demo
 ```
+
+An SSH session now fails closed unless the target's identity is verified. Onboarding queues a
+credential-free probe of the target. `--host-key` pins the expected host key and
+`--expected-fingerprint` approves that exact key once the probe observes it, so trust is
+established without prompting. Later, `assets identity list` shows the approved anchor and
+`assets probe` re-observes the target. Changing an asset's target address increments its
+endpoint revision, which invalidates the old anchor and queues a fresh probe.
 
 A CA target only accepts a certificate whose principal it has been told to trust. Provision the
 target's `AuthorizedPrincipalsFile` with the host-scoped principal `<login>@<path>` — the asset
@@ -81,14 +91,18 @@ by its DNS path once it exists in the catalog:
 # password workload:
 jumpgate --context admin assets ssh create password-box \
   --folder demo \
-  --target ssh-target-password.default.svc.cluster.local:22
+  --target ssh-target-password.default.svc.cluster.local:22 \
+  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
+  --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk
 printf 'demo-password-123\n' | jumpgate --context admin assets ssh login set password-box.demo \
   --login demo --kind password --password-stdin
 
 # key workload:
 jumpgate --context admin assets ssh create key-box \
   --folder demo \
-  --target ssh-target-key.default.svc.cluster.local:22
+  --target ssh-target-key.default.svc.cluster.local:22 \
+  --host-key "$(cat test/env/testworkload/ssh_host_ed25519_key.pub)" \
+  --wait --expected-fingerprint SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk
 jumpgate --context admin assets ssh login set key-box.demo \
   --login demo --kind key --key-file test/env/testworkload/demo_key
 ```

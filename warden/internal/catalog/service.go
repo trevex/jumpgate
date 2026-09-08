@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 	"github.com/trevex/jumpgate/warden/internal/secrets"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
 
 // sessionTerminator is the narrow dependency catalog needs from the data plane to
@@ -26,6 +27,14 @@ import (
 // *dataplane.Terminator; a nil terminator disables teardown.
 type sessionTerminator interface {
 	TerminateAssetSessions(ctx context.Context, assetID uuid.UUID) error
+}
+
+// probeQueuer queues a target-identity probe inside the caller's transaction so an
+// SSH asset's initial (or post-endpoint-change) probe is atomic with the asset write
+// that set its endpoint revision. Backed by *targetidentity.Service; a nil probes
+// disables probe queueing (deployments/tests that run without verification).
+type probeQueuer interface {
+	QueueProbeTx(ctx context.Context, q *sqlc.Queries, req targetidentity.QueueProbeRequest) (targetidentity.ProbeJob, error)
 }
 
 // requestReadAuthorizer authorizes display reads for callers who are party to a
@@ -48,16 +57,19 @@ type Service struct {
 	terminator sessionTerminator
 	authz      *authz.Authorizer
 	reqReads   requestReadAuthorizer
+	probes     probeQueuer
 }
 
 // NewService constructs the catalog Service over pool, building its own sqlc
 // queries. sealer seals inline SSH login secrets during onboarding (a nil sealer
 // fails those write paths closed); terminator tears down an asset's live sessions
 // before DeleteAsset (a nil terminator disables teardown); reqReads authorizes the
-// request-party path of GetAssetDisplay (a nil reqReads disables it).
-func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminator, a *authz.Authorizer, rr requestReadAuthorizer) *Service {
+// request-party path of GetAssetDisplay (a nil reqReads disables it); probes queues
+// the SSH onboarding/endpoint-change identity probe in the asset write transaction (a
+// nil probes disables probe queueing).
+func NewService(pool *pgxpool.Pool, sealer *secrets.Sealer, term sessionTerminator, a *authz.Authorizer, rr requestReadAuthorizer, probes probeQueuer) *Service {
 	q := sqlc.New(pool)
-	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), sealer: sealer, terminator: term, authz: a, reqReads: rr}
+	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), sealer: sealer, terminator: term, authz: a, reqReads: rr, probes: probes}
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────

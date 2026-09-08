@@ -20,8 +20,10 @@ install -d -m 0700 -o "${DEMO_USER}" -g "${DEMO_USER}" "${DEMO_HOME}/.ssh"
 install -m 0600 -o "${DEMO_USER}" -g "${DEMO_USER}" \
   "${DEMO_PUBKEY}" "${DEMO_HOME}/.ssh/authorized_keys"
 
-# Generate host keys if they are missing (idempotent).
-ssh-keygen -A
+# Deterministic host identity: install the committed fixture as the sole ed25519
+# host key so the target presents the fingerprint the operator pins at onboarding.
+install -m 0600 /etc/ssh/fixture_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
 
 # sshd refuses to run without its privilege-separation directory.
 mkdir -p /run/sshd
@@ -29,6 +31,7 @@ mkdir -p /run/sshd
 # Drop-in config: public-key auth only.
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/jumpgate.conf <<EOF
+HostKey /etc/ssh/ssh_host_ed25519_key
 PubkeyAuthentication yes
 PasswordAuthentication no
 EOF

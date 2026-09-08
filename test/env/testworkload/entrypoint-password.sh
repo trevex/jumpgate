@@ -15,8 +15,10 @@ DEMO_PASSWORD=demo-password-123
 id "${DEMO_USER}" >/dev/null 2>&1 || useradd -m -s /bin/bash "${DEMO_USER}"
 echo "${DEMO_USER}:${DEMO_PASSWORD}" | chpasswd
 
-# Generate host keys if they are missing (idempotent).
-ssh-keygen -A
+# Deterministic host identity: install the committed fixture as the sole ed25519
+# host key so the target presents the fingerprint the operator pins at onboarding.
+install -m 0600 /etc/ssh/fixture_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
 
 # sshd refuses to run without its privilege-separation directory.
 mkdir -p /run/sshd
@@ -24,6 +26,7 @@ mkdir -p /run/sshd
 # Drop-in config: password auth only for the demo account.
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/jumpgate.conf <<EOF
+HostKey /etc/ssh/ssh_host_ed25519_key
 PasswordAuthentication yes
 PermitEmptyPasswords no
 EOF

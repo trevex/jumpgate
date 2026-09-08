@@ -392,9 +392,9 @@ func TestGetAssetDisplay(t *testing.T) {
 	q := sqlc.New(pool)
 
 	// A server whose fake authorizes the request-party path.
-	allowSrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: true}), apiguard.New(authorizer, q))
+	allowSrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: true}, nil), apiguard.New(authorizer, q))
 	// A server whose fake denies the request-party path (only the cap path can pass).
-	denySrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: false}), apiguard.New(authorizer, q))
+	denySrv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, fakeReqReads{allow: false}, nil), apiguard.New(authorizer, q))
 
 	assertSSH := func(t *testing.T, resp *catalogv1.GetAssetDisplayResponse) {
 		t.Helper()
@@ -831,7 +831,7 @@ func TestSearchCatalog(t *testing.T) {
 	}
 
 	authorizer := authz.New(pool)
-	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil), apiguard.New(authorizer, q))
+	srv := catalog.NewHandler(catalog.NewService(pool, testSealer(t), nil, authorizer, nil, nil), apiguard.New(authorizer, q))
 	searcherCtx := auth.WithUser(ctx, auth.CurrentUser{ID: su.ID, Email: "searcher@x"})
 
 	// (a) substring "pg" returns the caller's visible matches across multiple kinds.

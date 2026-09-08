@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -12,9 +13,11 @@ import (
 
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
+	"github.com/trevex/jumpgate/warden/internal/targetidentity"
 )
 
 // AssetConfigInput is a kind-tagged union of a create/update config write. Exactly
@@ -64,6 +67,11 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		}
 		if err := writeSSHConfig(ctx, qtx, a.ID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
+		}
+		// Queue the onboarding identity probe in this same transaction so the asset is
+		// never persisted without its probe (a probe-queue failure rolls the create back).
+		if err := s.queueSSHProbe(ctx, qtx, a.ID, a.EndpointRevision, targetidentity.ProbeReasonOnboarding); err != nil {
+			return AssetWithConfig{}, err
 		}
 		cfg, err := qtx.GetSSHAssetConfig(ctx, a.ID)
 		if err != nil {
@@ -120,6 +128,34 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 	}
 	res.Path = s.assetPath(ctx, a.FolderID, a.Name)
 	return res, nil
+}
+
+// queueSSHProbe queues a credential-free identity probe for an SSH asset within the
+// caller's transaction q, at the given endpoint revision. It is a no-op when probe
+// queueing is disabled (nil probes). Any queue failure aborts the surrounding asset
+// write, so an asset is never persisted or re-pointed without its probe.
+func (s *Service) queueSSHProbe(ctx context.Context, q *sqlc.Queries, assetID uuid.UUID, revision int64, reason targetidentity.ProbeReason) error {
+	if s.probes == nil {
+		return nil
+	}
+	if _, err := s.probes.QueueProbeTx(ctx, q, targetidentity.QueueProbeRequest{
+		AssetID:          assetID,
+		EndpointRevision: revision,
+		Reason:           reason,
+		RequestedBy:      callerID(ctx),
+	}); err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("queue ssh identity probe: %w", err))
+	}
+	return nil
+}
+
+// callerID returns the authenticated caller's id for probe attribution, or the nil
+// UUID for an unauthenticated/in-process caller (requested_by is nullable).
+func callerID(ctx context.Context) uuid.UUID {
+	if u, ok := auth.UserFromContext(ctx); ok {
+		return u.ID
+	}
+	return uuid.Nil
 }
 
 // GetAsset returns an asset with its typed config. NotFound if the asset does not
@@ -195,12 +231,29 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 	qtx := s.q.WithTx(tx)
 	switch in.Kind {
 	case "ssh":
+		// A target-address change moves the endpoint: bump the revision (invalidating
+		// anchors bound to the old revision) and queue a fresh probe. A login/secret-only
+		// change leaves the endpoint — and its trust — untouched.
+		old, cfgErr := qtx.GetSSHAssetConfig(ctx, assetID)
+		if cfgErr != nil && !errors.Is(cfgErr, pgx.ErrNoRows) {
+			return connect.NewError(connect.CodeInternal, cfgErr)
+		}
+		addressChanged := cfgErr != nil || old.TargetAddress != in.SSH.TargetAddress
 		rows, err := s.resolveSSHConfigInput(ctx, qtx, assetID, *in.SSH, false)
 		if err != nil {
 			return err
 		}
 		if err := writeSSHConfig(ctx, qtx, assetID, in.SSH.HostPublicKey, in.SSH.TargetAddress, rows); err != nil {
 			return apierr.MapWrite(err)
+		}
+		if addressChanged {
+			rev, err := qtx.IncrementAssetEndpointRevision(ctx, assetID)
+			if err != nil {
+				return connect.NewError(connect.CodeInternal, err)
+			}
+			if err := s.queueSSHProbe(ctx, qtx, assetID, rev, targetidentity.ProbeReasonEndpointChanged); err != nil {
+				return err
+			}
 		}
 	case "postgres":
 		rows, err := s.resolvePostgresConfigInput(ctx, qtx, assetID, *in.Postgres, false)

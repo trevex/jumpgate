@@ -279,11 +279,34 @@ a validly-signed agent cert without a separate asset-ownership check. The gatewa
 serving certificate has no production DNS SAN yet, so `kubectl` currently trusts it via
 an explicit CA. See [roadmap.md](roadmap.md#known-deferrals).
 
+## Target identity verification
+
+A proxy that authenticates to a target it cannot itself identify is a
+man-in-the-middle waiting to happen. SSH sessions defend against that by requiring a
+verified target identity before any credential is released.
+
+- Onboarding queues a credential-free probe. The worker observes the target's host key
+  without authenticating, so a mis-onboarded or hostile endpoint reveals its identity
+  before any secret is exposed.
+- Trust is explicit and exact. An operator approves an exact host-key fingerprint,
+  which records a trust anchor. Session setup fails closed unless a current anchor
+  matches the observed key. An asset with no anchor grants no session.
+- Endpoint moves invalidate trust. Each asset carries an endpoint revision, and anchors
+  are bound to the revision they were approved at. Changing the target address
+  increments the revision, so the old anchors stop being current and a fresh probe is
+  queued. A login, secret, or metadata change does not move the endpoint, so its trust
+  stands.
+- Existing pins migrate without weakening. A one-shot migration converts a valid pinned
+  host key into an approved anchor. An unparseable or absent pin produces no anchor, so
+  an invalid key is never trusted and its asset stays unverified until an operator
+  approves it.
+
 ## Threat-model summary
 
 | Threat | Mitigation | Status |
 |---|---|---|
 | Attacker maps infrastructure by probing | Existence-hiding: catalog returns only visible assets; invisible lookup → `CodeNotFound`, never `403` | Implemented |
+| Man-in-the-middle or swapped SSH target | Target identity verification: credential-free host-key probe, exact-fingerprint trust anchor, sessions fail closed without a current match; endpoint-address change invalidates old anchors | Implemented |
 | Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation (`Logout`) | Implemented |
 | CSRF via browser cookie | `Sec-Fetch-Site: same-origin` required for cookie-authenticated requests; browsers set it automatically, cross-origin JS cannot forge it; missing header means the cookie is ignored | Implemented |
 | Privilege creep / broad standing access | Requestable, approval-gated, JIT time-boxed grants (clamped to `MaxGrantTTL=8h`); approval gate travels with the role | Implemented |

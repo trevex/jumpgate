@@ -11,8 +11,12 @@ CA_PUB=/etc/ssh/jumpgate_ca.pub
 # only (the ssh-proxy presents a cert signed by warden's SSH CA).
 id deploy >/dev/null 2>&1 || useradd -m -s /bin/bash deploy
 
-# Generate host keys if they are missing (idempotent).
-ssh-keygen -A
+# Deterministic host identity: install the committed fixture as the sole ed25519
+# host key. Specifying an explicit HostKey below disables sshd's default key set,
+# so the target offers only this key and the identity probe observes exactly the
+# fingerprint the operator pins at onboarding.
+install -m 0600 /etc/ssh/fixture_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
 
 # sshd refuses to run without its privilege-separation directory.
 mkdir -p /run/sshd
@@ -21,6 +25,7 @@ mkdir -p /run/sshd
 # gate which certificate principals are accepted per user via a principals file.
 mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/jumpgate.conf <<EOF
+HostKey /etc/ssh/ssh_host_ed25519_key
 TrustedUserCAKeys /etc/ssh/jumpgate_ca.pub
 PubkeyAuthentication yes
 PasswordAuthentication no

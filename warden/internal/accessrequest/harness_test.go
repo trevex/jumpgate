@@ -103,7 +103,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 		Lookup:        auth.Lookup{Tokens: tokens, Q: q},
 		Auth:          auth.NewHandler(q, tokens, authorizer, true),
 		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
-		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, q)),
+		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, nil), apiguard.New(authorizer, q)),
 		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
 		AccessRequest: accessrequest.NewHandler(resolver, arSvc, authorizer, q),
 		Vault:         vault.NewHandler(q, sealer, authorizer),

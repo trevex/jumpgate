@@ -15,6 +15,13 @@ const (
 	bobPass    = "bob-password-1234"
 	danaPass   = "dana-password-1234"
 	marker     = "JUMPGATE_E2E_OK"
+
+	// sshHostKeyPub is the committed ed25519 host key every sshd test workload
+	// presents (see test/env/testworkload/ssh_host_ed25519_key). Onboarding pins it
+	// as an expectation; sshHostKeyFP is its exact SHA-256 fingerprint, approved
+	// non-interactively so the session enforces a real trust anchor rather than TOFU.
+	sshHostKeyPub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGWmQcvPr9bEL7+OFwukS4iXZwkldBKTuTn9RkIG3cLg jumpgate-e2e-ssh-target"
+	sshHostKeyFP  = "SHA256:aHz1NE+a17NjNyeuqc4JzyiSUAxkT95gAQye7BE7Jqk"
 )
 
 // scenarioState threads ids captured in Act 0 through the later acts.
@@ -45,10 +52,16 @@ func TestScenario(t *testing.T) {
 
 		e.asActor(t, "admin", "folders", "create", e.name("demo"))
 
+		// Onboard with the target's known host key pinned, and approve that exact
+		// fingerprint as the probe observes it. Sessions now fail closed without a
+		// current trust anchor, so this establishes verified identity up front.
 		assetOut := e.asActor(t, "admin", "assets", "ssh", "create", e.name("demo-box"),
 			"--folder", e.name("demo"),
 			"--target", "ssh-target.default.svc.cluster.local:22",
-			"--login", "deploy", "-o", "json")
+			"--login", "deploy",
+			"--host-key", sshHostKeyPub,
+			"--wait", "--expected-fingerprint", sshHostKeyFP,
+			"-o", "json")
 		st.assetID = jsonID(assetOut)
 		if st.assetID == "" {
 			t.Fatalf("no asset id:\n%s", assetOut)
@@ -114,18 +127,24 @@ func TestScenario(t *testing.T) {
 		pwPath := e.name("password-box") + "." + e.name("demo")
 		keyPath := e.name("key-box") + "." + e.name("demo")
 
-		// Password asset: create (no inline login), then set a password login.
+		// Password asset: create (no inline login) with the host key pinned and its
+		// exact fingerprint approved, then set a password login.
 		e.asActor(t, "admin", "assets", "ssh", "create", e.name("password-box"),
 			"--folder", e.name("demo"),
-			"--target", "ssh-target-password.default.svc.cluster.local:22")
+			"--target", "ssh-target-password.default.svc.cluster.local:22",
+			"--host-key", sshHostKeyPub,
+			"--wait", "--expected-fingerprint", sshHostKeyFP)
 		e.asActorStdin(t, "admin", "demo-password-123\n",
 			"assets", "ssh", "login", "set", pwPath,
 			"--login", "demo", "--kind", "password", "--password-stdin")
 
-		// Key asset: create, then set a key login from the committed test private key.
+		// Key asset: create with the host key pinned and its exact fingerprint
+		// approved, then set a key login from the committed test private key.
 		e.asActor(t, "admin", "assets", "ssh", "create", e.name("key-box"),
 			"--folder", e.name("demo"),
-			"--target", "ssh-target-key.default.svc.cluster.local:22")
+			"--target", "ssh-target-key.default.svc.cluster.local:22",
+			"--host-key", sshHostKeyPub,
+			"--wait", "--expected-fingerprint", sshHostKeyFP)
 		e.asActor(t, "admin", "assets", "ssh", "login", "set", keyPath,
 			"--login", "demo", "--kind", "key", "--key-file", "../env/testworkload/demo_key")
 

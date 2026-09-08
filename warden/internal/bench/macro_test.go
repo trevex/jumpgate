@@ -36,7 +36,7 @@ func benchCatalog(b *testing.B) *catalog.Handler {
 	pool, _ := sharedDB(b)
 	q := sqlc.New(pool)
 	a := authz.New(pool)
-	svc := catalog.NewService(pool, nil, nil, a, benchAccessService(b))
+	svc := catalog.NewService(pool, nil, nil, a, benchAccessService(b), nil)
 	return catalog.NewHandler(svc, apiguard.New(a, q))
 }
 

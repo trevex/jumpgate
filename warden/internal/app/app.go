@@ -60,6 +60,14 @@ func Run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
+	// One-shot SSH trust migration: convert valid pinned host keys into approved
+	// migration-source trust anchors (idempotent). Runs in Go because fingerprinting
+	// OpenSSH material safely is not possible in SQL; the 0007 SQL migration queues the
+	// companion onboarding probes.
+	if err := migrate.BackfillSSHTrustAnchors(ctx, pool); err != nil {
+		return err
+	}
+
 	// Derive a cancellable lifecycle ctx and track every background worker in bg, so
 	// shutdown cancels them and waits for them to drain before the deferred
 	// pool.Close() fires. Without this, pool.Close races in-flight worker queries.
@@ -246,7 +254,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 		Lookup:         apiLookup,
 		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
 		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
-		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc), apiguard.New(authorizer, apiQ)),
+		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, targetIdentitySvc), apiguard.New(authorizer, apiQ)),
 		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
 		AccessRequest:  accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
 		Vault:          vault.NewHandler(apiQ, sealer, authorizer),

@@ -88,8 +88,30 @@ func NewService(pool *pgxpool.Pool, auditLog Enqueuer, options ...Option) *Servi
 	return service
 }
 
-// QueueProbe persists a credential-free job for the current endpoint revision.
+// QueueProbe persists a credential-free job for the current endpoint revision in its
+// own transaction.
 func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJob, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ProbeJob{}, fmt.Errorf("begin queue probe: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	result, err := s.QueueProbeTx(ctx, sqlc.New(tx), req)
+	if err != nil {
+		return ProbeJob{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProbeJob{}, fmt.Errorf("commit queue probe: %w", err)
+	}
+	return result, nil
+}
+
+// QueueProbeTx persists a credential-free probe job using the caller's transaction q,
+// so the initial probe is atomic with the asset write that established (or moved) the
+// endpoint revision. It locks the asset and requires req.EndpointRevision to equal the
+// asset's current revision, so callers must pass the revision the same transaction just
+// wrote. It does not begin or commit — the caller owns the transaction boundary.
+func (s *Service) QueueProbeTx(ctx context.Context, q *sqlc.Queries, req QueueProbeRequest) (ProbeJob, error) {
 	idempotencyPayload := req
 	idempotencyPayload.RequestID = uuid.Nil
 	if req.AssetID == uuid.Nil || req.EndpointRevision <= 0 || !validProbeReason(req.Reason) {
@@ -104,12 +126,6 @@ func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJ
 	if req.NextAttemptAt.IsZero() {
 		req.NextAttemptAt = s.now()
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return ProbeJob{}, fmt.Errorf("begin queue probe: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	q := sqlc.New(tx)
 	var replay ProbeJob
 	replayed, err := claimMutation(ctx, q, req.RequestID, "start_probe", req.AssetID, req.RequestedBy, idempotencyPayload, &replay)
 	if err != nil {
@@ -167,9 +183,6 @@ func (s *Service) QueueProbe(ctx context.Context, req QueueProbeRequest) (ProbeJ
 	result := probeJobFromRow(row)
 	if err := completeMutation(ctx, q, req.RequestID, result); err != nil {
 		return ProbeJob{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ProbeJob{}, fmt.Errorf("commit queue probe: %w", err)
 	}
 	return result, nil
 }

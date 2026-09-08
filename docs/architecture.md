@@ -175,6 +175,17 @@ signal force-closes the live session, and the worker reports the session's end. 
 same worker also serves the browser terminal over its WebSocket ingress, running the
 identical target SSH and recording.
 
+Before the target hop, the worker must prove the target's identity. Onboarding an SSH
+asset queues a credential-free identity probe, and the worker observes the target's
+host key without authenticating. An operator approves an exact fingerprint, which
+records a trust anchor. Session setup then fails closed unless a current trust anchor
+matches the observed host key. Each asset carries an endpoint revision. Changing the
+target address increments that revision, which invalidates the anchors bound to the
+old revision and queues a fresh probe. A login, secret, or metadata change leaves the
+revision and its anchors untouched. Assets onboarded before verification keep their
+trust: a one-shot migration converts a pinned host key into an approved anchor, and an
+unparseable or absent pin is never trusted.
+
 ### Postgres — `pg-proxy` (Go)
 
 The Postgres worker is a gateway-tunnelled worker like ssh-proxy, written in Go on

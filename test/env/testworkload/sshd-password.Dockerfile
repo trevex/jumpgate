@@ -14,6 +14,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server \
  && rm -rf /var/lib/apt/lists/*
 
+# Committed throwaway host key: installed by the entrypoint as the sole ed25519
+# host key so the target presents a deterministic identity pinned at onboarding
+# by exact SHA-256 fingerprint. Test-only material, never reused.
+COPY ssh_host_ed25519_key /etc/ssh/fixture_host_ed25519_key
 COPY entrypoint-password.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
