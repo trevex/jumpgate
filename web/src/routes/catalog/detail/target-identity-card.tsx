@@ -64,6 +64,7 @@ import {
   probeStages,
   anchorState,
   anchorWarnings,
+  evidenceWarnings,
   isCA,
   rotationActive,
   type Severity,
@@ -274,6 +275,18 @@ export function EvidenceView({ evidence }: { evidence: Evidence }) {
           )}
         </div>
       )}
+
+      {evidenceWarnings(evidence, Date.now()).map((w) => (
+        <p
+          key={w.kind}
+          className={cn(
+            "text-eyebrow",
+            w.severity === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400",
+          )}
+        >
+          {w.text}
+        </p>
+      ))}
     </div>
   );
 }

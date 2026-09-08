@@ -38,11 +38,17 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio-stream = "0.1"
+thiserror = "2"
 # Match ssh-proxy's rustls crypto setup: a single (ring) provider workspace-wide.
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 # Read the target-server CA PEM into a RootCertStore when the asset pins one.
 rustls-pemfile = "2"
+# Canonical "SHA256:"+raw-std-base64 fingerprint over cert DER (matches warden/pg).
+base64 = "0.22"
+# Parse the observed leaf/intermediate X.509 fields (subject/SAN/validity/serial)
+# into onboarding probe evidence, mirroring the pg-proxy worker's chainEvidence.
+x509-parser = "0.18"
 # Scrub the warden-injected target password from our copy on drop.
 zeroize = "1"
 # PDU framing/decoding for the RDCleanPath relay: find_size to frame the plaintext
@@ -62,3 +68,7 @@ hex = "0.4"
 async-trait = "0.1"
 ironrdp-rdcleanpath = "0.2.2"
 ironrdp-core = "0.2.1"
+
+[dev-dependencies]
+# Generate self-signed + CA-signed leaf certs for the probe/verification tests.
+rcgen = "0.14"

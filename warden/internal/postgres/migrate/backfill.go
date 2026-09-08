@@ -155,6 +155,74 @@ func BackfillPostgresTrustAnchors(ctx context.Context, pool *pgxpool.Pool) error
 	return nil
 }
 
+// BackfillRDPTrustAnchors is the Go half of the 0009 RDP trust migration. It follows
+// BackfillPostgresTrustAnchors exactly, reading each rdp asset's configured
+// target_server_ca PEM instead: it converts a valid pinned CA into an approved
+// migration-source tls_ca trust anchor at the asset's current endpoint revision, with a
+// required DNS name derived from the normalized target host, so assets that were trusted
+// by a pinned server CA stay verified once sessions require a current trust anchor.
+//
+// As with the postgres migration, parsing and fingerprinting X.509 material stays in Go
+// (an invalid or empty CA is never trusted — the asset stays pending until an operator
+// probes and approves it). The fingerprint is the canonical "SHA256:" + raw-std-base64
+// over the CA certificate DER, matching the rdp-proxy worker's fingerprint_der so the
+// anchor compares equal to a session-time observed chain. Idempotent.
+func BackfillRDPTrustAnchors(ctx context.Context, pool *pgxpool.Pool) error {
+	type conf struct {
+		assetID  uuid.UUID
+		revision int64
+		target   string
+		serverCA string
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT c.asset_id, a.endpoint_revision, c.target_address, c.target_server_ca
+		FROM rdp_asset_config c
+		JOIN assets a ON a.id = c.asset_id
+		WHERE c.target_server_ca <> ''`)
+	if err != nil {
+		return fmt.Errorf("read rdp CAs: %w", err)
+	}
+	var confs []conf
+	for rows.Next() {
+		var c conf
+		if err := rows.Scan(&c.assetID, &c.revision, &c.target, &c.serverCA); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan rdp CA: %w", err)
+		}
+		confs = append(confs, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate rdp CAs: %w", err)
+	}
+
+	for _, c := range confs {
+		cert := firstCertificate(c.serverCA)
+		if cert == nil {
+			// An empty or unparseable CA is never trusted; the asset stays pending until
+			// an operator probes and approves it.
+			continue
+		}
+		sum := sha256.Sum256(cert.Raw)
+		fingerprint := "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
+		material := strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})))
+		requiredDNS := []string{normalizeHost(c.target)}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO target_trust_anchors
+				(asset_id, endpoint_revision, kind, algorithm, sha256_fingerprint, public_material, source, required_dns_names)
+			SELECT $1, $2, 'tls_ca', $3, $4, $5, 'migration', $6
+			WHERE NOT EXISTS (
+				SELECT 1 FROM target_trust_anchors
+				WHERE asset_id = $1 AND endpoint_revision = $2
+				  AND sha256_fingerprint = $4 AND source = 'migration' AND revoked_at IS NULL
+			)`,
+			c.assetID, c.revision, strings.ToLower(cert.PublicKeyAlgorithm.String()), fingerprint, material, requiredDNS); err != nil {
+			return fmt.Errorf("insert migration anchor for asset %s: %w", c.assetID, err)
+		}
+	}
+	return nil
+}
+
 // firstCertificate returns the first parseable CERTIFICATE PEM block in caPEM, or nil
 // if none parse. Never fabricates trust: a blob that is not a real certificate yields
 // nil so the caller skips it.

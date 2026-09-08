@@ -111,6 +111,10 @@ func (s *Service) CreateAsset(ctx context.Context, folderID uuid.UUID, name stri
 		if err := writeRDPConfig(ctx, qtx, a.ID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
 			return AssetWithConfig{}, apierr.MapWrite(err)
 		}
+		// Queue the onboarding identity probe in the same transaction (see the ssh arm).
+		if err := s.queueIdentityProbe(ctx, qtx, a.ID, a.EndpointRevision, targetidentity.ProbeReasonOnboarding); err != nil {
+			return AssetWithConfig{}, err
+		}
 		cfg, err := qtx.GetRDPAssetConfig(ctx, a.ID)
 		if err != nil {
 			return AssetWithConfig{}, connect.NewError(connect.CodeInternal, err)
@@ -287,12 +291,29 @@ func (s *Service) UpdateAssetConfig(ctx context.Context, assetID uuid.UUID, in A
 			}
 		}
 	case "rdp":
+		// A target-address change moves the endpoint: bump the revision (invalidating
+		// anchors bound to the old revision) and queue a fresh probe. A login/secret/CA
+		// or metadata-only change leaves the endpoint — and its trust — untouched.
+		old, cfgErr := qtx.GetRDPAssetConfig(ctx, assetID)
+		if cfgErr != nil && !errors.Is(cfgErr, pgx.ErrNoRows) {
+			return connect.NewError(connect.CodeInternal, cfgErr)
+		}
+		addressChanged := cfgErr != nil || old.TargetAddress != in.RDP.TargetAddress
 		rows, err := s.resolveRDPConfigInput(ctx, qtx, assetID, *in.RDP, false)
 		if err != nil {
 			return err
 		}
 		if err := writeRDPConfig(ctx, qtx, assetID, in.RDP.TargetAddress, in.RDP.TargetServerCA, rows); err != nil {
 			return apierr.MapWrite(err)
+		}
+		if addressChanged {
+			rev, err := qtx.IncrementAssetEndpointRevision(ctx, assetID)
+			if err != nil {
+				return connect.NewError(connect.CodeInternal, err)
+			}
+			if err := s.queueIdentityProbe(ctx, qtx, assetID, rev, targetidentity.ProbeReasonEndpointChanged); err != nil {
+				return err
+			}
 		}
 	default:
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("unsupported asset kind"))

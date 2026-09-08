@@ -18,6 +18,7 @@ import {
   FailureCategory,
   TrustAnchorKind,
   TrustSource,
+  EvidenceKind,
 } from "@/gen/jumpgate/targetidentity/v1/targetidentity_pb";
 
 // ─── View shape ─────────────────────────────────────────────────────────────
@@ -402,4 +403,53 @@ export function anchorWarnings(
  */
 export function rotationActive(anchors: TrustAnchorLike[], nowMs: number): boolean {
   return anchors.filter((a) => anchorState(a, nowMs) === "active").length > 1;
+}
+
+/** The subset of Evidence fields the evidence-warning model reads. */
+export interface EvidenceLike {
+  kind: EvidenceKind;
+  validUntilUnixMs: bigint;
+}
+
+/**
+ * Warnings a piece of observed evidence should carry BEFORE it is approved,
+ * mirroring {@link anchorWarnings} but driven off the raw observation (used in
+ * the verification wizard/detail flow for TLS assets — postgres and rdp alike):
+ * a CA-level certificate (intermediate / presented root) means approving it as a
+ * CA anchor trusts broadly; a leaf with a validity window flags upcoming or past
+ * expiry. Evidence with neither is unremarkable and yields nothing.
+ */
+export function evidenceWarnings(
+  e: EvidenceLike,
+  nowMs: number,
+  expiringWindowMs: number = EXPIRING_WINDOW_MS,
+): AnchorWarning[] {
+  const out: AnchorWarning[] = [];
+
+  if (e.kind === EvidenceKind.TLS_INTERMEDIATE || e.kind === EvidenceKind.TLS_PRESENTED_ROOT) {
+    out.push({
+      kind: "ca-breadth",
+      severity: "warning",
+      text: "Approving this as a CA trusts every current and future certificate it signs — broader than pinning a single identity.",
+    });
+  }
+
+  if (e.validUntilUnixMs > 0n) {
+    const expires = Number(e.validUntilUnixMs);
+    if (expires <= nowMs) {
+      out.push({
+        kind: "leaf-expired",
+        severity: "error",
+        text: "This certificate has expired; approving it will not verify the target.",
+      });
+    } else if (expires - nowMs <= expiringWindowMs) {
+      out.push({
+        kind: "leaf-expiring",
+        severity: "warning",
+        text: "This certificate expires soon — plan a rotation before it lapses.",
+      });
+    }
+  }
+
+  return out;
 }

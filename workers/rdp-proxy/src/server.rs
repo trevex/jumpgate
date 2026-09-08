@@ -22,7 +22,7 @@ use jumpgate_mesh::tls::MeshClientCerts;
 use crate::config::Config;
 use crate::control::SessionRegistry;
 use crate::record::{PartUploader, RecordStatus, RecorderConfig, S3Uploader};
-use crate::setup::{setup_session, TargetCredential};
+use crate::setup::{issue_session_credential, prepare_session};
 
 /// Current wall-clock time as unix milliseconds (saturating at 0 before the
 /// epoch). Stamps the recording end timestamp.
@@ -255,9 +255,10 @@ async fn run_rdp<S>(
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    // 1. Redeem the session (web mode: no client key). Any failure is a hard
+    // 1. PrepareSession (web mode: no client key): redeem the token and learn the
+    //    endpoint + active trust anchors, WITHOUT a credential. Any failure is a hard
     //    refuse — log and close the stream.
-    let outcome = match setup_session(
+    let outcome = match prepare_session(
         &config.warden_mesh_addr,
         &config.warden_spiffe,
         mesh_certs,
@@ -269,7 +270,7 @@ async fn run_rdp<S>(
     {
         Ok(o) => o,
         Err(e) => {
-            tracing::warn!(%login, error = %e, "RDP SetupSession rejected; closing");
+            tracing::warn!(%login, error = %e, "RDP PrepareSession rejected; closing");
             return;
         }
     };
@@ -298,21 +299,44 @@ async fn run_rdp<S>(
         None
     };
 
-    // setup_session already rejected every non-password arm, so this destructure
-    // of the single-variant credential enum is infallible.
-    let TargetCredential::Password(password) = &outcome.credential;
-
     // 3. Register the live session (so a Teardown force-closes it) and bridge. The
-    //    bridge spawns the recorder after the handshake, tees each graphics frame
-    //    into it (fail-closed), and finalizes it on exit.
+    //    bridge observes the target's TLS identity, matches it against the prepared
+    //    anchors (fail closed), and ONLY THEN calls the `issue` closure below to
+    //    release the target password (verify-before-issue). The bridge spawns the
+    //    recorder after the handshake, tees each graphics frame into it (fail-closed),
+    //    and finalizes it on exit.
     let handle = registry.insert(&outcome.session_id);
-    tracing::info!(session_id = %outcome.session_id, %login, "RDP session set up");
+    tracing::info!(session_id = %outcome.session_id, %login, anchors = outcome.anchors.len(), "RDP session prepared");
+
+    // IssueSessionCredential callback: reachable ONLY after a successful anchor match.
+    // It is the single point at which the target password comes into existence in
+    // this worker. Owned clones are captured so the returned future never borrows
+    // `outcome` (still needed for the bridge args + the end report below).
+    let warden_addr = config.warden_mesh_addr.clone();
+    let warden_spiffe = config.warden_spiffe.clone();
+    let worker_id = config.worker_id.clone();
+    let issue_session_id = outcome.session_id.clone();
+    let endpoint_revision = outcome.endpoint_revision;
+    let issue = move |matched_anchor_id: String, observed_fingerprint: String| async move {
+        issue_session_credential(
+            &warden_addr,
+            &warden_spiffe,
+            mesh_certs,
+            &issue_session_id,
+            &worker_id,
+            endpoint_revision,
+            &matched_anchor_id,
+            &observed_fingerprint,
+        )
+        .await
+    };
 
     let run_report = crate::bridge::run(
         &outcome.target_address,
         &outcome.target_server_ca,
         &login,
-        password,
+        &outcome.anchors,
+        issue,
         handle.cancel,
         stream,
         uploader,

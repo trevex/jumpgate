@@ -5,6 +5,7 @@ import {
   FailureCategory,
   TrustAnchorKind,
   TrustSource,
+  EvidenceKind,
 } from "@/gen/jumpgate/targetidentity/v1/targetidentity_pb";
 import {
   verificationView,
@@ -12,6 +13,7 @@ import {
   probeStages,
   anchorState,
   anchorWarnings,
+  evidenceWarnings,
   isCA,
   rotationActive,
   type TrustAnchorLike,
@@ -229,6 +231,50 @@ describe("anchorWarnings", () => {
   it("TOFU anchors warn that reachability is not proof of identity", () => {
     const w = anchorWarnings(anchor({ source: TrustSource.TOFU }), NOW);
     expect(w.some((x) => x.kind === "tofu")).toBe(true);
+  });
+});
+
+describe("evidenceWarnings — pre-approval, evidence-driven (postgres + rdp TLS)", () => {
+  it("a CA-level cert (presented root / intermediate) surfaces a breadth warning", () => {
+    expect(
+      evidenceWarnings({ kind: EvidenceKind.TLS_PRESENTED_ROOT, validUntilUnixMs: 0n }, NOW).some(
+        (w) => w.kind === "ca-breadth",
+      ),
+    ).toBe(true);
+    expect(
+      evidenceWarnings({ kind: EvidenceKind.TLS_INTERMEDIATE, validUntilUnixMs: 0n }, NOW).some(
+        (w) => w.kind === "ca-breadth",
+      ),
+    ).toBe(true);
+  });
+  it("a leaf surfaces no CA-breadth warning", () => {
+    expect(
+      evidenceWarnings({ kind: EvidenceKind.TLS_LEAF, validUntilUnixMs: 0n }, NOW).some(
+        (w) => w.kind === "ca-breadth",
+      ),
+    ).toBe(false);
+  });
+  it("a near-expiry leaf surfaces an expiry warning", () => {
+    const w = evidenceWarnings(
+      { kind: EvidenceKind.TLS_LEAF, validUntilUnixMs: BigInt(NOW + 5 * DAY) },
+      NOW,
+    );
+    expect(w.some((x) => x.kind === "leaf-expiring")).toBe(true);
+  });
+  it("an already-expired leaf surfaces an expired (error) warning", () => {
+    const w = evidenceWarnings(
+      { kind: EvidenceKind.TLS_LEAF, validUntilUnixMs: BigInt(NOW - DAY) },
+      NOW,
+    );
+    expect(w.some((x) => x.kind === "leaf-expired" && x.severity === "error")).toBe(true);
+  });
+  it("a leaf comfortably in-date is unremarkable", () => {
+    expect(
+      evidenceWarnings(
+        { kind: EvidenceKind.TLS_LEAF, validUntilUnixMs: BigInt(NOW + 200 * DAY) },
+        NOW,
+      ),
+    ).toHaveLength(0);
   });
 });
 

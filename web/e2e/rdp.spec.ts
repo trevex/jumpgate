@@ -36,6 +36,13 @@ test("in-browser RDP session connects and stays connected", async ({ page }) => 
   const href = await openRdp.getAttribute("href");
   expect(href).toContain("/rdp/");
 
+  // Verify-before-issue: rdp-proxy observes the target's TLS identity and only
+  // injects the vault credential after it matches an approved trust anchor, so a
+  // connectable rdp-box must be verified first. The detail's identity card is the
+  // durable proof — assert it before driving the (credentialed) session.
+  await expect(page.getByRole("heading", { name: "Target identity" })).toBeVisible();
+  await expect(page.getByText("Identity verified")).toBeVisible();
+
   await page.goto(href!); // chromeless RDP route, same tab
   await expect(page.getByRole("status")).toContainText(/connected/i, { timeout: 90_000 });
 

@@ -76,6 +76,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 
+	// One-shot RDP trust migration: convert configured target_server_ca PEMs into
+	// approved migration-source tls_ca trust anchors (idempotent), following the
+	// postgres migration exactly; the 0009 SQL migration queues the companion probes.
+	if err := migrate.BackfillRDPTrustAnchors(ctx, pool); err != nil {
+		return err
+	}
+
 	// Derive a cancellable lifecycle ctx and track every background worker in bg, so
 	// shutdown cancels them and waits for them to drain before the deferred
 	// pool.Close() fires. Without this, pool.Close races in-flight worker queries.

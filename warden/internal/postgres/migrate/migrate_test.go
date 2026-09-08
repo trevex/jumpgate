@@ -1151,6 +1151,104 @@ func TestMigration0008PostgresTrustBackfill(t *testing.T) {
 	assertAnchor(rev2ID, 2)
 }
 
+// TestMigration0009RDPTrustBackfill covers the one-shot RDP trust migration, mirroring
+// the postgres case exactly: a valid target_server_ca PEM on an rdp asset converts to
+// exactly one approved migration-source tls_ca anchor at the asset's current endpoint
+// revision (correct fingerprint/algorithm/required DNS name); an invalid or empty CA
+// never produces an anchor; and the backfill is idempotent.
+func TestMigration0009RDPTrustBackfill(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	caPEM, wantFP, wantAlgo := makeCAPEM(t, "rdp-ca")
+
+	seed := func(name, target, serverCA string) uuid.UUID {
+		var folderID, assetID uuid.UUID
+		if err := pool.QueryRow(ctx, `INSERT INTO folders (name) VALUES ($1) RETURNING id`, "mig9-"+name).Scan(&folderID); err != nil {
+			t.Fatalf("insert folder %s: %v", name, err)
+		}
+		if err := pool.QueryRow(ctx, `INSERT INTO assets (folder_id, name, kind) VALUES ($1, $2, 'rdp') RETURNING id`, folderID, name).Scan(&assetID); err != nil {
+			t.Fatalf("insert asset %s: %v", name, err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO rdp_asset_config (asset_id, target_address, target_server_ca) VALUES ($1, $2, $3)`, assetID, target, serverCA); err != nil {
+			t.Fatalf("insert rdp config %s: %v", name, err)
+		}
+		return assetID
+	}
+
+	validID := seed("valid", "rdp-primary.desk.prod:3389", caPEM)
+	invalidID := seed("invalid", "rdp.desk:3389", "-----BEGIN CERTIFICATE-----\nnot a cert\n-----END CERTIFICATE-----")
+	emptyID := seed("empty", "rdp.desk:3389", "")
+
+	// An asset whose endpoint moved before the backfill: the anchor must land at the
+	// CURRENT revision, not a hardcoded 1 (else it would never be current).
+	rev2ID := seed("valid-rev2", "rdp-primary.desk.prod:3389", caPEM)
+	if _, err := pool.Exec(ctx, `UPDATE assets SET endpoint_revision = 2 WHERE id = $1`, rev2ID); err != nil {
+		t.Fatalf("bump endpoint revision: %v", err)
+	}
+
+	if err := BackfillRDPTrustAnchors(ctx, pool); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	assertAnchor := func(id uuid.UUID, wantRev int64) {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("asset %s anchors = %d; want exactly 1", id, n)
+		}
+		var kind, algo, fp, source string
+		var dns []string
+		var rev int64
+		var revoked bool
+		if err := pool.QueryRow(ctx,
+			`SELECT kind, algorithm, sha256_fingerprint, source, endpoint_revision, revoked_at IS NOT NULL, required_dns_names FROM target_trust_anchors WHERE asset_id = $1`,
+			id).Scan(&kind, &algo, &fp, &source, &rev, &revoked, &dns); err != nil {
+			t.Fatalf("read anchor: %v", err)
+		}
+		if kind != "tls_ca" || source != "migration" || fp != wantFP || algo != wantAlgo || rev != wantRev || revoked {
+			t.Fatalf("anchor kind=%q algo=%q fp=%q source=%q rev=%d revoked=%v; want tls_ca/%s/%s/migration/%d/false",
+				kind, algo, fp, source, rev, revoked, wantAlgo, wantFP, wantRev)
+		}
+		if len(dns) != 1 || dns[0] != "rdp-primary.desk.prod" {
+			t.Fatalf("required_dns_names = %v; want [rdp-primary.desk.prod] (host from target)", dns)
+		}
+	}
+
+	// (a) valid CA migrates to an approved migration tls_ca anchor at the current revision.
+	assertAnchor(validID, 1)
+	assertAnchor(rev2ID, 2)
+
+	// (b) invalid/empty CAs never become a trust anchor.
+	for _, id := range []uuid.UUID{invalidID, emptyID} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM target_trust_anchors WHERE asset_id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("count anchors: %v", err)
+		}
+		if n != 0 {
+			t.Fatalf("asset %s anchors = %d; want 0 (an invalid/empty CA must never be trusted)", id, n)
+		}
+	}
+
+	// Idempotent: a second pass creates no duplicate anchors.
+	if err := BackfillRDPTrustAnchors(ctx, pool); err != nil {
+		t.Fatalf("backfill re-run: %v", err)
+	}
+	assertAnchor(validID, 1)
+	assertAnchor(rev2ID, 2)
+}
+
 func ptrTime(value time.Time) *time.Time { return &value }
 
 func nullableTime(value *time.Time) pgtype.Timestamptz {

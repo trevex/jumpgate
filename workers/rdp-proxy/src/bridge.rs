@@ -84,6 +84,10 @@ pub enum BridgeOutcome {
     /// The target handshake failed (surfaced to the browser as an RDCleanPath
     /// error response where possible, else the stream is just closed).
     ConnectFailed,
+    /// The target's observed TLS identity matched no approved trust anchor (or no
+    /// anchor was current). Fail closed: NO credential was ever requested and the
+    /// Client Info injection path is never reached.
+    IdentityUnverified,
     /// A required recording could not keep up (its channel overflowed/closed) or
     /// its [`Header`] could not be assembled: fail closed — the frame is never
     /// forwarded and the bridge tears down rather than run the session unrecorded.
@@ -96,6 +100,7 @@ impl BridgeOutcome {
             BridgeOutcome::Terminated => "terminated",
             BridgeOutcome::Closed => "closed",
             BridgeOutcome::ConnectFailed => "target_unavailable",
+            BridgeOutcome::IdentityUnverified => "target_identity_unverified",
             BridgeOutcome::RecordingFailed => "recording_failed",
         }
     }
@@ -157,12 +162,20 @@ enum RecState {
 ///
 /// `uploader` is opened by the CALLER before dialing (so a session that cannot be
 /// recorded is refused before the target is ever contacted).
+///
+/// Two-stage credential issuance: this function observes the target's TLS identity
+/// (credential-free), matches the captured chain against `anchors` (fail closed on
+/// no match / no anchors), and ONLY THEN calls `issue` — the `IssueSessionCredential`
+/// callback returning the target password. The password therefore does not exist in
+/// this worker until after a successful anchor match, and the Client Info injection
+/// path ([`inject_then_relay`]) is unreachable before that.
 #[allow(clippy::too_many_arguments)]
-pub async fn run<S>(
+pub async fn run<S, F, Fut>(
     target_address: &str,
     target_server_ca: &str,
     login: &str,
-    password: &Zeroizing<String>,
+    anchors: &[crate::probe::SessionAnchor],
+    issue: F,
     cancel: Arc<Notify>,
     stream: S,
     uploader: Option<Box<dyn PartUploader>>,
@@ -170,6 +183,8 @@ pub async fn run<S>(
 ) -> RunReport
 where
     S: AsyncRead + AsyncWrite + Unpin,
+    F: FnOnce(String, String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<Zeroizing<String>>>,
 {
     let (mut mesh_reader, mut mesh_writer) = tokio::io::split(stream);
 
@@ -234,11 +249,54 @@ where
         }
     };
 
-    // 4. TLS-upgrade to the target, capturing its certificate chain (DER).
-    let (tls_stream, cert_chain) = match tls_upgrade(tcp, &host, target_server_ca).await {
+    // 4. TLS-upgrade to the target, capturing its certificate chain (DER). The
+    //    capture handshake accepts any cert at the trust layer but verifies the
+    //    server signature; identity is enforced by the anchor match below.
+    let (tls_stream, cert_chain) = match tls_upgrade(tcp, &host).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(%target_address, error = %e, "RDP target TLS upgrade failed");
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_tls_error(0)).await;
+            refuse!(BridgeOutcome::ConnectFailed);
+        }
+    };
+
+    // 4a. VERIFY BEFORE ISSUE: match the observed chain against the approved anchors.
+    //     A mismatch (or no current anchors) is terminal and MUST NOT reach the
+    //     credential callback — we drop the connection with no credential requested.
+    let der_chain: Vec<rustls::pki_types::CertificateDer<'static>> = cert_chain
+        .iter()
+        .map(|d| rustls::pki_types::CertificateDer::from(d.clone()))
+        .collect();
+    let matched = match crate::probe::match_identity(
+        &der_chain,
+        target_server_ca,
+        anchors,
+        rustls::pki_types::UnixTime::now(),
+    ) {
+        Ok(m) => m,
+        Err(_) => {
+            let observed_fp = der_chain
+                .first()
+                .map(|c| crate::probe::fingerprint_der(c.as_ref()))
+                .unwrap_or_default();
+            tracing::warn!(
+                %target_address,
+                observed_fingerprint = %observed_fp,
+                anchors = anchors.len(),
+                "target TLS identity matched no approved anchor; refusing session before credential issuance",
+            );
+            send_error_response(&mut mesh_writer, RDCleanPathPdu::new_tls_error(0)).await;
+            refuse!(BridgeOutcome::IdentityUnverified);
+        }
+    };
+
+    // 4b. Only now — after a successful match — request the credential. The password
+    //     first exists in this worker HERE.
+    let password = match issue(matched.anchor_id, matched.observed_fingerprint).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(%target_address, error = %e, "IssueSessionCredential failed; refusing session");
             send_error_response(&mut mesh_writer, RDCleanPathPdu::new_tls_error(0)).await;
             refuse!(BridgeOutcome::ConnectFailed);
         }
@@ -292,7 +350,7 @@ where
         &mut mesh_reader,
         &mut target_write,
         login,
-        password,
+        &password,
         leftover,
         &comp_slot,
     );
@@ -840,37 +898,19 @@ fn client_info_compression(info: &ClientInfoPdu) -> u8 {
 }
 
 /// Upgrade the target TCP stream to TLS and capture its certificate chain (DER).
-/// When `target_server_ca` is non-empty the server cert is verified against it
-/// (fail closed / MITM protection); empty = accept any (TOFU-off bring-up path).
-// ponytail: accept-any is the DEFAULT when an asset pins no CA — a blank asset
-// silently gets an unauthenticated target channel. Acceptable for bring-up; before
-// GA, production RDP assets MUST require a pinned target_server_ca (enforce at
-// asset-authoring or reject empty-CA at setup).
+///
+/// The handshake uses the SHARED credential-free capture config
+/// ([`crate::probe::capture_client_config`]): it accepts any certificate at the
+/// trust layer but verifies the server's handshake signature (proof of possession).
+/// The trust decision is NOT made here — the caller enforces the target's identity
+/// by matching the captured chain against the approved anchors
+/// ([`crate::probe::match_identity`]) before any credential is issued, failing
+/// closed on no match. This replaces the old accept-any `NoCertificateVerification`.
 async fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
-    target_server_ca: &str,
 ) -> anyhow::Result<(TlsStream<TcpStream>, Vec<Vec<u8>>)> {
-    let mut config = if target_server_ca.trim().is_empty() {
-        rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
-            .with_no_client_auth()
-    } else {
-        let mut roots = rustls::RootCertStore::empty();
-        let mut pem = target_server_ca.as_bytes();
-        for cert in rustls_pemfile::certs(&mut pem) {
-            let cert = cert.context("parse target_server_ca PEM")?;
-            roots.add(cert).context("add target CA to root store")?;
-        }
-        rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth()
-    };
-    // RDP does not use TLS resumption; disable it (harmless when off too).
-    config.resumption = rustls::client::Resumption::disabled();
-
-    let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(crate::probe::capture_client_config()));
     let dns = rustls::pki_types::ServerName::try_from(server_name.to_owned())
         .with_context(|| format!("invalid TLS server name {server_name}"))?;
     let tls_stream = connector
@@ -911,67 +951,6 @@ fn split_host_port(addr: &str) -> Option<(String, u16)> {
         return None;
     }
     Some((host.to_string(), port.parse().ok()?))
-}
-
-/// Accept-any TLS verifier for the unpinned target path. Only reachable when the
-/// asset configures no `target_server_ca`.
-mod danger {
-    use tokio_rustls::rustls::client::danger::{
-        HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-    };
-    use tokio_rustls::rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
-
-    #[derive(Debug)]
-    pub(super) struct NoCertificateVerification;
-
-    impl ServerCertVerifier for NoCertificateVerification {
-        fn verify_server_cert(
-            &self,
-            _: &pki_types::CertificateDer<'_>,
-            _: &[pki_types::CertificateDer<'_>],
-            _: &pki_types::ServerName<'_>,
-            _: &[u8],
-            _: pki_types::UnixTime,
-        ) -> Result<ServerCertVerified, Error> {
-            Ok(ServerCertVerified::assertion())
-        }
-
-        fn verify_tls12_signature(
-            &self,
-            _: &[u8],
-            _: &pki_types::CertificateDer<'_>,
-            _: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn verify_tls13_signature(
-            &self,
-            _: &[u8],
-            _: &pki_types::CertificateDer<'_>,
-            _: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-            vec![
-                SignatureScheme::RSA_PKCS1_SHA1,
-                SignatureScheme::ECDSA_SHA1_Legacy,
-                SignatureScheme::RSA_PKCS1_SHA256,
-                SignatureScheme::ECDSA_NISTP256_SHA256,
-                SignatureScheme::RSA_PKCS1_SHA384,
-                SignatureScheme::ECDSA_NISTP384_SHA384,
-                SignatureScheme::RSA_PKCS1_SHA512,
-                SignatureScheme::ECDSA_NISTP521_SHA512,
-                SignatureScheme::RSA_PSS_SHA256,
-                SignatureScheme::RSA_PSS_SHA384,
-                SignatureScheme::RSA_PSS_SHA512,
-                SignatureScheme::ED25519,
-                SignatureScheme::ED448,
-            ]
-        }
-    }
 }
 
 #[cfg(test)]
