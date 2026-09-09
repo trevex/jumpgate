@@ -383,12 +383,16 @@ exactly what they run and where it came from.
 - Published to GHCR. The seven first-party images publish to
   `ghcr.io/trevex/jumpgate/<service>` on every main build and on release tags.
 - Provenance and SBOM. Each published image carries a SLSA build-provenance
-  attestation and an SPDX SBOM, attached to the image in the registry.
+  attestation and an SPDX SBOM, attached to the image index by BuildKit. The
+  signed image digest covers that index, so tampering with an attestation
+  invalidates the signature.
 - Signed, keyless. Each image digest is signed with cosign using the release
   workflow's GitHub OIDC identity; the signature is recorded in the Rekor
   transparency log. No signing key is held.
-- Scanned. Images and dependencies are scanned in CI (trivy, govulncheck,
-  cargo-deny), gating on fixable HIGH and CRITICAL findings.
+- Scanned. Images and dependencies are scanned in CI: trivy covers the image and
+  the Go, Rust, and pnpm dependency manifests; govulncheck adds Go reachability
+  analysis; cargo-deny enforces the Rust dependency ban policy. The gate fails on
+  fixable HIGH and CRITICAL findings.
 
 To verify a released image, replace `<tag>` with a released tag:
 
@@ -398,11 +402,9 @@ cosign verify ghcr.io/trevex/jumpgate/warden:<tag> \
   --certificate-identity-regexp '^https://github.com/trevex/jumpgate/\.github/workflows/images\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-# Verify the SLSA build-provenance attestation.
-cosign verify-attestation --type slsaprovenance \
-  --certificate-identity-regexp '^https://github.com/trevex/jumpgate/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/trevex/jumpgate/warden:<tag>
+# Inspect the SLSA build-provenance attestation (attached to the image index).
+docker buildx imagetools inspect ghcr.io/trevex/jumpgate/warden:<tag> \
+  --format '{{ json .Provenance }}'
 
 # Inspect the SPDX SBOM attached to the image.
 docker buildx imagetools inspect ghcr.io/trevex/jumpgate/warden:<tag> \
@@ -415,7 +417,7 @@ docker buildx imagetools inspect ghcr.io/trevex/jumpgate/warden:<tag> \
 |---|---|---|
 | Demo credentials or open ports reach production | Safe-by-default chart: template-time fail-closed guards on required secrets, `ClusterIP` services and bundled datastores off by default, demo values isolated to `test/env/demo-values.yaml` | Implemented |
 | Compromised pod pivots across the cluster | Non-root read-only workloads with dropped capabilities and unmounted API tokens; default-deny NetworkPolicies encode the trust graph and are enforced by Cilium in e2e | Implemented |
-| Tampered or unattested image deployed | Images build from digest-pinned distroless bases and publish with a SLSA provenance attestation and SPDX SBOM, signed by cosign keyless (GitHub OIDC, Rekor); deployers verify with `cosign verify` / `verify-attestation` | Implemented |
+| Tampered or unattested image deployed | Images build from digest-pinned distroless bases and publish with a SLSA provenance attestation and SPDX SBOM (BuildKit, on the signed index); the digest is signed by cosign keyless (GitHub OIDC, Rekor); deployers verify with `cosign verify` and inspect provenance/SBOM via `docker buildx imagetools inspect` | Implemented |
 | Attacker maps infrastructure by probing | Existence-hiding: catalog returns only visible assets; invisible lookup → `CodeNotFound`, never `403` | Implemented |
 | Man-in-the-middle or swapped target | Target identity verification (all four protocols): credential-free identity probe, approved trust anchor (exact key/leaf fingerprint or CA with required name), two-phase setup releases no credential until warden re-confirms a current anchor match; endpoint-address change invalidates old anchors; a mismatch blocks new sessions | Implemented |
 | Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation (`Logout`) | Implemented |
