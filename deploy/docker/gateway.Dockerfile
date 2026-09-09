@@ -25,4 +25,5 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/gateway /usr/local/bin/gateway
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/gateway"]
