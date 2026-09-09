@@ -11,7 +11,7 @@ KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 ZENSICAL_IMAGE ?= zensical/zensical:latest
 
 .PHONY: help gen wasm sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
-        ci-go ci-rust ci-rdp ci-web ci-gen chart-test \
+        ci-go ci-rust ci-rdp ci-web ci-gen chart-test scan \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build docs docs-serve
 
@@ -110,6 +110,12 @@ ci-gen: ## CI slice: regenerate code (buf + sqlc) and fail on any drift
 	buf generate
 	$(MAKE) sqlc
 	git diff --exit-code
+
+scan: ## Dependency + filesystem vulnerability scan (fixable HIGH/CRITICAL gate)
+	trivy fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --ignore-unfixed \
+	  --skip-dirs test/env/testworkload --skip-dirs .claude/worktrees --exit-code 1 .
+	cd warden && govulncheck ./...
+	$(MAKE) rust-deny
 
 chart-test: ## Render-time fail-closed / no-leak assertions for the Helm chart
 	helm lint deploy/helm/jumpgate --values test/env/demo-values.yaml

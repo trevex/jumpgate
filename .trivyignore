@@ -1,0 +1,8 @@
+# DS-0002: "Specify at least 1 USER command in Dockerfile with non-root user"
+# False positive for us: every shipped image's final stage is
+# gcr.io/distroless/{static,cc-debian12}:nonroot, which already bakes in
+# USER 65532 at the base-image level. Trivy's Dockerfile linter only parses
+# the Dockerfile text and doesn't resolve the inherited USER from a remote
+# base image, so it flags these even though the running container is
+# genuinely non-root. Revisit if any final stage stops using a nonroot base.
+DS-0002

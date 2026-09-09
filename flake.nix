@@ -108,6 +108,8 @@
             silo
             pkgs.kubernetes-helm
             pkgs.kubectl
+            pkgs.trivy
+            pkgs.govulncheck
             pkgs.kind
             pkgs.gnumake
             pkgs.chromium
