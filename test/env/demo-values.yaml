@@ -33,13 +33,20 @@ bootstrapAdmin:
 
 recording:
   s3:
+    accessKey: minioadmin
+    secretKey: minioadmin-demo-secret
     # Presigned download URLs must be reachable from the host CLI. Expose silo on
     # a NodePort forwarded to localhost:30900 (cluster.yaml) and have warden sign
     # that host; the worker still uploads via the in-cluster endpoint.
     publicEndpoint: "http://localhost:30900"
 
+silo:
+  enabled: true
+
 service:
-  silo: { nodePort: 30900 }
+  warden:  { nodePort: 30080 }
+  gateway: { nodePort: 30443, insecureNodePort: 30444 }
+  silo:    { nodePort: 30900 }
 
 # The chart ships with the bundled Postgres OFF (a production install points warden
 # at a customer-operated DB). For the local kind demo/e2e we re-enable the in-cluster

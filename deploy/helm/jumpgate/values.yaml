@@ -42,9 +42,9 @@ mesh:
     existingSecret: ""     # Secret with tls.crt/tls.key of the mesh CA; else bootstrap generates
 
 bootstrapAdmin:
-  existingSecret: ""       # Secret with keys: email, password
-  email: admin@demo.test
-  password: admin-password-1234
+  existingSecret: ""
+  email: ""                # required: supply an admin email (or bootstrapAdmin.existingSecret)
+  password: ""             # required: supply a strong password (or bootstrapAdmin.existingSecret)
 
 worker:
   id: worker-0
@@ -80,8 +80,9 @@ recording:
     # back to the in-cluster endpoint.
     publicEndpoint: ""
     region: us-east-1
-    accessKey: minioadmin
-    secretKey: minioadmin-demo-secret
+    existingSecret: ""     # Secret holding AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (preferred)
+    accessKey: ""          # inline creds (demo only); prefer existingSecret
+    secretKey: ""
 
 # Bundled in-cluster Postgres. DEMO/DEV ONLY — single replica, emptyDir storage,
 # no backups/HA/PITR. DISABLED by default: a production install must run Postgres
@@ -105,7 +106,7 @@ database:
   existingSecretKey: uri   # key within existingSecret (CloudNativePG app secret uses "uri")
 
 silo:
-  enabled: true
+  enabled: false           # bundled MinIO is DEMO ONLY; prod points at an external object store
   image: pgsty/silo:latest
 
 certManager:
@@ -114,10 +115,10 @@ certManager:
   renewBefore: 360h        # 15d
 
 service:
-  warden:  { nodePort: 30080 }
+  warden:  { nodePort: "" }
   # insecureNodePort exposes the DEV-ONLY plaintext gateway listener (only when
   # gateway.insecure.enabled). Reach it from the host via a kind extraPortMapping.
-  gateway: { nodePort: 30443, insecureNodePort: 30444 }
+  gateway: { nodePort: "", insecureNodePort: "" }
   # Optional NodePort exposing silo's S3 port so a host client can fetch presigned
   # download URLs. Empty = ClusterIP only (no external S3 access).
   silo:    { nodePort: "" }
