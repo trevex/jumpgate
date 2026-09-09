@@ -1,0 +1,198 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+Default-deny + per-component allows for the documented trust graph. Requires an
+enforcing CNI (the e2e cluster uses Cilium). Ingress is segmented tightly per
+component; egress is left open for components that must reach dynamic, un-pinnable
+destinations (workers → arbitrary targets, warden/broker → external DB/S3, the
+bootstrap Job → the API server), and restricted where it is enumerable (gateway
+only ever talks to in-cluster components). Health probes: under Cilium, kubelet
+checks from the local node are permitted by default, so default-deny ingress does
+not block liveness/readiness.
+*/}}
+---
+# Default-deny all ingress and egress for jumpgate pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-default-deny
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+# DNS egress for every jumpgate pod (kube-dns in kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-allow-dns
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# Gateway: ingress from anywhere (external clients); egress restricted to the
+# in-cluster components it routes to (workers, broker, warden mesh).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-gateway
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - {}
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [ssh-proxy, pg-proxy, rdp-proxy, k8s-broker, warden]
+---
+# Warden: ingress from anywhere (user API + mesh from workers/gateway/broker);
+# egress open (reaches postgres/silo in-cluster, or an external managed DB and
+# object store that cannot be pinned).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-warden
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: warden
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - {}
+  egress:
+    - {}
+---
+# Workers (ssh/pg/rdp-proxy): ingress from the gateway only; egress open (warden
+# mesh, S3/silo, and arbitrary external targets — the product's core function).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-workers
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [ssh-proxy, pg-proxy, rdp-proxy]
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: gateway
+  egress:
+    - {}
+---
+# Broker: ingress from the gateway and from the agent reverse tunnel (agents dial
+# in from target clusters = off-cluster source); egress open (warden mesh + S3).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-k8s-broker
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: k8s-broker
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - {}
+  egress:
+    - {}
+---
+# Bootstrap Job: short-lived trusted admin task. Egress open — it reaches the
+# Kubernetes API server (kubectl apply) and the database (warden-bootstrap). No
+# ingress (nothing dials it).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-bootstrap
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bootstrap
+  policyTypes: [Ingress, Egress]
+  egress:
+    - {}
+{{- if .Values.postgres.enabled }}
+---
+# Bundled postgres (demo only): ingress on 5432 from any jumpgate pod (warden +
+# the bootstrap Job's wait-postgres/bootstrap containers).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-postgres
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "jumpgate.selectorLabels" . | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+{{- end }}
+{{- if .Values.silo.enabled }}
+---
+# Bundled silo/MinIO (demo only): ingress on 9000 from any jumpgate pod (warden,
+# workers, broker — recording upload + audit-anchor + cast-proxy reads).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jumpgate.fullname" . }}-silo
+  labels:
+    {{- include "jumpgate.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jumpgate.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: silo
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "jumpgate.selectorLabels" . | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: 9000 }
+{{- end }}
+{{- end }}

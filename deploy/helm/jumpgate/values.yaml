@@ -123,4 +123,10 @@ service:
   # download URLs. Empty = ClusterIP only (no external S3 access).
   silo:    { nodePort: "" }
 
+# NetworkPolicy default-deny + per-component allows for the documented trust
+# graph. Requires an enforcing CNI (the e2e cluster uses Cilium). Set false only
+# on a cluster whose CNI does not enforce NetworkPolicy.
+networkPolicy:
+  enabled: true
+
 resources: {}
