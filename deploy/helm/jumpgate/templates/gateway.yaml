@@ -23,7 +23,7 @@ spec:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: gateway
-          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}

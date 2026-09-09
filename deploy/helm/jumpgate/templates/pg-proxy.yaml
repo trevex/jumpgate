@@ -25,7 +25,7 @@ spec:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: pg-proxy
-          image: "{{ .Values.images.pgProxy.repository }}:{{ .Values.images.pgProxy.tag }}"
+          image: "{{ .Values.images.pgProxy.repository }}:{{ .Values.images.pgProxy.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.pgProxy.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}

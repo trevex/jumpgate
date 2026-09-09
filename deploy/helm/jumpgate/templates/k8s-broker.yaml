@@ -25,7 +25,7 @@ spec:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: k8s-broker
-          image: "{{ .Values.images.k8sBroker.repository }}:{{ .Values.images.k8sBroker.tag }}"
+          image: "{{ .Values.images.k8sBroker.repository }}:{{ .Values.images.k8sBroker.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.k8sBroker.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}

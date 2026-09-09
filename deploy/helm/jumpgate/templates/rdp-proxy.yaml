@@ -25,7 +25,7 @@ spec:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: rdp-proxy
-          image: "{{ .Values.images.rdpProxy.repository }}:{{ .Values.images.rdpProxy.tag }}"
+          image: "{{ .Values.images.rdpProxy.repository }}:{{ .Values.images.rdpProxy.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.rdpProxy.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}

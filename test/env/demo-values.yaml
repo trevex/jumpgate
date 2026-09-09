@@ -3,6 +3,18 @@
 # These override the chart defaults so the stack is reachable from the host via
 # the kind extraPortMappings (see cluster.yaml): warden on localhost:8080,
 # gateway on localhost:8443.
+
+# Chart defaults point at published GHCR images; the kind demo instead uses
+# images built locally and `kind load`ed, so pin back to the :dev tags.
+images:
+  warden:   { repository: jumpgate/warden,    tag: dev }
+  gateway:  { repository: jumpgate/gateway,   tag: dev }
+  sshProxy: { repository: jumpgate/ssh-proxy, tag: dev }
+  pgProxy:  { repository: jumpgate/pg-proxy,  tag: dev }
+  rdpProxy: { repository: jumpgate/rdp-proxy, tag: dev }
+  k8sBroker: { repository: jumpgate/k8s-broker, tag: dev }
+  k8sAgent:  { repository: jumpgate/k8s-agent,  tag: dev }
+
 warden:
   # What warden tells the CLI to dial for the data plane. Matches the gateway
   # NodePort forwarded to the host by the kind cluster.

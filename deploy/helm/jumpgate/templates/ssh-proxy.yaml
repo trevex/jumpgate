@@ -25,7 +25,7 @@ spec:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: ssh-proxy
-          image: "{{ .Values.images.sshProxy.repository }}:{{ .Values.images.sshProxy.tag }}"
+          image: "{{ .Values.images.sshProxy.repository }}:{{ .Values.images.sshProxy.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.sshProxy.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}

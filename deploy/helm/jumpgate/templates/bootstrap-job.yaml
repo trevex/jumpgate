@@ -38,7 +38,7 @@ spec:
               done
         {{- end }}
         - name: bootstrap
-          image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag }}"
+          image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.warden.pullPolicy }}
           securityContext:
             {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
