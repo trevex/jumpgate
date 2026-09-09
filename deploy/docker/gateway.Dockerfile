@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1 AS build
+FROM rust:1@sha256:bf5a9aa29062a6cb03c49bd59a46eb55e3cc770caf598a221a7866e500be3082 AS build
 
 # The mesh crate's build.rs generates gRPC stubs: it runs `buf export` (to
 # materialize the proto closure incl. the protovalidate BSR dep) and then
@@ -20,10 +20,8 @@ WORKDIR /src
 COPY . .
 RUN cargo build --release -p gateway
 
-FROM debian:stable-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# distroless/cc ships glibc + libgcc + ca-certificates and runs as uid 65532
+# (the :nonroot tag), so no apt step and no explicit USER are needed.
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
 COPY --from=build /src/target/release/gateway /usr/local/bin/gateway
-USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/gateway"]
