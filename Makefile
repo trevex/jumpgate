@@ -11,7 +11,7 @@ KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 ZENSICAL_IMAGE ?= zensical/zensical:latest
 
 .PHONY: help gen wasm sqlc build test bench lint fmt ci e2e-cluster kind-e2e web rust-deny \
-        ci-go ci-rust ci-rdp ci-web ci-gen \
+        ci-go ci-rust ci-rdp ci-web ci-gen chart-test \
         kind-images kind-up kind-down kind-redeploy kind-demo ui-e2e \
         ui-dev ui-dev-reset ui-build docs docs-serve
 
@@ -84,7 +84,7 @@ web: ## Install + typecheck + build the SPA
 	pnpm --dir web typecheck
 	pnpm --dir web build
 
-ci: gen build lint web test ## Full CI pipeline (web installs deps before `test` runs web unit tests)
+ci: gen build lint web test chart-test ## Full CI pipeline (web installs deps before `test` runs web unit tests)
 
 # ── CI slices (one per parallel CI job; single-sourced here) ──────────────────
 ci-go: ## CI slice: every Go module's unit tests
@@ -110,6 +110,10 @@ ci-gen: ## CI slice: regenerate code (buf + sqlc) and fail on any drift
 	buf generate
 	$(MAKE) sqlc
 	git diff --exit-code
+
+chart-test: ## Render-time fail-closed / no-leak assertions for the Helm chart
+	helm lint deploy/helm/jumpgate --values test/env/demo-values.yaml
+	bash deploy/helm/jumpgate/tests/render_test.sh
 
 kind-images: ## Build the container images used by the kind env
 	docker build $(DOCKER_BUILD_FLAGS) -f deploy/docker/warden.Dockerfile -t jumpgate/warden:dev .
