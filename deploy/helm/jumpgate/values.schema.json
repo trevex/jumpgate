@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["images", "warden", "recording", "database", "service"],
+  "properties": {
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["repository", "tag"],
+        "properties": {
+          "repository": { "type": "string", "minLength": 1 },
+          "tag": { "type": "string", "minLength": 1 },
+          "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+        }
+      }
+    },
+    "silo": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "postgres": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "insecure": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "recording": {
+      "type": "object",
+      "properties": {
+        "s3": {
+          "type": "object",
+          "properties": {
+            "region": { "type": "string", "minLength": 1 },
+            "existingSecret": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
