@@ -173,8 +173,14 @@ spec:
 {{- end }}
 {{- if .Values.silo.enabled }}
 ---
-# Bundled silo/MinIO (demo only): ingress on 9000 from any jumpgate pod (warden,
-# workers, broker — recording upload + audit-anchor + cast-proxy reads).
+# Bundled silo/MinIO (demo only): the S3 port (9000) is a deliberately exposed
+# surface — in-cluster writers (warden/workers/broker: recording upload +
+# audit-anchor + cast-proxy reads) AND off-cluster auditors who fetch recordings
+# through the silo NodePort via presigned (SigV4-signed) URLs. Ingress is opened on
+# 9000 only (the console port 9001 stays default-denied), mirroring how the gateway
+# and warden NodePorts accept external clients. Egress lets the post-install
+# silo-bucket Job (component=silo, so selected by default-deny) reach silo to create
+# the recordings bucket.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -186,12 +192,16 @@ spec:
     matchLabels:
       {{- include "jumpgate.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: silo
-  policyTypes: [Ingress]
+  policyTypes: [Ingress, Egress]
   ingress:
-    - from:
+    - ports:
+        - { protocol: TCP, port: 9000 }
+  egress:
+    - to:
         - podSelector:
             matchLabels:
               {{- include "jumpgate.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: silo
       ports:
         - { protocol: TCP, port: 9000 }
 {{- end }}
