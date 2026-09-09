@@ -24,6 +24,7 @@ jobs:
           - { name: web, target: ci-web }
           - { name: generation, target: ci-gen }
           - { name: lint, target: lint }
+          - { name: chart, target: chart-test }
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
