@@ -130,6 +130,14 @@ kind-images: ## Build the container images used by the kind env
 
 kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the ssh test workload
 	kind create cluster --name $(KIND_CLUSTER) --config test/env/cluster.yaml
+	# The cluster boots with no CNI (disableDefaultCNI). Install Cilium first so nodes
+	# become Ready — cert-manager's rollout wait would otherwise hang on NotReady nodes.
+	helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1 || true
+	helm repo update >/dev/null
+	helm install cilium cilium/cilium --namespace kube-system \
+	  --set image.pullPolicy=IfNotPresent --set ipam.mode=kubernetes
+	kubectl -n kube-system rollout status ds/cilium --timeout=300s
+	kubectl wait --for=condition=Ready nodes --all --timeout=300s
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml
 	kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
 	kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
