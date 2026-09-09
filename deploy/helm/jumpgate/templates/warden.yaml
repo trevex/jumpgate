@@ -100,10 +100,7 @@ spec:
             - name: RECORDING_S3_PUBLIC_ENDPOINT
               value: {{ .Values.recording.s3.publicEndpoint | quote }}
             {{- end }}
-            - name: AWS_ACCESS_KEY_ID
-              value: {{ .Values.recording.s3.accessKey | quote }}
-            - name: AWS_SECRET_ACCESS_KEY
-              value: {{ .Values.recording.s3.secretKey | quote }}
+            {{- include "jumpgate.s3Env" . | nindent 12 }}
           volumeMounts:
             - name: warden-mesh
               mountPath: /mesh

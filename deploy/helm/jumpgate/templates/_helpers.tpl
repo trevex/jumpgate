@@ -98,3 +98,27 @@ Service DNS hostnames referenced by component templates.
 {{- define "jumpgate.wardenMeshHost" -}}
 {{ include "jumpgate.fullname" . }}-warden-mesh
 {{- end -}}
+
+{{/*
+S3 credentials Secret name: operator-provided existingSecret, else chart-managed.
+*/}}
+{{- define "jumpgate.s3Secret" -}}
+{{- if .Values.recording.s3.existingSecret }}{{ .Values.recording.s3.existingSecret }}{{- else }}{{ include "jumpgate.fullname" . }}-s3{{- end }}
+{{- end -}}
+
+{{/*
+AWS_* env sourced from the S3 Secret. Shared by warden and every worker so the
+credential never appears in plaintext env.
+*/}}
+{{- define "jumpgate.s3Env" -}}
+- name: AWS_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "jumpgate.s3Secret" . }}
+      key: AWS_ACCESS_KEY_ID
+- name: AWS_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "jumpgate.s3Secret" . }}
+      key: AWS_SECRET_ACCESS_KEY
+{{- end -}}
