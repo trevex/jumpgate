@@ -17,10 +17,14 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: warden
     spec:
+      securityContext:
+        {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: warden
           image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag }}"
           imagePullPolicy: {{ .Values.images.warden.pullPolicy }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: api
               containerPort: 8080
@@ -105,6 +109,8 @@ spec:
             - name: warden-mesh
               mountPath: /mesh
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /healthz
@@ -125,6 +131,8 @@ spec:
         - name: warden-mesh
           secret:
             secretName: {{ include "jumpgate.fullname" . }}-warden-mesh
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

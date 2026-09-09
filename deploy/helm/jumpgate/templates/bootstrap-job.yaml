@@ -24,10 +24,14 @@ spec:
       volumes:
         - name: work
           emptyDir: {}
+        - name: tmp
+          emptyDir: {}
       initContainers:
         {{- if .Values.postgres.enabled }}
         - name: wait-postgres
           image: {{ .Values.postgres.image }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -38,6 +42,8 @@ spec:
         - name: bootstrap
           image: "{{ .Values.images.warden.repository }}:{{ .Values.images.warden.tag }}"
           imagePullPolicy: {{ .Values.images.warden.pullPolicy }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
           command: ["/usr/local/bin/warden-bootstrap"]
           args: ["--out", "/work"{{ if .Values.mesh.ca.existingSecret }}, "--skip-mesh-ca"{{ end }}]
           env:
@@ -64,6 +70,11 @@ spec:
         - name: apply
           image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
           imagePullPolicy: {{ .Values.images.kubectl.pullPolicy }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
+          env:
+            - name: HOME
+              value: /tmp
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -83,3 +94,5 @@ spec:
           volumeMounts:
             - name: work
               mountPath: /work
+            - name: tmp
+              mountPath: /tmp

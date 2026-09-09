@@ -18,6 +18,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
+      # Demo-only bundled component; intentionally not fully hardened (needs a
+      # writable data dir). Production uses an external Postgres database.
       containers:
         - name: postgres
           image: {{ .Values.postgres.image | quote }}

@@ -19,10 +19,14 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: pg-proxy
     spec:
+      securityContext:
+        {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: pg-proxy
           image: "{{ .Values.images.pgProxy.repository }}:{{ .Values.images.pgProxy.tag }}"
           imagePullPolicy: {{ .Values.images.pgProxy.pullPolicy }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: dataplane
               containerPort: 9000
@@ -75,6 +79,8 @@ spec:
             - name: worker-mesh
               mountPath: /mesh
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             tcpSocket:
               port: 9001
@@ -93,6 +99,8 @@ spec:
         - name: worker-mesh
           secret:
             secretName: {{ include "jumpgate.fullname" . }}-pg-worker-mesh
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

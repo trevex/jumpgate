@@ -17,10 +17,14 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: gateway
     spec:
+      securityContext:
+        {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
         - name: gateway
           image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
           imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          securityContext:
+            {{- include "jumpgate.containerSecurityContext" . | nindent 12 }}
           ports:
             - name: external
               containerPort: 8443
@@ -66,6 +70,8 @@ spec:
             - name: gateway-mesh
               mountPath: /mesh
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             tcpSocket:
               port: 8081
@@ -87,6 +93,8 @@ spec:
         - name: gateway-mesh
           secret:
             secretName: {{ include "jumpgate.fullname" . }}-gateway-mesh
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
