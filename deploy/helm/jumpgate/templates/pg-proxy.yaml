@@ -19,6 +19,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: pg-proxy
     spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-pg-proxy
+      automountServiceAccountToken: false
       securityContext:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:

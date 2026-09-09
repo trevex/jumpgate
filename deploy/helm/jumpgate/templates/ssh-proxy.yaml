@@ -19,6 +19,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: ssh-proxy
     spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-ssh-proxy
+      automountServiceAccountToken: false
       securityContext:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:

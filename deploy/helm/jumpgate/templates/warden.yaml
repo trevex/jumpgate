@@ -17,6 +17,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: warden
     spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-warden
+      automountServiceAccountToken: false
       securityContext:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:

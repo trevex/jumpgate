@@ -17,6 +17,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: gateway
     spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-gateway
+      automountServiceAccountToken: false
       securityContext:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:

@@ -19,6 +19,8 @@ spec:
         {{- include "jumpgate.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: k8s-broker
     spec:
+      serviceAccountName: {{ include "jumpgate.fullname" . }}-k8s-broker
+      automountServiceAccountToken: false
       securityContext:
         {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       containers:
