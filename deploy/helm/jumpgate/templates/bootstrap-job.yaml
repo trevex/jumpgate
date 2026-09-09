@@ -18,10 +18,7 @@ spec:
       # 'nonroot' user) so the kubectl container can read the 0600 mesh-ca.key the
       # bootstrap container writes into the shared volume.
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        {{- include "jumpgate.podSecurityContext" . | nindent 8 }}
       volumes:
         - name: work
           emptyDir: {}
