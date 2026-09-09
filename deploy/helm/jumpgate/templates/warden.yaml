@@ -137,7 +137,7 @@ metadata:
     {{- include "jumpgate.labels" . | nindent 4 }}
     app.kubernetes.io/component: warden
 spec:
-  type: NodePort
+  type: {{ if .Values.service.warden.nodePort }}NodePort{{ else }}ClusterIP{{ end }}
   selector:
     {{- include "jumpgate.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: warden
@@ -145,7 +145,9 @@ spec:
     - name: api
       port: 8080
       targetPort: 8080
+      {{- if .Values.service.warden.nodePort }}
       nodePort: {{ .Values.service.warden.nodePort }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

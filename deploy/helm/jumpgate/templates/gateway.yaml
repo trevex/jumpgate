@@ -96,7 +96,7 @@ metadata:
     {{- include "jumpgate.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
-  type: NodePort
+  type: {{ if .Values.service.gateway.nodePort }}NodePort{{ else }}ClusterIP{{ end }}
   selector:
     {{- include "jumpgate.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
@@ -104,10 +104,14 @@ spec:
     - name: external
       port: 8443
       targetPort: 8443
+      {{- if .Values.service.gateway.nodePort }}
       nodePort: {{ .Values.service.gateway.nodePort }}
+      {{- end }}
     {{- if .Values.gateway.insecure.enabled }}
     - name: insecure
       port: {{ .Values.gateway.insecure.port }}
       targetPort: {{ .Values.gateway.insecure.port }}
+      {{- if .Values.service.gateway.insecureNodePort }}
       nodePort: {{ .Values.service.gateway.insecureNodePort }}
+      {{- end }}
     {{- end }}
