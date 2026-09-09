@@ -117,7 +117,17 @@ test("catalog authoring: create folder, onboard asset, rename, blocked delete, m
   await wizard.getByLabel("Secret for row 1").fill("hunter2");
 
   await wizard.getByRole("button", { name: "Onboard asset" }).click();
-  await expect(wizard).toBeHidden();
+
+  // Onboarding no longer closes the wizard on submit: the asset is created and
+  // the dialog swaps to the guided target-identity verification step. This
+  // fixture's target (10.0.0.9) isn't reachable from the probe worker, so we
+  // don't drive it to approval — "Finish later" is always available and leaves a
+  // durable, resumable pending asset. The asset already exists and appears in the
+  // tree regardless of its verification state.
+  const verify = page.getByRole("dialog", { name: "Verify target identity" });
+  await expect(verify).toBeVisible();
+  await verify.getByRole("button", { name: "Finish later" }).click();
+  await expect(verify).toBeHidden();
 
   // The asset now lives under `folder`. `folder` was selected+expanded when we
   // opened its menu, so its children are visible; the new asset appears in the

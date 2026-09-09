@@ -41,8 +41,9 @@ import {
   ObservationOutcome,
   type Observation,
 } from "@/gen/jumpgate/targetidentity/v1/targetidentity_pb";
+import { getAssetAccess } from "@/gen/jumpgate/catalog/v1/catalog-CatalogService_connectquery";
 import { ShieldCheck } from "lucide-react";
-import { capsCover, useCapabilities } from "@/lib/capabilities";
+import { capsCover } from "@/lib/capabilities";
 import { connectErrorMessage } from "@/lib/format";
 import { verificationView } from "./target-verification-model";
 import { StatusBanner, EvidenceView } from "./detail/target-identity-card";
@@ -73,9 +74,15 @@ export function TargetVerificationStep({
   open,
   onOpenChange,
 }: TargetVerificationStepProps) {
-  const caps = useCapabilities();
-  const canApprove = capsCover(caps, IDENTITY_APPROVE);
-  const canProbe = capsCover(caps, ASSET_PROBE);
+  // Approve/probe affordances are gated on the caller's management caps ON THIS
+  // ASSET, not their global caps. A folder-scoped admin (e.g. a delegated folder
+  // owner) holds identity:approve via a scoped binding, which never surfaces in
+  // the global WhoAmI set — so read the asset's managementCapabilities, mirroring
+  // the detail card. The server re-checks every mutation regardless.
+  const accessQ = useQuery(getAssetAccess, { assetId }, { enabled: open });
+  const mgmtCaps = accessQ.data?.managementCapabilities ?? [];
+  const canApprove = capsCover(mgmtCaps, IDENTITY_APPROVE);
+  const canProbe = capsCover(mgmtCaps, ASSET_PROBE);
 
   // Stable idempotency key: re-invoking StartProbe with the same request id
   // returns the same durable job rather than queuing a duplicate.

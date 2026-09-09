@@ -37,11 +37,13 @@ test("in-browser RDP session connects and stays connected", async ({ page }) => 
   expect(href).toContain("/rdp/");
 
   // Verify-before-issue: rdp-proxy observes the target's TLS identity and only
-  // injects the vault credential after it matches an approved trust anchor, so a
-  // connectable rdp-box must be verified first. The detail's identity card is the
-  // durable proof — assert it before driving the (credentialed) session.
-  await expect(page.getByRole("heading", { name: "Target identity" })).toBeVisible();
-  await expect(page.getByText("Identity verified")).toBeVisible();
+  // injects the vault credential after it matches an approved trust anchor, so
+  // rdp-box's identity is probed + approved up front in the seed (see
+  // test/e2e/uiseed_test.go). The target-identity detail card is a MANAGEMENT
+  // affordance (gated on catalog:asset:identity:read); alice is a connect-only
+  // user (rdp:login:demo) and holds no management caps on rdp-box, so the card is
+  // intentionally absent for her — the server-side trust anchor, not a UI card,
+  // is what lets the credentialed session open.
 
   await page.goto(href!); // chromeless RDP route, same tab
   await expect(page.getByRole("status")).toContainText(/connected/i, { timeout: 90_000 });
