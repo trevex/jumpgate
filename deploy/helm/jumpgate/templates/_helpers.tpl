@@ -122,3 +122,23 @@ credential never appears in plaintext env.
       name: {{ include "jumpgate.s3Secret" . }}
       key: AWS_SECRET_ACCESS_KEY
 {{- end -}}
+
+{{/*
+Pod- and container-level hardening, applied to every first-party workload.
+UID/GID 65532 matches the distroless "nonroot" user the Go images run as.
+*/}}
+{{- define "jumpgate.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 65532
+runAsGroup: 65532
+fsGroup: 65532
+seccompProfile:
+  type: RuntimeDefault
+{{- end -}}
+{{- define "jumpgate.containerSecurityContext" -}}
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop:
+    - ALL
+{{- end -}}
