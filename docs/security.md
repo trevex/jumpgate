@@ -335,10 +335,49 @@ identity-mismatch, repeated-probe-failure, and approaching-expiry events at leas
 a stuck outbox can never block or weaken a session decision, because it holds no
 authorization or identity state.
 
+## Deployment hardening
+
+The Helm chart is safe by default. A bare `helm install` ships no credentials,
+exposes nothing outside the cluster, and refuses to render until the operator
+supplies the required secrets. The demo and kind environments are reproduced
+entirely through `test/env/demo-values.yaml`; the chart itself has no demo mode.
+
+- Fail closed on missing config. Template-time guards abort the render when the
+  master key, bootstrap admin, database, or object-storage credentials are
+  absent. The demo values file supplies them; a production install must too.
+- No inline secrets. Master key, admin, database DSN, mesh CA, and S3 credentials
+  are all consumed through `secretKeyRef`. Each has an `existingSecret` value, so
+  an External Secrets or CSI provider can populate a normal Secret that the chart
+  references. The chart couples to no specific provider.
+- Nothing exposed by default. Every Service is `ClusterIP` unless a NodePort is
+  set. The bundled Postgres and object store are off by default; a production
+  install points warden at an external database and object store.
+- Non-root, read-only workloads. Every first-party workload runs as a non-root
+  UID with `allowPrivilegeEscalation: false`, all capabilities dropped, a
+  read-only root filesystem, and the `RuntimeDefault` seccomp profile. Each has a
+  dedicated ServiceAccount with the API token unmounted; only the bootstrap Job,
+  which applies manifests, keeps a token.
+- Enforced network segmentation. Default-deny NetworkPolicies plus per-component
+  allows encode the trust graph: external clients reach the gateway and the warden
+  API, the gateway reaches the workers and the broker, workers reach targets and
+  object storage, warden reaches the database and object storage, and the broker
+  accepts the agent reverse tunnel. Worker egress to targets is intentionally
+  open, since reaching arbitrary targets is the product's function. The policies
+  require an enforcing CNI; the kind e2e cluster runs Cilium so they are enforced
+  on every run.
+- Restricted Pod Security. Label the namespace
+  `pod-security.kubernetes.io/enforce: restricted`. The chart's security contexts
+  already satisfy the `restricted` profile.
+
+Image supply-chain hardening — digest pinning, SBOMs, scanning, and signed
+provenance — is tracked separately and is not part of the chart.
+
 ## Threat-model summary
 
 | Threat | Mitigation | Status |
 |---|---|---|
+| Demo credentials or open ports reach production | Safe-by-default chart: template-time fail-closed guards on required secrets, `ClusterIP` services and bundled datastores off by default, demo values isolated to `test/env/demo-values.yaml` | Implemented |
+| Compromised pod pivots across the cluster | Non-root read-only workloads with dropped capabilities and unmounted API tokens; default-deny NetworkPolicies encode the trust graph and are enforced by Cilium in e2e | Implemented |
 | Attacker maps infrastructure by probing | Existence-hiding: catalog returns only visible assets; invisible lookup → `CodeNotFound`, never `403` | Implemented |
 | Man-in-the-middle or swapped target | Target identity verification (all four protocols): credential-free identity probe, approved trust anchor (exact key/leaf fingerprint or CA with required name), two-phase setup releases no credential until warden re-confirms a current anchor match; endpoint-address change invalidates old anchors; a mismatch blocks new sessions | Implemented |
 | Stolen/leaked bearer token used indefinitely | Opaque DB-backed hashed tokens with expiry; instant server-side revocation (`Logout`) | Implemented |
