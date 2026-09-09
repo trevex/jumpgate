@@ -34,6 +34,7 @@ Create chart name and version as used by the chart label.
 Common labels
 */}}
 {{- define "jumpgate.labels" -}}
+{{- include "jumpgate.validate" . -}}
 helm.sh/chart: {{ include "jumpgate.chart" . }}
 {{ include "jumpgate.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
