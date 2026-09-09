@@ -221,6 +221,14 @@ async fn probe_observes_leaf_and_matches_leaf_anchor() {
     assert_eq!(obs.leaf_fingerprint, leaf_fp);
     assert!(!obs.chain.is_empty());
     assert!(!obs.resolved_addresses.is_empty());
+    // Warden validates each resolved address with net.ParseIP, which rejects a
+    // port suffix — every entry must be a bare IP.
+    for a in &obs.resolved_addresses {
+        assert!(
+            a.parse::<std::net::IpAddr>().is_ok(),
+            "resolved address must be a bare IP (no port), got {a:?}",
+        );
+    }
 
     let good = SessionAnchor {
         id: "a-good".into(),

@@ -44,10 +44,14 @@ func TestUISeed(t *testing.T) {
 	// ── Governance tree: a demo folder holding the requestable asset ──
 	e.asActor(t, "admin", "folders", "create", "demo")
 
+	// Onboard the target's identity up front (probe + approve the committed host
+	// key). Sessions fail closed without a current trust anchor, so the browser
+	// request→approve→connect loop needs demo-box's identity approved to connect.
 	assetOut := e.asActor(t, "admin", "assets", "ssh", "create", "demo-box",
 		"--folder", "demo",
 		"--target", "ssh-target.default.svc.cluster.local:22",
-		"--login", "deploy", "-o", "json")
+		"--login", "deploy",
+		"--wait", "--expected-fingerprint", sshHostKeyFP, "-o", "json")
 	assetID := jsonID(assetOut)
 	if assetID == "" {
 		t.Fatalf("no demo-box asset id:\n%s", assetOut)
@@ -101,7 +105,8 @@ func TestUISeed(t *testing.T) {
 
 	pwOut := e.asActor(t, "admin", "assets", "ssh", "create", "password-box",
 		"--folder", "demo",
-		"--target", "ssh-target-password.default.svc.cluster.local:22", "-o", "json")
+		"--target", "ssh-target-password.default.svc.cluster.local:22",
+		"--wait", "--expected-fingerprint", sshHostKeyFP, "-o", "json")
 	pwAssetID := jsonID(pwOut)
 	if pwAssetID == "" {
 		t.Fatalf("no password-box asset id:\n%s", pwOut)
@@ -125,7 +130,8 @@ func TestUISeed(t *testing.T) {
 	e.asActor(t, "admin", "folders", "create", "cascade")
 	e.asActor(t, "admin", "assets", "ssh", "create", "cascade-box",
 		"--folder", "cascade",
-		"--target", "ssh-target-password.default.svc.cluster.local:22")
+		"--target", "ssh-target-password.default.svc.cluster.local:22",
+		"--wait", "--expected-fingerprint", sshHostKeyFP)
 	e.asActorStdin(t, "admin", "demo-password-123\n",
 		"assets", "ssh", "login", "set", "cascade-box.cascade",
 		"--login", "demo", "--kind", "password", "--password-stdin")
@@ -159,6 +165,14 @@ func TestUISeed(t *testing.T) {
 	e.asActorStdin(t, "admin", "rdp-demo-pw-123\n",
 		"assets", "rdp", "login", "set", rdpPath,
 		"--login", "demo", "--password-stdin")
+
+	// Onboard the RDP target's TLS identity. `assets rdp create` has no inline
+	// onboarding flags and the xrdp target's certificate is generated at runtime
+	// (no committed fingerprint to pin), so probe the target and TOFU-approve
+	// whatever it presents. Without an approved anchor the browser RDP connect
+	// fails closed with "target identity could not be verified".
+	e.asActor(t, "admin", "assets", "probe", rdpPath)
+	e.asActor(t, "admin", "assets", "identity", "approve", rdpPath, "--auto-approve")
 
 	// Standing binding for sre on rdp-box. rdp-demo is folder-scoped, so address it
 	// by its namespaced DNS name.
@@ -199,7 +213,8 @@ func TestUISeed(t *testing.T) {
 	reviewOut := e.asActor(t, "admin", "assets", "ssh", "create", "review-box",
 		"--folder", "demo",
 		"--target", "ssh-target.default.svc.cluster.local:22",
-		"--login", "deploy", "-o", "json")
+		"--login", "deploy",
+		"--wait", "--expected-fingerprint", sshHostKeyFP, "-o", "json")
 	reviewAssetID := jsonID(reviewOut)
 	if reviewAssetID == "" {
 		t.Fatalf("no review-box asset id:\n%s", reviewOut)

@@ -58,7 +58,8 @@ pub struct ProbeObservation {
     pub openssh_public_line: String,
     /// The server identification banner (`SSH-2.0-...`).
     pub banner: String,
-    /// Addresses the endpoint resolved to (`ip:port`).
+    /// Distinct bare IPs the endpoint resolved to (no port). Warden validates
+    /// each with `net.ParseIP`, which requires a bare IP.
     pub resolved_addresses: Vec<String>,
     /// Milliseconds to establish the TCP connection.
     pub connect_ms: i64,
@@ -191,7 +192,7 @@ async fn probe_ssh(
             "{host}:{port} resolved to no addresses"
         )));
     }
-    let resolved_addresses: Vec<String> = addrs.iter().map(SocketAddr::to_string).collect();
+    let resolved_addresses = distinct_ips(&addrs);
 
     // Connect (first address that answers) under the connect deadline.
     let connect_timeout = ms(limits.connect_timeout_ms);
@@ -440,6 +441,19 @@ impl russh::client::Handler for ProbeHandler {
         *self.captured.lock().unwrap() = Some(server_public_key.clone());
         Ok(true)
     }
+}
+
+/// Distinct bare IPs (no port) from resolved socket addresses, order preserved.
+/// Warden's `validateResult` runs `net.ParseIP` on each, which rejects `ip:port`.
+fn distinct_ips(addrs: &[SocketAddr]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(addrs.len());
+    for a in addrs {
+        let ip = a.ip().to_string();
+        if !out.contains(&ip) {
+            out.push(ip);
+        }
+    }
+    out
 }
 
 /// Clamp a non-positive millisecond bound to 1ms so a misconfigured limit never

@@ -192,6 +192,14 @@ async fn probe_returns_host_key_evidence_without_authenticating() {
         !obs.resolved_addresses.is_empty(),
         "resolved addresses must be recorded",
     );
+    // Warden validates each resolved address with net.ParseIP, which rejects a
+    // port suffix — every entry must be a bare IP.
+    for a in &obs.resolved_addresses {
+        assert!(
+            a.parse::<std::net::IpAddr>().is_ok(),
+            "resolved address must be a bare IP (no port), got {a:?}",
+        );
+    }
 
     // Deterministic never-authenticate check: wait until the server has fully
     // processed and closed the probe's connection. Only then is `auth_rx`'s state
