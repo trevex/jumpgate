@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -32,5 +33,26 @@ func TestThrottleProgressive(t *testing.T) {
 	th.Success(email, ip)
 	if d, blocked := th.Check(email, ip); blocked || d != 0 {
 		t.Fatalf("after success: d=%v blocked=%v", d, blocked)
+	}
+}
+
+func TestThrottlePerIPIndependentOfEmail(t *testing.T) {
+	th := auth.NewThrottle()
+	const ip = "10.9.9.9"
+	// 30 distinct emails, one failure each from the same IP: above the per-IP
+	// free count (20) but below the per-IP hard threshold (60).
+	for i := 0; i < 30; i++ {
+		th.Fail(fmt.Sprintf("user%d@x", i), ip)
+	}
+	// A brand-new email (zero failures of its own) still inherits the IP delay.
+	if d, blocked := th.Check("fresh@x", ip); blocked || d == 0 {
+		t.Fatalf("expected IP-driven delay for fresh email: d=%v blocked=%v", d, blocked)
+	}
+	// Push the IP counter past its hard threshold (60).
+	for i := 30; i < 61; i++ {
+		th.Fail(fmt.Sprintf("user%d@x", i), ip)
+	}
+	if _, blocked := th.Check("another-fresh@x", ip); !blocked {
+		t.Fatal("expected IP-driven hard block for a fresh email")
 	}
 }

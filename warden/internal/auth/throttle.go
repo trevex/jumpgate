@@ -10,6 +10,11 @@ import (
 // with Retry-After, but a single success clears the key. Keys are the login
 // email and the client IP; the stricter of the two applies.
 //
+// Entries accumulate until Cleanup is called; nothing here runs it on a
+// timer — the caller wires that up. Pass real, non-empty email/ip values:
+// an empty string is a valid map key like any other, so blank inputs land
+// every caller in one shared bucket and throttle each other.
+//
 // ponytail: in-memory = per-replica. Move to a shared store (Postgres/Redis)
 // when warden runs multi-replica; the HA milestone owns that.
 type Throttle struct {
@@ -43,6 +48,8 @@ func (t *Throttle) eval(key string, free, hard int) (time.Duration, bool) {
 		return 0, false
 	}
 	if time.Since(c.first) > throttleWindow {
+		// Lazy eviction: Check is not side-effect-free, it also reaps its own
+		// stale entry rather than waiting for the next Cleanup sweep.
 		delete(t.m, key)
 		return 0, false
 	}
@@ -74,11 +81,7 @@ func (t *Throttle) Check(email, ip string) (time.Duration, bool) {
 	defer t.mu.Unlock()
 	de, be := t.eval("e:"+email, throttleFreeEmail, throttleHardEmail)
 	di, bi := t.eval("i:"+ip, throttleFreeIP, throttleHardIP)
-	d := de
-	if di > d {
-		d = di
-	}
-	return d, be || bi
+	return max(de, di), be || bi
 }
 
 func (t *Throttle) bump(key string) {
