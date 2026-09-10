@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.26@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff AS build
+FROM golang:1.27@sha256:f44f6e88636cfb311f9ebace870ded69d943f227bb3cb27d32ffd84ea18c43ea AS build
 WORKDIR /src
 # Prime module cache for the workspace module + its `replace ../../warden` target.
 COPY warden/go.mod warden/go.sum ./warden/
