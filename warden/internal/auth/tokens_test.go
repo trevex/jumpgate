@@ -141,7 +141,10 @@ func TestIdleTimeoutRejects(t *testing.T) {
 	ctx := context.Background()
 	q := sqlc.New(pool)
 	svc := auth.NewTokenService(q, auth.WithIdleTTL(time.Hour))
-	u, _ := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "idle@x", DisplayName: "I"})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "idle@x", DisplayName: "I"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tok, err := svc.Issue(ctx, u.ID, 12*time.Hour, auth.TokenMeta{ClientIP: "1.2.3.4", UserAgent: "cli"})
 	if err != nil {
@@ -155,14 +158,22 @@ func TestIdleTimeoutRejects(t *testing.T) {
 	}
 }
 
-func TestRevokeAllForUser(t *testing.T) {
+func TestRevokeAllExcept(t *testing.T) {
 	pool := newPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
 	svc := auth.NewTokenService(q)
-	u, _ := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "all@x", DisplayName: "A"})
-	keep, _ := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
-	_, _ = svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "all@x", DisplayName: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{}); err != nil {
+		t.Fatal(err)
+	}
 
 	n, err := svc.RevokeAllExcept(ctx, u.ID, keep)
 	if err != nil || n != 1 {
@@ -170,5 +181,56 @@ func TestRevokeAllForUser(t *testing.T) {
 	}
 	if _, err := svc.Validate(ctx, keep); err != nil {
 		t.Fatal("kept token was revoked")
+	}
+}
+
+func TestRevokeAll(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q)
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "revall@x", DisplayName: "R"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := svc.RevokeAll(ctx, u.ID)
+	if err != nil || n != 2 {
+		t.Fatalf("revoke-all: %v n=%d", err, n)
+	}
+	if _, err := svc.Validate(ctx, a); err == nil {
+		t.Fatal("token a still valid")
+	}
+	if _, err := svc.Validate(ctx, b); err == nil {
+		t.Fatal("token b still valid")
+	}
+}
+
+func TestIdleTimeoutKeptAliveByActivity(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q, auth.WithIdleTTL(2*time.Second))
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "active@x", DisplayName: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Validate every 400ms for ~2.4s (> idleTTL). Continuous activity must keep it valid.
+	for i := 0; i < 6; i++ {
+		if _, err := svc.Validate(ctx, tok); err != nil {
+			t.Fatalf("active token rejected on call %d: %v", i, err)
+		}
+		time.Sleep(400 * time.Millisecond)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -58,13 +59,6 @@ func hashToken(raw string) []byte {
 	return sum[:]
 }
 
-func text(v string) pgtype.Text {
-	if v == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: v, Valid: true}
-}
-
 // Issue creates a token for userID valid for ttl and returns the raw token.
 func (s *TokenService) Issue(ctx context.Context, userID uuid.UUID, ttl time.Duration, meta TokenMeta) (string, error) {
 	buf := make([]byte, 32)
@@ -76,9 +70,9 @@ func (s *TokenService) Issue(ctx context.Context, userID uuid.UUID, ttl time.Dur
 		UserID:    userID,
 		TokenHash: hashToken(raw),
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(ttl), Valid: true},
-		ClientIp:  text(meta.ClientIP),
-		UserAgent: text(meta.UserAgent),
-		Label:     text(meta.Label),
+		ClientIp:  pgconv.Text(meta.ClientIP),
+		UserAgent: pgconv.Text(meta.UserAgent),
+		Label:     pgconv.Text(meta.Label),
 	}); err != nil {
 		return "", fmt.Errorf("create token: %w", err)
 	}
@@ -98,10 +92,19 @@ func (s *TokenService) Validate(ctx context.Context, raw string) (uuid.UUID, err
 	if row.ExpiresAt.Before(now) {
 		return uuid.Nil, ErrInvalidToken
 	}
+	// last_used_at/expires_at are Postgres now() timestamps compared against Go
+	// time.Now(); tiny clock drift is possible but benign for this backstop check.
 	if s.idleTTL > 0 && now.After(row.LastUsedAt.Add(s.idleTTL)) {
 		return uuid.Nil, ErrInvalidToken
 	}
-	if now.Sub(row.LastUsedAt) > touchInterval {
+	// Touch often enough relative to the idle window that continuous activity
+	// keeps a session alive; cap at touchInterval so a long idle TTL doesn't
+	// turn every request into a write.
+	touchEvery := touchInterval
+	if s.idleTTL > 0 && s.idleTTL/4 < touchEvery {
+		touchEvery = s.idleTTL / 4
+	}
+	if now.Sub(row.LastUsedAt) > touchEvery {
 		_ = s.q.TouchAuthToken(ctx, h) // best-effort; a lost touch only shortens the idle window
 	}
 	return row.UserID, nil
