@@ -45,7 +45,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	if u.DeactivatedAt.Valid {
 		return nil, unauth
 	}
-	tok, err := s.tokens.Issue(ctx, u.ID, tokenTTL)
+	tok, err := s.tokens.Issue(ctx, u.ID, tokenTTL, TokenMeta{})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

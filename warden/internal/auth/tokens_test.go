@@ -39,7 +39,7 @@ func TestTokenIssueValidateRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tok, err := svc.Issue(ctx, u.ID, time.Hour)
+	tok, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestExpiredTokenRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := svc.Issue(ctx, u.ID, -1*time.Minute) // already expired
+	tok, err := svc.Issue(ctx, u.ID, -1*time.Minute, auth.TokenMeta{}) // already expired
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,5 +133,42 @@ func TestListAndRevokeByID(t *testing.T) {
 	n, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: u.ID})
 	if err != nil || n != 1 {
 		t.Fatalf("owner delete: %v n=%d", err, n)
+	}
+}
+
+func TestIdleTimeoutRejects(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q, auth.WithIdleTTL(time.Hour))
+	u, _ := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "idle@x", DisplayName: "I"})
+
+	tok, err := svc.Issue(ctx, u.ID, 12*time.Hour, auth.TokenMeta{ClientIP: "1.2.3.4", UserAgent: "cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE auth_tokens SET last_used_at = now() - interval '2 hours' WHERE user_id = $1", u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Validate(ctx, tok); err == nil {
+		t.Fatal("idle-expired token still validates")
+	}
+}
+
+func TestRevokeAllForUser(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q)
+	u, _ := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "all@x", DisplayName: "A"})
+	keep, _ := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	_, _ = svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+
+	n, err := svc.RevokeAllExcept(ctx, u.ID, keep)
+	if err != nil || n != 1 {
+		t.Fatalf("revoke-all-except: %v n=%d", err, n)
+	}
+	if _, err := svc.Validate(ctx, keep); err != nil {
+		t.Fatal("kept token was revoked")
 	}
 }
