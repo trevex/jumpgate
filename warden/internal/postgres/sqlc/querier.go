@@ -95,6 +95,9 @@ type Querier interface {
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
+	DeleteAuthTokenByIDForUser(ctx context.Context, arg DeleteAuthTokenByIDForUserParams) (int64, error)
+	DeleteAuthTokensByUser(ctx context.Context, userID uuid.UUID) (int64, error)
+	DeleteAuthTokensByUserExcept(ctx context.Context, arg DeleteAuthTokensByUserExceptParams) (int64, error)
 	DeleteExpiredAgentEnrollmentTokens(ctx context.Context) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
@@ -201,7 +204,7 @@ type Querier interface {
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetTargetProbeJob(ctx context.Context, arg GetTargetProbeJobParams) (TargetProbeJob, error)
-	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error)
 	// globalHeldCapabilities.
@@ -260,6 +263,7 @@ type Querier interface {
 	// path resolved in SQL via folder_path() (no per-row Go resolution).
 	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
+	ListAuthTokensByUser(ctx context.Context, userID uuid.UUID) ([]ListAuthTokensByUserRow, error)
 	ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
@@ -442,6 +446,7 @@ type Querier interface {
 	// deactivation guard. Parameterized by kind to single-source the identical body.
 	SubjectExistsForKind(ctx context.Context, arg SubjectExistsForKindParams) (bool, error)
 	TargetIdentityDatabaseTime(ctx context.Context) (time.Time, error)
+	TouchAuthToken(ctx context.Context, tokenHash []byte) error
 	UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error
 	UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error
 	UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error

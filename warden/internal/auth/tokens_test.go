@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -81,5 +82,37 @@ func TestExpiredTokenRejected(t *testing.T) {
 	}
 	if _, err := svc.Validate(ctx, tok); err == nil {
 		t.Fatal("expired token validated")
+	}
+}
+
+func TestListAndRevokeByID(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "list@x", DisplayName: "L"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
+		UserID:    u.ID,
+		TokenHash: []byte("hash-1"),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		ClientIp:  pgtype.Text{String: "10.0.0.1", Valid: true},
+		UserAgent: pgtype.Text{String: "cli", Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	sessions, err := q.ListAuthTokensByUser(ctx, u.ID)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("list: %v len=%d", err, len(sessions))
+	}
+	if sessions[0].ClientIp.String != "10.0.0.1" {
+		t.Fatalf("client_ip = %q", sessions[0].ClientIp.String)
+	}
+	n, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: u.ID})
+	if err != nil || n != 1 {
+		t.Fatalf("delete: %v n=%d", err, n)
 	}
 }
