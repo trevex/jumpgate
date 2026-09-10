@@ -104,6 +104,14 @@ func TestListAndRevokeByID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	_, err = q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
+		UserID:    u.ID,
+		TokenHash: []byte("hash-expired"),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create expired: %v", err)
+	}
 	sessions, err := q.ListAuthTokensByUser(ctx, u.ID)
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("list: %v len=%d", err, len(sessions))
@@ -111,8 +119,19 @@ func TestListAndRevokeByID(t *testing.T) {
 	if sessions[0].ClientIp.String != "10.0.0.1" {
 		t.Fatalf("client_ip = %q", sessions[0].ClientIp.String)
 	}
+
+	other, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "other@x", DisplayName: "O"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong owner: must delete nothing.
+	n0, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: other.ID})
+	if err != nil || n0 != 0 {
+		t.Fatalf("cross-user delete should be no-op: err=%v n=%d", err, n0)
+	}
+	// Correct owner: deletes exactly one.
 	n, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: u.ID})
 	if err != nil || n != 1 {
-		t.Fatalf("delete: %v n=%d", err, n)
+		t.Fatalf("owner delete: %v n=%d", err, n)
 	}
 }

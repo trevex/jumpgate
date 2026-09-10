@@ -7,6 +7,8 @@ ALTER TABLE public.auth_tokens
     ADD COLUMN label        text;
 
 -- Case-insensitive login identity: reject duplicate emails that differ only in case.
+-- Up will fail if any two existing users' emails already differ only by case;
+-- acceptable pre-production.
 CREATE UNIQUE INDEX users_email_lower_key ON public.users (lower(email));
 -- +goose StatementEnd
 

@@ -81,6 +81,8 @@ type DeleteAuthTokenByIDForUserParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
+// The user_id predicate is the ownership guard: a caller can only revoke a
+// session that is theirs, regardless of which token id they name.
 func (q *Queries) DeleteAuthTokenByIDForUser(ctx context.Context, arg DeleteAuthTokenByIDForUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteAuthTokenByIDForUser, arg.ID, arg.UserID)
 	if err != nil {
@@ -110,6 +112,8 @@ type DeleteAuthTokensByUserExceptParams struct {
 	TokenHash []byte    `json:"token_hash"`
 }
 
+// "Revoke all my other sessions": deletes every token for the user except the
+// one matching the passed token_hash (the caller's current session).
 func (q *Queries) DeleteAuthTokensByUserExcept(ctx context.Context, arg DeleteAuthTokensByUserExceptParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteAuthTokensByUserExcept, arg.UserID, arg.TokenHash)
 	if err != nil {
@@ -152,8 +156,8 @@ const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users WHERE lower(email) = lower($1)
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, lower)
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -202,6 +206,8 @@ type ListAuthTokensByUserRow struct {
 	Label      pgtype.Text `json:"label"`
 }
 
+// Session inventory for a user: only unexpired sessions, and token_hash is
+// deliberately omitted from the projection so it never round-trips to a caller.
 func (q *Queries) ListAuthTokensByUser(ctx context.Context, userID uuid.UUID) ([]ListAuthTokensByUserRow, error) {
 	rows, err := q.db.Query(ctx, listAuthTokensByUser, userID)
 	if err != nil {

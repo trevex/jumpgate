@@ -95,8 +95,12 @@ type Querier interface {
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
+	// The user_id predicate is the ownership guard: a caller can only revoke a
+	// session that is theirs, regardless of which token id they name.
 	DeleteAuthTokenByIDForUser(ctx context.Context, arg DeleteAuthTokenByIDForUserParams) (int64, error)
 	DeleteAuthTokensByUser(ctx context.Context, userID uuid.UUID) (int64, error)
+	// "Revoke all my other sessions": deletes every token for the user except the
+	// one matching the passed token_hash (the caller's current session).
 	DeleteAuthTokensByUserExcept(ctx context.Context, arg DeleteAuthTokensByUserExceptParams) (int64, error)
 	DeleteExpiredAgentEnrollmentTokens(ctx context.Context) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
@@ -204,7 +208,7 @@ type Querier interface {
 	GetSSHAssetLogin(ctx context.Context, arg GetSSHAssetLoginParams) (SshAssetLogin, error)
 	GetSessionRecording(ctx context.Context, sessionID uuid.UUID) (SessionRecording, error)
 	GetTargetProbeJob(ctx context.Context, arg GetTargetProbeJobParams) (TargetProbeJob, error)
-	GetUserByEmail(ctx context.Context, lower string) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error)
 	// globalHeldCapabilities.
@@ -263,6 +267,8 @@ type Querier interface {
 	// path resolved in SQL via folder_path() (no per-row Go resolution).
 	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
+	// Session inventory for a user: only unexpired sessions, and token_hash is
+	// deliberately omitted from the projection so it never round-trips to a caller.
 	ListAuthTokensByUser(ctx context.Context, userID uuid.UUID) ([]ListAuthTokensByUserRow, error)
 	ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
