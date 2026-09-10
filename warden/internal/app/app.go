@@ -260,11 +260,14 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Build the token lookup once here and share it with both the RPC interceptor
 	// and the HTTP cookie-auth middleware.
 	apiQ := sqlc.New(pool)
-	apiTokens := auth.NewTokenService(apiQ)
+	apiTokens := auth.NewTokenService(apiQ, auth.WithIdleTTL(cfg.AuthSessionIdleTTL))
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
+	// authThrottle is shared by every Login call; kept in this scope (not
+	// module-local) so a later task can wire a periodic Cleanup ticker.
+	authThrottle := auth.NewThrottle()
 	userServices := rpc.UserServices{
 		Lookup:         apiLookup,
-		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
+		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, authThrottle, auditLog, cfg.CookieSecure(), cfg.AuthSessionTTL),
 		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
 		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, targetIdentitySvc), apiguard.New(authorizer, apiQ)),
 		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
