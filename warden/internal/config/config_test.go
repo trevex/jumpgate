@@ -96,6 +96,12 @@ func TestValidate(t *testing.T) {
 	}
 
 	c = valid()
+	c.AuthSessionIdleTTL = -time.Second
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "AUTH_SESSION_IDLE_TTL") {
+		t.Fatalf("negative AuthSessionIdleTTL = %v, want named error", err)
+	}
+
+	c = valid()
 	c.MaxRequestBytes = 0
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "MAX_REQUEST_BYTES") {
 		t.Fatalf("zero MaxRequestBytes = %v, want named error", err)

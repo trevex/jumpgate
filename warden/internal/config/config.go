@@ -225,5 +225,8 @@ func (c Config) Validate() error {
 	if c.MaxRequestBytes <= 0 {
 		return fmt.Errorf("MAX_REQUEST_BYTES must be positive, got %d", c.MaxRequestBytes)
 	}
+	if c.AuthSessionIdleTTL < 0 {
+		return fmt.Errorf("AUTH_SESSION_IDLE_TTL must not be negative, got %s", c.AuthSessionIdleTTL)
+	}
 	return nil
 }

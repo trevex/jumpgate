@@ -96,6 +96,29 @@ to keep the calling session alive while ending the rest. The CLI exposes these a
 `jumpgate sessions list`, `jumpgate sessions revoke <id>`, and `jumpgate sessions
 revoke-all [--keep-current]`.
 
+### Password policy
+
+Local accounts are subject to a password policy, enforced on user creation and
+on admin bootstrap: a minimum length of 12 characters, rejection of a small
+embedded common-password blocklist, and rejection of reusing the current
+password. The blocklist check is local only — there is no external
+breach-screening call, so an air-gapped deployment makes no outbound network
+calls to validate a password. On verify, a stored argon2id hash's parameters
+are bounds-checked, so a pathological value cannot be used to bypass or crash
+verification.
+
+### Login throttling
+
+Failed logins are throttled with progressive backoff, keyed per client IP and
+per account. It is not a lockout — a successful login clears the backoff for
+both keys. Within a 15-minute window, repeated failures escalate the delay
+before the next attempt is evaluated, and enough failures return
+`CodeResourceExhausted` with a `Retry-After` header. Throttle state is
+in-memory today, scoped to a single warden replica. Every authentication
+outcome — success, failure, throttle, logout, and session revocation — is
+recorded as a redacted audit event (`auth.login.*`, `auth.logout`,
+`auth.session.*`) that carries no email, password, or token.
+
 ### WhoAmI
 
 `AuthService.WhoAmI` returns the caller's `user_id`, `email`, `display_name`, and a
