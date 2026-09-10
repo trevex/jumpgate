@@ -144,7 +144,9 @@ shared gateway. The k8s-agent deploys into target clusters, not the jumpgate cha
   no Docker). They `t.Skip` when that tooling is not on PATH, so run them inside
   `nix develop`.
 - Config is env-based (`internal/config`); see `DATABASE_URL`, `LISTEN_ADDR`,
-  `SHUTDOWN_TIMEOUT`.
+  `SHUTDOWN_TIMEOUT`, `AUTH_SESSION_TTL` (absolute login-token lifetime, default 12h),
+  `AUTH_SESSION_IDLE_TTL` (idle timeout, default 2h; zero disables it), and
+  `MAX_REQUEST_BYTES` (user-API request body cap, default 1048576).
 
 ## API (ConnectRPC)
 

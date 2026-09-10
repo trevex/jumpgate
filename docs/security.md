@@ -49,10 +49,11 @@ Three distinct token mechanisms:
 - API bearer tokens (CLI). `AuthService.Login` with `cookie_only=false` (the default)
   exchanges email and password for an opaque, DB-backed, hashed bearer token, not a
   JWT. Passwords are hashed with argon2id; the token is stored hashed
-  (`auth_tokens.token_hash`) with a 12-hour expiry, returned in the response body, and
-  presented as `Authorization: Bearer <token>`. Because the server holds the token
-  record, revocation is instant and server-side (delete the row). The CLI stores the
-  token in `~/.config/jumpgate/config.json` per named context.
+  (`auth_tokens.token_hash`) with a 12-hour absolute expiry (`AUTH_SESSION_TTL`) and a
+  2-hour idle timeout (`AUTH_SESSION_IDLE_TTL`; zero disables it), returned in the
+  response body, and presented as `Authorization: Bearer <token>`. Because the server
+  holds the token record, revocation is instant and server-side (delete the row). The
+  CLI stores the token in `~/.config/jumpgate/config.json` per named context.
 
 - Browser cookie sessions. `Login` with `cookie_only=true` issues the same opaque token
   but delivers it via a `Set-Cookie` response header instead of the body (the response
@@ -83,6 +84,17 @@ Three distinct token mechanisms:
 `AuthService.Logout` requires authentication and revokes the caller's current token
 server-side (idempotent). When the token was supplied via cookie it also clears the
 `jumpgate_session` cookie (by setting `MaxAge=-1` in the response).
+
+### Managing your sessions
+
+`AuthService.ListSessions` returns the caller's active login tokens (id, label,
+client IP, user agent, and last-used/expiry timestamps), with the token used for the
+current request flagged. `RevokeSession(id)` revokes one of them by id.
+`RevokeAllSessions(except_current)` revokes every session at once — the "log out
+everywhere" control for a lost laptop or a leaked token, with `except_current=true`
+to keep the calling session alive while ending the rest. The CLI exposes these as
+`jumpgate sessions list`, `jumpgate sessions revoke <id>`, and `jumpgate sessions
+revoke-all [--keep-current]`.
 
 ### WhoAmI
 

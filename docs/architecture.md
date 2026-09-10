@@ -360,7 +360,9 @@ or a UUID; the CLI resolves it via `CatalogService.ResolveAsset`, which performs
 access check and returns `NotFound` for both an unknown reference and one the caller
 cannot see. Beyond `connect`, the CLI covers the full surface: admin (`users`,
 `groups`, `folders`, `assets ssh|pg|k8s|rdp`, `roles`, `bindings`, `policies`), access
-requests, and recordings. Config is a small file with kubectl-style named contexts,
+requests, recordings, and the caller's own login sessions (`sessions list|revoke|
+revoke-all`; see [security.md](security.md#managing-your-sessions)). Config is a
+small file with kubectl-style named contexts,
 so multiple identities coexist. A React web console, embedded in the warden binary,
 offers the same access loop plus an in-browser SSH terminal and the browser RDP
 session; see [development.md](development.md#web-ui).
