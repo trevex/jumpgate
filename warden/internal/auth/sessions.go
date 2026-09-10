@@ -15,13 +15,10 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// connectHeaderer is satisfied by every *connect.Request[T].
-type connectHeaderer interface{ Header() http.Header }
-
 // currentTokenID resolves the caller's own session id from their bearer/cookie
-// token, so ListSessions can mark it and RevokeAllSessions can keep it.
-func (s *Handler) currentTokenID(ctx context.Context, req connectHeaderer) (uuid.UUID, bool) {
-	raw, _ := ExtractToken(req.Header())
+// token, so ListSessions can mark it.
+func (s *Handler) currentTokenID(ctx context.Context, h http.Header) (uuid.UUID, bool) {
+	raw, _ := ExtractToken(h)
 	if raw == "" {
 		return uuid.Nil, false
 	}
@@ -42,7 +39,7 @@ func (s *Handler) ListSessions(ctx context.Context, req *connect.Request[authv1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	curID, _ := s.currentTokenID(ctx, req)
+	curID, _ := s.currentTokenID(ctx, req.Header())
 	out := make([]*authv1.Session, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, &authv1.Session{
@@ -67,7 +64,7 @@ func (s *Handler) RevokeSession(ctx context.Context, req *connect.Request[authv1
 	}
 	id, err := uuid.Parse(req.Msg.Id)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("session not found"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid session id"))
 	}
 	n, err := s.q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: id, UserID: u.ID})
 	if err != nil {
@@ -89,7 +86,14 @@ func (s *Handler) RevokeAllSessions(ctx context.Context, req *connect.Request[au
 	var n int64
 	var err error
 	if req.Msg.ExceptCurrent {
+		// raw is guaranteed non-empty here: UserFromContext only succeeds after
+		// the interceptor ran ExtractToken+Validate on this same request (see
+		// NewInterceptor). Guard anyway so a future violation fails loudly rather
+		// than silently revoking the current session via RevokeAllExcept("").
 		raw, _ := ExtractToken(req.Header())
+		if raw == "" {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("current session token not resolvable"))
+		}
 		n, err = s.tokens.RevokeAllExcept(ctx, u.ID, raw)
 	} else {
 		n, err = s.tokens.RevokeAll(ctx, u.ID)
