@@ -22,7 +22,7 @@ test.use({ ignoreHTTPSErrors: true });
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 
 // wt-* actor passwords (we create these users through the UI).
 const WT_PASS = "wt-pass-1234";

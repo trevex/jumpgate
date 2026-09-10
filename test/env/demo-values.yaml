@@ -41,7 +41,7 @@ masterKey:
 
 bootstrapAdmin:
   email: admin@demo.test
-  password: admin-password-1234
+  password: demo-admin-passphrase
 
 recording:
   s3:

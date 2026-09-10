@@ -25,6 +25,10 @@ func EnsureAdmin(ctx context.Context, q *sqlc.Queries, email, password string) e
 	if n > 0 {
 		return nil
 	}
+	email = auth.NormalizeEmail(email)
+	if err := auth.ValidatePassword(password, ""); err != nil {
+		return fmt.Errorf("admin password rejected: %w", err)
+	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("hash: %w", err)

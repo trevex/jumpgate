@@ -30,7 +30,7 @@ func TestManagementIsCapabilityOnly(t *testing.T) {
 	// Capless user → PermissionDenied on a management RPC.
 	nobodyTok := authClient(t, url, "nobody@x", "nobodypass")
 	_, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "x1@x", DisplayName: "X1", Password: "password123",
+		Email: "x1@x", DisplayName: "X1", Password: "password123456",
 	}), nobodyTok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("capless create code = %v, want PermissionDenied", connect.CodeOf(err))
@@ -39,7 +39,7 @@ func TestManagementIsCapabilityOnly(t *testing.T) {
 	// Admin holding `**` → allowed.
 	adminTok := adminToken(t, url)
 	if _, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "x2@x", DisplayName: "X2", Password: "password123",
+		Email: "x2@x", DisplayName: "X2", Password: "password123456",
 	}), adminTok)); err != nil {
 		t.Fatalf("admin create: %v", err)
 	}
@@ -54,14 +54,14 @@ func TestUsersCRUDRequiresAdmin(t *testing.T) {
 
 	// No token → not allowed
 	_, err := c.CreateUser(ctx, connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "bob@x", DisplayName: "Bob", Password: "password123",
+		Email: "bob@x", DisplayName: "Bob", Password: "password123456",
 	}))
 	if code := connect.CodeOf(err); code != connect.CodeUnauthenticated && code != connect.CodePermissionDenied {
 		t.Fatalf("anon create code = %v, want Unauthenticated/PermissionDenied", code)
 	}
 
 	created, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "bob@x", DisplayName: "Bob", Password: "password123",
+		Email: "bob@x", DisplayName: "Bob", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -107,7 +107,7 @@ func TestIdentityCapabilityGating(t *testing.T) {
 
 	// admin (**) can do everything: create a user and a group to operate on.
 	createdUser, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "target@x", DisplayName: "Target", Password: "password123",
+		Email: "target@x", DisplayName: "Target", Password: "password123456",
 	}), adminTok))
 	if err != nil {
 		t.Fatalf("admin create user: %v", err)
@@ -129,7 +129,7 @@ func TestIdentityCapabilityGating(t *testing.T) {
 
 	// reader lacks identity:user:create → PermissionDenied.
 	_, err = c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "nope@x", DisplayName: "Nope", Password: "password123",
+		Email: "nope@x", DisplayName: "Nope", Password: "password123456",
 	}), readerTok))
 	if code := connect.CodeOf(err); code != connect.CodePermissionDenied {
 		t.Fatalf("reader CreateUser code = %v, want PermissionDenied", code)
@@ -201,7 +201,7 @@ func TestGroupGovernanceGating(t *testing.T) {
 
 	// A user to add.
 	u, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "u@x", DisplayName: "U", Password: "password123",
+		Email: "u@x", DisplayName: "U", Password: "password123456",
 	}), atok))
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -345,7 +345,7 @@ func TestGetUserDisplay(t *testing.T) {
 
 	// An existing target user with a distinct display name + email.
 	target, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "target@x", DisplayName: "Target Person", Password: "password123",
+		Email: "target@x", DisplayName: "Target Person", Password: "password123456",
 	}), atok))
 	if err != nil {
 		t.Fatalf("create target: %v", err)
@@ -387,7 +387,7 @@ func TestGetUserDisplay(t *testing.T) {
 
 	// A deactivated user is still returned (display-only, not an authz decision).
 	dead, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "dead@x", DisplayName: "Deactivated One", Password: "password123",
+		Email: "dead@x", DisplayName: "Deactivated One", Password: "password123456",
 	}), atok))
 	if err != nil {
 		t.Fatalf("create dead: %v", err)
@@ -419,7 +419,7 @@ func TestUserActiveFlag(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "active@x", DisplayName: "Active", Password: "password123",
+		Email: "active@x", DisplayName: "Active", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -668,7 +668,7 @@ func TestListUsersKeysetByEmail(t *testing.T) {
 	// the list is ordered by email, not by creation/id order.
 	for _, email := range []string{"z@example.com", "m@example.com", "f@example.com"} {
 		if _, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-			Email: email, DisplayName: email, Password: "password123",
+			Email: email, DisplayName: email, Password: "password123456",
 		}), tok)); err != nil {
 			t.Fatalf("create %s: %v", email, err)
 		}
@@ -942,13 +942,13 @@ func TestListGroupMembersKeysetPagination(t *testing.T) {
 	}
 
 	u1, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "m1@x", DisplayName: "M1", Password: "password123",
+		Email: "m1@x", DisplayName: "M1", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create m1: %v", err)
 	}
 	u2, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "m2@x", DisplayName: "M2", Password: "password123",
+		Email: "m2@x", DisplayName: "M2", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create m2: %v", err)
@@ -1136,7 +1136,7 @@ func TestListGroupsParentScoped(t *testing.T) {
 	// --- Non-admin member visibility (no management cap) ---
 	// Create a member who belongs to folderGroup.
 	member, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "member@x", DisplayName: "Member", Password: "password123",
+		Email: "member@x", DisplayName: "Member", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create member: %v", err)
@@ -1146,7 +1146,7 @@ func TestListGroupsParentScoped(t *testing.T) {
 	}), tok)); err != nil {
 		t.Fatalf("add member to folder-group: %v", err)
 	}
-	memberTok := authClient(t, url, "member@x", "password123")
+	memberTok := authClient(t, url, "member@x", "password123456")
 
 	// Member can see folder-group under parent=f1 with NO management cap.
 	memberList, err := id.ListGroups(ctx, withToken(connect.NewRequest(&identityv1.ListGroupsRequest{
@@ -1251,7 +1251,7 @@ func TestGetGroupAccess(t *testing.T) {
 	}
 
 	// A member (no manage cap) sees the group (empty caps), not NotFound.
-	memberID := seedCapUser(t, pool, "member@x", "password123", `[]`)
+	memberID := seedCapUser(t, pool, "member@x", "password123456", `[]`)
 	// Add them to the group via direct DB (we need the q/pool).
 	q := sqlc.New(pool)
 	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{
@@ -1260,7 +1260,7 @@ func TestGetGroupAccess(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("add member to group: %v", err)
 	}
-	mtok := authClient(t, url, "member@x", "password123")
+	mtok := authClient(t, url, "member@x", "password123456")
 	macc, err := ic.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: groupID}), mtok))
 	if err != nil {
 		t.Fatalf("member GetGroupAccess: %v", err)
@@ -1271,8 +1271,8 @@ func TestGetGroupAccess(t *testing.T) {
 	}
 
 	// stranger: capless, not a member → NotFound (existence hiding for topology).
-	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
-	stok := authClient(t, url, "stranger@x", "password123")
+	seedCapUser(t, pool, "stranger@x", "password123456", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123456")
 	if _, err := ic.GetGroupAccess(ctx, withToken(connect.NewRequest(&identityv1.GetGroupAccessRequest{GroupId: groupID}), stok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("stranger GetGroupAccess = %v, want NotFound", connect.CodeOf(err))
 	}

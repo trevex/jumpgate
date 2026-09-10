@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { login } from "./helpers";
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 
 test("access control: create a role with a capability, then cascade-delete it", async ({ page }) => {
   test.setTimeout(90_000);

@@ -137,6 +137,10 @@ func (s *Service) groupResult(ctx context.Context, g sqlc.Group) (GroupResult, e
 // leaves NO user row (this closes the prior non-atomic gap). A duplicate email is
 // AlreadyExists; any other write failure is Internal.
 func (s *Service) CreateUser(ctx context.Context, email, displayName, password string) (sqlc.User, error) {
+	email = auth.NormalizeEmail(email)
+	if err := auth.ValidatePassword(password, ""); err != nil {
+		return sqlc.User{}, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return sqlc.User{}, connect.NewError(connect.CodeInternal, err)

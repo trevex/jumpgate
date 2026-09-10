@@ -5,7 +5,7 @@ import { login } from "./helpers";
 // every disclosure is visible. Creds default to the browser-e2e seed
 // (test/e2e/uiseed_test.go), overridable via env for ad-hoc runs.
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 
 // Seed anchors the other browser specs already depend on:
 //   - folder `demo` holds the asset `demo-box` (a JIT-requestable box, gated by

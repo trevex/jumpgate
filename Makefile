@@ -185,7 +185,7 @@ kind-demo: kind-up ## Bring up the env, export the mesh CA, build the CLI, and p
 	cd cli && go build -o ../jumpgate .
 	@echo "warden API:  http://localhost:8080"
 	@echo "gateway:     localhost:8443 (mesh CA: ./jumpgate-mesh-ca.pem)"
-	@echo "admin creds: admin@demo.test / admin-password-1234"
+	@echo "admin creds: admin@demo.test / demo-admin-passphrase"
 	@echo "CLI built at ./jumpgate — it is not on PATH, so alias it: alias jumpgate=./jumpgate"
 	@echo "try: jumpgate login --context admin --warden-addr http://localhost:8080"
 

@@ -71,7 +71,7 @@ func TestListFoldersParentScoped(t *testing.T) {
 	}
 
 	// ── requester alice ─────────────────────────────────────────────────────────
-	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123"}), tok))
+	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestListFoldersParentScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	atok := authClient(t, url, "alice@x", "password123")
+	atok := authClient(t, url, "alice@x", "password123456")
 	// alice at root cascade: sees f1 and its child db (the path to her asset), not f2.
 	av, err := cat.ListFolders(ctx, withToken(connect.NewRequest(&catalogv1.ListFoldersRequest{Cascade: true}), atok))
 	if err != nil {
@@ -157,7 +157,7 @@ func TestListAssetsUnified(t *testing.T) {
 	}
 
 	// requester alice: standing role on f1 (cascades to a1 and a2), never f2/a3.
-	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123"}), tok))
+	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestListAssetsUnified(t *testing.T) {
 	}), tok)); err != nil {
 		t.Fatal(err)
 	}
-	atok := authClient(t, url, "alice@x", "password123")
+	atok := authClient(t, url, "alice@x", "password123456")
 	av, err := cat.ListAssets(ctx, withToken(connect.NewRequest(&catalogv1.ListAssetsRequest{Cascade: true}), atok))
 	if err != nil {
 		t.Fatalf("alice cascade: %v", err)
@@ -212,8 +212,8 @@ func TestGetAssetAccessCapabilities(t *testing.T) {
 	assetID := uuid.MustParse(a.Msg.Asset.Id)
 
 	// User holds catalog:asset:read bound directly at the asset scope.
-	seedCapUserScoped(t, pool, "reader@x", "password123", `["catalog:asset:read"]`, uuid.Nil, assetID)
-	rtok := authClient(t, url, "reader@x", "password123")
+	seedCapUserScoped(t, pool, "reader@x", "password123456", `["catalog:asset:read"]`, uuid.Nil, assetID)
+	rtok := authClient(t, url, "reader@x", "password123456")
 	acc, err := cat.GetAssetAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetAssetAccessRequest{AssetId: a.Msg.Asset.Id}), rtok))
 	if err != nil {
 		t.Fatalf("access: %v", err)
@@ -247,8 +247,8 @@ func TestGetFolderAccess(t *testing.T) {
 	}
 
 	// A folder-scoped cap holder sees exactly their concrete capability.
-	seedCapUserScoped(t, pool, "fadmin@x", "password123", `["catalog:folder:read"]`, uuid.MustParse(f.Msg.Folder.Id), uuid.Nil)
-	ftok := authClient(t, url, "fadmin@x", "password123")
+	seedCapUserScoped(t, pool, "fadmin@x", "password123456", `["catalog:folder:read"]`, uuid.MustParse(f.Msg.Folder.Id), uuid.Nil)
+	ftok := authClient(t, url, "fadmin@x", "password123456")
 	facc, err := cat.GetFolderAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetFolderAccessRequest{FolderId: f.Msg.Folder.Id}), ftok))
 	if err != nil {
 		t.Fatalf("folder-admin folder access: %v", err)
@@ -258,8 +258,8 @@ func TestGetFolderAccess(t *testing.T) {
 	}
 
 	// stranger: capless, no relationship -> NotFound.
-	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
-	stok := authClient(t, url, "stranger@x", "password123")
+	seedCapUser(t, pool, "stranger@x", "password123456", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123456")
 	if _, err := cat.GetFolderAccess(ctx, withToken(connect.NewRequest(&catalogv1.GetFolderAccessRequest{FolderId: f.Msg.Folder.Id}), stok)); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("stranger folder access = %v, want NotFound", connect.CodeOf(err))
 	}
@@ -293,8 +293,8 @@ func TestListFoldersDescendantVisibleParentGate(t *testing.T) {
 
 	// Seed a user with catalog:folder:read bound at db scope only (not prod, no assets).
 	// seedCapUserScoped binds the role at folder scope when scopeFolder != uuid.Nil.
-	_ = seedCapUserScoped(t, pool, "descendant@x", "password123", `["catalog:folder:read"]`, dbID, uuid.Nil)
-	dtok := authClient(t, url, "descendant@x", "password123")
+	_ = seedCapUserScoped(t, pool, "descendant@x", "password123456", `["catalog:folder:read"]`, dbID, uuid.Nil)
+	dtok := authClient(t, url, "descendant@x", "password123456")
 
 	// ListFolders(parent=prod) must NOT return NotFound — the user can see db (a
 	// direct child of prod), so prod itself is visible as a navigable parent.

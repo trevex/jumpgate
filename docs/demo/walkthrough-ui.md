@@ -44,7 +44,7 @@ Everything else below is done in the browser.
 ## Act 0 — the admin sets the stage  ·  *admin window*
 
 **Sign in.** Open http://localhost:8080 → you land on **Sign in**. Enter `admin@demo.test` /
-`admin-password-1234`. You arrive on the **Overview** dashboard.
+`demo-admin-passphrase`. You arrive on the **Overview** dashboard.
 
 **Create the `demo` folder.** Go to **Catalog** (sidebar). In the tree pane header click **+**
 (*Create…*) → **New folder** → name it `demo` → **Create folder**. It appears in the tree.

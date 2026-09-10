@@ -29,8 +29,8 @@ func TestAccessRoleCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// non-admin rejected
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	_, err := c.CreateRole(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleRequest{Name: "nope", Capabilities: []string{"db:read"}}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin CreateRole = %v, want PermissionDenied", connect.CodeOf(err))
@@ -189,8 +189,8 @@ func TestRoleGrantCRUD(t *testing.T) {
 	}
 
 	// non-admin rejected on all admin ops
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	_, err = acc.AddRoleGrant(ctx, withToken(connect.NewRequest(&accessv1.AddRoleGrantRequest{RoleId: editor, SourceRoleId: owner, Via: "same_object"}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin add = %v, want PermissionDenied", connect.CodeOf(err))
@@ -260,8 +260,8 @@ func TestRoleBindingCRUD(t *testing.T) {
 	}
 
 	// non-admin rejected
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	_, err = acc.CreateRoleBinding(ctx, withToken(connect.NewRequest(&accessv1.CreateRoleBindingRequest{
 		RoleId: role.Msg.Role.Id, ScopeFolderId: f.Msg.Folder.Id, SubjectGroupId: g.Msg.Group.Id,
 	}), utok))
@@ -396,8 +396,8 @@ func TestListRoleBindings(t *testing.T) {
 	}
 
 	// non-admin rejected
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	_, err = acc.ListRoleBindings(ctx, withToken(connect.NewRequest(&accessv1.ListRoleBindingsRequest{}), utok))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin list bindings = %v, want PermissionDenied", connect.CodeOf(err))
@@ -562,8 +562,8 @@ func TestGetRoleAccess(t *testing.T) {
 	}
 
 	// A user with access:role:read scoped to the role's folder sees that capability.
-	seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
-	rtok := authClient(t, url, "roleadmin@x", "password123")
+	seedCapUserScoped(t, pool, "roleadmin@x", "password123456", `["access:role:read"]`, folderID, uuid.Nil)
+	rtok := authClient(t, url, "roleadmin@x", "password123456")
 	racc, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), rtok))
 	if err != nil {
 		t.Fatalf("role-admin GetRoleAccess: %v", err)
@@ -573,8 +573,8 @@ func TestGetRoleAccess(t *testing.T) {
 	}
 
 	// stranger: capless, no relationship → PermissionDenied (roles are NOT topology).
-	seedCapUser(t, pool, "stranger@x", "password123", `[]`)
-	stok := authClient(t, url, "stranger@x", "password123")
+	seedCapUser(t, pool, "stranger@x", "password123456", `[]`)
+	stok := authClient(t, url, "stranger@x", "password123456")
 	if _, err := acc.GetRoleAccess(ctx, withToken(connect.NewRequest(&accessv1.GetRoleAccessRequest{RoleId: roleID}), stok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("stranger GetRoleAccess = %v, want PermissionDenied", connect.CodeOf(err))
 	}
@@ -618,7 +618,7 @@ func TestExplainRole(t *testing.T) {
 	}
 
 	// alice (non-admin) in group sre; sre standing owner@prod.
-	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123"}), tok))
+	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatalf("create alice: %v", err)
 	}
@@ -687,7 +687,7 @@ func TestExplainRole(t *testing.T) {
 	}
 
 	// negative: bob has no path.
-	bob, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "bob@x", DisplayName: "Bob", Password: "password123"}), tok))
+	bob, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "bob@x", DisplayName: "Bob", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatalf("create bob: %v", err)
 	}
@@ -702,7 +702,7 @@ func TestExplainRole(t *testing.T) {
 	}
 
 	// non-admin explaining ANOTHER user → PermissionDenied.
-	atok := authClient(t, url, "alice@x", "password123")
+	atok := authClient(t, url, "alice@x", "password123456")
 	_, err = acc.ExplainRole(ctx, withToken(connect.NewRequest(&accessv1.ExplainRoleRequest{
 		UserId: bob.Msg.User.Id, RoleId: ownerID, AssetId: pgID,
 	}), atok))
@@ -761,8 +761,8 @@ func TestRequestPolicyCRUD(t *testing.T) {
 	}
 
 	// non-admin CreateRequestPolicy → PermissionDenied
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	_, err = acc.CreateRequestPolicy(ctx, withToken(connect.NewRequest(&accessv1.CreateRequestPolicyRequest{
 		RoleId: roleID, RequiredApprovals: 1,
 	}), utok))
@@ -1076,8 +1076,8 @@ func TestResolvePolicy(t *testing.T) {
 		t.Fatalf("wrong name = %v, want NotFound", connect.CodeOf(err))
 	}
 	// non-admin → PermissionDenied
-	seedUser(t, pool, "u2@x", "password123", false)
-	utok := authClient(t, url, "u2@x", "password123")
+	seedUser(t, pool, "u2@x", "password123456", false)
+	utok := authClient(t, url, "u2@x", "password123456")
 	if _, err := ac.ResolvePolicy(ctx, withToken(connect.NewRequest(&accessv1.ResolvePolicyRequest{Name: "approve-deploy", AssetId: assetID}), utok)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin = %v, want PermissionDenied", connect.CodeOf(err))
 	}
@@ -1230,8 +1230,8 @@ func TestResolveRole(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	tok := adminToken(t, url)
-	seedUser(t, pool, "user@x", "password123", false)
-	utok := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	utok := authClient(t, url, "user@x", "password123456")
 	access := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 	ctx := context.Background()
@@ -1306,7 +1306,7 @@ func TestRoleContainment(t *testing.T) {
 		}
 		return r.Msg.GetAsset().GetId()
 	}
-	subj, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "subject@x", DisplayName: "Subject", Password: "password123"}), tok))
+	subj, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "subject@x", DisplayName: "Subject", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatalf("create subject: %v", err)
 	}
@@ -1417,8 +1417,8 @@ func TestAccessCapabilityGatingAndSubset(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	tok := adminToken(t, url)
-	seedUser(t, pool, "dana@x", "password123", false)
-	danaTok := authClient(t, url, "dana@x", "password123")
+	seedUser(t, pool, "dana@x", "password123456", false)
+	danaTok := authClient(t, url, "dana@x", "password123456")
 
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 	cat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
@@ -1526,8 +1526,8 @@ func TestAddRoleGrantNoEscalation(t *testing.T) {
 	pool, url := newServer(t)
 	seedUser(t, pool, "admin@x", "supersecret", true)
 	tok := adminToken(t, url)
-	seedUser(t, pool, "mallory@x", "password123", false)
-	malloryTok := authClient(t, url, "mallory@x", "password123")
+	seedUser(t, pool, "mallory@x", "password123456", false)
+	malloryTok := authClient(t, url, "mallory@x", "password123456")
 
 	acc := accessv1connect.NewAccessServiceClient(http.DefaultClient, url)
 	idc := identityv1connect.NewIdentityServiceClient(http.DefaultClient, url)
@@ -2078,7 +2078,7 @@ func TestListRolesParentScoped(t *testing.T) {
 	// --- Non-admin holder visibility (no management cap) ---
 	// Create a holder who holds the folder role via a standing binding.
 	holder, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "holder@x", DisplayName: "Holder", Password: "password123",
+		Email: "holder@x", DisplayName: "Holder", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create holder: %v", err)
@@ -2089,7 +2089,7 @@ func TestListRolesParentScoped(t *testing.T) {
 	}), tok)); err != nil {
 		t.Fatalf("bind holder: %v", err)
 	}
-	holderTok := authClient(t, url, "holder@x", "password123")
+	holderTok := authClient(t, url, "holder@x", "password123456")
 
 	// Holder can see folder-role under parent=f1 with NO management cap.
 	holderList, err := acc.ListRoles(ctx, withToken(connect.NewRequest(&accessv1.ListRolesRequest{
@@ -2202,10 +2202,10 @@ func TestGetRoleDisplay(t *testing.T) {
 	roleID := uuid.MustParse(r.Msg.Role.Id)
 
 	// A capless party candidate.
-	seedUser(t, pool, "party@x", "password123", false)
+	seedUser(t, pool, "party@x", "password123456", false)
 	party := auth.CurrentUser{ID: userID(t, pool, "party@x"), Email: "party@x"}
 	// A cap-holder: access:role:read scoped to the role's folder.
-	capperID := seedCapUserScoped(t, pool, "roleadmin@x", "password123", `["access:role:read"]`, folderID, uuid.Nil)
+	capperID := seedCapUserScoped(t, pool, "roleadmin@x", "password123456", `["access:role:read"]`, folderID, uuid.Nil)
 	capper := auth.CurrentUser{ID: capperID, Email: "roleadmin@x"}
 
 	authorizer := authz.New(pool)

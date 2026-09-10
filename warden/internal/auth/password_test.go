@@ -33,3 +33,29 @@ func TestHashesAreSalted(t *testing.T) {
 		t.Fatal("two hashes of the same password are identical (missing random salt)")
 	}
 }
+
+func TestValidatePassword(t *testing.T) {
+	if err := ValidatePassword("short", ""); err == nil {
+		t.Fatal("accepted too-short password")
+	}
+	if err := ValidatePassword("password1234", ""); err == nil {
+		t.Fatal("accepted common password")
+	}
+	if err := ValidatePassword("a-perfectly-fine-passphrase", ""); err != nil {
+		t.Fatalf("rejected good password: %v", err)
+	}
+}
+
+func TestValidatePasswordRejectsReuse(t *testing.T) {
+	h, _ := HashPassword("a-perfectly-fine-passphrase")
+	if err := ValidatePassword("a-perfectly-fine-passphrase", h); err == nil {
+		t.Fatal("accepted reuse of current password")
+	}
+}
+
+func TestVerifyRejectsPathologicalParams(t *testing.T) {
+	bad := "$argon2id$m=8388608,t=1,p=4$YWJjZGVmZ2hpamtsbW5vcA$YWJjZGVmZ2hpamtsbW5vcA"
+	if _, err := VerifyPassword("x", bad); err == nil {
+		t.Fatal("accepted pathological argon2 params")
+	}
+}

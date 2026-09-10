@@ -42,7 +42,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	}
 
 	// alice (non-admin) in group sre
-	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123"}), tok))
+	alice, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "alice@x", DisplayName: "Alice", Password: "password123456"}), tok))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestPerUserVisibilityCatalog(t *testing.T) {
 	}
 
 	// --- act as alice ---
-	atok := authClient(t, url, "alice@x", "password123")
+	atok := authClient(t, url, "alice@x", "password123456")
 	acat := catalogv1connect.NewCatalogServiceClient(http.DefaultClient, url)
 
 	// ListAssets(parent="",cascade=true) is the caller's full visible-asset catalog.

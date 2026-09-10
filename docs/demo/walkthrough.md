@@ -49,7 +49,7 @@ later):
 jumpgate login --context admin \
   --warden-addr http://localhost:8080 \
   --ca ./jumpgate-mesh-ca.pem \
-  --email admin@demo.test --password admin-password-1234
+  --email admin@demo.test --password demo-admin-passphrase
 ```
 
 Create a folder and onboard three sshd test workloads as SSH assets (cert, password, key):
