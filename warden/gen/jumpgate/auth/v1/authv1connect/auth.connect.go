@@ -39,6 +39,15 @@ const (
 	AuthServiceWhoAmIProcedure = "/jumpgate.auth.v1.AuthService/WhoAmI"
 	// AuthServiceLogoutProcedure is the fully-qualified name of the AuthService's Logout RPC.
 	AuthServiceLogoutProcedure = "/jumpgate.auth.v1.AuthService/Logout"
+	// AuthServiceListSessionsProcedure is the fully-qualified name of the AuthService's ListSessions
+	// RPC.
+	AuthServiceListSessionsProcedure = "/jumpgate.auth.v1.AuthService/ListSessions"
+	// AuthServiceRevokeSessionProcedure is the fully-qualified name of the AuthService's RevokeSession
+	// RPC.
+	AuthServiceRevokeSessionProcedure = "/jumpgate.auth.v1.AuthService/RevokeSession"
+	// AuthServiceRevokeAllSessionsProcedure is the fully-qualified name of the AuthService's
+	// RevokeAllSessions RPC.
+	AuthServiceRevokeAllSessionsProcedure = "/jumpgate.auth.v1.AuthService/RevokeAllSessions"
 )
 
 // AuthServiceClient is a client for the jumpgate.auth.v1.AuthService service.
@@ -49,6 +58,13 @@ type AuthServiceClient interface {
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 	// Logout revokes the caller's current token and clears the session cookie.
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// ListSessions returns the caller's active login sessions. Requires auth.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// RevokeSession revokes one of the caller's own sessions by id. Requires auth.
+	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[v1.RevokeSessionResponse], error)
+	// RevokeAllSessions logs the caller out everywhere (optionally except the
+	// current session). Requires auth.
+	RevokeAllSessions(context.Context, *connect.Request[v1.RevokeAllSessionsRequest]) (*connect.Response[v1.RevokeAllSessionsResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the jumpgate.auth.v1.AuthService service. By
@@ -80,14 +96,35 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("Logout")),
 			connect.WithClientOptions(opts...),
 		),
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
+			httpClient,
+			baseURL+AuthServiceListSessionsProcedure,
+			connect.WithSchema(authServiceMethods.ByName("ListSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeSession: connect.NewClient[v1.RevokeSessionRequest, v1.RevokeSessionResponse](
+			httpClient,
+			baseURL+AuthServiceRevokeSessionProcedure,
+			connect.WithSchema(authServiceMethods.ByName("RevokeSession")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeAllSessions: connect.NewClient[v1.RevokeAllSessionsRequest, v1.RevokeAllSessionsResponse](
+			httpClient,
+			baseURL+AuthServiceRevokeAllSessionsProcedure,
+			connect.WithSchema(authServiceMethods.ByName("RevokeAllSessions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
-	login  *connect.Client[v1.LoginRequest, v1.LoginResponse]
-	whoAmI *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
-	logout *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
+	login             *connect.Client[v1.LoginRequest, v1.LoginResponse]
+	whoAmI            *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
+	logout            *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
+	listSessions      *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	revokeSession     *connect.Client[v1.RevokeSessionRequest, v1.RevokeSessionResponse]
+	revokeAllSessions *connect.Client[v1.RevokeAllSessionsRequest, v1.RevokeAllSessionsResponse]
 }
 
 // Login calls jumpgate.auth.v1.AuthService.Login.
@@ -105,6 +142,21 @@ func (c *authServiceClient) Logout(ctx context.Context, req *connect.Request[v1.
 	return c.logout.CallUnary(ctx, req)
 }
 
+// ListSessions calls jumpgate.auth.v1.AuthService.ListSessions.
+func (c *authServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallUnary(ctx, req)
+}
+
+// RevokeSession calls jumpgate.auth.v1.AuthService.RevokeSession.
+func (c *authServiceClient) RevokeSession(ctx context.Context, req *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[v1.RevokeSessionResponse], error) {
+	return c.revokeSession.CallUnary(ctx, req)
+}
+
+// RevokeAllSessions calls jumpgate.auth.v1.AuthService.RevokeAllSessions.
+func (c *authServiceClient) RevokeAllSessions(ctx context.Context, req *connect.Request[v1.RevokeAllSessionsRequest]) (*connect.Response[v1.RevokeAllSessionsResponse], error) {
+	return c.revokeAllSessions.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the jumpgate.auth.v1.AuthService service.
 type AuthServiceHandler interface {
 	// Login exchanges email + password for a bearer token. Unauthenticated.
@@ -113,6 +165,13 @@ type AuthServiceHandler interface {
 	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
 	// Logout revokes the caller's current token and clears the session cookie.
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
+	// ListSessions returns the caller's active login sessions. Requires auth.
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// RevokeSession revokes one of the caller's own sessions by id. Requires auth.
+	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[v1.RevokeSessionResponse], error)
+	// RevokeAllSessions logs the caller out everywhere (optionally except the
+	// current session). Requires auth.
+	RevokeAllSessions(context.Context, *connect.Request[v1.RevokeAllSessionsRequest]) (*connect.Response[v1.RevokeAllSessionsResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -140,6 +199,24 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("Logout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceListSessionsHandler := connect.NewUnaryHandler(
+		AuthServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(authServiceMethods.ByName("ListSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authServiceRevokeSessionHandler := connect.NewUnaryHandler(
+		AuthServiceRevokeSessionProcedure,
+		svc.RevokeSession,
+		connect.WithSchema(authServiceMethods.ByName("RevokeSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authServiceRevokeAllSessionsHandler := connect.NewUnaryHandler(
+		AuthServiceRevokeAllSessionsProcedure,
+		svc.RevokeAllSessions,
+		connect.WithSchema(authServiceMethods.ByName("RevokeAllSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.auth.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceLoginProcedure:
@@ -148,6 +225,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceWhoAmIHandler.ServeHTTP(w, r)
 		case AuthServiceLogoutProcedure:
 			authServiceLogoutHandler.ServeHTTP(w, r)
+		case AuthServiceListSessionsProcedure:
+			authServiceListSessionsHandler.ServeHTTP(w, r)
+		case AuthServiceRevokeSessionProcedure:
+			authServiceRevokeSessionHandler.ServeHTTP(w, r)
+		case AuthServiceRevokeAllSessionsProcedure:
+			authServiceRevokeAllSessionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -167,4 +250,16 @@ func (UnimplementedAuthServiceHandler) WhoAmI(context.Context, *connect.Request[
 
 func (UnimplementedAuthServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.auth.v1.AuthService.Logout is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.auth.v1.AuthService.ListSessions is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[v1.RevokeSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.auth.v1.AuthService.RevokeSession is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) RevokeAllSessions(context.Context, *connect.Request[v1.RevokeAllSessionsRequest]) (*connect.Response[v1.RevokeAllSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.auth.v1.AuthService.RevokeAllSessions is not implemented"))
 }

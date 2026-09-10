@@ -75,6 +75,27 @@ func (stubAuthService) WhoAmI(
 	return connect.NewResponse(&authv1.WhoAmIResponse{Email: email}), nil
 }
 
+func (stubAuthService) ListSessions(
+	_ context.Context,
+	_ *connect.Request[authv1.ListSessionsRequest],
+) (*connect.Response[authv1.ListSessionsResponse], error) {
+	return connect.NewResponse(&authv1.ListSessionsResponse{}), nil
+}
+
+func (stubAuthService) RevokeSession(
+	_ context.Context,
+	_ *connect.Request[authv1.RevokeSessionRequest],
+) (*connect.Response[authv1.RevokeSessionResponse], error) {
+	return connect.NewResponse(&authv1.RevokeSessionResponse{}), nil
+}
+
+func (stubAuthService) RevokeAllSessions(
+	_ context.Context,
+	_ *connect.Request[authv1.RevokeAllSessionsRequest],
+) (*connect.Response[authv1.RevokeAllSessionsResponse], error) {
+	return connect.NewResponse(&authv1.RevokeAllSessionsResponse{}), nil
+}
+
 // ── test harness ──────────────────────────────────────────────────────────────
 
 // newTestServer spins up a real httptest server with the auth interceptor wired

@@ -10,6 +10,7 @@ import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -310,11 +311,359 @@ func (x *WhoAmIResponse) GetCapabilities() []string {
 	return nil
 }
 
+type Session struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastUsedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ClientIp      string                 `protobuf:"bytes,5,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	UserAgent     string                 `protobuf:"bytes,6,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
+	Label         string                 `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
+	Current       bool                   `protobuf:"varint,8,opt,name=current,proto3" json:"current,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Session) Reset() {
+	*x = Session{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Session) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Session) ProtoMessage() {}
+
+func (x *Session) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Session.ProtoReflect.Descriptor instead.
+func (*Session) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Session) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Session) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Session) GetLastUsedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastUsedAt
+	}
+	return nil
+}
+
+func (x *Session) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *Session) GetClientIp() string {
+	if x != nil {
+		return x.ClientIp
+	}
+	return ""
+}
+
+func (x *Session) GetUserAgent() string {
+	if x != nil {
+		return x.UserAgent
+	}
+	return ""
+}
+
+func (x *Session) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Session) GetCurrent() bool {
+	if x != nil {
+		return x.Current
+	}
+	return false
+}
+
+type ListSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionsRequest) Reset() {
+	*x = ListSessionsRequest{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsRequest) ProtoMessage() {}
+
+func (x *ListSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{7}
+}
+
+type ListSessionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sessions      []*Session             `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSessionsResponse) Reset() {
+	*x = ListSessionsResponse{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSessionsResponse) ProtoMessage() {}
+
+func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
+func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListSessionsResponse) GetSessions() []*Session {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+type RevokeSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionRequest) Reset() {
+	*x = RevokeSessionRequest{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionRequest) ProtoMessage() {}
+
+func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionRequest.ProtoReflect.Descriptor instead.
+func (*RevokeSessionRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RevokeSessionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type RevokeSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionResponse) Reset() {
+	*x = RevokeSessionResponse{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionResponse) ProtoMessage() {}
+
+func (x *RevokeSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionResponse.ProtoReflect.Descriptor instead.
+func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+}
+
+type RevokeAllSessionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExceptCurrent bool                   `protobuf:"varint,1,opt,name=except_current,json=exceptCurrent,proto3" json:"except_current,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAllSessionsRequest) Reset() {
+	*x = RevokeAllSessionsRequest{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAllSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAllSessionsRequest) ProtoMessage() {}
+
+func (x *RevokeAllSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAllSessionsRequest.ProtoReflect.Descriptor instead.
+func (*RevokeAllSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RevokeAllSessionsRequest) GetExceptCurrent() bool {
+	if x != nil {
+		return x.ExceptCurrent
+	}
+	return false
+}
+
+type RevokeAllSessionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Revoked       int64                  `protobuf:"varint,1,opt,name=revoked,proto3" json:"revoked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeAllSessionsResponse) Reset() {
+	*x = RevokeAllSessionsResponse{}
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeAllSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeAllSessionsResponse) ProtoMessage() {}
+
+func (x *RevokeAllSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpgate_auth_v1_auth_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeAllSessionsResponse.ProtoReflect.Descriptor instead.
+func (*RevokeAllSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_jumpgate_auth_v1_auth_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RevokeAllSessionsResponse) GetRevoked() int64 {
+	if x != nil {
+		return x.Revoked
+	}
+	return 0
+}
+
 var File_jumpgate_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x1bjumpgate/auth/v1/auth.proto\x12\x10jumpgate.auth.v1\x1a\x1bbuf/validate/validate.proto\"s\n" +
+	"\x1bjumpgate/auth/v1/auth.proto\x12\x10jumpgate.auth.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"s\n" +
 	"\fLoginRequest\x12\x1d\n" +
 	"\x05email\x18\x01 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12#\n" +
 	"\bpassword\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bpassword\x12\x1f\n" +
@@ -330,11 +679,37 @@ const file_jumpgate_auth_v1_auth_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\"\n" +
-	"\fcapabilities\x18\x05 \x03(\tR\fcapabilitiesJ\x04\b\x04\x10\x05R\bis_admin2\xf7\x01\n" +
+	"\fcapabilities\x18\x05 \x03(\tR\fcapabilitiesJ\x04\b\x04\x10\x05R\bis_admin\"\xb9\x02\n" +
+	"\aSession\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x129\n" +
+	"\n" +
+	"created_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\flast_used_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastUsedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1b\n" +
+	"\tclient_ip\x18\x05 \x01(\tR\bclientIp\x12\x1d\n" +
+	"\n" +
+	"user_agent\x18\x06 \x01(\tR\tuserAgent\x12\x14\n" +
+	"\x05label\x18\a \x01(\tR\x05label\x12\x18\n" +
+	"\acurrent\x18\b \x01(\bR\acurrent\"\x15\n" +
+	"\x13ListSessionsRequest\"M\n" +
+	"\x14ListSessionsResponse\x125\n" +
+	"\bsessions\x18\x01 \x03(\v2\x19.jumpgate.auth.v1.SessionR\bsessions\"0\n" +
+	"\x14RevokeSessionRequest\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"\x17\n" +
+	"\x15RevokeSessionResponse\"A\n" +
+	"\x18RevokeAllSessionsRequest\x12%\n" +
+	"\x0eexcept_current\x18\x01 \x01(\bR\rexceptCurrent\"5\n" +
+	"\x19RevokeAllSessionsResponse\x12\x18\n" +
+	"\arevoked\x18\x01 \x01(\x03R\arevoked2\xac\x04\n" +
 	"\vAuthService\x12J\n" +
 	"\x05Login\x12\x1e.jumpgate.auth.v1.LoginRequest\x1a\x1f.jumpgate.auth.v1.LoginResponse\"\x00\x12M\n" +
 	"\x06WhoAmI\x12\x1f.jumpgate.auth.v1.WhoAmIRequest\x1a .jumpgate.auth.v1.WhoAmIResponse\"\x00\x12M\n" +
-	"\x06Logout\x12\x1f.jumpgate.auth.v1.LogoutRequest\x1a .jumpgate.auth.v1.LogoutResponse\"\x00B?Z=github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1b\x06proto3"
+	"\x06Logout\x12\x1f.jumpgate.auth.v1.LogoutRequest\x1a .jumpgate.auth.v1.LogoutResponse\"\x00\x12_\n" +
+	"\fListSessions\x12%.jumpgate.auth.v1.ListSessionsRequest\x1a&.jumpgate.auth.v1.ListSessionsResponse\"\x00\x12b\n" +
+	"\rRevokeSession\x12&.jumpgate.auth.v1.RevokeSessionRequest\x1a'.jumpgate.auth.v1.RevokeSessionResponse\"\x00\x12n\n" +
+	"\x11RevokeAllSessions\x12*.jumpgate.auth.v1.RevokeAllSessionsRequest\x1a+.jumpgate.auth.v1.RevokeAllSessionsResponse\"\x00B?Z=github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1b\x06proto3"
 
 var (
 	file_jumpgate_auth_v1_auth_proto_rawDescOnce sync.Once
@@ -348,27 +723,45 @@ func file_jumpgate_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_jumpgate_auth_v1_auth_proto_rawDescData
 }
 
-var file_jumpgate_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_jumpgate_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_jumpgate_auth_v1_auth_proto_goTypes = []any{
-	(*LoginRequest)(nil),   // 0: jumpgate.auth.v1.LoginRequest
-	(*LoginResponse)(nil),  // 1: jumpgate.auth.v1.LoginResponse
-	(*LogoutRequest)(nil),  // 2: jumpgate.auth.v1.LogoutRequest
-	(*LogoutResponse)(nil), // 3: jumpgate.auth.v1.LogoutResponse
-	(*WhoAmIRequest)(nil),  // 4: jumpgate.auth.v1.WhoAmIRequest
-	(*WhoAmIResponse)(nil), // 5: jumpgate.auth.v1.WhoAmIResponse
+	(*LoginRequest)(nil),              // 0: jumpgate.auth.v1.LoginRequest
+	(*LoginResponse)(nil),             // 1: jumpgate.auth.v1.LoginResponse
+	(*LogoutRequest)(nil),             // 2: jumpgate.auth.v1.LogoutRequest
+	(*LogoutResponse)(nil),            // 3: jumpgate.auth.v1.LogoutResponse
+	(*WhoAmIRequest)(nil),             // 4: jumpgate.auth.v1.WhoAmIRequest
+	(*WhoAmIResponse)(nil),            // 5: jumpgate.auth.v1.WhoAmIResponse
+	(*Session)(nil),                   // 6: jumpgate.auth.v1.Session
+	(*ListSessionsRequest)(nil),       // 7: jumpgate.auth.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),      // 8: jumpgate.auth.v1.ListSessionsResponse
+	(*RevokeSessionRequest)(nil),      // 9: jumpgate.auth.v1.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),     // 10: jumpgate.auth.v1.RevokeSessionResponse
+	(*RevokeAllSessionsRequest)(nil),  // 11: jumpgate.auth.v1.RevokeAllSessionsRequest
+	(*RevokeAllSessionsResponse)(nil), // 12: jumpgate.auth.v1.RevokeAllSessionsResponse
+	(*timestamppb.Timestamp)(nil),     // 13: google.protobuf.Timestamp
 }
 var file_jumpgate_auth_v1_auth_proto_depIdxs = []int32{
-	0, // 0: jumpgate.auth.v1.AuthService.Login:input_type -> jumpgate.auth.v1.LoginRequest
-	4, // 1: jumpgate.auth.v1.AuthService.WhoAmI:input_type -> jumpgate.auth.v1.WhoAmIRequest
-	2, // 2: jumpgate.auth.v1.AuthService.Logout:input_type -> jumpgate.auth.v1.LogoutRequest
-	1, // 3: jumpgate.auth.v1.AuthService.Login:output_type -> jumpgate.auth.v1.LoginResponse
-	5, // 4: jumpgate.auth.v1.AuthService.WhoAmI:output_type -> jumpgate.auth.v1.WhoAmIResponse
-	3, // 5: jumpgate.auth.v1.AuthService.Logout:output_type -> jumpgate.auth.v1.LogoutResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	13, // 0: jumpgate.auth.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	13, // 1: jumpgate.auth.v1.Session.last_used_at:type_name -> google.protobuf.Timestamp
+	13, // 2: jumpgate.auth.v1.Session.expires_at:type_name -> google.protobuf.Timestamp
+	6,  // 3: jumpgate.auth.v1.ListSessionsResponse.sessions:type_name -> jumpgate.auth.v1.Session
+	0,  // 4: jumpgate.auth.v1.AuthService.Login:input_type -> jumpgate.auth.v1.LoginRequest
+	4,  // 5: jumpgate.auth.v1.AuthService.WhoAmI:input_type -> jumpgate.auth.v1.WhoAmIRequest
+	2,  // 6: jumpgate.auth.v1.AuthService.Logout:input_type -> jumpgate.auth.v1.LogoutRequest
+	7,  // 7: jumpgate.auth.v1.AuthService.ListSessions:input_type -> jumpgate.auth.v1.ListSessionsRequest
+	9,  // 8: jumpgate.auth.v1.AuthService.RevokeSession:input_type -> jumpgate.auth.v1.RevokeSessionRequest
+	11, // 9: jumpgate.auth.v1.AuthService.RevokeAllSessions:input_type -> jumpgate.auth.v1.RevokeAllSessionsRequest
+	1,  // 10: jumpgate.auth.v1.AuthService.Login:output_type -> jumpgate.auth.v1.LoginResponse
+	5,  // 11: jumpgate.auth.v1.AuthService.WhoAmI:output_type -> jumpgate.auth.v1.WhoAmIResponse
+	3,  // 12: jumpgate.auth.v1.AuthService.Logout:output_type -> jumpgate.auth.v1.LogoutResponse
+	8,  // 13: jumpgate.auth.v1.AuthService.ListSessions:output_type -> jumpgate.auth.v1.ListSessionsResponse
+	10, // 14: jumpgate.auth.v1.AuthService.RevokeSession:output_type -> jumpgate.auth.v1.RevokeSessionResponse
+	12, // 15: jumpgate.auth.v1.AuthService.RevokeAllSessions:output_type -> jumpgate.auth.v1.RevokeAllSessionsResponse
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_jumpgate_auth_v1_auth_proto_init() }
@@ -382,7 +775,7 @@ func file_jumpgate_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpgate_auth_v1_auth_proto_rawDesc), len(file_jumpgate_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

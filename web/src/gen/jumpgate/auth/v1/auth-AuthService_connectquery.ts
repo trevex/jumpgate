@@ -24,3 +24,25 @@ export const whoAmI = AuthService.method.whoAmI;
  * @generated from rpc jumpgate.auth.v1.AuthService.Logout
  */
 export const logout = AuthService.method.logout;
+
+/**
+ * ListSessions returns the caller's active login sessions. Requires auth.
+ *
+ * @generated from rpc jumpgate.auth.v1.AuthService.ListSessions
+ */
+export const listSessions = AuthService.method.listSessions;
+
+/**
+ * RevokeSession revokes one of the caller's own sessions by id. Requires auth.
+ *
+ * @generated from rpc jumpgate.auth.v1.AuthService.RevokeSession
+ */
+export const revokeSession = AuthService.method.revokeSession;
+
+/**
+ * RevokeAllSessions logs the caller out everywhere (optionally except the
+ * current session). Requires auth.
+ *
+ * @generated from rpc jumpgate.auth.v1.AuthService.RevokeAllSessions
+ */
+export const revokeAllSessions = AuthService.method.revokeAllSessions;

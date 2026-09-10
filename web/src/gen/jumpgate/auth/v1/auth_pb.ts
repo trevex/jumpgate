@@ -5,13 +5,15 @@
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
+import type { Timestamp } from "../../../google/protobuf/timestamp_pb";
+import { file_google_protobuf_timestamp } from "../../../google/protobuf/timestamp_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file jumpgate/auth/v1/auth.proto.
  */
 export const file_jumpgate_auth_v1_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChtqdW1wZ2F0ZS9hdXRoL3YxL2F1dGgucHJvdG8SEGp1bXBnYXRlLmF1dGgudjEiVgoMTG9naW5SZXF1ZXN0EhYKBWVtYWlsGAEgASgJQge6SARyAmABEhkKCHBhc3N3b3JkGAIgASgJQge6SARyAhABEhMKC2Nvb2tpZV9vbmx5GAMgASgIIj8KDUxvZ2luUmVzcG9uc2USDQoFdG9rZW4YASABKAkSDwoHdXNlcl9pZBgCIAEoCUoECAMQBFIIaXNfYWRtaW4iDwoNTG9nb3V0UmVxdWVzdCIQCg5Mb2dvdXRSZXNwb25zZSIPCg1XaG9BbUlSZXF1ZXN0ImwKDldob0FtSVJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhQKDGNhcGFiaWxpdGllcxgFIAMoCUoECAQQBVIIaXNfYWRtaW4y9wEKC0F1dGhTZXJ2aWNlEkoKBUxvZ2luEh4uanVtcGdhdGUuYXV0aC52MS5Mb2dpblJlcXVlc3QaHy5qdW1wZ2F0ZS5hdXRoLnYxLkxvZ2luUmVzcG9uc2UiABJNCgZXaG9BbUkSHy5qdW1wZ2F0ZS5hdXRoLnYxLldob0FtSVJlcXVlc3QaIC5qdW1wZ2F0ZS5hdXRoLnYxLldob0FtSVJlc3BvbnNlIgASTQoGTG9nb3V0Eh8uanVtcGdhdGUuYXV0aC52MS5Mb2dvdXRSZXF1ZXN0GiAuanVtcGdhdGUuYXV0aC52MS5Mb2dvdXRSZXNwb25zZSIAQj9aPWdpdGh1Yi5jb20vdHJldmV4L2p1bXBnYXRlL3dhcmRlbi9nZW4vanVtcGdhdGUvYXV0aC92MTthdXRodjFiBnByb3RvMw", [file_buf_validate_validate]);
+  fileDesc("ChtqdW1wZ2F0ZS9hdXRoL3YxL2F1dGgucHJvdG8SEGp1bXBnYXRlLmF1dGgudjEiVgoMTG9naW5SZXF1ZXN0EhYKBWVtYWlsGAEgASgJQge6SARyAmABEhkKCHBhc3N3b3JkGAIgASgJQge6SARyAhABEhMKC2Nvb2tpZV9vbmx5GAMgASgIIj8KDUxvZ2luUmVzcG9uc2USDQoFdG9rZW4YASABKAkSDwoHdXNlcl9pZBgCIAEoCUoECAMQBFIIaXNfYWRtaW4iDwoNTG9nb3V0UmVxdWVzdCIQCg5Mb2dvdXRSZXNwb25zZSIPCg1XaG9BbUlSZXF1ZXN0ImwKDldob0FtSVJlc3BvbnNlEg8KB3VzZXJfaWQYASABKAkSDQoFZW1haWwYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhQKDGNhcGFiaWxpdGllcxgFIAMoCUoECAQQBVIIaXNfYWRtaW4i7gEKB1Nlc3Npb24SCgoCaWQYASABKAkSLgoKY3JlYXRlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF91c2VkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCgljbGllbnRfaXAYBSABKAkSEgoKdXNlcl9hZ2VudBgGIAEoCRINCgVsYWJlbBgHIAEoCRIPCgdjdXJyZW50GAggASgIIhUKE0xpc3RTZXNzaW9uc1JlcXVlc3QiQwoUTGlzdFNlc3Npb25zUmVzcG9uc2USKwoIc2Vzc2lvbnMYASADKAsyGS5qdW1wZ2F0ZS5hdXRoLnYxLlNlc3Npb24iLAoUUmV2b2tlU2Vzc2lvblJlcXVlc3QSFAoCaWQYASABKAlCCLpIBXIDsAEBIhcKFVJldm9rZVNlc3Npb25SZXNwb25zZSIyChhSZXZva2VBbGxTZXNzaW9uc1JlcXVlc3QSFgoOZXhjZXB0X2N1cnJlbnQYASABKAgiLAoZUmV2b2tlQWxsU2Vzc2lvbnNSZXNwb25zZRIPCgdyZXZva2VkGAEgASgDMqwECgtBdXRoU2VydmljZRJKCgVMb2dpbhIeLmp1bXBnYXRlLmF1dGgudjEuTG9naW5SZXF1ZXN0Gh8uanVtcGdhdGUuYXV0aC52MS5Mb2dpblJlc3BvbnNlIgASTQoGV2hvQW1JEh8uanVtcGdhdGUuYXV0aC52MS5XaG9BbUlSZXF1ZXN0GiAuanVtcGdhdGUuYXV0aC52MS5XaG9BbUlSZXNwb25zZSIAEk0KBkxvZ291dBIfLmp1bXBnYXRlLmF1dGgudjEuTG9nb3V0UmVxdWVzdBogLmp1bXBnYXRlLmF1dGgudjEuTG9nb3V0UmVzcG9uc2UiABJfCgxMaXN0U2Vzc2lvbnMSJS5qdW1wZ2F0ZS5hdXRoLnYxLkxpc3RTZXNzaW9uc1JlcXVlc3QaJi5qdW1wZ2F0ZS5hdXRoLnYxLkxpc3RTZXNzaW9uc1Jlc3BvbnNlIgASYgoNUmV2b2tlU2Vzc2lvbhImLmp1bXBnYXRlLmF1dGgudjEuUmV2b2tlU2Vzc2lvblJlcXVlc3QaJy5qdW1wZ2F0ZS5hdXRoLnYxLlJldm9rZVNlc3Npb25SZXNwb25zZSIAEm4KEVJldm9rZUFsbFNlc3Npb25zEiouanVtcGdhdGUuYXV0aC52MS5SZXZva2VBbGxTZXNzaW9uc1JlcXVlc3QaKy5qdW1wZ2F0ZS5hdXRoLnYxLlJldm9rZUFsbFNlc3Npb25zUmVzcG9uc2UiAEI/Wj1naXRodWIuY29tL3RyZXZleC9qdW1wZ2F0ZS93YXJkZW4vZ2VuL2p1bXBnYXRlL2F1dGgvdjE7YXV0aHYxYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message jumpgate.auth.v1.LoginRequest
@@ -138,6 +140,152 @@ export const WhoAmIResponseSchema: GenMessage<WhoAmIResponse> = /*@__PURE__*/
   messageDesc(file_jumpgate_auth_v1_auth, 5);
 
 /**
+ * @generated from message jumpgate.auth.v1.Session
+ */
+export type Session = Message<"jumpgate.auth.v1.Session"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 2;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_used_at = 3;
+   */
+  lastUsedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 4;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string client_ip = 5;
+   */
+  clientIp: string;
+
+  /**
+   * @generated from field: string user_agent = 6;
+   */
+  userAgent: string;
+
+  /**
+   * @generated from field: string label = 7;
+   */
+  label: string;
+
+  /**
+   * @generated from field: bool current = 8;
+   */
+  current: boolean;
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.Session.
+ * Use `create(SessionSchema)` to create a new message.
+ */
+export const SessionSchema: GenMessage<Session> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 6);
+
+/**
+ * @generated from message jumpgate.auth.v1.ListSessionsRequest
+ */
+export type ListSessionsRequest = Message<"jumpgate.auth.v1.ListSessionsRequest"> & {
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.ListSessionsRequest.
+ * Use `create(ListSessionsRequestSchema)` to create a new message.
+ */
+export const ListSessionsRequestSchema: GenMessage<ListSessionsRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 7);
+
+/**
+ * @generated from message jumpgate.auth.v1.ListSessionsResponse
+ */
+export type ListSessionsResponse = Message<"jumpgate.auth.v1.ListSessionsResponse"> & {
+  /**
+   * @generated from field: repeated jumpgate.auth.v1.Session sessions = 1;
+   */
+  sessions: Session[];
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.ListSessionsResponse.
+ * Use `create(ListSessionsResponseSchema)` to create a new message.
+ */
+export const ListSessionsResponseSchema: GenMessage<ListSessionsResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 8);
+
+/**
+ * @generated from message jumpgate.auth.v1.RevokeSessionRequest
+ */
+export type RevokeSessionRequest = Message<"jumpgate.auth.v1.RevokeSessionRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.RevokeSessionRequest.
+ * Use `create(RevokeSessionRequestSchema)` to create a new message.
+ */
+export const RevokeSessionRequestSchema: GenMessage<RevokeSessionRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 9);
+
+/**
+ * @generated from message jumpgate.auth.v1.RevokeSessionResponse
+ */
+export type RevokeSessionResponse = Message<"jumpgate.auth.v1.RevokeSessionResponse"> & {
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.RevokeSessionResponse.
+ * Use `create(RevokeSessionResponseSchema)` to create a new message.
+ */
+export const RevokeSessionResponseSchema: GenMessage<RevokeSessionResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 10);
+
+/**
+ * @generated from message jumpgate.auth.v1.RevokeAllSessionsRequest
+ */
+export type RevokeAllSessionsRequest = Message<"jumpgate.auth.v1.RevokeAllSessionsRequest"> & {
+  /**
+   * @generated from field: bool except_current = 1;
+   */
+  exceptCurrent: boolean;
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.RevokeAllSessionsRequest.
+ * Use `create(RevokeAllSessionsRequestSchema)` to create a new message.
+ */
+export const RevokeAllSessionsRequestSchema: GenMessage<RevokeAllSessionsRequest> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 11);
+
+/**
+ * @generated from message jumpgate.auth.v1.RevokeAllSessionsResponse
+ */
+export type RevokeAllSessionsResponse = Message<"jumpgate.auth.v1.RevokeAllSessionsResponse"> & {
+  /**
+   * @generated from field: int64 revoked = 1;
+   */
+  revoked: bigint;
+};
+
+/**
+ * Describes the message jumpgate.auth.v1.RevokeAllSessionsResponse.
+ * Use `create(RevokeAllSessionsResponseSchema)` to create a new message.
+ */
+export const RevokeAllSessionsResponseSchema: GenMessage<RevokeAllSessionsResponse> = /*@__PURE__*/
+  messageDesc(file_jumpgate_auth_v1_auth, 12);
+
+/**
  * AuthService issues and inspects bearer tokens for local accounts.
  *
  * @generated from service jumpgate.auth.v1.AuthService
@@ -172,6 +320,37 @@ export const AuthService: GenService<{
     methodKind: "unary";
     input: typeof LogoutRequestSchema;
     output: typeof LogoutResponseSchema;
+  },
+  /**
+   * ListSessions returns the caller's active login sessions. Requires auth.
+   *
+   * @generated from rpc jumpgate.auth.v1.AuthService.ListSessions
+   */
+  listSessions: {
+    methodKind: "unary";
+    input: typeof ListSessionsRequestSchema;
+    output: typeof ListSessionsResponseSchema;
+  },
+  /**
+   * RevokeSession revokes one of the caller's own sessions by id. Requires auth.
+   *
+   * @generated from rpc jumpgate.auth.v1.AuthService.RevokeSession
+   */
+  revokeSession: {
+    methodKind: "unary";
+    input: typeof RevokeSessionRequestSchema;
+    output: typeof RevokeSessionResponseSchema;
+  },
+  /**
+   * RevokeAllSessions logs the caller out everywhere (optionally except the
+   * current session). Requires auth.
+   *
+   * @generated from rpc jumpgate.auth.v1.AuthService.RevokeAllSessions
+   */
+  revokeAllSessions: {
+    methodKind: "unary";
+    input: typeof RevokeAllSessionsRequestSchema;
+    output: typeof RevokeAllSessionsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_jumpgate_auth_v1_auth, 0);
