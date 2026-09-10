@@ -41,6 +41,9 @@ func TestValidatePassword(t *testing.T) {
 	if err := ValidatePassword("password1234", ""); err == nil {
 		t.Fatal("accepted common password")
 	}
+	if err := ValidatePassword("Password1234", ""); err == nil {
+		t.Fatal("accepted common password in different case")
+	}
 	if err := ValidatePassword("a-perfectly-fine-passphrase", ""); err != nil {
 		t.Fatalf("rejected good password: %v", err)
 	}
@@ -57,5 +60,13 @@ func TestVerifyRejectsPathologicalParams(t *testing.T) {
 	bad := "$argon2id$m=8388608,t=1,p=4$YWJjZGVmZ2hpamtsbW5vcA$YWJjZGVmZ2hpamtsbW5vcA"
 	if _, err := VerifyPassword("x", bad); err == nil {
 		t.Fatal("accepted pathological argon2 params")
+	}
+	badT := "$argon2id$m=65536,t=17,p=4$YWJjZGVmZ2hpamtsbW5vcA$YWJjZGVmZ2hpamtsbW5vcA"
+	if _, err := VerifyPassword("x", badT); err == nil {
+		t.Fatal("accepted out-of-range t")
+	}
+	badP := "$argon2id$m=65536,t=1,p=17$YWJjZGVmZ2hpamtsbW5vcA$YWJjZGVmZ2hpamtsbW5vcA"
+	if _, err := VerifyPassword("x", badP); err == nil {
+		t.Fatal("accepted out-of-range p")
 	}
 }

@@ -12,6 +12,9 @@ const minPasswordLen = 12
 // commonPasswords is a small embedded blocklist of the most-abused passwords.
 // It is intentionally short — a full breach corpus is out of scope for a
 // self-hosted, possibly air-gapped deployment (no external HIBP call).
+// Entries shorter than minPasswordLen ("password", "changeme", "letmein") are
+// unreachable via the length check above and are defense-in-depth only —
+// they start mattering if minPasswordLen is ever lowered. Not dead code.
 var commonPasswords = map[string]struct{}{
 	"password":            {},
 	"password1234":        {},
@@ -33,6 +36,9 @@ func ValidatePassword(pw, currentHash string) error {
 	if _, bad := commonPasswords[strings.ToLower(pw)]; bad {
 		return errors.New("password is too common")
 	}
+	// currentHash is "" from both current callers (CreateUser, EnsureAdmin);
+	// this branch only activates once a change-password RPC passes the
+	// account's existing hash.
 	if currentHash != "" {
 		if ok, _ := VerifyPassword(pw, currentHash); ok {
 			return errors.New("new password must differ from the current password")
