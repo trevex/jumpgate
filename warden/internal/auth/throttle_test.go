@@ -3,6 +3,7 @@ package auth_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
 )
@@ -54,5 +55,25 @@ func TestThrottlePerIPIndependentOfEmail(t *testing.T) {
 	}
 	if _, blocked := th.Check("another-fresh@x", ip); !blocked {
 		t.Fatal("expected IP-driven hard block for a fresh email")
+	}
+}
+
+func TestThrottleRetryAfter(t *testing.T) {
+	th := auth.NewThrottle()
+	const email, ip = "retry@x", "10.0.0.2"
+
+	if d := th.RetryAfter(email, ip); d != 0 {
+		t.Fatalf("fresh key: RetryAfter = %v, want 0", d)
+	}
+
+	for i := 0; i < 15; i++ {
+		th.Fail(email, ip)
+	}
+	if _, blocked := th.Check(email, ip); !blocked {
+		t.Fatal("expected hard block")
+	}
+	d := th.RetryAfter(email, ip)
+	if d <= 0 || d > 15*time.Minute {
+		t.Fatalf("blocked key: RetryAfter = %v, want (0, 15m]", d)
 	}
 }

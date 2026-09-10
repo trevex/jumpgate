@@ -406,3 +406,14 @@ func TestLoginAuditOnSuccess(t *testing.T) {
 		t.Fatalf("login.succeeded count = %d", n)
 	}
 }
+
+func TestLoginAuditOnFailure(t *testing.T) {
+	h, _, uid, pool := newLoginHarness(t, "fail@x", "a-perfectly-fine-passphrase")
+	req := connect.NewRequest(&authv1.LoginRequest{Email: "fail@x", Password: "the-wrong-password"})
+	if _, err := h.Login(context.Background(), req); err == nil {
+		t.Fatal("expected auth failure")
+	}
+	if n := auditCount(t, pool, auth.EventLoginFailed, uid); n != 1 {
+		t.Fatalf("login.failed count = %d", n)
+	}
+}

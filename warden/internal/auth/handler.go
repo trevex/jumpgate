@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
@@ -51,6 +53,14 @@ func jsonDetails(kv map[string]string) []byte {
 	return b
 }
 
+// recordAudit appends e best-effort: the RPC never fails on an audit error,
+// but a broken chain for auth events must not fail silently.
+func (s *Handler) recordAudit(ctx context.Context, e audit.Event) {
+	if err := s.audit.Append(ctx, e); err != nil {
+		slog.Error("audit append failed", "event", e.Type, "err", err)
+	}
+}
+
 // Login exchanges email + password for a bearer token.
 func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRequest]) (*connect.Response[authv1.LoginResponse], error) {
 	unauth := connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
@@ -62,9 +72,13 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	ua := req.Header().Get("User-Agent")
 
 	if delay, blocked := s.throttle.Check(email, ip); blocked {
-		_ = s.audit.Append(ctx, audit.Event{Type: EventLoginThrottled, Details: jsonDetails(map[string]string{"ip": ip})})
+		s.recordAudit(ctx, audit.Event{Type: EventLoginThrottled, Details: jsonDetails(map[string]string{"ip": ip})})
 		cerr := connect.NewError(connect.CodeResourceExhausted, errors.New("too many attempts; try again later"))
-		cerr.Meta().Set("Retry-After", "60")
+		secs := int(s.throttle.RetryAfter(email, ip).Seconds())
+		if secs < 1 {
+			secs = 1
+		}
+		cerr.Meta().Set("Retry-After", strconv.Itoa(secs))
 		return nil, cerr
 	} else if delay > 0 {
 		select {
@@ -78,7 +92,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	if err != nil {
 		_, _ = VerifyPassword(req.Msg.Password, DummyHash) // constant-time: avoid user enumeration via timing
 		s.throttle.Fail(email, ip)
-		_ = s.audit.Append(ctx, audit.Event{Type: EventLoginFailed, Details: jsonDetails(map[string]string{"reason": "unknown_user", "ip": ip})})
+		s.recordAudit(ctx, audit.Event{Type: EventLoginFailed, Details: jsonDetails(map[string]string{"reason": "unknown_user", "ip": ip})})
 		return nil, unauth
 	}
 	ok, verr := VerifyPassword(req.Msg.Password, u.PasswordHash)
@@ -90,7 +104,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 		if u.DeactivatedAt.Valid {
 			reason = "deactivated"
 		}
-		_ = s.audit.Append(ctx, audit.Event{Type: EventLoginFailed, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: jsonDetails(map[string]string{"reason": reason, "ip": ip})})
+		s.recordAudit(ctx, audit.Event{Type: EventLoginFailed, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: jsonDetails(map[string]string{"reason": reason, "ip": ip})})
 		return nil, unauth
 	}
 
@@ -103,7 +117,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	_ = s.audit.Append(ctx, audit.Event{Type: EventLoginSucceeded, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: jsonDetails(map[string]string{"ip": ip})})
+	s.recordAudit(ctx, audit.Event{Type: EventLoginSucceeded, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: jsonDetails(map[string]string{"ip": ip})})
 
 	resp := connect.NewResponse(&authv1.LoginResponse{UserId: u.ID.String()})
 	if req.Msg.CookieOnly {
@@ -136,7 +150,7 @@ func (s *Handler) Logout(ctx context.Context, req *connect.Request[authv1.Logout
 	if raw != "" {
 		_ = s.tokens.Revoke(ctx, raw) // idempotent: ignore already-revoked errors
 	}
-	_ = s.audit.Append(ctx, audit.Event{Type: EventLogout, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: []byte("{}")})
+	s.recordAudit(ctx, audit.Event{Type: EventLogout, ActorID: u.ID, Subject: "user:" + u.ID.String(), Details: []byte("{}")})
 	resp := connect.NewResponse(&authv1.LogoutResponse{})
 	if fromCookie {
 		// Matches the login cookie's attributes so the browser replaces it; Secure

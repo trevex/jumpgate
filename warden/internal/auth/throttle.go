@@ -94,6 +94,22 @@ func (t *Throttle) bump(key string) {
 	c.failures++
 }
 
+// RetryAfter reports how long until a currently-blocked key's window clears,
+// taking the longer of the email and IP keys. Returns 0 when nothing is blocked.
+func (t *Throttle) RetryAfter(email, ip string) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var d time.Duration
+	for _, key := range []string{"e:" + email, "i:" + ip} {
+		if c := t.m[key]; c != nil {
+			if rem := throttleWindow - time.Since(c.first); rem > d {
+				d = rem
+			}
+		}
+	}
+	return d
+}
+
 // Fail records a failed attempt for both keys.
 func (t *Throttle) Fail(email, ip string) {
 	t.mu.Lock()
