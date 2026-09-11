@@ -31,7 +31,12 @@ func newCLICodeStore() *cliCodeStore {
 	return &cliCodeStore{m: map[string]cliCodeEntry{}, now: time.Now}
 }
 
-// put stores token under a fresh random code and returns the code.
+// put stores token under a fresh random code and returns the code. It also
+// opportunistically sweeps expired entries first, so an abandoned CLI login
+// (code minted, /exchange never called) doesn't leak an entry for the life of
+// the process. ponytail: O(n) scan over live entries on every put — fine at
+// CLI-login volumes; swap for a background ticker if this ever needs to scale
+// beyond "bounded by codes minted in the last TTL".
 func (s *cliCodeStore) put(token string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -40,7 +45,13 @@ func (s *cliCodeStore) put(token string) (string, error) {
 	code := base64.RawURLEncoding.EncodeToString(b)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.m[code] = cliCodeEntry{token: token, expiry: s.now().Add(cliCodeTTL)}
+	now := s.now()
+	for c, e := range s.m {
+		if now.After(e.expiry) {
+			delete(s.m, c)
+		}
+	}
+	s.m[code] = cliCodeEntry{token: token, expiry: now.Add(cliCodeTTL)}
 	return code, nil
 }
 
@@ -93,12 +104,7 @@ func oidcCLILoginHandler(svc oidcFlow, cookieSecure bool) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		// Same cookie shape as oidcLoginHandler: SameSite=Lax because the
-		// callback arrives as a top-level cross-site navigation from the IdP.
-		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Lax set; Secure is config-gated.
-			Name: oidcStateCookie, Value: sealed, Path: "/auth/oidc",
-			MaxAge: 300, HttpOnly: true, Secure: cookieSecure, SameSite: http.SameSiteLaxMode,
-		})
+		setOIDCStateCookie(w, sealed, cookieSecure)
 		http.Redirect(w, r, authURL, http.StatusFound) //nolint:gosec // G710: authURL is the IdP's authorize endpoint built server-side by AuthCodeURLCLI, not an echo of redirect_uri; redirect_uri itself is validated loopback-only above and only ever reaches the callback's Location query param, never a Redirect target.
 	}
 }

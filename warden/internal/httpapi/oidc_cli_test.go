@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,6 +68,35 @@ func TestCLICodeStoreExpiry(t *testing.T) {
 	}
 }
 
+// TestCLICodeStoreSweepsOnPut verifies put() opportunistically evicts expired
+// entries so an abandoned CLI login (code minted, /exchange never called)
+// doesn't leak an entry for the life of the process.
+func TestCLICodeStoreSweepsOnPut(t *testing.T) {
+	s := newCLICodeStore()
+	now := time.Now()
+	s.now = func() time.Time { return now }
+
+	codeA, err := s.put("tok-a")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	s.now = func() time.Time { return now.Add(cliCodeTTL + time.Second) }
+	if _, err := s.put("tok-b"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	s.mu.Lock()
+	_, stillThere := s.m[codeA]
+	s.mu.Unlock()
+	if stillThere {
+		t.Fatal("expired entry not swept on put")
+	}
+	if _, ok := s.take(codeA); ok {
+		t.Fatal("take succeeded for swept code")
+	}
+}
+
 func TestOIDCCLIExchangeHandler(t *testing.T) {
 	store := newCLICodeStore()
 	code, err := store.put("tok-1")
@@ -95,6 +125,16 @@ func TestOIDCCLIExchangeHandler(t *testing.T) {
 		}
 		if resp.Token != "tok-1" {
 			t.Fatalf("token = %q, want tok-1", resp.Token)
+		}
+	})
+
+	t.Run("malformed json", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/auth/oidc/cli/exchange", strings.NewReader("{not json"))
+		h(w, r)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", w.Code)
 		}
 	})
 
@@ -127,6 +167,19 @@ func TestOIDCCLILoginHandler(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/auth/oidc/cli/login?redirect_uri=https://evil.com/cb", nil)
+		h(w, r)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", w.Code)
+		}
+	})
+
+	t.Run("missing redirect_uri rejected", func(t *testing.T) {
+		svc := &stubOIDCFlow{authURL: "https://idp.example/authorize", sealedState: "sealed"}
+		h := oidcCLILoginHandler(svc, true)
+
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/auth/oidc/cli/login", nil)
 		h(w, r)
 
 		if w.Code != http.StatusBadRequest {
@@ -200,6 +253,34 @@ func TestOIDCCallbackHandlerCLISuccess(t *testing.T) {
 	}
 	if tok != "tok" { // stubSessionIssuer.Issue always returns "tok"
 		t.Fatalf("token = %q, want tok", tok)
+	}
+}
+
+func TestOIDCCallbackHandlerCLIIssueFailure(t *testing.T) {
+	const cliRedirect = "http://127.0.0.1:5555/cb"
+	svc := &stubOIDCFlow{
+		claims:      &oidc.Claims{Subject: "sub-1", EmailVerified: true},
+		cliRedirect: cliRedirect,
+	}
+	iss := &stubSessionIssuer{err: errors.New("issue failed")}
+	h := oidcCallbackHandler(svc, iss, true, nil, newCLICodeStore())
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
+	r.AddCookie(testStateCookie("sealed"))
+	h(w, r)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, cliRedirect+"?error=") {
+		t.Fatalf("Location = %q, want prefix %q", loc, cliRedirect+"?error=")
+	}
+	for _, c := range w.Header().Values("Set-Cookie") {
+		if strings.Contains(c, auth.SessionCookie+"=") {
+			t.Fatalf("session cookie set on failed CLI login: %q", c)
+		}
 	}
 }
 

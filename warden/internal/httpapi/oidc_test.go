@@ -122,7 +122,7 @@ func TestRouterOIDCGating(t *testing.T) {
 		t.Fatalf("body = %+v, want local=true oidc=false", body)
 	}
 
-	for _, path := range []string{"/auth/oidc/login", "/auth/oidc/callback"} {
+	for _, path := range []string{"/auth/oidc/login", "/auth/oidc/callback", "/auth/oidc/cli/login", "/auth/oidc/cli/exchange"} {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
