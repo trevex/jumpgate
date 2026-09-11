@@ -105,3 +105,11 @@ export const deleteGroup = IdentityService.method.deleteGroup;
  * @generated from rpc jumpgate.identity.v1.IdentityService.SetLocalPassword
  */
 export const setLocalPassword = IdentityService.method.setLocalPassword;
+
+/**
+ * SetGroupExternalKey sets (or clears, when external_key is empty) the IdP
+ * group-claim value that maps to this group for OIDC membership sync.
+ *
+ * @generated from rpc jumpgate.identity.v1.IdentityService.SetGroupExternalKey
+ */
+export const setGroupExternalKey = IdentityService.method.setGroupExternalKey;

@@ -196,16 +196,17 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Fol
 }
 
 const createGroup = `-- name: CreateGroup :one
-INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING id, name, folder_id, created_at, external_key
+INSERT INTO groups (name, folder_id, external_key) VALUES ($1, $2, $3) RETURNING id, name, folder_id, created_at, external_key
 `
 
 type CreateGroupParams struct {
-	Name     string      `json:"name"`
-	FolderID pgtype.UUID `json:"folder_id"`
+	Name        string      `json:"name"`
+	FolderID    pgtype.UUID `json:"folder_id"`
+	ExternalKey pgtype.Text `json:"external_key"`
 }
 
 func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error) {
-	row := q.db.QueryRow(ctx, createGroup, arg.Name, arg.FolderID)
+	row := q.db.QueryRow(ctx, createGroup, arg.Name, arg.FolderID, arg.ExternalKey)
 	var i Group
 	err := row.Scan(
 		&i.ID,
@@ -847,6 +848,20 @@ func (q *Queries) RoleCapabilityRows(ctx context.Context, roleID uuid.UUID) ([]R
 		return nil, err
 	}
 	return items, nil
+}
+
+const setGroupExternalKey = `-- name: SetGroupExternalKey :exec
+UPDATE groups SET external_key = $2 WHERE id = $1
+`
+
+type SetGroupExternalKeyParams struct {
+	ID          uuid.UUID   `json:"id"`
+	ExternalKey pgtype.Text `json:"external_key"`
+}
+
+func (q *Queries) SetGroupExternalKey(ctx context.Context, arg SetGroupExternalKeyParams) error {
+	_, err := q.db.Exec(ctx, setGroupExternalKey, arg.ID, arg.ExternalKey)
+	return err
 }
 
 const updateAssetCatalogName = `-- name: UpdateAssetCatalogName :exec

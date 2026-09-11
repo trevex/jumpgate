@@ -2,29 +2,70 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
-// CreateGroup creates a group (optionally folder-homed). A name/sibling collision
-// maps to AlreadyExists via apierr.MapWrite.
-func (s *Service) CreateGroup(ctx context.Context, folderID pgtype.UUID, name string) (GroupResult, error) {
-	g, err := s.q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: name, FolderID: folderID})
+// CreateGroup creates a group (optionally folder-homed, optionally pre-mapped to an
+// IdP external_key). A name/sibling collision maps to AlreadyExists via
+// apierr.MapWrite; an external_key collision gets its own clear message.
+func (s *Service) CreateGroup(ctx context.Context, folderID pgtype.UUID, name, externalKey string) (GroupResult, error) {
+	g, err := s.q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: name, FolderID: folderID, ExternalKey: pgconv.Text(externalKey)})
 	if err != nil {
-		return GroupResult{}, apierr.MapWrite(err)
+		return GroupResult{}, mapGroupWriteErr(err)
 	}
 	return s.groupResult(ctx, g)
+}
+
+// mapGroupWriteErr maps a group insert/update error to a Connect error, giving the
+// external_key unique-index violation its own clear message; every other case
+// (name collision, FK, etc.) keeps the generic apierr.MapWrite mapping.
+func mapGroupWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_group_external_key" {
+		return connect.NewError(connect.CodeAlreadyExists, errors.New("group external key already in use"))
+	}
+	return apierr.MapWrite(err)
+}
+
+// SetGroupExternalKey sets (externalKey non-empty) or clears (empty) the group's
+// IdP group-claim mapping key used by OIDC membership sync. The caller's
+// capability is gated by the handler at the group's folder scope.
+func (s *Service) SetGroupExternalKey(ctx context.Context, actor, groupID uuid.UUID, externalKey string) error {
+	if err := s.q.SetGroupExternalKey(ctx, sqlc.SetGroupExternalKeyParams{ID: groupID, ExternalKey: pgconv.Text(externalKey)}); err != nil {
+		return mapGroupWriteErr(err)
+	}
+	if s.audit != nil {
+		cleared := "false"
+		if externalKey == "" {
+			cleared = "true"
+		}
+		details, _ := json.Marshal(map[string]string{"cleared": cleared})
+		if err := s.audit.Append(ctx, audit.Event{
+			Type:    EventGroupExternalKeySet,
+			ActorID: actor,
+			Subject: "group:" + groupID.String(),
+			Details: details,
+		}); err != nil {
+			slog.Error("audit append failed", "event", EventGroupExternalKeySet, "group_id", groupID.String(), "err", err)
+		}
+	}
+	return nil
 }
 
 // ResolveGroup resolves a group reference to a group. The reference is one of a
