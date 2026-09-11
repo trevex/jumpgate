@@ -39,6 +39,29 @@
       "type": "object",
       "properties": { "enabled": { "type": "boolean" } }
     },
+    "warden": {
+      "type": "object",
+      "properties": {
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "issuerUrl": { "type": "string" },
+            "clientId": { "type": "string" },
+            "clientSecret": {
+              "type": "object",
+              "properties": {
+                "secretName": { "type": "string" },
+                "secretKey": { "type": "string" }
+              }
+            },
+            "redirectUrl": { "type": "string" },
+            "groupsClaim": { "type": "string" },
+            "scopes": { "type": "string" }
+          }
+        }
+      }
+    },
     "recording": {
       "type": "object",
       "properties": {
