@@ -241,6 +241,13 @@ func (h *Handler) CreateGroup(ctx context.Context, req *connect.Request[identity
 	if err := h.guard.RequireCap(ctx, c, authz.GroupCreateCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
+	// external_key drives OIDC-membership auto-sync (privilege-relevant), so setting
+	// it at creation time demands the same dedicated cap as the update path.
+	if req.Msg.ExternalKey != "" {
+		if err := h.guard.RequireCap(ctx, c, authz.GroupSetExternalKeyCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
+			return nil, err
+		}
+	}
 	res, err := h.svc.CreateGroup(ctx, folderID, req.Msg.Name, req.Msg.ExternalKey)
 	if err != nil {
 		return nil, err

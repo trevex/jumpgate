@@ -122,6 +122,23 @@ func TestGroupExternalKey(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin SetGroupExternalKey code = %v, want PermissionDenied", connect.CodeOf(err))
 	}
+
+	// A caller holding ONLY identity:group:create (not set-external-key) may create
+	// plain groups but is denied setting external_key at creation time — otherwise
+	// the dedicated cap would be trivially bypassable via the create path.
+	seedCapUser(t, pool, "creator@x", "password123456", `["identity:group:create"]`)
+	cc := authClient(t, url, "creator@x", "password123456")
+	if _, err := c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "plain-ok",
+	}), cc)); err != nil {
+		t.Fatalf("create-cap caller creating a plain group: %v", err)
+	}
+	_, err = c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{
+		Name: "with-key", ExternalKey: "sneaky",
+	}), cc))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("create-cap-only caller creating with external_key code = %v, want PermissionDenied", connect.CodeOf(err))
+	}
 }
 
 // readGroupExternalKeyViaList finds groupID in a ListGroups page and returns its
