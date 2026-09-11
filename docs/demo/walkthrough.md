@@ -655,18 +655,6 @@ jumpgate --context admin groups create sso-ops --external-key authors
 jumpgate --context admin bindings create --role ssh-demo.demo --group sso-ops --asset password-box.demo
 ```
 
-One host-side step first. The demo IdP's issuer is the in-cluster name
-`dex.default.svc.cluster.local`, and warden redirects your browser straight there — so the host
-browser has to resolve it. Map it to the NodePort `cluster.yaml` already forwards to
-`localhost:5556` (one-time):
-
-```bash
-echo '127.0.0.1 dex.default.svc.cluster.local' | sudo tee -a /etc/hosts
-```
-
-(The automated e2e rewrites this in-process instead of touching `/etc/hosts`; a real browser
-needs the entry. A production IdP has a real public issuer, so this is a demo-only wrinkle.)
-
 Now sign in as the SSO user. `login --sso` opens a loopback listener, sends your browser to
 warden, and exchanges a one-time code for the bearer — the token never touches the browser URL.
 Pass `--warden-addr`/`--ca` just like a password login so they land in the new context:

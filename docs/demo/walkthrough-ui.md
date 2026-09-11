@@ -270,17 +270,6 @@ the bootstrap admin holds it. Then grant the group something visible the same wa
 chapter does: a folder-scoped role with a capability such as `ssh:login:demo` (**New role**),
 bound to `sso-ops` on an asset (**Bindings ▸ Bind a role**).
 
-**One host-side step first.** warden redirects the browser to the demo IdP at its in-cluster
-issuer `dex.default.svc.cluster.local`, so the host has to resolve that name. Map it to the
-NodePort `cluster.yaml` already forwards to `localhost:5556` (one-time), or the SSO button
-dead-ends at an unreachable host:
-
-```bash
-echo '127.0.0.1 dex.default.svc.cluster.local' | sudo tee -a /etc/hosts
-```
-
-A production IdP has a real public issuer, so this is a demo-only wrinkle.
-
 **Sign in with SSO.** Open a fresh incognito window at http://localhost:8080. Instead of the
 password form, click **Sign in with SSO**. You land straight back on the **Overview**
 dashboard — the demo IdP (Dex, configured with its `mockCallback` connector; see
