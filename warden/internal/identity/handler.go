@@ -49,10 +49,11 @@ func toUserMsg(u sqlc.User) *identityv1.User {
 // groupMsg renders a GroupResult as an identity Group with its folder path.
 func groupMsg(res GroupResult) *identityv1.Group {
 	return &identityv1.Group{
-		Id:         res.Group.ID.String(),
-		Name:       res.Group.Name,
-		FolderId:   pgconv.UUIDString(res.Group.FolderID),
-		FolderPath: res.FolderPath,
+		Id:          res.Group.ID.String(),
+		Name:        res.Group.Name,
+		FolderId:    pgconv.UUIDString(res.Group.FolderID),
+		FolderPath:  res.FolderPath,
+		ExternalKey: res.Group.ExternalKey.String,
 	}
 }
 
@@ -240,7 +241,14 @@ func (h *Handler) CreateGroup(ctx context.Context, req *connect.Request[identity
 	if err := h.guard.RequireCap(ctx, c, authz.GroupCreateCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
 		return nil, err
 	}
-	res, err := h.svc.CreateGroup(ctx, folderID, req.Msg.Name)
+	// external_key drives OIDC-membership auto-sync (privilege-relevant), so setting
+	// it at creation time demands the same dedicated cap as the update path.
+	if req.Msg.ExternalKey != "" {
+		if err := h.guard.RequireCap(ctx, c, authz.GroupSetExternalKeyCap, apiguard.ScopeOfFolderID(folderID)); err != nil {
+			return nil, err
+		}
+	}
+	res, err := h.svc.CreateGroup(ctx, folderID, req.Msg.Name, req.Msg.ExternalKey)
 	if err != nil {
 		return nil, err
 	}
@@ -466,4 +474,29 @@ func (h *Handler) DeleteGroup(ctx context.Context, req *connect.Request[identity
 		return nil, err
 	}
 	return connect.NewResponse(&identityv1.DeleteGroupResponse{}), nil
+}
+
+// SetGroupExternalKey sets or clears a group's IdP external_key mapping used by
+// OIDC membership sync, gated by identity:group:set-external-key at the group's
+// folder scope. Empty external_key clears it.
+func (h *Handler) SetGroupExternalKey(ctx context.Context, req *connect.Request[identityv1.SetGroupExternalKeyRequest]) (*connect.Response[identityv1.SetGroupExternalKeyResponse], error) {
+	gid, err := uuid.Parse(req.Msg.GroupId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad group_id"))
+	}
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := h.guard.ScopeOfGroup(ctx, gid)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireCap(ctx, c, authz.GroupSetExternalKeyCap, scope); err != nil {
+		return nil, err
+	}
+	if err := h.svc.SetGroupExternalKey(ctx, c, gid, req.Msg.ExternalKey); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&identityv1.SetGroupExternalKeyResponse{}), nil
 }

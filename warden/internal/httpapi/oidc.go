@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/google/uuid"
 
@@ -30,7 +31,8 @@ const oidcStateCookie = "jumpgate_oidc_state"
 // live IdP or network discovery; *oidc.Service satisfies it structurally.
 type oidcFlow interface {
 	AuthCodeURL() (authURL, sealedState string, err error)
-	Exchange(ctx context.Context, sealedState, gotState, code string) (*oidc.Claims, error)
+	AuthCodeURLCLI(cliRedirect string) (authURL, sealedState string, err error)
+	Exchange(ctx context.Context, sealedState, gotState, code string) (*oidc.Claims, string, error)
 	Provision(ctx context.Context, issuer, subject string, c oidc.Claims) (uuid.UUID, error)
 	SyncGroups(ctx context.Context, userID uuid.UUID, groups []string) error
 	IssuerURL() string
@@ -77,6 +79,20 @@ func authMethodsHandler(oidcEnabled bool) http.HandlerFunc {
 	}
 }
 
+// setOIDCStateCookie stashes the sealed state/nonce/PKCE bundle in a
+// short-lived cookie for the redirect round trip to the IdP and back. Shared
+// by the browser and CLI login handlers, which set byte-identical cookies.
+// SameSite=Lax is required, not Strict: the callback arrives as a top-level
+// cross-site navigation (the IdP redirecting the browser back to us), and a
+// Strict cookie is withheld on exactly that request — the callback would
+// never see the state cookie it needs to validate.
+func setOIDCStateCookie(w http.ResponseWriter, sealed string, secure bool) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Lax set; Secure is config-gated.
+		Name: oidcStateCookie, Value: sealed, Path: "/auth/oidc",
+		MaxAge: 300, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
+}
+
 // oidcLoginHandler starts the auth-code+PKCE flow: mints state/nonce/PKCE,
 // stashes them in a short-lived cookie, and redirects to the IdP.
 func oidcLoginHandler(svc oidcFlow, cookieSecure bool) http.HandlerFunc {
@@ -86,16 +102,24 @@ func oidcLoginHandler(svc oidcFlow, cookieSecure bool) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		// SameSite=Lax is required, not Strict: the callback arrives as a
-		// top-level cross-site navigation (the IdP redirecting the browser back
-		// to us), and a Strict cookie is withheld on exactly that request — the
-		// callback would never see the state cookie it needs to validate.
-		http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Lax set; Secure is config-gated.
-			Name: oidcStateCookie, Value: sealed, Path: "/auth/oidc",
-			MaxAge: 300, HttpOnly: true, Secure: cookieSecure, SameSite: http.SameSiteLaxMode,
-		})
+		setOIDCStateCookie(w, sealed, cookieSecure)
 		http.Redirect(w, r, authURL, http.StatusFound)
 	}
+}
+
+// mergeRedirectQuery adds key=value into base's existing query string rather
+// than naively concatenating "?key=value", which would produce a malformed
+// second "?" when base (the CLI's loopback redirect_uri) already carries its
+// own query parameters.
+func mergeRedirectQuery(base, key, value string) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set(key, value)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // exchangeFailReason maps a Service.Exchange error to an audit reason code.
@@ -131,7 +155,13 @@ func provisionFailReason(err error) string {
 // issues the same jumpgate_session cookie a local-password login would. Any
 // failure clears the state cookie, audits the reason, and redirects to the
 // login page rather than leaking detail to the browser.
-func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bool, auditLog *audit.Logger) http.HandlerFunc {
+//
+// When the sealed state carries a CLI loopback redirect (set by
+// oidcCLILoginHandler), this is a CLI flow instead: on success the bearer is
+// handed to the CLI via a one-time code through store rather than a session
+// cookie (the bearer never touches the browser), and failures redirect to the
+// CLI's loopback server with an error query param instead of /login.
+func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bool, auditLog *audit.Logger, store *cliCodeStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := auth.PeerHost(r.RemoteAddr)
 		fail := func(reason string) {
@@ -150,30 +180,81 @@ func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bo
 			return
 		}
 
-		claims, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		// cli-ness is only known post-Exchange (it's carried inside the sealed
+		// state). A CLI request whose Exchange fails falls back to fail(), same
+		// as the browser: the state cookie round trip is browser-side either
+		// way, and the CLI's loopback server will simply time out waiting for a
+		// code — acceptable for a rare failure mode.
+		claims, cliRedirect, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
 		if err != nil {
 			fail(exchangeFailReason(err))
 			return
 		}
 
+		failFlow := func(reason string) {
+			if cliRedirect == "" {
+				fail(reason)
+				return
+			}
+			auditOIDC(r.Context(), auditLog, oidcEventLoginFailed, uuid.Nil, "", reason, ip)
+			dest, err := mergeRedirectQuery(cliRedirect, "error", reason)
+			if err != nil {
+				// cliRedirect was validated loopback-only at mint time (see
+				// isLoopbackRedirect); an unparseable value here would be a bug,
+				// not user input. The failure is already audited above, so just
+				// fail closed to the login page without re-auditing via fail().
+				http.Redirect(w, r, "/login?error=oidc", http.StatusFound)
+				return
+			}
+			http.Redirect(w, r, dest, http.StatusFound)
+		}
+
 		userID, err := svc.Provision(r.Context(), svc.IssuerURL(), claims.Subject, *claims)
 		if err != nil {
-			fail(provisionFailReason(err))
+			failFlow(provisionFailReason(err))
 			return
 		}
 
 		if err := svc.SyncGroups(r.Context(), userID, claims.Groups); err != nil {
-			fail("group_sync")
+			failFlow("group_sync")
 			return
 		}
 
-		_, cookie, err := issuer.Issue(r.Context(), userID, auth.TokenMeta{ClientIP: ip, UserAgent: r.UserAgent(), Label: "browser-sso"})
+		label := "browser-sso"
+		if cliRedirect != "" {
+			label = "cli-sso"
+		}
+		token, cookie, err := issuer.Issue(r.Context(), userID, auth.TokenMeta{ClientIP: ip, UserAgent: r.UserAgent(), Label: label})
 		if err != nil {
+			if cliRedirect != "" {
+				failFlow("issue_failed")
+				return
+			}
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		http.SetCookie(w, cookie)
+
+		if cliRedirect == "" {
+			http.SetCookie(w, cookie)
+			auditOIDC(r.Context(), auditLog, oidcEventLoginSucceeded, userID, "user:"+userID.String(), "", ip)
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		// CLI flow: the bearer never reaches the browser. Stash it behind a
+		// short-lived, single-use code and hand only the code to the CLI's
+		// loopback server via the redirect query string.
+		code, err := store.put(token)
+		if err != nil {
+			failFlow("code_store_failed")
+			return
+		}
+		dest, err := mergeRedirectQuery(cliRedirect, "code", code)
+		if err != nil {
+			failFlow("code_store_failed")
+			return
+		}
 		auditOIDC(r.Context(), auditLog, oidcEventLoginSucceeded, userID, "user:"+userID.String(), "", ip)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, dest, http.StatusFound)
 	}
 }

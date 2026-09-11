@@ -2,7 +2,10 @@
 INSERT INTO users (email, display_name) VALUES ($1, $2) RETURNING *;
 
 -- name: CreateGroup :one
-INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING *;
+INSERT INTO groups (name, folder_id, external_key) VALUES ($1, $2, $3) RETURNING *;
+
+-- name: SetGroupExternalKey :exec
+UPDATE groups SET external_key = $2 WHERE id = $1;
 
 -- name: GetGroup :one
 SELECT * FROM groups WHERE id = $1;

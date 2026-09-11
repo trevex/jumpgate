@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +111,78 @@ func performOIDCLogin(t *testing.T, wardenBase string) string {
 	return ""
 }
 
+// cliLoopbackRedirect is a placeholder loopback redirect_uri for performOIDCLoginCLI.
+// In the real CLI (cli/cmd/login.go runLoginSSO) this is `http://127.0.0.1:<port>`
+// for a listener it actually opens; here nothing ever binds this port — the test
+// intercepts the redirect to it (see performOIDCLoginCLI) before any dial would
+// happen, so no listener is needed.
+const cliLoopbackRedirect = "http://127.0.0.1:45999/callback"
+
+// performOIDCLoginCLI drives warden's CLI-loopback OIDC endpoints
+// (GET /auth/oidc/cli/login, POST /auth/oidc/cli/exchange — warden/internal/httpapi/oidc_cli.go)
+// end to end against a real Dex, proving out the backend `jumpgate login --sso`
+// (cli/cmd/login.go runLoginSSO) relies on — without a real browser or a real loopback
+// listener. It plays "browser" exactly like performOIDCLogin (same Dex dial rewrite +
+// cookie jar), except its CheckRedirect stops just short of following the final
+// redirect to cliLoopbackRedirect (mirroring runLoginSSO's own loopback server, which
+// would receive that exact request) and reads the one-time `code` off that redirect's
+// Location instead. It then exchanges that code for a bearer the same way
+// exchangeCLICode does, and returns the bearer.
+func performOIDCLoginCLI(t *testing.T, wardenBase string) string {
+	t.Helper()
+	client := oidcHTTPClient(t)
+	client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+		if req.URL.Hostname() == "127.0.0.1" {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}
+
+	resp, err := client.Get(wardenBase + "/auth/oidc/cli/login?redirect_uri=" + url.QueryEscape(cliLoopbackRedirect))
+	if err != nil {
+		t.Fatalf("cli oidc login flow: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("cli oidc login flow ended with status %d at %s (want 302 to the loopback redirect_uri)", resp.StatusCode, resp.Request.URL)
+	}
+	loc, err := resp.Location()
+	if err != nil {
+		t.Fatalf("parse final redirect Location: %v", err)
+	}
+	if !strings.HasPrefix(loc.String(), cliLoopbackRedirect) {
+		t.Fatalf("final redirect = %q, want prefix %q", loc.String(), cliLoopbackRedirect)
+	}
+	code := loc.Query().Get("code")
+	if code == "" {
+		t.Fatalf("no code in final redirect %s (error=%s)", loc.String(), loc.Query().Get("error"))
+	}
+
+	body, err := json.Marshal(map[string]string{"code": code})
+	if err != nil {
+		t.Fatalf("marshal exchange body: %v", err)
+	}
+	exResp, err := client.Post(wardenBase+"/auth/oidc/cli/exchange", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("cli exchange: %v", err)
+	}
+	defer func() { _ = exResp.Body.Close() }()
+	if exResp.StatusCode != http.StatusOK {
+		t.Fatalf("cli exchange status = %d, want 200", exResp.StatusCode)
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(exResp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode exchange response: %v", err)
+	}
+	if out.Token == "" {
+		t.Fatal("empty token from cli exchange")
+	}
+	return out.Token
+}
+
 // TestOIDCLogin drives a real browser-shaped OIDC auth-code login against the Dex test IdP
 // end to end and proves the three things B9 cares about: the login JIT-provisions a local
 // user, syncs the IdP's asserted group into an origin='oidc' membership on the
@@ -140,10 +215,10 @@ func TestOIDCLogin(t *testing.T) {
 	if groupID == "" {
 		t.Fatalf("no group id:\n%s", groupOut)
 	}
-	// groups.external_key has no CLI/RPC write surface (only oidc.Provisioner reads it, via
-	// GetGroupByExternalKey) — set it directly, mirroring e.reset's existing
-	// kubectl-exec-psql pattern for e2e-only fixture setup that has no API of its own.
-	e.execSQL(t, fmt.Sprintf(`UPDATE groups SET external_key = '%s' WHERE id = '%s';`, oidcGroupKey, groupID))
+	// Map the group to Dex's "authors" groups claim via the SetGroupExternalKey RPC
+	// surface (cli/cmd/groups.go), so the JIT login below syncs an origin='oidc'
+	// membership onto it.
+	e.asActor(t, "admin", "groups", "set-external-key", groupID, oidcGroupKey)
 
 	e.asActor(t, "admin", "roles", "create", "oidc-viewer", "--folder", folder, "--capability", "ssh:login:demo")
 	e.asActor(t, "admin", "bindings", "create",
@@ -180,6 +255,21 @@ func TestOIDCLogin(t *testing.T) {
 			"assets", "list", "--cascade", "-o", "json")
 		if !strings.Contains(out, assetPath) {
 			t.Fatalf("oidc-provisioned user should see the group-granted asset %s:\n%s", assetPath, out)
+		}
+	})
+
+	t.Run("cli_loopback_login_matches_browser_flow", func(t *testing.T) {
+		// Proves out jumpgate login --sso's backend (warden's /auth/oidc/cli/login +
+		// /auth/oidc/cli/exchange) end to end against the same Dex identity and the
+		// same fixtures the browser subtests above already exercised, without a real
+		// browser or a real loopback listener — see performOIDCLoginCLI.
+		cliToken := performOIDCLoginCLI(t, e.wardenURL)
+
+		out := run(t, []string{"XDG_CONFIG_HOME=" + e.configDir}, e.jgBin,
+			"--warden-addr", e.wardenURL, "--token", cliToken,
+			"assets", "list", "--cascade", "-o", "json")
+		if !strings.Contains(out, assetPath) {
+			t.Fatalf("cli-oidc-provisioned user should see the group-granted asset %s:\n%s", assetPath, out)
 		}
 	})
 

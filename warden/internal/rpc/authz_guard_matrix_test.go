@@ -308,6 +308,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.identity.AddUserToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddUserToGroupRequest{GroupId: f.groupID, UserId: f.targetUserID}), tok))
 			return err
 		}},
+		{"Identity.SetGroupExternalKey", PD, func() error {
+			_, err := cl.identity.SetGroupExternalKey(ctx, withToken(connect.NewRequest(&identityv1.SetGroupExternalKeyRequest{GroupId: f.groupID, ExternalKey: "idp-group-z"}), tok))
+			return err
+		}},
 		{"Identity.AddGroupToGroup", PD, func() error {
 			_, err := cl.identity.AddGroupToGroup(ctx, withToken(connect.NewRequest(&identityv1.AddGroupToGroupRequest{GroupId: f.groupID, MemberGroupId: f.groupID}), tok))
 			return err

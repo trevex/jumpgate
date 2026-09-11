@@ -60,9 +60,10 @@ var (
 // stateData is sealed into the login-flow cookie so it survives the redirect
 // round trip without server-side session storage.
 type stateData struct {
-	State    string `json:"state"`
-	Nonce    string `json:"nonce"`
-	Verifier string `json:"verifier"`
+	State       string `json:"state"`
+	Nonce       string `json:"nonce"`
+	Verifier    string `json:"verifier"`
+	CLIRedirect string `json:"cli_redirect,omitempty"`
 }
 
 // Service drives one OIDC issuer/client's auth-code+PKCE flow.
@@ -106,10 +107,23 @@ func (s *Service) IssuerURL() string { return s.cfg.IssuerURL }
 // the callback's ?state= and sealedState from the cookie, and passes both to
 // Exchange.
 func (s *Service) AuthCodeURL() (authURL, sealedState string, err error) {
+	return s.authCodeURL("")
+}
+
+// AuthCodeURLCLI is AuthCodeURL for the CLI login flow: cliRedirect is the
+// CLI's loopback callback URL, sealed into the state so the shared
+// /auth/oidc/callback can hand the result back to the CLI instead of setting
+// a browser session cookie.
+func (s *Service) AuthCodeURLCLI(cliRedirect string) (authURL, sealedState string, err error) {
+	return s.authCodeURL(cliRedirect)
+}
+
+func (s *Service) authCodeURL(cliRedirect string) (authURL, sealedState string, err error) {
 	sd := stateData{
-		State:    oauth2.GenerateVerifier(),
-		Nonce:    oauth2.GenerateVerifier(),
-		Verifier: oauth2.GenerateVerifier(),
+		State:       oauth2.GenerateVerifier(),
+		Nonce:       oauth2.GenerateVerifier(),
+		Verifier:    oauth2.GenerateVerifier(),
+		CLIRedirect: cliRedirect,
 	}
 	pt, err := json.Marshal(sd)
 	if err != nil {
@@ -126,48 +140,51 @@ func (s *Service) AuthCodeURL() (authURL, sealedState string, err error) {
 // Exchange verifies the callback: opens the sealed state cookie, checks the
 // state param matches (CSRF defense), exchanges the code for tokens using the
 // bound PKCE verifier, verifies+parses the ID token, and checks the nonce
-// matches (replay defense). It returns the verified claims on success.
+// matches (replay defense). It returns the verified claims and the
+// CLIRedirect sealed into the state (empty for a browser login) on success,
+// so the callback can branch between setting a session cookie and completing
+// a CLI loopback handoff.
 //
 // Fail-closed by construction: every check returns before any network call
 // that would otherwise proceed, and a failure at any step aborts the login.
-func (s *Service) Exchange(ctx context.Context, sealedState, gotState, code string) (*Claims, error) {
+func (s *Service) Exchange(ctx context.Context, sealedState, gotState, code string) (*Claims, string, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(sealedState)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrStateMismatch, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrStateMismatch, err)
 	}
 	pt, err := s.sealer.Open(raw, secrets.AADOIDCState())
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrStateMismatch, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrStateMismatch, err)
 	}
 	var sd stateData
 	if err := json.Unmarshal(pt, &sd); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrStateMismatch, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrStateMismatch, err)
 	}
 	// A non-constant-time compare is fine here: state is not a secret, the
 	// sealed cookie is the integrity control.
 	if gotState == "" || gotState != sd.State {
-		return nil, ErrStateMismatch
+		return nil, "", ErrStateMismatch
 	}
 
 	tok, err := s.oauth.Exchange(ctx, code, oauth2.VerifierOption(sd.Verifier))
 	if err != nil {
-		return nil, fmt.Errorf("oidc: code exchange: %w", err)
+		return nil, "", fmt.Errorf("oidc: code exchange: %w", err)
 	}
 	rawIDToken, ok := tok.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
-		return nil, ErrNoIDToken
+		return nil, "", ErrNoIDToken
 	}
 	idt, err := s.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: verify id_token: %w", err)
+		return nil, "", fmt.Errorf("oidc: verify id_token: %w", err)
 	}
 	if idt.Nonce != sd.Nonce {
-		return nil, ErrNonceMismatch
+		return nil, "", ErrNonceMismatch
 	}
 
 	var raw2 map[string]any
 	if err := idt.Claims(&raw2); err != nil {
-		return nil, fmt.Errorf("oidc: parse claims: %w", err)
+		return nil, "", fmt.Errorf("oidc: parse claims: %w", err)
 	}
 	c := &Claims{
 		Subject:       idt.Subject,
@@ -177,9 +194,9 @@ func (s *Service) Exchange(ctx context.Context, sealedState, gotState, code stri
 		Groups:        extractGroups(raw2, s.cfg.GroupsClaim),
 	}
 	if !c.EmailVerified {
-		return nil, ErrUnverifiedEmail
+		return nil, "", ErrUnverifiedEmail
 	}
-	return c, nil
+	return c, sd.CLIRedirect, nil
 }
 
 // Provision resolves an existing (issuer, subject) identity to its user id,

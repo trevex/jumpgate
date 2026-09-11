@@ -33,6 +33,13 @@ var groupsCreateCmd = &cobra.Command{
 	RunE:  runGroupsCreate,
 }
 
+var groupsSetExternalKeyCmd = &cobra.Command{
+	Use:   "set-external-key <group> <key>",
+	Short: "Set (or clear, with an empty key) the group's IdP group-claim external key",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runGroupsSetExternalKey,
+}
+
 var (
 	groupsListCascade bool
 )
@@ -58,10 +65,14 @@ var groupsRemoveMemberCmd = &cobra.Command{
 	RunE:  runGroupsRemoveMember,
 }
 
-var groupsCreateFolder string
+var (
+	groupsCreateFolder      string
+	groupsCreateExternalKey string
+)
 
 func init() {
 	groupsCreateCmd.Flags().StringVar(&groupsCreateFolder, "folder", "", "folder to home the group in for governance (uuid or DNS path); empty = global")
+	groupsCreateCmd.Flags().StringVar(&groupsCreateExternalKey, "external-key", "", "IdP group-claim value to map to this group; empty = unmapped")
 
 	groupsListCmd.Flags().BoolVar(&groupsListCascade, "cascade", false, "list groups in the whole subtree")
 
@@ -69,6 +80,7 @@ func init() {
 	groupsCmd.AddCommand(groupsListCmd)
 	groupsCmd.AddCommand(groupsAddMemberCmd)
 	groupsCmd.AddCommand(groupsRemoveMemberCmd)
+	groupsCmd.AddCommand(groupsSetExternalKeyCmd)
 	rootCmd.AddCommand(groupsCmd)
 }
 
@@ -86,7 +98,7 @@ func runGroupsCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	req := connect.NewRequest(&identityv1.CreateGroupRequest{Name: args[0], FolderId: folderID})
+	req := connect.NewRequest(&identityv1.CreateGroupRequest{Name: args[0], FolderId: folderID, ExternalKey: groupsCreateExternalKey})
 	cl.Authorize(req)
 	resp, err := cl.Identity().CreateGroup(cmd.Context(), req)
 	if err != nil {
@@ -98,6 +110,34 @@ func runGroupsCreate(cmd *cobra.Command, args []string) error {
 		Headers: groupHeaders,
 		Rows:    [][]string{groupRow(g)},
 	})
+}
+
+func runGroupsSetExternalKey(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+
+	groupID, err := resolveGroupID(cmd.Context(), cl, args[0])
+	if err != nil {
+		return err
+	}
+
+	req := connect.NewRequest(&identityv1.SetGroupExternalKeyRequest{
+		GroupId:     groupID,
+		ExternalKey: args[1],
+	})
+	cl.Authorize(req)
+	if _, err := cl.Identity().SetGroupExternalKey(cmd.Context(), req); err != nil {
+		return err
+	}
+
+	if args[1] == "" {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "cleared external key for group %s\n", groupID)
+	} else {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "set external key for group %s\n", groupID)
+	}
+	return nil
 }
 
 func runGroupsList(cmd *cobra.Command, args []string) error {

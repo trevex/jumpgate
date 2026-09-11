@@ -454,6 +454,7 @@ type Querier interface {
 	SearchRolesByIDs(ctx context.Context, arg SearchRolesByIDsParams) ([]SearchRolesByIDsRow, error)
 	SetAccessRequestStatus(ctx context.Context, arg SetAccessRequestStatusParams) error
 	SetAssetSecret(ctx context.Context, arg SetAssetSecretParams) (AssetSecret, error)
+	SetGroupExternalKey(ctx context.Context, arg SetGroupExternalKeyParams) error
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	// Explicit-subject arm shared by approvals.IsApprover (kind='approver') and
 	// approvals.IsEligibleRequester (kind='requester'): the caller is an explicit
