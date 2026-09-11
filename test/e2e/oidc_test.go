@@ -14,14 +14,14 @@ import (
 	"time"
 )
 
-// dexIssuerHost is the in-cluster Service DNS:port for Dex (test/env/testworkload/dex.yaml).
-// warden runs in-cluster and both discovers Dex (fetches .well-known/openid-configuration)
-// and performs the token exchange in-cluster, so demo-values.yaml points OIDC_ISSUER_URL at
-// this Service DNS name. go-oidc verifies an ID token's `iss` against that same string, and
-// Dex derives every endpoint in its discovery document (authorization_endpoint,
-// token_endpoint, the /callback it bounces through) from it too — so whoever drives the
-// browser leg of the login must reach Dex at this *exact* host:port, byte for byte.
-const dexIssuerHost = "dex.default.svc.cluster.local:5556"
+// dexIssuerHost is the issuer host:port for Dex (test/env/testworkload/dex.yaml): the single
+// string that must match the ID token `iss`, be reachable by warden in-cluster, and be
+// reachable by whoever drives the browser leg. We use `dex.localhost` so a real browser
+// resolves it to loopback natively (→ the NodePort) while warden resolves it in-cluster via a
+// CoreDNS rewrite (see the Makefile kind-up target). Dex derives every endpoint in its
+// discovery document (authorization_endpoint, token_endpoint, the /callback it bounces
+// through) from this string, so the browser leg hits Dex at this *exact* host:port.
+const dexIssuerHost = "dex.localhost:5556"
 
 // dexHostAddr is the localhost address cluster.yaml maps to Dex's NodePort, i.e. how this
 // test process (running on the host, outside the cluster) reaches the very same Dex
@@ -48,13 +48,13 @@ const (
 // it follows redirects and keeps cookies (both warden's state/session cookies and dex's
 // own), exactly like a real browser tab would.
 //
-// The one wrinkle, spelled out at dexIssuerHost above: this test process runs on the host,
-// outside the cluster, so plain DNS can't resolve dex's in-cluster Service name the way
-// warden's pod can. Rather than editing cluster DNS or adding pod hostAliases just for a
-// test, the transport below special-cases dials to dexIssuerHost and redirects them to
-// dexHostAddr — the exact same trick as `curl --resolve`. Every hop in the login flow that
-// targets dex (the initial redirect off of /auth/oidc/login, and dex's own internal bounce
-// through /callback) goes through this one substitution transparently.
+// The one wrinkle: this test process runs on the host but isn't a browser, so it gets neither
+// the browser's native *.localhost→loopback resolution nor warden's in-cluster CoreDNS
+// rewrite. Rather than depend on either, the transport below special-cases dials to
+// dexIssuerHost and redirects them to dexHostAddr (the NodePort) — the exact same trick as
+// `curl --resolve`. Every hop in the login flow that targets dex (the initial redirect off of
+// /auth/oidc/login, and dex's own internal bounce through /callback) goes through this one
+// substitution transparently.
 func oidcHTTPClient(t *testing.T) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)

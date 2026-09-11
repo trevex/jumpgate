@@ -1,16 +1,22 @@
 # Dex (https://dexidp.io) as the test OIDC IdP for the kind e2e/demo environment.
 #
-# Issuer/reachability: warden runs in-cluster and both discovers Dex (fetches
-# .well-known/openid-configuration) and does the token exchange in-cluster, so
-# `issuer` below is the Service DNS name. go-oidc verifies an ID token's `iss`
-# against that same string, and Dex builds every endpoint in its discovery
-# document (authorization_endpoint, token_endpoint, ...) from it too — so
+# Issuer/reachability: the issuer is a single string that must (1) match the
+# ID token `iss` go-oidc verifies, (2) be reachable by warden in-cluster (it
+# discovers Dex and does the token exchange there), and (3) be reachable by
 # whoever drives the browser leg of the login (a real browser in the demo, or
-# the scripted e2e client in test/e2e/oidc_test.go) must reach Dex at this
-# exact host:port as well. The Service is also published as a NodePort
-# (cluster.yaml forwards it to localhost:5556) so a host process can reach it;
-# see oidc_test.go for how the e2e test resolves the in-cluster DNS name to
-# that NodePort without any real DNS or /etc/hosts changes.
+# the scripted e2e client in test/e2e/oidc_test.go). Dex derives every endpoint
+# in its discovery document (authorization_endpoint, token_endpoint, ...) from
+# the issuer, so both the browser and warden hit this exact host:port.
+#
+# We use `dex.localhost` to satisfy all three without any /etc/hosts edit:
+#   - Browsers resolve any *.localhost name to loopback natively (Chrome, and
+#     Firefox since 84), so the host reaches Dex at 127.0.0.1:5556, which
+#     cluster.yaml forwards to the NodePort below.
+#   - In-cluster, warden resolves `dex.localhost` via a CoreDNS `rewrite` rule
+#     (added in the Makefile kind-up target) that points it at the Dex Service
+#     DNS name, so warden reaches the same Dex over the cluster network.
+# The e2e test process runs on the host but isn't a browser, so it rewrites
+# `dex.localhost:5556` to the NodePort in-process; see oidc_test.go.
 #
 # Connector: the client_id/secret below are demo-only, not real secrets.
 # Static client `jumpgate` matches demo-values.yaml's warden.oidc.clientId,
@@ -34,7 +40,7 @@ data:
   # Mounted at the image's default config path (Dockerfile CMD), so the
   # Deployment below needs no command/args override.
   config.docker.yaml: |
-    issuer: http://dex.default.svc.cluster.local:5556
+    issuer: http://dex.localhost:5556
     storage:
       type: memory
       config: {}

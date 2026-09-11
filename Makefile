@@ -157,6 +157,20 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	# --wait` would time out waiting on a warden pod stuck failing readiness otherwise.
 	kubectl apply -f test/env/testworkload/dex.yaml
 	kubectl rollout status deploy/dex --timeout=120s
+	# Teach in-cluster DNS to resolve the browser-facing issuer host `dex.localhost`
+	# to Dex. Browsers map *.localhost to loopback themselves (→ the NodePort at
+	# localhost:5556), but warden reaches Dex over the cluster network, so a CoreDNS
+	# `rewrite` points that same name at the Dex Service. One issuer string, both legs
+	# reach one Dex, no /etc/hosts. Must land before warden starts (it discovers the
+	# issuer at boot — fatal if unreachable), hence before `helm install`.
+	@COREFILE=$$(kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}'); \
+	if ! printf '%s' "$$COREFILE" | grep -q 'dex.localhost'; then \
+	  printf '%s\n' "$$COREFILE" | awk '/^\.:53 \{/{print; print "    rewrite name dex.localhost dex.default.svc.cluster.local"; next} {print}' \
+	    | kubectl -n kube-system create cm coredns --from-file=Corefile=/dev/stdin --dry-run=client -o yaml \
+	    | kubectl -n kube-system apply -f -; \
+	  kubectl -n kube-system rollout restart deploy/coredns; \
+	  kubectl -n kube-system rollout status deploy/coredns --timeout=90s; \
+	fi
 	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f test/env/testworkload/sshd.yaml
