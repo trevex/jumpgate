@@ -6,5 +6,5 @@ const EventLocalPasswordSet = "auth.local_password.set" //nolint:gosec // audit 
 
 // EventGroupExternalKeySet records a group's external_key (OIDC membership sync
 // mapping key) being set or cleared (see Service.SetGroupExternalKey). Details
-// carry {"cleared": "true"|"false"}.
+// carry {"action": "set"|"clear"}.
 const EventGroupExternalKeySet = "identity.group.external_key_set"

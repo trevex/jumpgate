@@ -470,8 +470,8 @@ func (h *Handler) DeleteGroup(ctx context.Context, req *connect.Request[identity
 }
 
 // SetGroupExternalKey sets or clears a group's IdP external_key mapping used by
-// OIDC membership sync, gated by identity:group:create at the group's folder
-// scope. Empty external_key clears it.
+// OIDC membership sync, gated by identity:group:set-external-key at the group's
+// folder scope. Empty external_key clears it.
 func (h *Handler) SetGroupExternalKey(ctx context.Context, req *connect.Request[identityv1.SetGroupExternalKeyRequest]) (*connect.Response[identityv1.SetGroupExternalKeyResponse], error) {
 	gid, err := uuid.Parse(req.Msg.GroupId)
 	if err != nil {
@@ -485,7 +485,7 @@ func (h *Handler) SetGroupExternalKey(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	if err := h.guard.RequireCap(ctx, c, authz.GroupCreateCap, scope); err != nil {
+	if err := h.guard.RequireCap(ctx, c, authz.GroupSetExternalKeyCap, scope); err != nil {
 		return nil, err
 	}
 	if err := h.svc.SetGroupExternalKey(ctx, c, gid, req.Msg.ExternalKey); err != nil {

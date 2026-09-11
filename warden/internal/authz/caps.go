@@ -54,10 +54,14 @@ const (
 	UserSetPasswordCap = "identity:user:set-password"
 
 	// identity:group authoring.
-	GroupCreateCap       = "identity:group:create"
-	GroupDeleteCap       = "identity:group:delete"
-	GroupAddMemberCap    = "identity:group:add-member"
-	GroupRemoveMemberCap = "identity:group:remove-member"
+	GroupCreateCap = "identity:group:create"
+	GroupDeleteCap = "identity:group:delete"
+	// GroupSetExternalKeyCap gates setting/clearing a group's IdP external_key
+	// mapping (separate from GroupCreateCap: the key drives OIDC-membership
+	// auto-sync, a privilege-relevant lever, not just group authoring).
+	GroupSetExternalKeyCap = "identity:group:set-external-key"
+	GroupAddMemberCap      = "identity:group:add-member"
+	GroupRemoveMemberCap   = "identity:group:remove-member"
 
 	// Session-review / recordings.
 	RecordingReadCap = "recording:read"

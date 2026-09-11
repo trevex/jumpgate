@@ -1051,6 +1051,7 @@ export const IdentityService: GenService<{
   /**
    * SetGroupExternalKey sets (or clears, when external_key is empty) the IdP
    * group-claim value that maps to this group for OIDC membership sync.
+   * Requires identity:group:set-external-key.
    *
    * @generated from rpc jumpgate.identity.v1.IdentityService.SetGroupExternalKey
    */

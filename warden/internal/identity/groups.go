@@ -36,9 +36,11 @@ func (s *Service) CreateGroup(ctx context.Context, folderID pgtype.UUID, name, e
 // external_key unique-index violation its own clear message; every other case
 // (name collision, FK, etc.) keeps the generic apierr.MapWrite mapping.
 func mapGroupWriteErr(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_group_external_key" {
-		return connect.NewError(connect.CodeAlreadyExists, errors.New("group external key already in use"))
+	if apierr.IsUniqueViolation(err) {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "uq_group_external_key" {
+			return connect.NewError(connect.CodeAlreadyExists, errors.New("group external key already in use"))
+		}
 	}
 	return apierr.MapWrite(err)
 }
@@ -51,11 +53,11 @@ func (s *Service) SetGroupExternalKey(ctx context.Context, actor, groupID uuid.U
 		return mapGroupWriteErr(err)
 	}
 	if s.audit != nil {
-		cleared := "false"
+		action := "set"
 		if externalKey == "" {
-			cleared = "true"
+			action = "clear"
 		}
-		details, _ := json.Marshal(map[string]string{"cleared": cleared})
+		details, _ := json.Marshal(map[string]string{"action": action})
 		if err := s.audit.Append(ctx, audit.Event{
 			Type:    EventGroupExternalKeySet,
 			ActorID: actor,

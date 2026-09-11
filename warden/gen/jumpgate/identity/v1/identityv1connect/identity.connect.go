@@ -122,6 +122,7 @@ type IdentityServiceClient interface {
 	SetLocalPassword(context.Context, *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error)
 	// SetGroupExternalKey sets (or clears, when external_key is empty) the IdP
 	// group-claim value that maps to this group for OIDC membership sync.
+	// Requires identity:group:set-external-key.
 	SetGroupExternalKey(context.Context, *connect.Request[v1.SetGroupExternalKeyRequest]) (*connect.Response[v1.SetGroupExternalKeyResponse], error)
 }
 
@@ -411,6 +412,7 @@ type IdentityServiceHandler interface {
 	SetLocalPassword(context.Context, *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error)
 	// SetGroupExternalKey sets (or clears, when external_key is empty) the IdP
 	// group-claim value that maps to this group for OIDC membership sync.
+	// Requires identity:group:set-external-key.
 	SetGroupExternalKey(context.Context, *connect.Request[v1.SetGroupExternalKeyRequest]) (*connect.Response[v1.SetGroupExternalKeyResponse], error)
 }
 

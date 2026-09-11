@@ -72,6 +72,15 @@ func TestGroupExternalKey(t *testing.T) {
 	if got := queryGroupExternalKey(t, pool, g2.Msg.Group.Id); got != "idp-grp-2" {
 		t.Fatalf("db external_key after set = %q, want idp-grp-2", got)
 	}
+
+	// Setting the SAME key on the SAME group again is idempotent, not a
+	// self-collision against its own existing value.
+	if _, err := c.SetGroupExternalKey(ctx, withToken(connect.NewRequest(&identityv1.SetGroupExternalKeyRequest{
+		GroupId: g2.Msg.Group.Id, ExternalKey: "idp-grp-2",
+	}), tok)); err != nil {
+		t.Fatalf("re-set same external key: %v", err)
+	}
+
 	if _, err := c.SetGroupExternalKey(ctx, withToken(connect.NewRequest(&identityv1.SetGroupExternalKeyRequest{
 		GroupId: g2.Msg.Group.Id, ExternalKey: "",
 	}), tok)); err != nil {
@@ -79,6 +88,13 @@ func TestGroupExternalKey(t *testing.T) {
 	}
 	if got := queryGroupExternalKey(t, pool, g2.Msg.Group.Id); got != "" {
 		t.Fatalf("db external_key after clear = %q, want empty (NULL)", got)
+	}
+
+	// Clearing an already-unset key is a no-op, not an error.
+	if _, err := c.SetGroupExternalKey(ctx, withToken(connect.NewRequest(&identityv1.SetGroupExternalKeyRequest{
+		GroupId: g2.Msg.Group.Id, ExternalKey: "",
+	}), tok)); err != nil {
+		t.Fatalf("clear already-unset external key: %v", err)
 	}
 
 	// Duplicate external_key on CreateGroup is rejected.
