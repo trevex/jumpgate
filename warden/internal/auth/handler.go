@@ -35,9 +35,11 @@ func NewHandler(q *sqlc.Queries, tokens *TokenService, authorizer *authz.Authori
 	return &Handler{q: q, tokens: tokens, authorizer: authorizer, throttle: throttle, audit: auditLog, cookieSecure: cookieSecure, sessionTTL: sessionTTL, issuer: NewSessionIssuer(tokens, cookieSecure, sessionTTL)}
 }
 
-// peerHost strips the port from a "host:port" peer address, falling back to
-// the raw address if it isn't in that form.
-func peerHost(addr string) string {
+// PeerHost strips the port from a "host:port" peer address, falling back to
+// the raw address if it isn't in that form. Exported so other packages on the
+// same auth-audit trust boundary (e.g. the OIDC callback) share one
+// implementation instead of drifting.
+func PeerHost(addr string) string {
 	if h, _, err := net.SplitHostPort(addr); err == nil {
 		return h
 	}
@@ -69,7 +71,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	// req.Peer().Addr is the direct client address; warden has no trusted proxy
 	// today. ponytail: parse a trusted forwarded header once warden sits behind
 	// an ingress that sets one.
-	ip := peerHost(req.Peer().Addr)
+	ip := PeerHost(req.Peer().Addr)
 	ua := req.Header().Get("User-Agent")
 
 	if delay, blocked := s.throttle.Check(email, ip); blocked {

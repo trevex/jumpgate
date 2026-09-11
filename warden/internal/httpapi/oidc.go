@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -48,16 +47,6 @@ var (
 	_ oidcSessionIssuer = (*auth.SessionIssuer)(nil)
 )
 
-// peerIP strips the port from r.RemoteAddr, falling back to the raw address.
-// Warden has no trusted reverse proxy today; ponytail: parse a trusted
-// forwarded header once it sits behind an ingress that sets one.
-func peerIP(r *http.Request) string {
-	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return h
-	}
-	return r.RemoteAddr
-}
-
 // auditOIDC appends an OIDC login audit event best-effort. A nil logger (no
 // Audit dep wired) silently disables OIDC audit events without affecting the
 // login flow itself.
@@ -80,6 +69,7 @@ func auditOIDC(ctx context.Context, log *audit.Logger, eventType string, actorID
 func authMethodsHandler(oidcEnabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(struct {
 			Local bool `json:"local"`
 			OIDC  bool `json:"oidc"`
@@ -143,7 +133,7 @@ func provisionFailReason(err error) string {
 // login page rather than leaking detail to the browser.
 func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bool, auditLog *audit.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := peerIP(r)
+		ip := auth.PeerHost(r.RemoteAddr)
 		fail := func(reason string) {
 			auditOIDC(r.Context(), auditLog, oidcEventLoginFailed, uuid.Nil, "", reason, ip)
 			http.Redirect(w, r, "/login?error=oidc", http.StatusFound)

@@ -259,6 +259,54 @@ func TestOIDCCallbackHandlerSuccess(t *testing.T) {
 	}
 }
 
+func TestOIDCCallbackHandlerSyncGroupsFailure(t *testing.T) {
+	svc := &stubOIDCFlow{
+		claims:  &oidc.Claims{Subject: "sub-1", EmailVerified: true},
+		syncErr: errors.New("db down"),
+	}
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
+	r.AddCookie(testStateCookie("sealed"))
+	h(w, r)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/login?error=oidc" {
+		t.Fatalf("Location = %q, want /login?error=oidc", loc)
+	}
+	for _, c := range w.Header().Values("Set-Cookie") {
+		if strings.Contains(c, auth.SessionCookie+"=") {
+			t.Fatalf("session cookie set on failed login: %q", c)
+		}
+	}
+}
+
+func TestOIDCCallbackHandlerSessionIssueFailure(t *testing.T) {
+	svc := &stubOIDCFlow{claims: &oidc.Claims{Subject: "sub-1", EmailVerified: true}}
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{err: errors.New("issue failed")}, true, nil)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
+	r.AddCookie(testStateCookie("sealed"))
+	h(w, r)
+
+	// The Issue failure doesn't go through fail(): it's a 500, not a redirect.
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc == "/" {
+		t.Fatal("must not redirect to / when session issuance failed")
+	}
+	for _, c := range w.Header().Values("Set-Cookie") {
+		if strings.Contains(c, auth.SessionCookie+"=") {
+			t.Fatalf("session cookie set despite Issue error: %q", c)
+		}
+	}
+}
+
 func TestOIDCCallbackHandlerProvisionFailure(t *testing.T) {
 	svc := &stubOIDCFlow{
 		claims:       &oidc.Claims{Subject: "sub-1", EmailVerified: true},
