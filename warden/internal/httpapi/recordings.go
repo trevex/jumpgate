@@ -10,8 +10,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
+	"github.com/trevex/jumpgate/warden/internal/oidc"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
 )
 
@@ -186,4 +188,19 @@ type RouterDeps struct {
 	Validate func(context.Context, string) (uuid.UUID, error)
 	// Load hydrates a CurrentUser from its ID (auth.Lookup.Load).
 	Load func(context.Context, uuid.UUID) (auth.CurrentUser, error)
+
+	// OIDC drives the browser OIDC login/callback routes. Nil (the default)
+	// disables OIDC entirely: NewRouter does not mount /auth/oidc/* and
+	// authMethodsHandler reports oidc:false.
+	OIDC *oidc.Service
+	// SessionIssuer mints the jumpgate_session cookie on a successful OIDC
+	// login, mirroring the local-password login tail. Required whenever OIDC
+	// is non-nil.
+	SessionIssuer *auth.SessionIssuer
+	// CookieSecure gates the Secure flag on the OIDC state cookie (the session
+	// cookie itself takes its Secure flag from SessionIssuer).
+	CookieSecure bool
+	// Audit records OIDC login outcomes. Nil disables OIDC audit events without
+	// affecting the login flow (best-effort, same as the connect Auth handler).
+	Audit *audit.Logger
 }
