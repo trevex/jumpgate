@@ -47,3 +47,11 @@ DELETE FROM auth_tokens WHERE expires_at < now();
 
 -- name: CountUsers :one
 SELECT count(*) FROM users;
+
+-- name: GetUserByIdentity :one
+SELECT u.* FROM users u
+JOIN user_identities i ON i.user_id = u.id
+WHERE i.issuer = $1 AND i.subject = $2;
+
+-- name: CreateUserIdentity :exec
+INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, $2, $3);

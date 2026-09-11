@@ -8,6 +8,7 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/apierr"
 	"github.com/trevex/jumpgate/warden/internal/apiguard"
 	"github.com/trevex/jumpgate/warden/internal/apipage"
+	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
 	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/pgconv"
@@ -53,15 +55,18 @@ type Service struct {
 	revoker grantRevoker
 	evictor sessionEvictor
 	authz   *authz.Authorizer
+	audit   *audit.Logger
 }
 
 // NewService constructs the identity Service over pool, building its own sqlc
 // queries. revoker cascades JIT grant revocation on DeactivateUser and evictor
 // force-evicts the user's remaining live sessions; either may be nil in tests that
-// don't exercise deactivation teardown.
-func NewService(pool *pgxpool.Pool, revoker grantRevoker, evictor sessionEvictor, a *authz.Authorizer) *Service {
+// don't exercise deactivation teardown. auditLog records break-glass local-password
+// changes (SetLocalPassword); nil disables that audit trail (tests that don't
+// exercise it).
+func NewService(pool *pgxpool.Pool, revoker grantRevoker, evictor sessionEvictor, a *authz.Authorizer, auditLog *audit.Logger) *Service {
 	q := sqlc.New(pool)
-	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), revoker: revoker, evictor: evictor, authz: a}
+	return &Service{pool: pool, q: q, guard: apiguard.New(a, q), revoker: revoker, evictor: evictor, authz: a, audit: auditLog}
 }
 
 // ── small shared helpers (moved verbatim from rpc) ──────────────────────────────
@@ -132,18 +137,33 @@ func (s *Service) groupResult(ctx context.Context, g sqlc.Group) (GroupResult, e
 
 // ── users ────────────────────────────────────────────────────────────────────
 
-// CreateUser creates a local user. The password hash, the user row, and the
-// password write are committed in one transaction so a password-write failure
-// leaves NO user row (this closes the prior non-atomic gap). A duplicate email is
-// AlreadyExists; any other write failure is Internal.
+// CreateUser creates a local user. password is OPTIONAL: empty leaves the user
+// local-password-less (SSO-only; password_hash keeps its "" default, which
+// auth.VerifyPassword always rejects, so the account cannot local-login until a
+// break-glass password is set via SetLocalPassword). The user row and, when a
+// password is given, the password write are committed in one transaction so a
+// password-write failure leaves NO user row (this closes the prior non-atomic
+// gap). A duplicate email is AlreadyExists; any other write failure is Internal.
 func (s *Service) CreateUser(ctx context.Context, email, displayName, password string) (sqlc.User, error) {
 	email = auth.NormalizeEmail(email)
-	if err := auth.ValidatePassword(password, ""); err != nil {
-		return sqlc.User{}, connect.NewError(connect.CodeInvalidArgument, err)
-	}
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return sqlc.User{}, connect.NewError(connect.CodeInternal, err)
+	var hash string
+	// SSO-only creation (password == "") is the intended path. Supplying a
+	// password here is the discouraged break-glass shortcut — SetLocalPassword
+	// is the sanctioned way to set one after the fact — but it is gated by the
+	// same identity:user:create capability, so it is not a privilege escalation.
+	// This path is NOT audited: no identity lifecycle RPC (CreateUser,
+	// DeactivateUser, DeleteUser) emits an audit event today, and auditing only
+	// the password-at-create case would be inconsistent. A general
+	// user-lifecycle audit trail, covering this path, is a deferred follow-up.
+	if password != "" {
+		if err := auth.ValidatePassword(password, ""); err != nil {
+			return sqlc.User{}, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		h, err := auth.HashPassword(password)
+		if err != nil {
+			return sqlc.User{}, connect.NewError(connect.CodeInternal, err)
+		}
+		hash = h
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -156,13 +176,50 @@ func (s *Service) CreateUser(ctx context.Context, email, displayName, password s
 	if err != nil {
 		return sqlc.User{}, connect.NewError(connect.CodeAlreadyExists, errors.New("email already exists"))
 	}
-	if err := qtx.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
-		return sqlc.User{}, connect.NewError(connect.CodeInternal, err)
+	if hash != "" {
+		if err := qtx.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+			return sqlc.User{}, connect.NewError(connect.CodeInternal, err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return sqlc.User{}, connect.NewError(connect.CodeInternal, err)
 	}
 	return u, nil
+}
+
+// SetLocalPassword sets (newPassword non-empty) or clears (empty) a user's local
+// break-glass password. Capability is enforced in the handler. The audit append is
+// best-effort: the password write has already committed, so a failed append is
+// logged loudly but does not fail the RPC (mirrors vault.Broker.appendIssued).
+func (s *Service) SetLocalPassword(ctx context.Context, actor, userID uuid.UUID, newPassword string) error {
+	hash := ""
+	action := "clear"
+	if newPassword != "" {
+		if err := auth.ValidatePassword(newPassword, ""); err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		h, err := auth.HashPassword(newPassword)
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, err)
+		}
+		hash = h
+		action = "set"
+	}
+	if err := s.q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: userID, PasswordHash: hash}); err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if s.audit != nil {
+		details, _ := json.Marshal(map[string]string{"action": action})
+		if err := s.audit.Append(ctx, audit.Event{
+			Type:    EventLocalPasswordSet,
+			ActorID: actor,
+			Subject: "user:" + userID.String(),
+			Details: details,
+		}); err != nil {
+			slog.Error("audit append failed", "event", EventLocalPasswordSet, "user_id", userID.String(), "err", err)
+		}
+	}
+	return nil
 }
 
 // GetUser returns a user by id. A malformed id or an unknown id is NotFound.

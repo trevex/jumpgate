@@ -41,19 +41,30 @@ func NewRouter(db Pinger, deps ...RouterDeps) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
 	})
 
+	var d RouterDeps
+	if len(deps) > 0 {
+		d = deps[0]
+	}
+
+	// Public (unauthenticated) OIDC routes. /auth/methods always mounts so the
+	// login page can decide what to render; the login/callback pair only mounts
+	// when OIDC is actually configured.
+	r.Get("/auth/methods", authMethodsHandler(d.OIDC != nil))
+	if d.OIDC != nil {
+		r.Get("/auth/oidc/login", oidcLoginHandler(d.OIDC, d.CookieSecure))
+		r.Get("/auth/oidc/callback", oidcCallbackHandler(d.OIDC, d.SessionIssuer, d.CookieSecure, d.Audit))
+	}
+
 	// Recording cast proxy: streams asciicast objects server-side so the browser
 	// never needs a presigned URL. Only mounted when deps are provided.
-	if len(deps) > 0 {
-		d := deps[0]
-		if d.Validate != nil && d.Load != nil {
-			authMw := CookieAuth(d.Validate, d.Load)
-			r.With(authMw).Get("/api/recordings/{sessionId}/cast", castHandler(d))
-			// HEAD probe: the frontend player HEAD-probes this route to detect
-			// load errors before mounting. It must run the same auth prelude and
-			// return the same status codes as GET (minus the body) so a 200 is a
-			// faithful predictor of a streamable recording.
-			r.With(authMw).Head("/api/recordings/{sessionId}/cast", castHeadHandler(d))
-		}
+	if d.Validate != nil && d.Load != nil {
+		authMw := CookieAuth(d.Validate, d.Load)
+		r.With(authMw).Get("/api/recordings/{sessionId}/cast", castHandler(d))
+		// HEAD probe: the frontend player HEAD-probes this route to detect
+		// load errors before mounting. It must run the same auth prelude and
+		// return the same status codes as GET (minus the body) so a 200 is a
+		// faithful predictor of a streamable recording.
+		r.With(authMw).Head("/api/recordings/{sessionId}/cast", castHeadHandler(d))
 	}
 
 	return r

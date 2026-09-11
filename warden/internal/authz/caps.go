@@ -48,6 +48,10 @@ const (
 	UserCreateCap     = "identity:user:create"
 	UserDeleteCap     = "identity:user:delete"
 	UserDeactivateCap = "identity:user:deactivate"
+	// UserSetPasswordCap gates setting/clearing a local break-glass password on
+	// any account (incl. one's own). Local passwords are the break-glass path;
+	// SSO is the managed lifecycle.
+	UserSetPasswordCap = "identity:user:set-password"
 
 	// identity:group authoring.
 	GroupCreateCap       = "identity:group:create"

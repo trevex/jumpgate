@@ -144,10 +144,11 @@ type Folder struct {
 }
 
 type Group struct {
-	ID        uuid.UUID   `json:"id"`
-	Name      string      `json:"name"`
-	FolderID  pgtype.UUID `json:"folder_id"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID          uuid.UUID   `json:"id"`
+	Name        string      `json:"name"`
+	FolderID    pgtype.UUID `json:"folder_id"`
+	CreatedAt   time.Time   `json:"created_at"`
+	ExternalKey pgtype.Text `json:"external_key"`
 }
 
 type GroupMembership struct {
@@ -156,6 +157,7 @@ type GroupMembership struct {
 	MemberUserID  pgtype.UUID `json:"member_user_id"`
 	MemberGroupID pgtype.UUID `json:"member_group_id"`
 	CreatedAt     time.Time   `json:"created_at"`
+	Origin        string      `json:"origin"`
 }
 
 type LiveSession struct {
@@ -433,6 +435,14 @@ type User struct {
 	CreatedAt     time.Time          `json:"created_at"`
 	PasswordHash  string             `json:"password_hash"`
 	DeactivatedAt pgtype.Timestamptz `json:"deactivated_at"`
+}
+
+type UserIdentity struct {
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Issuer    string    `json:"issuer"`
+	Subject   string    `json:"subject"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type WorkerPresence struct {

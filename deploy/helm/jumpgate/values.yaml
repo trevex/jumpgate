@@ -22,6 +22,17 @@ warden:
   # listener for the in-browser terminal. Only consulted when gateway.insecure.enabled.
   # Empty leaves the insecure path disabled in warden (fail-closed).
   gatewayInsecureEndpoint: ""
+  oidc:
+    enabled: false
+    issuerUrl: ""
+    clientId: ""
+    # OIDC client secret is read from an existing Secret (never inline).
+    clientSecret:
+      secretName: ""
+      secretKey: "oidc-client-secret"
+    redirectUrl: ""
+    groupsClaim: "groups"
+    scopes: "openid email profile groups"
 
 # DEV ONLY: an optional plaintext (no-TLS) gateway listener so a browser console
 # served over plain http can use the in-browser terminal over ws:// (the mesh-CA

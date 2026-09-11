@@ -25,6 +25,19 @@ warden:
   # DEV ONLY: host:port the browser uses for the plaintext (ws://) gateway. Matches
   # the insecure gateway NodePort forwarded to localhost:8444 (cluster.yaml).
   gatewayInsecureEndpoint: "localhost:8444"
+  # SSO against the Dex test IdP (test/env/testworkload/dex.yaml). issuerUrl is
+  # Dex's in-cluster Service DNS — warden (also in-cluster) reaches Dex there for
+  # discovery/token exchange, and that's the same string Dex asserts as the token
+  # `iss`; see dex.yaml and test/e2e/oidc_test.go for why a host-side browser/test
+  # can still reach the identical issuer via the NodePort cluster.yaml forwards.
+  # groupsClaim/scopes are left at the chart defaults.
+  oidc:
+    enabled: true
+    issuerUrl: "http://dex.default.svc.cluster.local:5556"
+    clientId: "jumpgate"
+    clientSecret:
+      secretName: "jumpgate-oidc-client-secret"
+    redirectUrl: "http://localhost:8080/auth/oidc/callback"
 
 # DEV ONLY: enable the plaintext gateway listener so the in-browser terminal works
 # over ws:// against the http kind console (no browser-trusted cert). This also

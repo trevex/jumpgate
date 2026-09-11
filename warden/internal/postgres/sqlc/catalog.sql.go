@@ -1153,7 +1153,7 @@ func (q *Queries) SearchFoldersByIDs(ctx context.Context, arg SearchFoldersByIDs
 }
 
 const searchGroupsByIDs = `-- name: SearchGroupsByIDs :many
-SELECT groups.id, groups.name, groups.folder_id, groups.created_at, folder_path(groups.folder_id) AS folder_path FROM groups
+SELECT groups.id, groups.name, groups.folder_id, groups.created_at, groups.external_key, folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[]) AND name ILIKE $2
 ORDER BY name, id
 LIMIT $3
@@ -1184,6 +1184,7 @@ func (q *Queries) SearchGroupsByIDs(ctx context.Context, arg SearchGroupsByIDsPa
 			&i.Group.Name,
 			&i.Group.FolderID,
 			&i.Group.CreatedAt,
+			&i.Group.ExternalKey,
 			&i.FolderPath,
 		); err != nil {
 			return nil, err

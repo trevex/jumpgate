@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/trevex/jumpgate/warden/internal/identity"
 	"github.com/trevex/jumpgate/warden/internal/mesh"
 	"github.com/trevex/jumpgate/warden/internal/notification"
+	"github.com/trevex/jumpgate/warden/internal/oidc"
 	"github.com/trevex/jumpgate/warden/internal/postgres"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -277,10 +279,41 @@ func Run(ctx context.Context, cfg config.Config) error {
 			}
 		}
 	})
+	// Browser OIDC login. Built after the vault sealer above because the
+	// login-flow state (nonce/PKCE verifier) is sealed with the vault master
+	// key: an unset VAULT_MASTER_KEY would make OIDC's state cookie
+	// unsealable, so fail startup loudly rather than mount a route that can
+	// never complete a login. Discovery against the issuer also happens here
+	// (network call), so a misconfigured/unreachable issuer is a startup error
+	// too, not a first-login surprise.
+	var oidcSvc *oidc.Service
+	if cfg.OIDCEnabled() {
+		if sealer == nil {
+			return errors.New("OIDC_ISSUER_URL is set but VAULT_MASTER_KEY is unset (OIDC state-sealing requires the vault)")
+		}
+		svc, err := oidc.New(ctx, oidc.Config{
+			IssuerURL:    cfg.OIDCIssuerURL,
+			ClientID:     cfg.OIDCClientID,
+			ClientSecret: cfg.OIDCClientSecret,
+			RedirectURL:  cfg.OIDCRedirectURL,
+			GroupsClaim:  cfg.OIDCGroupsClaim,
+			Scopes:       strings.Fields(cfg.OIDCScopes),
+		}, sealer, oidc.NewProvisioner(pool))
+		if err != nil {
+			return err
+		}
+		oidcSvc = svc
+	}
+	// SessionIssuer mints the jumpgate_session cookie. The connect Auth handler
+	// (below) builds its own instance for Login/Logout; the OIDC callback is a
+	// plain HTTP redirect endpoint (not a connect RPC) and needs its own to
+	// issue the byte-identical cookie.
+	sessionIssuer := auth.NewSessionIssuer(apiTokens, cfg.CookieSecure(), cfg.AuthSessionTTL)
+
 	userServices := rpc.UserServices{
 		Lookup:         apiLookup,
 		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, authThrottle, auditLog, cfg.CookieSecure(), cfg.AuthSessionTTL),
-		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
+		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer, auditLog), apiguard.New(authorizer, apiQ)),
 		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, targetIdentitySvc), apiguard.New(authorizer, apiQ)),
 		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
 		AccessRequest:  accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),
@@ -300,6 +333,10 @@ func Run(ctx context.Context, cfg config.Config) error {
 		GrantReviewer: arSvc,
 		Validate:      apiLookup.Validate,
 		Load:          apiLookup.Load,
+		OIDC:          oidcSvc,
+		SessionIssuer: sessionIssuer,
+		CookieSecure:  cfg.CookieSecure(),
+		Audit:         auditLog,
 	})))
 	rpc.RegisterUserServices(mux, userServices)
 

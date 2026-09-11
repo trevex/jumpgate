@@ -38,7 +38,7 @@ func testUserServices(pool *pgxpool.Pool, arSvc *accessrequest.Service, sealer *
 	services := rpc.UserServices{
 		Lookup:         lookup,
 		Auth:           auth.NewHandler(q, tokens, authorizer, auth.NewThrottle(), auditLog, cookieSecure, 12*time.Hour),
-		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
+		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer, auditLog), apiguard.New(authorizer, q)),
 		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, nil), apiguard.New(authorizer, q)),
 		Access:         access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
 		AccessRequest:  accessrequest.NewHandler(resolver, arSvc, authorizer, q),

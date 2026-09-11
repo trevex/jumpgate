@@ -180,3 +180,22 @@ SELECT pg_notify('authz_changed', '');
 -- name: CountGroupMembers :one
 -- Direct membership count for a group (users + nested groups), for roster/badge display.
 SELECT count(*)::int FROM group_memberships WHERE group_id = $1;
+
+-- name: GetGroupByExternalKey :one
+SELECT * FROM groups WHERE external_key = $1;
+
+-- name: AddUserToGroupWithOrigin :exec
+-- ON CONFLICT targets uq_membership_user, a partial unique index (WHERE
+-- member_user_id IS NOT NULL); the inference clause must repeat that predicate
+-- for Postgres to match it.
+INSERT INTO group_memberships (group_id, member_user_id, origin)
+VALUES ($1, $2, $3)
+ON CONFLICT (group_id, member_user_id) WHERE member_user_id IS NOT NULL DO NOTHING;
+
+-- name: ListOIDCGroupIDsForUser :many
+SELECT group_id FROM group_memberships
+WHERE member_user_id = $1 AND origin = 'oidc';
+
+-- name: DeleteOIDCMembership :exec
+DELETE FROM group_memberships
+WHERE member_user_id = $1 AND group_id = $2 AND origin = 'oidc';

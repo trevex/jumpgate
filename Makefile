@@ -150,7 +150,13 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	$(MAKE) kind-images
 	docker pull $(KUBECTL_IMAGE)
 	docker pull danielguerra/ubuntu-xrdp:20.04
-	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev jumpgate/rdp-proxy:dev jumpgate/k8s-broker:dev jumpgate/k8s-agent:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev jumpgate/testworkload-pg-target:dev danielguerra/ubuntu-xrdp:20.04 $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
+	docker pull dexidp/dex:v2.45.1
+	kind load docker-image jumpgate/warden:dev jumpgate/gateway:dev jumpgate/ssh-proxy:dev jumpgate/pg-proxy:dev jumpgate/rdp-proxy:dev jumpgate/k8s-broker:dev jumpgate/k8s-agent:dev jumpgate/testworkload-sshd:dev jumpgate/testworkload-sshd-password:dev jumpgate/testworkload-sshd-key:dev jumpgate/testworkload-pg-target:dev danielguerra/ubuntu-xrdp:20.04 dexidp/dex:v2.45.1 $(KUBECTL_IMAGE) --name $(KIND_CLUSTER)
+	# Dex goes up before the chart: warden does OIDC discovery against it at startup
+	# (a fatal error if unreachable — see warden/internal/app/app.go), so `helm install
+	# --wait` would time out waiting on a warden pod stuck failing readiness otherwise.
+	kubectl apply -f test/env/testworkload/dex.yaml
+	kubectl rollout status deploy/dex --timeout=120s
 	helm install jumpgate deploy/helm/jumpgate -f test/env/demo-values.yaml --wait --timeout 300s
 	# The chart's bootstrap Job created Secret jumpgate-ssh-ca-pub; sshd.yaml mounts it by that name.
 	kubectl apply -f test/env/testworkload/sshd.yaml

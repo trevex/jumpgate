@@ -255,6 +255,47 @@ reproducing what was on screen. It is also reachable from **Catalog ▸ rdp-box 
 
 ---
 
+## Chapter: SSO sign-in (OIDC)  ·  *admin, then an SSO user*
+
+The kind demo also stands up [Dex](https://dexidp.io) as a stand-in identity provider, and
+`test/env/demo-values.yaml` points warden's `warden.oidc.*` settings at it. This chapter signs
+in through Dex instead of a local password, and shows the JIT-provisioned user land with exactly
+the access its synced group grants.
+
+**One step has no UI — same reason as the SSH principal in Prerequisites.**
+`groups.external_key` (which IdP group claim a jumpgate group syncs from) has no console
+affordance yet, so wire it up out-of-band:
+
+```bash
+kubectl exec deploy/jumpgate-postgres -c postgres -- \
+  psql -U jumpgate -d jumpgate -c \
+  "UPDATE groups SET external_key = 'authors' WHERE id = '<group-id>';"
+```
+
+**As admin, set the stage.** **Directory ▸ Groups ▸ New group**, name it `sso-ops`, then run the
+`UPDATE` above against its id (shown in the group detail pane). Grant the group something
+visible the same way every other chapter does: a folder-scoped role with a capability such as
+`ssh:login:demo` (**New role**), bound to `sso-ops` on an asset (**Bindings ▸ Bind a role**).
+
+**Sign in with SSO.** Open a fresh incognito window at http://localhost:8080. Instead of the
+password form, click **Sign in with SSO**. You land straight back on the **Overview**
+dashboard — the demo IdP (Dex, configured with its `mockCallback` connector; see
+[`dex.yaml`](../../test/env/testworkload/dex.yaml)) always asserts one fixed identity and shows
+no login form of its own, so there is nothing to type. A real IdP would show its own interactive
+login page at this point instead; nothing on warden's side changes either way. (The password
+form is still there, collapsed below the SSO button — that is how the bootstrap admin keeps
+signing in once SSO is on.)
+
+**What landed.** The signed-in user is `kilgore@kilgore.trout` — check **Directory ▸ Users** (in
+the admin window) and it is there, created on first login. Its membership in `sso-ops` came from
+the ID token's `groups` claim, which the demo IdP always asserts as `["authors"]` — matching
+`sso-ops`'s `external_key`. Back in the SSO window, **Catalog** shows the asset bound through
+`sso-ops`, granted entirely through the synced group rather than to the user directly. Delete
+that role binding as admin and the SSO user's next request loses the access immediately — the
+same continuous-enforcement path as any other capability loss.
+
+---
+
 > **Keeping the two guides honest.** This is the UI twin of the CLI [`walkthrough.md`](./walkthrough.md)
 > and the automated `test/e2e` suite. When a flow changes, update all three. The one step with no UI —
 > the target's `AuthorizedPrincipalsFile` — is a host-side operation by design, not a jumpgate action.

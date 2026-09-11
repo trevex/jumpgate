@@ -40,6 +40,26 @@ func (q *Queries) AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) 
 	return err
 }
 
+const addUserToGroupWithOrigin = `-- name: AddUserToGroupWithOrigin :exec
+INSERT INTO group_memberships (group_id, member_user_id, origin)
+VALUES ($1, $2, $3)
+ON CONFLICT (group_id, member_user_id) WHERE member_user_id IS NOT NULL DO NOTHING
+`
+
+type AddUserToGroupWithOriginParams struct {
+	GroupID      uuid.UUID   `json:"group_id"`
+	MemberUserID pgtype.UUID `json:"member_user_id"`
+	Origin       string      `json:"origin"`
+}
+
+// ON CONFLICT targets uq_membership_user, a partial unique index (WHERE
+// member_user_id IS NOT NULL); the inference clause must repeat that predicate
+// for Postgres to match it.
+func (q *Queries) AddUserToGroupWithOrigin(ctx context.Context, arg AddUserToGroupWithOriginParams) error {
+	_, err := q.db.Exec(ctx, addUserToGroupWithOrigin, arg.GroupID, arg.MemberUserID, arg.Origin)
+	return err
+}
+
 const countAssetsInFolder = `-- name: CountAssetsInFolder :one
 SELECT count(*) FROM assets WHERE folder_id = $1
 `
@@ -176,7 +196,7 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Fol
 }
 
 const createGroup = `-- name: CreateGroup :one
-INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING id, name, folder_id, created_at
+INSERT INTO groups (name, folder_id) VALUES ($1, $2) RETURNING id, name, folder_id, created_at, external_key
 `
 
 type CreateGroupParams struct {
@@ -192,6 +212,7 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.Name,
 		&i.FolderID,
 		&i.CreatedAt,
+		&i.ExternalKey,
 	)
 	return i, err
 }
@@ -326,6 +347,21 @@ func (q *Queries) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteOIDCMembership = `-- name: DeleteOIDCMembership :exec
+DELETE FROM group_memberships
+WHERE member_user_id = $1 AND group_id = $2 AND origin = 'oidc'
+`
+
+type DeleteOIDCMembershipParams struct {
+	MemberUserID pgtype.UUID `json:"member_user_id"`
+	GroupID      uuid.UUID   `json:"group_id"`
+}
+
+func (q *Queries) DeleteOIDCMembership(ctx context.Context, arg DeleteOIDCMembershipParams) error {
+	_, err := q.db.Exec(ctx, deleteOIDCMembership, arg.MemberUserID, arg.GroupID)
+	return err
+}
+
 const deleteRole = `-- name: DeleteRole :exec
 DELETE FROM roles WHERE id = $1
 `
@@ -368,7 +404,7 @@ func (q *Queries) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 }
 
 const getGroup = `-- name: GetGroup :one
-SELECT id, name, folder_id, created_at FROM groups WHERE id = $1
+SELECT id, name, folder_id, created_at, external_key FROM groups WHERE id = $1
 `
 
 func (q *Queries) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
@@ -379,12 +415,30 @@ func (q *Queries) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 		&i.Name,
 		&i.FolderID,
 		&i.CreatedAt,
+		&i.ExternalKey,
+	)
+	return i, err
+}
+
+const getGroupByExternalKey = `-- name: GetGroupByExternalKey :one
+SELECT id, name, folder_id, created_at, external_key FROM groups WHERE external_key = $1
+`
+
+func (q *Queries) GetGroupByExternalKey(ctx context.Context, externalKey pgtype.Text) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByExternalKey, externalKey)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.FolderID,
+		&i.CreatedAt,
+		&i.ExternalKey,
 	)
 	return i, err
 }
 
 const getGroupByFolderAndName = `-- name: GetGroupByFolderAndName :one
-SELECT id, name, folder_id, created_at FROM groups WHERE folder_id = $1 AND name = $2
+SELECT id, name, folder_id, created_at, external_key FROM groups WHERE folder_id = $1 AND name = $2
 `
 
 type GetGroupByFolderAndNameParams struct {
@@ -400,12 +454,13 @@ func (q *Queries) GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFol
 		&i.Name,
 		&i.FolderID,
 		&i.CreatedAt,
+		&i.ExternalKey,
 	)
 	return i, err
 }
 
 const getGroupByNameGlobal = `-- name: GetGroupByNameGlobal :one
-SELECT id, name, folder_id, created_at FROM groups WHERE name = $1 AND folder_id IS NULL
+SELECT id, name, folder_id, created_at, external_key FROM groups WHERE name = $1 AND folder_id IS NULL
 `
 
 func (q *Queries) GetGroupByNameGlobal(ctx context.Context, name string) (Group, error) {
@@ -416,6 +471,7 @@ func (q *Queries) GetGroupByNameGlobal(ctx context.Context, name string) (Group,
 		&i.Name,
 		&i.FolderID,
 		&i.CreatedAt,
+		&i.ExternalKey,
 	)
 	return i, err
 }
@@ -466,7 +522,7 @@ func (q *Queries) InsertRoleCapability(ctx context.Context, arg InsertRoleCapabi
 }
 
 const listGroupMembersPaged = `-- name: ListGroupMembersPaged :many
-SELECT gm.id, gm.group_id, gm.member_user_id, gm.member_group_id, gm.created_at FROM group_memberships gm
+SELECT gm.id, gm.group_id, gm.member_user_id, gm.member_group_id, gm.created_at, gm.origin FROM group_memberships gm
 WHERE gm.group_id = $1
   AND (
     $2::timestamptz IS NULL
@@ -507,6 +563,7 @@ func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMember
 			&i.MemberUserID,
 			&i.MemberGroupID,
 			&i.CreatedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -519,7 +576,7 @@ func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMember
 }
 
 const listGroupsByIDsPaged = `-- name: ListGroupsByIDsPaged :many
-SELECT groups.id, groups.name, groups.folder_id, groups.created_at, folder_path(groups.folder_id) AS folder_path FROM groups
+SELECT groups.id, groups.name, groups.folder_id, groups.created_at, groups.external_key, folder_path(groups.folder_id) AS folder_path FROM groups
 WHERE id = ANY($1::uuid[])
   AND (
     $2::text IS NULL
@@ -562,6 +619,7 @@ func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsP
 			&i.Group.Name,
 			&i.Group.FolderID,
 			&i.Group.CreatedAt,
+			&i.Group.ExternalKey,
 			&i.FolderPath,
 		); err != nil {
 			return nil, err
@@ -575,7 +633,7 @@ func (q *Queries) ListGroupsByIDsPaged(ctx context.Context, arg ListGroupsByIDsP
 }
 
 const listGroupsPaged = `-- name: ListGroupsPaged :many
-SELECT id, name, folder_id, created_at FROM groups
+SELECT id, name, folder_id, created_at, external_key FROM groups
 WHERE (
   $1::text IS NULL
   OR (name, id) > ($1, $2::uuid)
@@ -604,10 +662,36 @@ func (q *Queries) ListGroupsPaged(ctx context.Context, arg ListGroupsPagedParams
 			&i.Name,
 			&i.FolderID,
 			&i.CreatedAt,
+			&i.ExternalKey,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOIDCGroupIDsForUser = `-- name: ListOIDCGroupIDsForUser :many
+SELECT group_id FROM group_memberships
+WHERE member_user_id = $1 AND origin = 'oidc'
+`
+
+func (q *Queries) ListOIDCGroupIDsForUser(ctx context.Context, memberUserID pgtype.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listOIDCGroupIDsForUser, memberUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var group_id uuid.UUID
+		if err := rows.Scan(&group_id); err != nil {
+			return nil, err
+		}
+		items = append(items, group_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
