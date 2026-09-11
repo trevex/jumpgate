@@ -39,6 +39,16 @@ func TestOIDCQueries(t *testing.T) {
 		t.Fatal("expected error for unknown identity")
 	}
 
+	// uq_user_identity: a second user must not be able to claim an
+	// already-bound (issuer, subject).
+	other, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "other@x", DisplayName: "O"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.CreateUserIdentity(ctx, sqlc.CreateUserIdentityParams{UserID: other.ID, Issuer: "https://issuer", Subject: "sub-1"}); err == nil {
+		t.Fatal("second user claimed an already-bound (issuer,subject)")
+	}
+
 	g, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "grp1"})
 	if err != nil {
 		t.Fatalf("create group: %v", err)
@@ -114,6 +124,33 @@ func TestOIDCQueries(t *testing.T) {
 	for _, id := range ids {
 		if id == g2.ID {
 			t.Fatalf("manual membership leaked into OIDC-origin list: %v", ids)
+		}
+	}
+
+	// An OIDC sync attempt on a group where the user already has a manual
+	// membership must not hijack the row's origin: ON CONFLICT DO NOTHING
+	// leaves it 'manual'.
+	g3, err := q.CreateGroup(ctx, sqlc.CreateGroupParams{Name: "grp3"})
+	if err != nil {
+		t.Fatalf("create group 3: %v", err)
+	}
+	if err := q.AddUserToGroup(ctx, sqlc.AddUserToGroupParams{GroupID: g3.ID, MemberUserID: memberUserID}); err != nil {
+		t.Fatalf("add manual g3: %v", err)
+	}
+	if err := q.AddUserToGroupWithOrigin(ctx, sqlc.AddUserToGroupWithOriginParams{
+		GroupID:      g3.ID,
+		MemberUserID: memberUserID,
+		Origin:       "oidc",
+	}); err != nil {
+		t.Fatalf("oidc sync attempt on manual membership: %v", err)
+	}
+	ids, err = q.ListOIDCGroupIDsForUser(ctx, memberUserID)
+	if err != nil {
+		t.Fatalf("list oidc groups after sync attempt: %v", err)
+	}
+	for _, id := range ids {
+		if id == g3.ID {
+			t.Fatalf("OIDC sync hijacked a manual membership's origin: %v", ids)
 		}
 	}
 }
