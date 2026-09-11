@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2 } from "lucide-react";
@@ -15,7 +15,10 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { data: authMethods } = useAuthMethods();
+  const [searchParams] = useSearchParams();
+  const oidcFailed = searchParams.get("error") === "oidc";
+  const { data: authMethods, isLoading: authMethodsLoading } =
+    useAuthMethods();
   const oidcEnabled = authMethods?.oidc === true;
 
   const { mutate, isPending, error } = useMutation(login, {
@@ -24,6 +27,12 @@ export function LoginPage() {
       navigate("/");
     },
   });
+
+  const errorMessage = error
+    ? connectErrorMessage(error)
+    : oidcFailed
+      ? "Single sign-on failed. Please try again or use break-glass sign-in."
+      : null;
 
 
   return (
@@ -45,7 +54,7 @@ export function LoginPage() {
             </p>
           </div>
 
-          {error != null && (
+          {errorMessage != null && (
             <div
               role="alert"
               className="mb-5 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -54,25 +63,36 @@ export function LoginPage() {
                 className="mt-0.5 h-4 w-4 shrink-0"
                 aria-hidden="true"
               />
-              <span>{connectErrorMessage(error)}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
-          {oidcEnabled && (
-            <Button asChild className="w-full">
-              <a href="/auth/oidc/login">Sign in with SSO</a>
-            </Button>
-          )}
+          {authMethodsLoading ? (
+            <div className="flex justify-center py-2">
+              <Loader2
+                className="h-5 w-5 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
+            </div>
+          ) : (
+            <>
+              {oidcEnabled && (
+                <Button asChild className="w-full">
+                  <a href="/auth/oidc/login">Sign in with SSO</a>
+                </Button>
+              )}
 
-          <PasswordForm
-            email={email}
-            password={password}
-            isPending={isPending}
-            onEmailChange={setEmail}
-            onPasswordChange={setPassword}
-            onSubmit={() => mutate({ email, password, cookieOnly: true })}
-            demoted={oidcEnabled}
-          />
+              <PasswordForm
+                email={email}
+                password={password}
+                isPending={isPending}
+                onEmailChange={setEmail}
+                onPasswordChange={setPassword}
+                onSubmit={() => mutate({ email, password, cookieOnly: true })}
+                demoted={oidcEnabled}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>
