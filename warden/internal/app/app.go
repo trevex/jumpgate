@@ -280,7 +280,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 	userServices := rpc.UserServices{
 		Lookup:         apiLookup,
 		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, authThrottle, auditLog, cfg.CookieSecure(), cfg.AuthSessionTTL),
-		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
+		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer, auditLog), apiguard.New(authorizer, apiQ)),
 		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, targetIdentitySvc), apiguard.New(authorizer, apiQ)),
 		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
 		AccessRequest:  accessrequest.NewHandler(approvalResolver, arSvc, authorizer, apiQ),

@@ -32,6 +32,10 @@ service IdentityService {
   rpc ReactivateUser(ReactivateUserRequest) returns (ReactivateUserResponse) {}
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {}
   rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {}
+
+  // SetLocalPassword sets or clears a break-glass local password on a user.
+  // Requires identity:user:set-password. Empty new_password clears it.
+  rpc SetLocalPassword(SetLocalPasswordRequest) returns (SetLocalPasswordResponse) {}
 }
 
 message User {
@@ -65,7 +69,10 @@ message CreateGroupResponse {
 message CreateUserRequest {
   string email        = 1 [(buf.validate.field).string.email = true];
   string display_name = 2 [(buf.validate.field).string = {min_len: 1, max_len: 200}];
-  string password     = 3 [(buf.validate.field).string.min_len = 8];
+  // Optional: empty leaves the user local-password-less (SSO-only, break-glass
+  // password to be set later via SetLocalPassword). When non-empty, the server
+  // enforces the same minimum strength as SetLocalPassword.
+  string password     = 3 [(buf.validate.field).string.max_len = 200];
   reserved 4;
   reserved "is_admin";
 }
@@ -184,6 +191,14 @@ message DeleteGroupRequest {
   string group_id = 1 [(buf.validate.field).string.uuid = true];
 }
 message DeleteGroupResponse {}
+
+// SetLocalPasswordRequest sets (new_password non-empty) or clears (empty) a
+// user's local break-glass password.
+message SetLocalPasswordRequest {
+  string user_id      = 1 [(buf.validate.field).string.uuid = true];
+  string new_password = 2 [(buf.validate.field).string.max_len = 200];
+}
+message SetLocalPasswordResponse {}
 
 // GetGroupAccess returns the caller's management capabilities on one group.
 // NotFound (existence hiding) when the caller has no relationship to the group —

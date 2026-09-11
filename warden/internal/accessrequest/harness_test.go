@@ -102,7 +102,7 @@ func newServer(t *testing.T) (*pgxpool.Pool, string) {
 	services := rpc.UserServices{
 		Lookup:        auth.Lookup{Tokens: tokens, Q: q},
 		Auth:          auth.NewHandler(q, tokens, authorizer, auth.NewThrottle(), auditLog, true, 12*time.Hour),
-		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, q)),
+		Identity:      identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer, auditLog), apiguard.New(authorizer, q)),
 		Catalog:       catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, nil), apiguard.New(authorizer, q)),
 		Access:        access.NewHandler(access.NewService(pool, roles, authorizer, arSvc, arSvc), apiguard.New(authorizer, q)),
 		AccessRequest: accessrequest.NewHandler(resolver, arSvc, authorizer, q),

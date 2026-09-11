@@ -97,3 +97,11 @@ export const deleteUser = IdentityService.method.deleteUser;
  * @generated from rpc jumpgate.identity.v1.IdentityService.DeleteGroup
  */
 export const deleteGroup = IdentityService.method.deleteGroup;
+
+/**
+ * SetLocalPassword sets or clears a break-glass local password on a user.
+ * Requires identity:user:set-password. Empty new_password clears it.
+ *
+ * @generated from rpc jumpgate.identity.v1.IdentityService.SetLocalPassword
+ */
+export const setLocalPassword = IdentityService.method.setLocalPassword;

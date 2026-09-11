@@ -284,6 +284,10 @@ func TestAuthzGuardMatrix(t *testing.T) {
 			_, err := cl.identity.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{Email: "z@x", DisplayName: "Z", Password: "password123456"}), tok))
 			return err
 		}},
+		{"Identity.SetLocalPassword", PD, func() error {
+			_, err := cl.identity.SetLocalPassword(ctx, withToken(connect.NewRequest(&identityv1.SetLocalPasswordRequest{UserId: f.targetUserID, NewPassword: "password123456"}), tok))
+			return err
+		}},
 		{"Identity.GetUser", PD, func() error {
 			_, err := cl.identity.GetUser(ctx, withToken(connect.NewRequest(&identityv1.GetUserRequest{Id: f.targetUserID}), tok))
 			return err

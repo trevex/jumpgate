@@ -86,6 +86,9 @@ const (
 	// IdentityServiceDeleteGroupProcedure is the fully-qualified name of the IdentityService's
 	// DeleteGroup RPC.
 	IdentityServiceDeleteGroupProcedure = "/jumpgate.identity.v1.IdentityService/DeleteGroup"
+	// IdentityServiceSetLocalPasswordProcedure is the fully-qualified name of the IdentityService's
+	// SetLocalPassword RPC.
+	IdentityServiceSetLocalPasswordProcedure = "/jumpgate.identity.v1.IdentityService/SetLocalPassword"
 )
 
 // IdentityServiceClient is a client for the jumpgate.identity.v1.IdentityService service.
@@ -111,6 +114,9 @@ type IdentityServiceClient interface {
 	ReactivateUser(context.Context, *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error)
 	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error)
 	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
+	// SetLocalPassword sets or clears a break-glass local password on a user.
+	// Requires identity:user:set-password. Empty new_password clears it.
+	SetLocalPassword(context.Context, *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error)
 }
 
 // NewIdentityServiceClient constructs a client for the jumpgate.identity.v1.IdentityService
@@ -232,6 +238,12 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("DeleteGroup")),
 			connect.WithClientOptions(opts...),
 		),
+		setLocalPassword: connect.NewClient[v1.SetLocalPasswordRequest, v1.SetLocalPasswordResponse](
+			httpClient,
+			baseURL+IdentityServiceSetLocalPasswordProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("SetLocalPassword")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -255,6 +267,7 @@ type identityServiceClient struct {
 	reactivateUser       *connect.Client[v1.ReactivateUserRequest, v1.ReactivateUserResponse]
 	deleteUser           *connect.Client[v1.DeleteUserRequest, v1.DeleteUserResponse]
 	deleteGroup          *connect.Client[v1.DeleteGroupRequest, v1.DeleteGroupResponse]
+	setLocalPassword     *connect.Client[v1.SetLocalPasswordRequest, v1.SetLocalPasswordResponse]
 }
 
 // CreateUser calls jumpgate.identity.v1.IdentityService.CreateUser.
@@ -347,6 +360,11 @@ func (c *identityServiceClient) DeleteGroup(ctx context.Context, req *connect.Re
 	return c.deleteGroup.CallUnary(ctx, req)
 }
 
+// SetLocalPassword calls jumpgate.identity.v1.IdentityService.SetLocalPassword.
+func (c *identityServiceClient) SetLocalPassword(ctx context.Context, req *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error) {
+	return c.setLocalPassword.CallUnary(ctx, req)
+}
+
 // IdentityServiceHandler is an implementation of the jumpgate.identity.v1.IdentityService service.
 type IdentityServiceHandler interface {
 	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
@@ -370,6 +388,9 @@ type IdentityServiceHandler interface {
 	ReactivateUser(context.Context, *connect.Request[v1.ReactivateUserRequest]) (*connect.Response[v1.ReactivateUserResponse], error)
 	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.DeleteUserResponse], error)
 	DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error)
+	// SetLocalPassword sets or clears a break-glass local password on a user.
+	// Requires identity:user:set-password. Empty new_password clears it.
+	SetLocalPassword(context.Context, *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -487,6 +508,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("DeleteGroup")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceSetLocalPasswordHandler := connect.NewUnaryHandler(
+		IdentityServiceSetLocalPasswordProcedure,
+		svc.SetLocalPassword,
+		connect.WithSchema(identityServiceMethods.ByName("SetLocalPassword")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/jumpgate.identity.v1.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceCreateUserProcedure:
@@ -525,6 +552,8 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 			identityServiceDeleteUserHandler.ServeHTTP(w, r)
 		case IdentityServiceDeleteGroupProcedure:
 			identityServiceDeleteGroupHandler.ServeHTTP(w, r)
+		case IdentityServiceSetLocalPasswordProcedure:
+			identityServiceSetLocalPasswordHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -604,4 +633,8 @@ func (UnimplementedIdentityServiceHandler) DeleteUser(context.Context, *connect.
 
 func (UnimplementedIdentityServiceHandler) DeleteGroup(context.Context, *connect.Request[v1.DeleteGroupRequest]) (*connect.Response[v1.DeleteGroupResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.DeleteGroup is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) SetLocalPassword(context.Context, *connect.Request[v1.SetLocalPasswordRequest]) (*connect.Response[v1.SetLocalPasswordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("jumpgate.identity.v1.IdentityService.SetLocalPassword is not implemented"))
 }

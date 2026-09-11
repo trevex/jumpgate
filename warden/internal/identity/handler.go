@@ -204,6 +204,26 @@ func (h *Handler) DeleteUser(ctx context.Context, req *connect.Request[identityv
 	return connect.NewResponse(&identityv1.DeleteUserResponse{}), nil
 }
 
+// SetLocalPassword sets or clears a break-glass local password on a user,
+// gated by identity:user:set-password (global). Empty new_password clears it.
+func (h *Handler) SetLocalPassword(ctx context.Context, req *connect.Request[identityv1.SetLocalPasswordRequest]) (*connect.Response[identityv1.SetLocalPasswordResponse], error) {
+	c, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.guard.RequireCap(ctx, c, authz.UserSetPasswordCap, authz.GlobalScope()); err != nil {
+		return nil, err
+	}
+	uid, err := uuid.Parse(req.Msg.UserId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad user_id"))
+	}
+	if err := h.svc.SetLocalPassword(ctx, c, uid, req.Msg.NewPassword); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&identityv1.SetLocalPasswordResponse{}), nil
+}
+
 // ── groups ───────────────────────────────────────────────────────────────────
 
 // CreateGroup gates on identity:group:create at the group's folder scope, then
