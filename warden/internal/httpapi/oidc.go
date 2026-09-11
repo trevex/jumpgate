@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/google/uuid"
 
@@ -132,7 +133,13 @@ func provisionFailReason(err error) string {
 // issues the same jumpgate_session cookie a local-password login would. Any
 // failure clears the state cookie, audits the reason, and redirects to the
 // login page rather than leaking detail to the browser.
-func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bool, auditLog *audit.Logger) http.HandlerFunc {
+//
+// When the sealed state carries a CLI loopback redirect (set by
+// oidcCLILoginHandler), this is a CLI flow instead: on success the bearer is
+// handed to the CLI via a one-time code through store rather than a session
+// cookie (the bearer never touches the browser), and failures redirect to the
+// CLI's loopback server with an error query param instead of /login.
+func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bool, auditLog *audit.Logger, store *cliCodeStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := auth.PeerHost(r.RemoteAddr)
 		fail := func(reason string) {
@@ -151,30 +158,67 @@ func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bo
 			return
 		}
 
-		claims, _, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		// cli-ness is only known post-Exchange (it's carried inside the sealed
+		// state). A CLI request whose Exchange fails falls back to fail(), same
+		// as the browser: the state cookie round trip is browser-side either
+		// way, and the CLI's loopback server will simply time out waiting for a
+		// code — acceptable for a rare failure mode.
+		claims, cliRedirect, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
 		if err != nil {
 			fail(exchangeFailReason(err))
 			return
 		}
 
+		failFlow := func(reason string) {
+			if cliRedirect == "" {
+				fail(reason)
+				return
+			}
+			auditOIDC(r.Context(), auditLog, oidcEventLoginFailed, uuid.Nil, "", reason, ip)
+			http.Redirect(w, r, cliRedirect+"?error="+url.QueryEscape(reason), http.StatusFound)
+		}
+
 		userID, err := svc.Provision(r.Context(), svc.IssuerURL(), claims.Subject, *claims)
 		if err != nil {
-			fail(provisionFailReason(err))
+			failFlow(provisionFailReason(err))
 			return
 		}
 
 		if err := svc.SyncGroups(r.Context(), userID, claims.Groups); err != nil {
-			fail("group_sync")
+			failFlow("group_sync")
 			return
 		}
 
-		_, cookie, err := issuer.Issue(r.Context(), userID, auth.TokenMeta{ClientIP: ip, UserAgent: r.UserAgent(), Label: "browser-sso"})
+		label := "browser-sso"
+		if cliRedirect != "" {
+			label = "cli-sso"
+		}
+		token, cookie, err := issuer.Issue(r.Context(), userID, auth.TokenMeta{ClientIP: ip, UserAgent: r.UserAgent(), Label: label})
 		if err != nil {
+			if cliRedirect != "" {
+				failFlow("internal")
+				return
+			}
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		http.SetCookie(w, cookie)
+
+		if cliRedirect == "" {
+			http.SetCookie(w, cookie)
+			auditOIDC(r.Context(), auditLog, oidcEventLoginSucceeded, userID, "user:"+userID.String(), "", ip)
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		// CLI flow: the bearer never reaches the browser. Stash it behind a
+		// short-lived, single-use code and hand only the code to the CLI's
+		// loopback server via the redirect query string.
+		code, err := store.put(token)
+		if err != nil {
+			failFlow("internal")
+			return
+		}
 		auditOIDC(r.Context(), auditLog, oidcEventLoginSucceeded, userID, "user:"+userID.String(), "", ip)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, cliRedirect+"?code="+url.QueryEscape(code), http.StatusFound)
 	}
 }

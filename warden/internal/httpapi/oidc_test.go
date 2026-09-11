@@ -22,6 +22,7 @@ type stubOIDCFlow struct {
 	authErr              error
 
 	claims      *oidc.Claims
+	cliRedirect string
 	exchangeErr error
 
 	userID       uuid.UUID
@@ -41,7 +42,7 @@ func (s *stubOIDCFlow) AuthCodeURLCLI(string) (string, string, error) {
 }
 
 func (s *stubOIDCFlow) Exchange(context.Context, string, string, string) (*oidc.Claims, string, error) {
-	return s.claims, "", s.exchangeErr
+	return s.claims, s.cliRedirect, s.exchangeErr
 }
 
 func (s *stubOIDCFlow) Provision(context.Context, string, string, oidc.Claims) (uuid.UUID, error) {
@@ -191,7 +192,7 @@ func TestOIDCLoginHandlerAuthCodeURLError(t *testing.T) {
 // first hitting /auth/oidc/login, so a callback with no state cookie is
 // either a forged/replayed request or a stale bookmark either way, denied.
 func TestOIDCCallbackHandlerMissingStateCookie(t *testing.T) {
-	h := oidcCallbackHandler(&stubOIDCFlow{}, &stubSessionIssuer{}, true, nil)
+	h := oidcCallbackHandler(&stubOIDCFlow{}, &stubSessionIssuer{}, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
@@ -212,7 +213,7 @@ func TestOIDCCallbackHandlerMissingStateCookie(t *testing.T) {
 
 func TestOIDCCallbackHandlerExchangeFailure(t *testing.T) {
 	svc := &stubOIDCFlow{exchangeErr: oidc.ErrStateMismatch}
-	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil)
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
@@ -239,7 +240,7 @@ func TestOIDCCallbackHandlerSuccess(t *testing.T) {
 		issuer: "https://idp.example",
 	}
 	iss := &stubSessionIssuer{cookie: sessionCookie}
-	h := oidcCallbackHandler(svc, iss, true, nil)
+	h := oidcCallbackHandler(svc, iss, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
@@ -268,7 +269,7 @@ func TestOIDCCallbackHandlerSyncGroupsFailure(t *testing.T) {
 		claims:  &oidc.Claims{Subject: "sub-1", EmailVerified: true},
 		syncErr: errors.New("db down"),
 	}
-	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil)
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
@@ -290,7 +291,7 @@ func TestOIDCCallbackHandlerSyncGroupsFailure(t *testing.T) {
 
 func TestOIDCCallbackHandlerSessionIssueFailure(t *testing.T) {
 	svc := &stubOIDCFlow{claims: &oidc.Claims{Subject: "sub-1", EmailVerified: true}}
-	h := oidcCallbackHandler(svc, &stubSessionIssuer{err: errors.New("issue failed")}, true, nil)
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{err: errors.New("issue failed")}, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)
@@ -316,7 +317,7 @@ func TestOIDCCallbackHandlerProvisionFailure(t *testing.T) {
 		claims:       &oidc.Claims{Subject: "sub-1", EmailVerified: true},
 		provisionErr: oidc.ErrDeactivated,
 	}
-	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil)
+	h := oidcCallbackHandler(svc, &stubSessionIssuer{}, true, nil, nil)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?state=s&code=c", nil)

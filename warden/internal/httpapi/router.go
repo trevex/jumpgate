@@ -51,8 +51,11 @@ func NewRouter(db Pinger, deps ...RouterDeps) http.Handler {
 	// when OIDC is actually configured.
 	r.Get("/auth/methods", authMethodsHandler(d.OIDC != nil))
 	if d.OIDC != nil {
+		store := newCLICodeStore()
 		r.Get("/auth/oidc/login", oidcLoginHandler(d.OIDC, d.CookieSecure))
-		r.Get("/auth/oidc/callback", oidcCallbackHandler(d.OIDC, d.SessionIssuer, d.CookieSecure, d.Audit))
+		r.Get("/auth/oidc/callback", oidcCallbackHandler(d.OIDC, d.SessionIssuer, d.CookieSecure, d.Audit, store))
+		r.Get("/auth/oidc/cli/login", oidcCLILoginHandler(d.OIDC, d.CookieSecure))
+		r.Post("/auth/oidc/cli/exchange", oidcCLIExchangeHandler(store))
 	}
 
 	// Recording cast proxy: streams asciicast objects server-side so the browser
