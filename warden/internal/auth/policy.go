@@ -36,9 +36,9 @@ func ValidatePassword(pw, currentHash string) error {
 	if _, bad := commonPasswords[strings.ToLower(pw)]; bad {
 		return errors.New("password is too common")
 	}
-	// currentHash is "" from both current callers (CreateUser, EnsureAdmin);
-	// this branch only activates once a change-password RPC passes the
-	// account's existing hash.
+	// currentHash is "" from every current caller (CreateUser, EnsureAdmin,
+	// SetLocalPassword); this branch only activates once a change-password RPC
+	// passes the account's existing hash.
 	if currentHash != "" {
 		if ok, _ := VerifyPassword(pw, currentHash); ok {
 			return errors.New("new password must differ from the current password")

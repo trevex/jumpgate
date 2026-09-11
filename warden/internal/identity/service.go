@@ -138,7 +138,7 @@ func (s *Service) groupResult(ctx context.Context, g sqlc.Group) (GroupResult, e
 // ── users ────────────────────────────────────────────────────────────────────
 
 // CreateUser creates a local user. password is OPTIONAL: empty leaves the user
-// local-password-less (SSO-only; password_hash keeps its ” default, which
+// local-password-less (SSO-only; password_hash keeps its "" default, which
 // auth.VerifyPassword always rejects, so the account cannot local-login until a
 // break-glass password is set via SetLocalPassword). The user row and, when a
 // password is given, the password write are committed in one transaction so a
@@ -147,6 +147,14 @@ func (s *Service) groupResult(ctx context.Context, g sqlc.Group) (GroupResult, e
 func (s *Service) CreateUser(ctx context.Context, email, displayName, password string) (sqlc.User, error) {
 	email = auth.NormalizeEmail(email)
 	var hash string
+	// SSO-only creation (password == "") is the intended path. Supplying a
+	// password here is the discouraged break-glass shortcut — SetLocalPassword
+	// is the sanctioned way to set one after the fact — but it is gated by the
+	// same identity:user:create capability, so it is not a privilege escalation.
+	// This path is NOT audited: no identity lifecycle RPC (CreateUser,
+	// DeactivateUser, DeleteUser) emits an audit event today, and auditing only
+	// the password-at-create case would be inconsistent. A general
+	// user-lifecycle audit trail, covering this path, is a deferred follow-up.
 	if password != "" {
 		if err := auth.ValidatePassword(password, ""); err != nil {
 			return sqlc.User{}, connect.NewError(connect.CodeInvalidArgument, err)

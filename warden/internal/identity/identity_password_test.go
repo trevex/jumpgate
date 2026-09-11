@@ -81,6 +81,16 @@ func TestSetLocalPassword(t *testing.T) {
 		t.Fatalf("VerifyPassword after set: ok=%v err=%v", ok, err)
 	}
 
+	// The proto only caps new_password's length (max_len); the floor is
+	// enforced app-side via auth.ValidatePassword. Pin that SetLocalPassword
+	// actually calls it, so a regression that skipped validation on the set
+	// path doesn't go uncaught.
+	if _, err := c.SetLocalPassword(ctx, withToken(connect.NewRequest(&identityv1.SetLocalPasswordRequest{
+		UserId: uid, NewPassword: "short",
+	}), tok)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("short password: got %v, want InvalidArgument", err)
+	}
+
 	if _, err := c.SetLocalPassword(ctx, withToken(connect.NewRequest(&identityv1.SetLocalPasswordRequest{
 		UserId: uid, NewPassword: "",
 	}), tok)); err != nil {
