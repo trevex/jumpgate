@@ -260,11 +260,26 @@ func Run(ctx context.Context, cfg config.Config) error {
 	// Build the token lookup once here and share it with both the RPC interceptor
 	// and the HTTP cookie-auth middleware.
 	apiQ := sqlc.New(pool)
-	apiTokens := auth.NewTokenService(apiQ)
+	apiTokens := auth.NewTokenService(apiQ, auth.WithIdleTTL(cfg.AuthSessionIdleTTL))
 	apiLookup := auth.Lookup{Tokens: apiTokens, Q: apiQ}
+	// authThrottle is shared by every Login call; kept in this scope (not
+	// module-local) so a later task can wire a periodic Cleanup ticker.
+	authThrottle := auth.NewThrottle()
+	spawn(func(ctx context.Context) {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				authThrottle.Cleanup()
+			}
+		}
+	})
 	userServices := rpc.UserServices{
 		Lookup:         apiLookup,
-		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, cfg.CookieSecure()),
+		Auth:           auth.NewHandler(apiQ, apiTokens, authorizer, authThrottle, auditLog, cfg.CookieSecure(), cfg.AuthSessionTTL),
 		Identity:       identity.NewHandler(identity.NewService(pool, arSvc, terminator, authorizer), apiguard.New(authorizer, apiQ)),
 		Catalog:        catalog.NewHandler(catalog.NewService(pool, sealer, terminator, authorizer, arSvc, targetIdentitySvc), apiguard.New(authorizer, apiQ)),
 		Access:         access.NewHandler(access.NewService(pool, roleResolver, authorizer, arSvc, arSvc), apiguard.New(authorizer, apiQ)),
@@ -293,9 +308,10 @@ func Run(ctx context.Context, cfg config.Config) error {
 	protos.SetUnencryptedHTTP2(true)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           webcors.New(cfg.DevCORSOrigins)(mux),
+		Handler:           maxBytes(cfg.MaxRequestBytes, webcors.New(cfg.DevCORSOrigins)(mux)),
 		Protocols:         &protos,
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 
 	// Second, mTLS "mesh" listener: serves Dataplane + Gateway to workers/gateway.
@@ -395,7 +411,19 @@ func buildMeshServer(cfg config.Config, pool *pgxpool.Pool, setupSvc *dataplane.
 		TLSConfig:         tlsCfg,
 		Protocols:         &protos,
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
+}
+
+// maxBytes caps the size of incoming request bodies, rejecting anything over n
+// bytes. Applied only to the user-facing server: mesh traffic (worker/gateway
+// payloads such as recording multipart advertisements) is not untrusted user
+// input and may legitimately be larger.
+func maxBytes(n int64, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, n)
+		h.ServeHTTP(w, r)
+	})
 }
 
 // readMeshCerts loads warden's mesh leaf cert/key and the mesh CA bundle from the

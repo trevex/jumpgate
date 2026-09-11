@@ -18,7 +18,7 @@ import { login } from "./helpers";
  */
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 // A creator who can create + probe assets in their folder but holds no
 // catalog:asset:identity:approve — sees the read-only "awaiting approval" copy.
 const CREATOR_EMAIL = process.env.E2E_CREATOR_EMAIL ?? "creator@demo.test";

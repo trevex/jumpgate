@@ -27,7 +27,7 @@ func TestGroupsAndMemberships(t *testing.T) {
 		t.Fatalf("create group2: %v", err)
 	}
 	u, err := c.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "carol@x", DisplayName: "Carol", Password: "password123",
+		Email: "carol@x", DisplayName: "Carol", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -45,8 +45,8 @@ func TestGroupsAndMemberships(t *testing.T) {
 	}
 
 	// non-admin is rejected
-	seedUser(t, pool, "user@x", "password123", false)
-	uc := authClient(t, url, "user@x", "password123")
+	seedUser(t, pool, "user@x", "password123456", false)
+	uc := authClient(t, url, "user@x", "password123456")
 	_, err = c.CreateGroup(ctx, withToken(connect.NewRequest(&identityv1.CreateGroupRequest{Name: "nope"}), uc))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("non-admin create group code = %v, want PermissionDenied", connect.CodeOf(err))

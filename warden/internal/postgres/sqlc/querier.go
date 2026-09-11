@@ -95,6 +95,13 @@ type Querier interface {
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecretsForAsset(ctx context.Context, assetID uuid.UUID) error
 	DeleteAuthToken(ctx context.Context, tokenHash []byte) error
+	// The user_id predicate is the ownership guard: a caller can only revoke a
+	// session that is theirs, regardless of which token id they name.
+	DeleteAuthTokenByIDForUser(ctx context.Context, arg DeleteAuthTokenByIDForUserParams) (int64, error)
+	DeleteAuthTokensByUser(ctx context.Context, userID uuid.UUID) (int64, error)
+	// "Revoke all my other sessions": deletes every token for the user except the
+	// one matching the passed token_hash (the caller's current session).
+	DeleteAuthTokensByUserExcept(ctx context.Context, arg DeleteAuthTokensByUserExceptParams) (int64, error)
 	DeleteExpiredAgentEnrollmentTokens(ctx context.Context) error
 	DeleteExpiredAuthTokens(ctx context.Context) error
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
@@ -260,6 +267,9 @@ type Querier interface {
 	// path resolved in SQL via folder_path() (no per-row Go resolution).
 	ListAssetsByIDsPaged(ctx context.Context, arg ListAssetsByIDsPagedParams) ([]ListAssetsByIDsPagedRow, error)
 	ListAuditEntries(ctx context.Context) ([]AuditLog, error)
+	// Session inventory for a user: only unexpired sessions, and token_hash is
+	// deliberately omitted from the projection so it never round-trips to a caller.
+	ListAuthTokensByUser(ctx context.Context, userID uuid.UUID) ([]ListAuthTokensByUserRow, error)
 	ListCurrentActiveTrustAnchors(ctx context.Context, arg ListCurrentActiveTrustAnchorsParams) ([]TargetTrustAnchor, error)
 	ListDistinctAssetsByUserAndWorkers(ctx context.Context, arg ListDistinctAssetsByUserAndWorkersParams) ([]uuid.UUID, error)
 	ListDistinctUserAssetsByWorkers(ctx context.Context, dollar_1 []string) ([]ListDistinctUserAssetsByWorkersRow, error)
@@ -442,6 +452,7 @@ type Querier interface {
 	// deactivation guard. Parameterized by kind to single-source the identical body.
 	SubjectExistsForKind(ctx context.Context, arg SubjectExistsForKindParams) (bool, error)
 	TargetIdentityDatabaseTime(ctx context.Context) (time.Time, error)
+	TouchAuthToken(ctx context.Context, tokenHash []byte) error
 	UpdateAssetCatalogName(ctx context.Context, arg UpdateAssetCatalogNameParams) error
 	UpdateAssetFolder(ctx context.Context, arg UpdateAssetFolderParams) error
 	UpdateAssetName(ctx context.Context, arg UpdateAssetNameParams) error

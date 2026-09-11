@@ -218,7 +218,7 @@ func seedUserWithCap(t *testing.T, pool *pgxpool.Pool, lookup auth.Lookup, email
 		}
 	}
 
-	tok, err := lookup.Tokens.Issue(ctx, u.ID, 60*1_000_000_000 /* 1 minute */)
+	tok, err := lookup.Tokens.Issue(ctx, u.ID, time.Minute, auth.TokenMeta{})
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}

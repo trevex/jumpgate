@@ -15,6 +15,7 @@ import (
 
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/access/v1/accessv1connect"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/accessrequest/v1/accessrequestv1connect"
+	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	catalogv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1"
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/catalog/v1/catalogv1connect"
 	enrollmentv1 "github.com/trevex/jumpgate/warden/gen/jumpgate/enrollment/v1"
@@ -34,6 +35,7 @@ type Client struct {
 	catalog        catalogv1connect.CatalogServiceClient
 	session        sessionv1connect.SessionServiceClient
 	identity       identityv1connect.IdentityServiceClient
+	auth           authv1connect.AuthServiceClient
 	access         accessv1connect.AccessServiceClient
 	accessRequest  accessrequestv1connect.AccessRequestServiceClient
 	recording      recordingv1connect.RecordingServiceClient
@@ -52,6 +54,7 @@ func New(addr, token string) *Client {
 		catalog:        catalogv1connect.NewCatalogServiceClient(httpc, addr),
 		session:        sessionv1connect.NewSessionServiceClient(httpc, addr),
 		identity:       identityv1connect.NewIdentityServiceClient(httpc, addr),
+		auth:           authv1connect.NewAuthServiceClient(httpc, addr),
 		access:         accessv1connect.NewAccessServiceClient(httpc, addr),
 		accessRequest:  accessrequestv1connect.NewAccessRequestServiceClient(httpc, addr),
 		recording:      recordingv1connect.NewRecordingServiceClient(httpc, addr),
@@ -66,6 +69,9 @@ func (c *Client) Catalog() catalogv1connect.CatalogServiceClient { return c.cata
 
 // Identity returns the identity service client.
 func (c *Client) Identity() identityv1connect.IdentityServiceClient { return c.identity }
+
+// Auth returns the auth service client.
+func (c *Client) Auth() authv1connect.AuthServiceClient { return c.auth }
 
 // Access returns the access service client.
 func (c *Client) Access() accessv1connect.AccessServiceClient { return c.access }

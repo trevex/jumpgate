@@ -31,12 +31,12 @@ func TestDeactivateBlocksAuthenticatedRPCs(t *testing.T) {
 
 	// Create a non-admin user and obtain a token for them.
 	u, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "dave@x", DisplayName: "Dave", Password: "password123",
+		Email: "dave@x", DisplayName: "Dave", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	utok := authClient(t, url, "dave@x", "password123")
+	utok := authClient(t, url, "dave@x", "password123456")
 
 	// Sanity: an authenticated call works with the fresh token.
 	if _, err := authc.WhoAmI(ctx, withToken(connect.NewRequest(&authv1.WhoAmIRequest{}), utok)); err != nil {
@@ -55,7 +55,7 @@ func TestDeactivateBlocksAuthenticatedRPCs(t *testing.T) {
 	}
 
 	// A deactivated account cannot mint a NEW token either (correct credentials).
-	_, err = authc.Login(ctx, connect.NewRequest(&authv1.LoginRequest{Email: "dave@x", Password: "password123"}))
+	_, err = authc.Login(ctx, connect.NewRequest(&authv1.LoginRequest{Email: "dave@x", Password: "password123456"}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("login while deactivated = %v, want Unauthenticated", connect.CodeOf(err))
 	}
@@ -86,7 +86,7 @@ func TestDeleteGroupCascades(t *testing.T) {
 	}
 	// A user member of the group.
 	u, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "erin@x", DisplayName: "Erin", Password: "password123",
+		Email: "erin@x", DisplayName: "Erin", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -157,7 +157,7 @@ func TestDeleteUserCascades(t *testing.T) {
 	ctx := context.Background()
 
 	u, err := id.CreateUser(ctx, withToken(connect.NewRequest(&identityv1.CreateUserRequest{
-		Email: "frank@x", DisplayName: "Frank", Password: "password123",
+		Email: "frank@x", DisplayName: "Frank", Password: "password123456",
 	}), tok))
 	if err != nil {
 		t.Fatalf("create user: %v", err)

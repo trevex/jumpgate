@@ -3,6 +3,7 @@ syntax = "proto3";
 package jumpgate.auth.v1;
 
 import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1;authv1";
 
@@ -14,6 +15,13 @@ service AuthService {
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {}
   // Logout revokes the caller's current token and clears the session cookie.
   rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+  // ListSessions returns the caller's active login sessions. Requires auth.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {}
+  // RevokeSession revokes one of the caller's own sessions by id. Requires auth.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse) {}
+  // RevokeAllSessions logs the caller out everywhere (optionally except the
+  // current session). Requires auth.
+  rpc RevokeAllSessions(RevokeAllSessionsRequest) returns (RevokeAllSessionsResponse) {}
 }
 
 message LoginRequest {
@@ -42,4 +50,35 @@ message WhoAmIResponse {
   reserved 4;
   reserved "is_admin";
   repeated string capabilities = 5; // caller's globally-held capability patterns (nav gating)
+}
+
+message Session {
+  string id                              = 1;
+  google.protobuf.Timestamp created_at   = 2;
+  google.protobuf.Timestamp last_used_at = 3;
+  google.protobuf.Timestamp expires_at   = 4;
+  string client_ip                       = 5;
+  string user_agent                      = 6;
+  string label                           = 7;
+  bool   current                         = 8;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message RevokeSessionRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message RevokeSessionResponse {}
+
+message RevokeAllSessionsRequest {
+  bool except_current = 1;
+}
+
+message RevokeAllSessionsResponse {
+  int64 revoked = 1;
 }

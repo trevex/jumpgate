@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/jumpgate/warden/gen/jumpgate/auth/v1/authv1connect"
 	"github.com/trevex/jumpgate/warden/internal/audit"
 	"github.com/trevex/jumpgate/warden/internal/auth"
+	"github.com/trevex/jumpgate/warden/internal/authz"
 	"github.com/trevex/jumpgate/warden/internal/dataplane"
 	"github.com/trevex/jumpgate/warden/internal/postgres/migrate"
 	"github.com/trevex/jumpgate/warden/internal/postgres/sqlc"
@@ -306,5 +307,113 @@ func TestLogoutRevokesAndClears(t *testing.T) {
 	_, err = whoClient.WhoAmI(ctx, whoReq)
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("post-logout WhoAmI code = %v, want Unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// newLoginHarness builds a real Postgres-backed auth.Handler (via a fresh
+// throttle and audit logger) plus a seeded user, for tests that call Login
+// directly rather than through an HTTP server.
+func newLoginHarness(t *testing.T, email, pw string) (*auth.Handler, *sqlc.Queries, uuid.UUID, *pgxpool.Pool) {
+	t.Helper()
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: email, DisplayName: email})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+
+	h := auth.NewHandler(q, auth.NewTokenService(q), authz.New(pool), auth.NewThrottle(), audit.New(pool), false, 12*time.Hour)
+	return h, q, u.ID, pool
+}
+
+// auditCount returns the number of audit_log rows of eventType attributed to
+// actor.
+func auditCount(t *testing.T, pool *pgxpool.Pool, eventType string, actor uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_log WHERE event_type=$1 AND actor_user_id=$2`, eventType, actor).Scan(&n); err != nil {
+		t.Fatalf("audit count: %v", err)
+	}
+	return n
+}
+
+// TestLoginThrottledAfterFailures pre-drives a throttle directly to the hard
+// block threshold (rather than looping real failing Logins, which would sleep
+// through the backoff delay) so the test stays fast.
+func TestLoginThrottledAfterFailures(t *testing.T) {
+	dsn := testsupport.StartPostgres(t)
+	if err := migrate.Up(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	u, err := q.CreateUserFull(ctx, sqlc.CreateUserFullParams{Email: "throttle@x", DisplayName: "throttle@x"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	hash, err := auth.HashPassword("a-perfectly-fine-passphrase")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := q.SetUserPassword(ctx, sqlc.SetUserPasswordParams{ID: u.ID, PasswordHash: hash}); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+
+	th := auth.NewThrottle()
+	// A direct Login call (not routed through a real HTTP server) sees an empty
+	// Peer().Addr, so Login checks the "" IP key; drive that same key here.
+	for i := 0; i < 15; i++ {
+		th.Fail("throttle@x", "")
+	}
+	h := auth.NewHandler(q, auth.NewTokenService(q), authz.New(pool), th, audit.New(pool), false, 12*time.Hour)
+
+	req := connect.NewRequest(&authv1.LoginRequest{Email: "throttle@x", Password: "wrong-password-x"})
+	if _, err := h.Login(context.Background(), req); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("expected ResourceExhausted, got %v", err)
+	}
+}
+
+func TestLoginAuditOnSuccess(t *testing.T) {
+	h, _, uid, pool := newLoginHarness(t, "audit@x", "a-perfectly-fine-passphrase")
+	req := connect.NewRequest(&authv1.LoginRequest{Email: "audit@x", Password: "a-perfectly-fine-passphrase"})
+	if _, err := h.Login(context.Background(), req); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if n := auditCount(t, pool, auth.EventLoginSucceeded, uid); n != 1 {
+		t.Fatalf("login.succeeded count = %d", n)
+	}
+}
+
+func TestLoginAuditOnFailure(t *testing.T) {
+	h, _, uid, pool := newLoginHarness(t, "fail@x", "a-perfectly-fine-passphrase")
+	req := connect.NewRequest(&authv1.LoginRequest{Email: "fail@x", Password: "the-wrong-password"})
+	if _, err := h.Login(context.Background(), req); err == nil {
+		t.Fatal("expected auth failure")
+	}
+	if n := auditCount(t, pool, auth.EventLoginFailed, uid); n != 1 {
+		t.Fatalf("login.failed count = %d", n)
 	}
 }

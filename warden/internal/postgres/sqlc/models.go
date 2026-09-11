@@ -108,11 +108,15 @@ type AuditOutbox struct {
 }
 
 type AuthToken struct {
-	ID        uuid.UUID `json:"id"`
-	UserID    uuid.UUID `json:"user_id"`
-	TokenHash []byte    `json:"token_hash"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         uuid.UUID   `json:"id"`
+	UserID     uuid.UUID   `json:"user_id"`
+	TokenHash  []byte      `json:"token_hash"`
+	ExpiresAt  time.Time   `json:"expires_at"`
+	CreatedAt  time.Time   `json:"created_at"`
+	LastUsedAt time.Time   `json:"last_used_at"`
+	ClientIp   pgtype.Text `json:"client_ip"`
+	UserAgent  pgtype.Text `json:"user_agent"`
+	Label      pgtype.Text `json:"label"`
 }
 
 type CaKey struct {

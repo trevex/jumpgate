@@ -10,7 +10,7 @@ import (
 
 const (
 	adminEmail = "admin@demo.test"
-	adminPass  = "admin-password-1234"
+	adminPass  = "demo-admin-passphrase"
 	alicePass  = "alice-password-1234"
 	bobPass    = "bob-password-1234"
 	danaPass   = "dana-password-1234"

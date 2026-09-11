@@ -64,6 +64,14 @@ type Config struct {
 	// SessionTokenTTL bounds the data-plane admission token lifetime (an admission
 	// ticket; the session outlives it — teardown handles in-session revocation).
 	SessionTokenTTL time.Duration `env:"SESSION_TOKEN_TTL" envDefault:"60s"`
+	// AuthSessionTTL is the absolute lifetime of a browser/CLI login token.
+	AuthSessionTTL time.Duration `env:"AUTH_SESSION_TTL" envDefault:"12h"`
+	// AuthSessionIdleTTL rejects a login token unused for longer than this.
+	// Zero disables the idle check.
+	AuthSessionIdleTTL time.Duration `env:"AUTH_SESSION_IDLE_TTL" envDefault:"2h"`
+	// MaxRequestBytes caps the user-API request body. Auth/management payloads
+	// are tiny; recording uploads go worker->S3, not through this API.
+	MaxRequestBytes int64 `env:"MAX_REQUEST_BYTES" envDefault:"1048576"`
 	// GatewayEndpoint is the externally reachable gateway address the CLI dials.
 	GatewayEndpoint string `env:"GATEWAY_ENDPOINT" envDefault:"localhost:8443"`
 	// AllowInsecureSessions (DEV ONLY) permits CreateWebSession to hand back the
@@ -184,6 +192,7 @@ func (c Config) Validate() error {
 		{"ORPHAN_GRACE", c.OrphanGrace},
 		{"TEARDOWN_GRACE", c.TeardownGrace},
 		{"SESSION_TOKEN_TTL", c.SessionTokenTTL},
+		{"AUTH_SESSION_TTL", c.AuthSessionTTL},
 		{"SSH_CERT_MAX_TTL", c.SSHCertMaxTTL},
 		{"RECORDING_URL_TTL", c.RecordingURLTTL},
 		{"PROBE_DNS_TIMEOUT", c.ProbeDNSTimeout},
@@ -212,6 +221,12 @@ func (c Config) Validate() error {
 	}
 	if c.ProbeMaxPerWorker < 1 {
 		return fmt.Errorf("PROBE_MAX_PER_WORKER must be positive, got %d", c.ProbeMaxPerWorker)
+	}
+	if c.MaxRequestBytes <= 0 {
+		return fmt.Errorf("MAX_REQUEST_BYTES must be positive, got %d", c.MaxRequestBytes)
+	}
+	if c.AuthSessionIdleTTL < 0 {
+		return fmt.Errorf("AUTH_SESSION_IDLE_TTL must not be negative, got %s", c.AuthSessionIdleTTL)
 	}
 	return nil
 }

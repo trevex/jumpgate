@@ -56,6 +56,11 @@ func VerifyPassword(pw, encoded string) (bool, error) {
 	if _, err := fmt.Sscanf(parts[2], "m=%d,t=%d,p=%d", &m, &t, &p); err != nil {
 		return false, fmt.Errorf("params: %w", err)
 	}
+	// Reject pathological parameters before argon2.IDKey allocates. Our own
+	// hashes use m=65536,t=1,p=4; allow generous headroom but cap hard.
+	if m == 0 || m > 1<<20 || t == 0 || t > 16 || p == 0 || p > 16 {
+		return false, errors.New("argon2 params out of range")
+	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false, fmt.Errorf("salt: %w", err)

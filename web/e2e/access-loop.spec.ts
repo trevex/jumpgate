@@ -4,7 +4,7 @@ import { login } from "./helpers";
 // Actor credentials — defaults match test/e2e/uiseed_test.go (the seed the
 // make ui-e2e target runs before this spec). Overridable via env for ad-hoc runs.
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 const ALICE_EMAIL = process.env.E2E_ALICE_EMAIL ?? "alice@demo.test";
 const ALICE_PASSWORD = process.env.E2E_ALICE_PASSWORD ?? "alice-password-1234";
 const BOB_EMAIL = process.env.E2E_BOB_EMAIL ?? "bob@demo.test";

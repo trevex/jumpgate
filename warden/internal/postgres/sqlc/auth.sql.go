@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,19 +25,29 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createAuthToken = `-- name: CreateAuthToken :one
-INSERT INTO auth_tokens (user_id, token_hash, expires_at)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, token_hash, expires_at, created_at
+INSERT INTO auth_tokens (user_id, token_hash, expires_at, client_ip, user_agent, label)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, token_hash, expires_at, created_at, last_used_at, client_ip, user_agent, label
 `
 
 type CreateAuthTokenParams struct {
 	UserID    uuid.UUID          `json:"user_id"`
 	TokenHash []byte             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	ClientIp  pgtype.Text        `json:"client_ip"`
+	UserAgent pgtype.Text        `json:"user_agent"`
+	Label     pgtype.Text        `json:"label"`
 }
 
 func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error) {
-	row := q.db.QueryRow(ctx, createAuthToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
+	row := q.db.QueryRow(ctx, createAuthToken,
+		arg.UserID,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.ClientIp,
+		arg.UserAgent,
+		arg.Label,
+	)
 	var i AuthToken
 	err := row.Scan(
 		&i.ID,
@@ -44,6 +55,10 @@ func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.ClientIp,
+		&i.UserAgent,
+		&i.Label,
 	)
 	return i, err
 }
@@ -57,6 +72,56 @@ func (q *Queries) DeleteAuthToken(ctx context.Context, tokenHash []byte) error {
 	return err
 }
 
+const deleteAuthTokenByIDForUser = `-- name: DeleteAuthTokenByIDForUser :execrows
+DELETE FROM auth_tokens WHERE id = $1 AND user_id = $2
+`
+
+type DeleteAuthTokenByIDForUserParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// The user_id predicate is the ownership guard: a caller can only revoke a
+// session that is theirs, regardless of which token id they name.
+func (q *Queries) DeleteAuthTokenByIDForUser(ctx context.Context, arg DeleteAuthTokenByIDForUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAuthTokenByIDForUser, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteAuthTokensByUser = `-- name: DeleteAuthTokensByUser :execrows
+DELETE FROM auth_tokens WHERE user_id = $1
+`
+
+func (q *Queries) DeleteAuthTokensByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAuthTokensByUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteAuthTokensByUserExcept = `-- name: DeleteAuthTokensByUserExcept :execrows
+DELETE FROM auth_tokens WHERE user_id = $1 AND token_hash <> $2
+`
+
+type DeleteAuthTokensByUserExceptParams struct {
+	UserID    uuid.UUID `json:"user_id"`
+	TokenHash []byte    `json:"token_hash"`
+}
+
+// "Revoke all my other sessions": deletes every token for the user except the
+// one matching the passed token_hash (the caller's current session).
+func (q *Queries) DeleteAuthTokensByUserExcept(ctx context.Context, arg DeleteAuthTokensByUserExceptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAuthTokensByUserExcept, arg.UserID, arg.TokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteExpiredAuthTokens = `-- name: DeleteExpiredAuthTokens :exec
 DELETE FROM auth_tokens WHERE expires_at < now()
 `
@@ -67,7 +132,7 @@ func (q *Queries) DeleteExpiredAuthTokens(ctx context.Context) error {
 }
 
 const getAuthTokenByHash = `-- name: GetAuthTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, created_at FROM auth_tokens WHERE token_hash = $1
+SELECT id, user_id, token_hash, expires_at, created_at, last_used_at, client_ip, user_agent, label FROM auth_tokens WHERE token_hash = $1
 `
 
 func (q *Queries) GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (AuthToken, error) {
@@ -79,12 +144,16 @@ func (q *Queries) GetAuthTokenByHash(ctx context.Context, tokenHash []byte) (Aut
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.ClientIp,
+		&i.UserAgent,
+		&i.Label,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users WHERE email = $1
+SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM users WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -119,6 +188,55 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const listAuthTokensByUser = `-- name: ListAuthTokensByUser :many
+SELECT id, user_id, created_at, last_used_at, expires_at, client_ip, user_agent, label
+FROM auth_tokens
+WHERE user_id = $1 AND expires_at > now()
+ORDER BY created_at DESC
+`
+
+type ListAuthTokensByUserRow struct {
+	ID         uuid.UUID   `json:"id"`
+	UserID     uuid.UUID   `json:"user_id"`
+	CreatedAt  time.Time   `json:"created_at"`
+	LastUsedAt time.Time   `json:"last_used_at"`
+	ExpiresAt  time.Time   `json:"expires_at"`
+	ClientIp   pgtype.Text `json:"client_ip"`
+	UserAgent  pgtype.Text `json:"user_agent"`
+	Label      pgtype.Text `json:"label"`
+}
+
+// Session inventory for a user: only unexpired sessions, and token_hash is
+// deliberately omitted from the projection so it never round-trips to a caller.
+func (q *Queries) ListAuthTokensByUser(ctx context.Context, userID uuid.UUID) ([]ListAuthTokensByUserRow, error) {
+	rows, err := q.db.Query(ctx, listAuthTokensByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuthTokensByUserRow
+	for rows.Next() {
+		var i ListAuthTokensByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.ExpiresAt,
+			&i.ClientIp,
+			&i.UserAgent,
+			&i.Label,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setUserPassword = `-- name: SetUserPassword :exec
 UPDATE users SET password_hash = $2 WHERE id = $1
 `
@@ -130,5 +248,14 @@ type SetUserPasswordParams struct {
 
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, setUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
+const touchAuthToken = `-- name: TouchAuthToken :exec
+UPDATE auth_tokens SET last_used_at = now() WHERE token_hash = $1
+`
+
+func (q *Queries) TouchAuthToken(ctx context.Context, tokenHash []byte) error {
+	_, err := q.db.Exec(ctx, touchAuthToken, tokenHash)
 	return err
 }

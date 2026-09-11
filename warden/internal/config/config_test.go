@@ -20,6 +20,8 @@ func valid() Config {
 		OrphanGrace:           45 * time.Second,
 		TeardownGrace:         30 * time.Second,
 		SessionTokenTTL:       60 * time.Second,
+		AuthSessionTTL:        12 * time.Hour,
+		MaxRequestBytes:       1048576,
 		SSHCertMaxTTL:         8 * time.Hour,
 		RecordingURLTTL:       5 * time.Minute,
 		ProbeDNSTimeout:       10 * time.Second,
@@ -78,6 +80,31 @@ func TestValidate(t *testing.T) {
 	c.PeriodicProbeJitter = 0
 	if err := c.Validate(); err != nil {
 		t.Fatalf("zero jitter rejected: %v", err)
+	}
+
+	c = valid()
+	c.AuthSessionTTL = 0
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "AUTH_SESSION_TTL") {
+		t.Fatalf("zero AuthSessionTTL = %v, want named error", err)
+	}
+
+	// Zero idle TTL means the idle check is disabled; it must be accepted.
+	c = valid()
+	c.AuthSessionIdleTTL = 0
+	if err := c.Validate(); err != nil {
+		t.Fatalf("zero AuthSessionIdleTTL rejected: %v", err)
+	}
+
+	c = valid()
+	c.AuthSessionIdleTTL = -time.Second
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "AUTH_SESSION_IDLE_TTL") {
+		t.Fatalf("negative AuthSessionIdleTTL = %v, want named error", err)
+	}
+
+	c = valid()
+	c.MaxRequestBytes = 0
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "MAX_REQUEST_BYTES") {
+		t.Fatalf("zero MaxRequestBytes = %v, want named error", err)
 	}
 }
 

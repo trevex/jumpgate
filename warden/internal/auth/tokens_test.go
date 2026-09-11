@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trevex/jumpgate/warden/internal/auth"
@@ -38,7 +39,7 @@ func TestTokenIssueValidateRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tok, err := svc.Issue(ctx, u.ID, time.Hour)
+	tok, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -75,11 +76,161 @@ func TestExpiredTokenRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok, err := svc.Issue(ctx, u.ID, -1*time.Minute) // already expired
+	tok, err := svc.Issue(ctx, u.ID, -1*time.Minute, auth.TokenMeta{}) // already expired
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Validate(ctx, tok); err == nil {
 		t.Fatal("expired token validated")
+	}
+}
+
+func TestListAndRevokeByID(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "list@x", DisplayName: "L"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
+		UserID:    u.ID,
+		TokenHash: []byte("hash-1"),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		ClientIp:  pgtype.Text{String: "10.0.0.1", Valid: true},
+		UserAgent: pgtype.Text{String: "cli", Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = q.CreateAuthToken(ctx, sqlc.CreateAuthTokenParams{
+		UserID:    u.ID,
+		TokenHash: []byte("hash-expired"),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("create expired: %v", err)
+	}
+	sessions, err := q.ListAuthTokensByUser(ctx, u.ID)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("list: %v len=%d", err, len(sessions))
+	}
+	if sessions[0].ClientIp.String != "10.0.0.1" {
+		t.Fatalf("client_ip = %q", sessions[0].ClientIp.String)
+	}
+
+	other, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "other@x", DisplayName: "O"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong owner: must delete nothing.
+	n0, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: other.ID})
+	if err != nil || n0 != 0 {
+		t.Fatalf("cross-user delete should be no-op: err=%v n=%d", err, n0)
+	}
+	// Correct owner: deletes exactly one.
+	n, err := q.DeleteAuthTokenByIDForUser(ctx, sqlc.DeleteAuthTokenByIDForUserParams{ID: row.ID, UserID: u.ID})
+	if err != nil || n != 1 {
+		t.Fatalf("owner delete: %v n=%d", err, n)
+	}
+}
+
+func TestIdleTimeoutRejects(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q, auth.WithIdleTTL(time.Hour))
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "idle@x", DisplayName: "I"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := svc.Issue(ctx, u.ID, 12*time.Hour, auth.TokenMeta{ClientIP: "1.2.3.4", UserAgent: "cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE auth_tokens SET last_used_at = now() - interval '2 hours' WHERE user_id = $1", u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Validate(ctx, tok); err == nil {
+		t.Fatal("idle-expired token still validates")
+	}
+}
+
+func TestRevokeAllExcept(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q)
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "all@x", DisplayName: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{}); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := svc.RevokeAllExcept(ctx, u.ID, keep)
+	if err != nil || n != 1 {
+		t.Fatalf("revoke-all-except: %v n=%d", err, n)
+	}
+	if _, err := svc.Validate(ctx, keep); err != nil {
+		t.Fatal("kept token was revoked")
+	}
+}
+
+func TestRevokeAll(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q)
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "revall@x", DisplayName: "R"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := svc.RevokeAll(ctx, u.ID)
+	if err != nil || n != 2 {
+		t.Fatalf("revoke-all: %v n=%d", err, n)
+	}
+	if _, err := svc.Validate(ctx, a); err == nil {
+		t.Fatal("token a still valid")
+	}
+	if _, err := svc.Validate(ctx, b); err == nil {
+		t.Fatal("token b still valid")
+	}
+}
+
+func TestIdleTimeoutKeptAliveByActivity(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	q := sqlc.New(pool)
+	svc := auth.NewTokenService(q, auth.WithIdleTTL(2*time.Second))
+	u, err := q.CreateUser(ctx, sqlc.CreateUserParams{Email: "active@x", DisplayName: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := svc.Issue(ctx, u.ID, time.Hour, auth.TokenMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Validate every 400ms for ~2.4s (> idleTTL). Continuous activity must keep it valid.
+	for i := 0; i < 6; i++ {
+		if _, err := svc.Validate(ctx, tok); err != nil {
+			t.Fatalf("active token rejected on call %d: %v", i, err)
+		}
+		time.Sleep(400 * time.Millisecond)
 	}
 }

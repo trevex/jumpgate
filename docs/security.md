@@ -49,10 +49,11 @@ Three distinct token mechanisms:
 - API bearer tokens (CLI). `AuthService.Login` with `cookie_only=false` (the default)
   exchanges email and password for an opaque, DB-backed, hashed bearer token, not a
   JWT. Passwords are hashed with argon2id; the token is stored hashed
-  (`auth_tokens.token_hash`) with a 12-hour expiry, returned in the response body, and
-  presented as `Authorization: Bearer <token>`. Because the server holds the token
-  record, revocation is instant and server-side (delete the row). The CLI stores the
-  token in `~/.config/jumpgate/config.json` per named context.
+  (`auth_tokens.token_hash`) with a 12-hour absolute expiry (`AUTH_SESSION_TTL`) and a
+  2-hour idle timeout (`AUTH_SESSION_IDLE_TTL`; zero disables it), returned in the
+  response body, and presented as `Authorization: Bearer <token>`. Because the server
+  holds the token record, revocation is instant and server-side (delete the row). The
+  CLI stores the token in `~/.config/jumpgate/config.json` per named context.
 
 - Browser cookie sessions. `Login` with `cookie_only=true` issues the same opaque token
   but delivers it via a `Set-Cookie` response header instead of the body (the response
@@ -83,6 +84,40 @@ Three distinct token mechanisms:
 `AuthService.Logout` requires authentication and revokes the caller's current token
 server-side (idempotent). When the token was supplied via cookie it also clears the
 `jumpgate_session` cookie (by setting `MaxAge=-1` in the response).
+
+### Managing your sessions
+
+`AuthService.ListSessions` returns the caller's active login tokens (id, label,
+client IP, user agent, and last-used/expiry timestamps), with the token used for the
+current request flagged. `RevokeSession(id)` revokes one of them by id.
+`RevokeAllSessions(except_current)` revokes every session at once — the "log out
+everywhere" control for a lost laptop or a leaked token, with `except_current=true`
+to keep the calling session alive while ending the rest. The CLI exposes these as
+`jumpgate sessions list`, `jumpgate sessions revoke <id>`, and `jumpgate sessions
+revoke-all [--keep-current]`.
+
+### Password policy
+
+Local accounts are subject to a password policy, enforced on user creation and
+on admin bootstrap: a minimum length of 12 characters, rejection of a small
+embedded common-password blocklist, and rejection of reusing the current
+password. The blocklist check is local only — there is no external
+breach-screening call, so an air-gapped deployment makes no outbound network
+calls to validate a password. On verify, a stored argon2id hash's parameters
+are bounds-checked, so a pathological value cannot be used to bypass or crash
+verification.
+
+### Login throttling
+
+Failed logins are throttled with progressive backoff, keyed per client IP and
+per account. It is not a lockout — a successful login clears the backoff for
+both keys. Within a 15-minute window, repeated failures escalate the delay
+before the next attempt is evaluated, and enough failures return
+`CodeResourceExhausted` with a `Retry-After` header. Throttle state is
+in-memory today, scoped to a single warden replica. Every authentication
+outcome — success, failure, throttle, logout, and session revocation — is
+recorded as a redacted audit event (`auth.login.*`, `auth.logout`,
+`auth.session.*`) that carries no email, password, or token.
 
 ### WhoAmI
 

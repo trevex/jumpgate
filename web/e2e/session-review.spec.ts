@@ -8,7 +8,7 @@ import { login } from "./helpers";
 // that recording — the subject's grant card, the approver's Reviewable list,
 // and the per-asset filter — each ending in in-browser asciinema playback.
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@demo.test";
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "admin-password-1234";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "demo-admin-passphrase";
 const ALICE_EMAIL = process.env.E2E_ALICE_EMAIL ?? "alice@demo.test";
 const ALICE_PASSWORD = process.env.E2E_ALICE_PASSWORD ?? "alice-password-1234";
 const BOB_EMAIL = process.env.E2E_BOB_EMAIL ?? "bob@demo.test";
