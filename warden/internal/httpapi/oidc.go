@@ -30,7 +30,8 @@ const oidcStateCookie = "jumpgate_oidc_state"
 // live IdP or network discovery; *oidc.Service satisfies it structurally.
 type oidcFlow interface {
 	AuthCodeURL() (authURL, sealedState string, err error)
-	Exchange(ctx context.Context, sealedState, gotState, code string) (*oidc.Claims, error)
+	AuthCodeURLCLI(cliRedirect string) (authURL, sealedState string, err error)
+	Exchange(ctx context.Context, sealedState, gotState, code string) (*oidc.Claims, string, error)
 	Provision(ctx context.Context, issuer, subject string, c oidc.Claims) (uuid.UUID, error)
 	SyncGroups(ctx context.Context, userID uuid.UUID, groups []string) error
 	IssuerURL() string
@@ -150,7 +151,7 @@ func oidcCallbackHandler(svc oidcFlow, issuer oidcSessionIssuer, cookieSecure bo
 			return
 		}
 
-		claims, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		claims, _, err := svc.Exchange(r.Context(), sc.Value, r.URL.Query().Get("state"), r.URL.Query().Get("code"))
 		if err != nil {
 			fail(exchangeFailReason(err))
 			return

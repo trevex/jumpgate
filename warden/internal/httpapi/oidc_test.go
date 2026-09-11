@@ -36,8 +36,12 @@ func (s *stubOIDCFlow) AuthCodeURL() (string, string, error) {
 	return s.authURL, s.sealedState, s.authErr
 }
 
-func (s *stubOIDCFlow) Exchange(context.Context, string, string, string) (*oidc.Claims, error) {
-	return s.claims, s.exchangeErr
+func (s *stubOIDCFlow) AuthCodeURLCLI(string) (string, string, error) {
+	return s.authURL, s.sealedState, s.authErr
+}
+
+func (s *stubOIDCFlow) Exchange(context.Context, string, string, string) (*oidc.Claims, string, error) {
+	return s.claims, "", s.exchangeErr
 }
 
 func (s *stubOIDCFlow) Provision(context.Context, string, string, oidc.Claims) (uuid.UUID, error) {

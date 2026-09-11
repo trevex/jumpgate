@@ -26,7 +26,7 @@ func testSealer(t *testing.T) *secrets.Sealer {
 // AuthCodeURL/Exchange), without any network call.
 func TestStateSealRoundTrip(t *testing.T) {
 	sealer := testSealer(t)
-	sd := stateData{State: "s1", Nonce: "n1", Verifier: "v1"}
+	sd := stateData{State: "s1", Nonce: "n1", Verifier: "v1", CLIRedirect: "http://127.0.0.1:5555/cb"}
 
 	pt, err := json.Marshal(sd)
 	if err != nil {
@@ -84,14 +84,14 @@ func TestExchangeStateMismatch(t *testing.T) {
 	}
 
 	// Wrong state param: must fail before any network attempt.
-	if _, err := svc.Exchange(ctx, sealedState, "not-the-right-state", "code"); err == nil {
+	if _, _, err := svc.Exchange(ctx, sealedState, "not-the-right-state", "code"); err == nil {
 		t.Fatal("expected state mismatch error")
 	} else if !errors.Is(err, ErrStateMismatch) {
 		t.Fatalf("expected ErrStateMismatch, got %v", err)
 	}
 
 	// Malformed (non-base64) sealed cookie value.
-	if _, err := svc.Exchange(ctx, "not-valid-base64!!", correctState, "code"); err == nil {
+	if _, _, err := svc.Exchange(ctx, "not-valid-base64!!", correctState, "code"); err == nil {
 		t.Fatal("expected decode error for malformed sealed state")
 	} else if !errors.Is(err, ErrStateMismatch) {
 		t.Fatalf("expected ErrStateMismatch, got %v", err)
@@ -104,9 +104,29 @@ func TestExchangeStateMismatch(t *testing.T) {
 	}
 	raw[len(raw)-1] ^= 0xFF
 	tamperedSealed := base64.RawURLEncoding.EncodeToString(raw)
-	if _, err := svc.Exchange(ctx, tamperedSealed, correctState, "code"); err == nil {
+	if _, _, err := svc.Exchange(ctx, tamperedSealed, correctState, "code"); err == nil {
 		t.Fatal("expected open error for tampered sealed state")
 	} else if !errors.Is(err, ErrStateMismatch) {
 		t.Fatalf("expected ErrStateMismatch, got %v", err)
+	}
+}
+
+// TestAuthCodeURLCLISealsRedirect drives the real Service.AuthCodeURLCLI and
+// confirms it seals successfully and returns a non-empty authURL/sealedState
+// carrying the CLI loopback redirect, without any network call. The seal/open
+// round trip itself (including CLIRedirect) is covered directly by
+// TestStateSealRoundTrip.
+func TestAuthCodeURLCLISealsRedirect(t *testing.T) {
+	svc := &Service{sealer: testSealer(t)}
+
+	authURL, sealedState, err := svc.AuthCodeURLCLI("http://127.0.0.1:5555/cb")
+	if err != nil {
+		t.Fatalf("AuthCodeURLCLI: %v", err)
+	}
+	if authURL == "" {
+		t.Fatal("authURL is empty")
+	}
+	if sealedState == "" {
+		t.Fatal("sealedState is empty")
 	}
 }
