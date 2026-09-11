@@ -1,0 +1,119 @@
+# Dex (https://dexidp.io) as the test OIDC IdP for the kind e2e/demo environment.
+#
+# Issuer/reachability: warden runs in-cluster and both discovers Dex (fetches
+# .well-known/openid-configuration) and does the token exchange in-cluster, so
+# `issuer` below is the Service DNS name. go-oidc verifies an ID token's `iss`
+# against that same string, and Dex builds every endpoint in its discovery
+# document (authorization_endpoint, token_endpoint, ...) from it too — so
+# whoever drives the browser leg of the login (a real browser in the demo, or
+# the scripted e2e client in test/e2e/oidc_test.go) must reach Dex at this
+# exact host:port as well. The Service is also published as a NodePort
+# (cluster.yaml forwards it to localhost:5556) so a host process can reach it;
+# see oidc_test.go for how the e2e test resolves the in-cluster DNS name to
+# that NodePort without any real DNS or /etc/hosts changes.
+#
+# Connector: the client_id/secret below are demo-only, not real secrets.
+# Static client `jumpgate` matches demo-values.yaml's warden.oidc.clientId,
+# and its own secret lands in a Secret that demo-values.yaml's
+# warden.oidc.clientSecret references. The `mockCallback` connector
+# (registered in dex's own binary — connector/mock/connectortest.go
+# NewCallbackConnector — for exactly this kind of test) always asserts one
+# fixed identity (email kilgore@kilgore.trout, groups ["authors"]) with zero
+# configuration and zero user interaction: dex auto-skips the connector/login
+# screen when only one connector is configured, so the whole auth-code dance
+# is a chain of plain redirects the e2e test's http.Client can follow without
+# scraping an HTML login form. That determinism (and the ID token's
+# email/email_verified/groups claims) is exactly what the task needs to
+# assert JIT-provisioning + group sync; it trades away a real password-login
+# form, which the task's own plan offers as an equally-valid alternative.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+data:
+  # Mounted at the image's default config path (Dockerfile CMD), so the
+  # Deployment below needs no command/args override.
+  config.docker.yaml: |
+    issuer: http://dex.default.svc.cluster.local:5556
+    storage:
+      type: memory
+      config: {}
+    web:
+      http: 0.0.0.0:5556
+    oauth2:
+      skipApprovalScreen: true
+    staticClients:
+      - id: jumpgate
+        name: Jumpgate
+        secret: jumpgate-dex-demo-secret
+        redirectURIs:
+          - http://localhost:8080/auth/oidc/callback
+    connectors:
+      - type: mockCallback
+        id: mock
+        name: Example
+        config: {}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jumpgate-oidc-client-secret
+type: Opaque
+stringData:
+  # Key matches the Helm chart's warden.oidc.clientSecret.secretKey default.
+  oidc-client-secret: jumpgate-dex-demo-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+        - name: dex
+          image: dexidp/dex:v2.45.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5556
+          readinessProbe:
+            httpGet:
+              path: /.well-known/openid-configuration
+              port: 5556
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex/config.docker.yaml
+              subPath: config.docker.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: dex-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+spec:
+  # NodePort (not ClusterIP) so the host — and the e2e test process, which
+  # runs outside the cluster — can reach the same Dex instance warden talks
+  # to in-cluster. See cluster.yaml for the hostPort mapping.
+  type: NodePort
+  selector:
+    app: dex
+  ports:
+    - name: http
+      port: 5556
+      targetPort: 5556
+      nodePort: 30556

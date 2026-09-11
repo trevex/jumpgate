@@ -79,6 +79,55 @@ Three distinct token mechanisms:
   authorize a connection without a round-trip to warden, while the worker still
   re-authorizes at session setup.
 
+### Single sign-on (OIDC)
+
+Setting `OIDC_ISSUER_URL` (or the Helm chart's `warden.oidc.enabled`) turns on browser
+SSO alongside local password login — additive, not a replacement, so a break-glass
+admin using a local password still works. Login runs the standard Authorization Code
+flow with PKCE (`GET /auth/oidc/login` redirects to the IdP; the IdP calls back to
+`GET /auth/oidc/callback`), and a successful callback issues the exact same
+`jumpgate_session` cookie a local password login would — `SessionIssuer` is the shared
+tail of both paths, so there is no separate cookie format or session model to reason
+about.
+
+Every check that gates a successful callback fails closed: a state or nonce mismatch,
+a token response with no `id_token`, and `email_verified != true` on the ID token all
+abort the login and redirect to `/login?error=oidc` without issuing a session. OIDC
+discovery against the issuer happens once, at warden startup — a misconfigured or
+unreachable issuer is a startup error, not a first-login surprise; warden refuses to
+serve at all rather than mount a login route that can never complete.
+
+First login JIT-provisions a local user keyed on `(issuer, subject)`, using the ID
+token's `email`/`name` claims for the display record; a collision with an existing
+account on the same email is rejected rather than silently merged or taken over. On
+every login, the configured groups claim (default `groups`) is reconciled against
+jumpgate groups whose `external_key` matches a claim value: a matching group gains an
+`origin='oidc'` membership, and any `origin='oidc'` membership on a group that has
+left the claim is removed. A manually-granted membership on the same group is never
+touched by this — the two origins are independent. Losing IdP-asserted access this way
+tears down live sessions the same as any other capability loss.
+
+Environment variables (warden):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OIDC_ISSUER_URL` | *(empty)* | The IdP's issuer URL. Empty disables OIDC entirely. |
+| `OIDC_CLIENT_ID` | *(empty)* | Required once an issuer is set. |
+| `OIDC_CLIENT_SECRET` | *(empty)* | Required once an issuer is set. |
+| `OIDC_REDIRECT_URL` | *(empty)* | Required once an issuer is set; must match a redirect URI registered with the IdP. |
+| `OIDC_GROUPS_CLAIM` | `groups` | ID-token claim read for group sync. |
+| `OIDC_SCOPES` | `openid email profile groups` | Space-separated scopes requested at the IdP. |
+
+The Helm chart exposes the same knobs under `warden.oidc`: `enabled`, `issuerUrl`,
+`clientId`, `clientSecret.secretName` / `clientSecret.secretKey`, `redirectUrl`,
+`groupsClaim`, and `scopes`. The client secret is always read from an existing
+Secret via `secretName`/`secretKey`, never inlined into values.
+`deploy/helm/jumpgate/templates/warden.yaml` renders these straight into the
+environment variables above.
+
+See [the walkthrough](demo/walkthrough-ui.md) for what this looks like end to end
+against the kind demo's bundled Dex IdP.
+
 ### Logout
 
 `AuthService.Logout` requires authentication and revokes the caller's current token

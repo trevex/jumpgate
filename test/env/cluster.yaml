@@ -28,3 +28,6 @@ nodes:
       - containerPort: 30900   # silo S3      (service.silo.nodePort) for presigned downloads
         hostPort: 30900
         protocol: TCP
+      - containerPort: 30556   # dex OIDC IdP (see testworkload/dex.yaml) for the e2e OIDC login test
+        hostPort: 5556
+        protocol: TCP

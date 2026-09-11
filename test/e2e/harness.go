@@ -178,6 +178,17 @@ func (e *env) reset(t *testing.T) {
 		"psql", "-U", "jumpgate", "-d", "jumpgate", "-v", "ON_ERROR_STOP=1", "-c", resetSQL)
 }
 
+// execSQL runs sql against the in-cluster postgres via kubectl exec + psql, the same
+// mechanism reset uses, and returns stdout. -tA (tuples-only, unaligned) keeps a SELECT's
+// output parseable for simple single-column queries; used where a test needs to read or
+// write something with no CLI/RPC surface of its own (e.g. groups.external_key, or
+// checking a group_memberships row's origin).
+func (e *env) execSQL(t *testing.T, sql string) string {
+	t.Helper()
+	return e.kubectl(t, "exec", "deploy/jumpgate-postgres", "-c", "postgres", "--",
+		"psql", "-U", "jumpgate", "-d", "jumpgate", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql)
+}
+
 // exportMeshCA writes the gateway's mesh CA to e.meshCA (needed by `connect`).
 func (e *env) exportMeshCA(t *testing.T) {
 	t.Helper()
