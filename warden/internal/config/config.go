@@ -69,6 +69,16 @@ type Config struct {
 	// AuthSessionIdleTTL rejects a login token unused for longer than this.
 	// Zero disables the idle check.
 	AuthSessionIdleTTL time.Duration `env:"AUTH_SESSION_IDLE_TTL" envDefault:"2h"`
+	// OIDC single sign-on. Empty OIDCIssuerURL disables OIDC entirely (local
+	// accounts remain the break-glass path). When set, client id/secret/redirect
+	// are required.
+	OIDCIssuerURL    string `env:"OIDC_ISSUER_URL" envDefault:""`
+	OIDCClientID     string `env:"OIDC_CLIENT_ID" envDefault:""`
+	OIDCClientSecret string `env:"OIDC_CLIENT_SECRET" envDefault:""`
+	OIDCRedirectURL  string `env:"OIDC_REDIRECT_URL" envDefault:""`
+	OIDCGroupsClaim  string `env:"OIDC_GROUPS_CLAIM" envDefault:"groups"`
+	OIDCScopes       string `env:"OIDC_SCOPES" envDefault:"openid email profile groups"`
+
 	// MaxRequestBytes caps the user-API request body. Auth/management payloads
 	// are tiny; recording uploads go worker->S3, not through this API.
 	MaxRequestBytes int64 `env:"MAX_REQUEST_BYTES" envDefault:"1048576"`
@@ -159,6 +169,9 @@ type Config struct {
 // the intent that secure cookies are on by default and insecure is the opt-out.
 func (c Config) CookieSecure() bool { return !c.CookieInsecure }
 
+// OIDCEnabled reports whether OIDC login is configured.
+func (c Config) OIDCEnabled() bool { return c.OIDCIssuerURL != "" }
+
 // Load reads configuration from environment variables and validates it.
 func Load() (Config, error) {
 	var c Config
@@ -227,6 +240,11 @@ func (c Config) Validate() error {
 	}
 	if c.AuthSessionIdleTTL < 0 {
 		return fmt.Errorf("AUTH_SESSION_IDLE_TTL must not be negative, got %s", c.AuthSessionIdleTTL)
+	}
+	if c.OIDCEnabled() {
+		if c.OIDCClientID == "" || c.OIDCClientSecret == "" || c.OIDCRedirectURL == "" {
+			return fmt.Errorf("OIDC_ISSUER_URL is set but OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URL are required")
+		}
 	}
 	return nil
 }

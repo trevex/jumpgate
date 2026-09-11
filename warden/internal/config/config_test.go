@@ -106,6 +106,36 @@ func TestValidate(t *testing.T) {
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "MAX_REQUEST_BYTES") {
 		t.Fatalf("zero MaxRequestBytes = %v, want named error", err)
 	}
+
+	// OIDC disabled (empty issuer, the default) must be accepted.
+	c = valid()
+	if err := c.Validate(); err != nil {
+		t.Fatalf("OIDC disabled rejected: %v", err)
+	}
+	if c.OIDCEnabled() {
+		t.Fatal("OIDCEnabled true with empty OIDCIssuerURL")
+	}
+
+	// OIDC enabled but missing required fields must be rejected.
+	c = valid()
+	c.OIDCIssuerURL = "https://idp.example.com"
+	c.OIDCClientID = "client-id"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "OIDC") {
+		t.Fatalf("OIDC enabled with missing client secret/redirect = %v, want named error", err)
+	}
+
+	// OIDC fully configured must be accepted.
+	c = valid()
+	c.OIDCIssuerURL = "https://idp.example.com"
+	c.OIDCClientID = "client-id"
+	c.OIDCClientSecret = "client-secret"
+	c.OIDCRedirectURL = "https://warden.example.com/oidc/callback"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("fully configured OIDC rejected: %v", err)
+	}
+	if !c.OIDCEnabled() {
+		t.Fatal("OIDCEnabled false with OIDCIssuerURL set")
+	}
 }
 
 func TestProbeDefaults(t *testing.T) {
