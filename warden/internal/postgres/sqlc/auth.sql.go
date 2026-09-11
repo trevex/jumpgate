@@ -63,6 +63,21 @@ func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams
 	return i, err
 }
 
+const createUserIdentity = `-- name: CreateUserIdentity :exec
+INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, $2, $3)
+`
+
+type CreateUserIdentityParams struct {
+	UserID  uuid.UUID `json:"user_id"`
+	Issuer  string    `json:"issuer"`
+	Subject string    `json:"subject"`
+}
+
+func (q *Queries) CreateUserIdentity(ctx context.Context, arg CreateUserIdentityParams) error {
+	_, err := q.db.Exec(ctx, createUserIdentity, arg.UserID, arg.Issuer, arg.Subject)
+	return err
+}
+
 const deleteAuthToken = `-- name: DeleteAuthToken :exec
 DELETE FROM auth_tokens WHERE token_hash = $1
 `
@@ -176,6 +191,31 @@ SELECT id, email, display_name, created_at, password_hash, deactivated_at FROM u
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.DisplayName,
+		&i.CreatedAt,
+		&i.PasswordHash,
+		&i.DeactivatedAt,
+	)
+	return i, err
+}
+
+const getUserByIdentity = `-- name: GetUserByIdentity :one
+SELECT u.id, u.email, u.display_name, u.created_at, u.password_hash, u.deactivated_at FROM users u
+JOIN user_identities i ON i.user_id = u.id
+WHERE i.issuer = $1 AND i.subject = $2
+`
+
+type GetUserByIdentityParams struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+func (q *Queries) GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByIdentity, arg.Issuer, arg.Subject)
 	var i User
 	err := row.Scan(
 		&i.ID,

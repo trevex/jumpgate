@@ -21,6 +21,10 @@ type Querier interface {
 	AddGroupToGroup(ctx context.Context, arg AddGroupToGroupParams) error
 	AddPolicySubject(ctx context.Context, arg AddPolicySubjectParams) (RequestPolicySubject, error)
 	AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error
+	// ON CONFLICT targets uq_membership_user, a partial unique index (WHERE
+	// member_user_id IS NOT NULL); the inference clause must repeat that predicate
+	// for Postgres to match it.
+	AddUserToGroupWithOrigin(ctx context.Context, arg AddUserToGroupWithOriginParams) error
 	// allFolderIDs: every folder id (root+cascade candidate set = the whole tree).
 	AllFolderIDs(ctx context.Context) ([]uuid.UUID, error)
 	// [14] anchorHomeFolders: the union of the three folder-id anchor sources hanging
@@ -90,6 +94,7 @@ type Querier interface {
 	CreateSessionSigningKey(ctx context.Context, arg CreateSessionSigningKeyParams) (SessionSigningKey, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateUserFull(ctx context.Context, arg CreateUserFullParams) (User, error)
+	CreateUserIdentity(ctx context.Context, arg CreateUserIdentityParams) error
 	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	DeleteAsset(ctx context.Context, id uuid.UUID) error
 	DeleteAssetSecret(ctx context.Context, id uuid.UUID) error
@@ -107,6 +112,7 @@ type Querier interface {
 	DeleteFolder(ctx context.Context, id uuid.UUID) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteLiveSession(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteOIDCMembership(ctx context.Context, arg DeleteOIDCMembershipParams) error
 	// Drop asset_secrets no longer referenced by any of the asset's logins (ssh,
 	// postgres, OR rdp). A postgres/rdp password login references a secret via secret_id
 	// too, so it must be counted here or the secret is wrongly deemed orphan and its
@@ -184,6 +190,7 @@ type Querier interface {
 	GetGrant(ctx context.Context, id uuid.UUID) (AccessGrant, error)
 	GetGrantByRequest(ctx context.Context, requestID uuid.UUID) (AccessGrant, error)
 	GetGroup(ctx context.Context, id uuid.UUID) (Group, error)
+	GetGroupByExternalKey(ctx context.Context, externalKey pgtype.Text) (Group, error)
 	GetGroupByFolderAndName(ctx context.Context, arg GetGroupByFolderAndNameParams) (Group, error)
 	GetGroupByNameGlobal(ctx context.Context, name string) (Group, error)
 	GetIdentityEvidenceForApproval(ctx context.Context, arg GetIdentityEvidenceForApprovalParams) (TargetIdentityEvidence, error)
@@ -210,6 +217,7 @@ type Querier interface {
 	GetTargetProbeJob(ctx context.Context, arg GetTargetProbeJobParams) (TargetProbeJob, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserByIdentity(ctx context.Context, arg GetUserByIdentityParams) (User, error)
 	GetValidationEvidence(ctx context.Context, arg GetValidationEvidenceParams) (GetValidationEvidenceRow, error)
 	// globalHeldCapabilities.
 	GlobalHeldCapabilities(ctx context.Context, user uuid.UUID) ([]GlobalHeldCapabilitiesRow, error)
@@ -309,6 +317,7 @@ type Querier interface {
 	ListLiveSessionsByUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	ListLiveSessionsByUserAsset(ctx context.Context, arg ListLiveSessionsByUserAssetParams) ([]LiveSession, error)
 	ListLiveSessionsByWorker(ctx context.Context, workerID string) ([]LiveSession, error)
+	ListOIDCGroupIDsForUser(ctx context.Context, memberUserID pgtype.UUID) ([]uuid.UUID, error)
 	ListObservationPageEvidence(ctx context.Context, observationIds []uuid.UUID) ([]TargetIdentityEvidence, error)
 	ListPendingRequests(ctx context.Context) ([]AccessRequest, error)
 	ListPendingRequestsByAsset(ctx context.Context, assetID uuid.UUID) ([]ListPendingRequestsByAssetRow, error)
