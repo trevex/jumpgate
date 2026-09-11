@@ -631,3 +631,68 @@ say where; authority **cascades** down the folder subtree; the **no-escalation s
 stops a delegate from handing out more than they themselves hold; and the bootstrap admin is
 just the holder of `**` globally. Delegated administration falls straight out of these rules —
 no special "admin of folder X" concept required.
+
+## Chapter: SSO login (OIDC)
+
+Everyone so far signed in with a local `--email`/`--password`. In production most users
+should instead be provisioned by your identity provider and signed in through SSO; local
+passwords are the **break-glass** path for admins. The kind demo stands up
+[Dex](https://dexidp.io) as a stand-in IdP, and `test/env/demo-values.yaml` points warden's
+`warden.oidc.*` settings at it. This chapter signs in over OIDC from the CLI and lands the
+just-in-time user with exactly the access its **synced group** grants — no local password, no
+per-user binding.
+
+Group membership is what SSO drives: a jumpgate group carries an **external key** naming the
+IdP group-claim value it syncs from, and on every SSO login warden reconciles the user's
+`oidc`-origin memberships to match the ID token's `groups` claim (manual memberships are left
+alone). So first, as admin, create a group keyed to the claim the demo IdP asserts (`authors`)
+and give it standing access to one of the boxes onboarded in Act 0:
+
+```bash
+# --external-key needs identity:group:set-external-key; the bootstrap admin holds it.
+# (Set or clear it later on an existing group with: groups set-external-key <group> <key>.)
+jumpgate --context admin groups create sso-ops --external-key authors
+jumpgate --context admin bindings create --role ssh-demo.demo --group sso-ops --asset password-box.demo
+```
+
+One host-side step first. The demo IdP's issuer is the in-cluster name
+`dex.default.svc.cluster.local`, and warden redirects your browser straight there — so the host
+browser has to resolve it. Map it to the NodePort `cluster.yaml` already forwards to
+`localhost:5556` (one-time):
+
+```bash
+echo '127.0.0.1 dex.default.svc.cluster.local' | sudo tee -a /etc/hosts
+```
+
+(The automated e2e rewrites this in-process instead of touching `/etc/hosts`; a real browser
+needs the entry. A production IdP has a real public issuer, so this is a demo-only wrinkle.)
+
+Now sign in as the SSO user. `login --sso` opens a loopback listener, sends your browser to
+warden, and exchanges a one-time code for the bearer — the token never touches the browser URL.
+Pass `--warden-addr`/`--ca` just like a password login so they land in the new context:
+
+```bash
+jumpgate login --context sso \
+  --warden-addr http://localhost:8080 \
+  --ca ./jumpgate-mesh-ca.pem \
+  --sso
+# Opens a browser to warden; if none can open it prints the URL to visit.
+# The demo IdP (Dex mockCallback) asserts one fixed identity with groups ["authors"]
+# and shows no login form, so the round-trip completes with nothing to type. A real IdP
+# would present its own login page here; warden's side is identical either way.
+```
+
+The signed-in user is `kilgore@kilgore.trout`, created on first login (`jumpgate --context admin
+users list` shows it). Its membership in `sso-ops` came from the `groups` claim matching the
+group's external key — so it can reach the bound asset with no request and no direct grant:
+
+```bash
+jumpgate --context sso assets get password-box.demo     # bound via sso-ops
+# Standing access, no approval — connect and run a command, then exit (as in Act 3):
+jumpgate --context sso connect demo@password-box.demo --ca ./jumpgate-mesh-ca.pem
+```
+
+Revoke it as admin — find the binding's id with `jumpgate --context admin bindings list` and
+`jumpgate --context admin bindings delete <id>` — and the SSO user loses that access on its next
+connect, the same continuous-enforcement path as any other capability loss. The bootstrap admin
+keeps signing in with its local password throughout; SSO and break-glass local auth coexist.

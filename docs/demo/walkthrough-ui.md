@@ -262,20 +262,24 @@ The kind demo also stands up [Dex](https://dexidp.io) as a stand-in identity pro
 in through Dex instead of a local password, and shows the JIT-provisioned user land with exactly
 the access its synced group grants.
 
-**One step has no UI — same reason as the SSH principal in Prerequisites.**
-`groups.external_key` (which IdP group claim a jumpgate group syncs from) has no console
-affordance yet, so wire it up out-of-band:
+**As admin, set the stage.** **Directory ▸ Groups ▸ New group**, name it `sso-ops`, and in the
+same dialog set its **External key** to `authors` — this is the IdP group-claim value the group
+syncs from. (You can also set or clear it later from the group's detail pane via the **External
+key** row's **Edit** button.) Setting it needs the `identity:group:set-external-key` capability;
+the bootstrap admin holds it. Then grant the group something visible the same way every other
+chapter does: a folder-scoped role with a capability such as `ssh:login:demo` (**New role**),
+bound to `sso-ops` on an asset (**Bindings ▸ Bind a role**).
+
+**One host-side step first.** warden redirects the browser to the demo IdP at its in-cluster
+issuer `dex.default.svc.cluster.local`, so the host has to resolve that name. Map it to the
+NodePort `cluster.yaml` already forwards to `localhost:5556` (one-time), or the SSO button
+dead-ends at an unreachable host:
 
 ```bash
-kubectl exec deploy/jumpgate-postgres -c postgres -- \
-  psql -U jumpgate -d jumpgate -c \
-  "UPDATE groups SET external_key = 'authors' WHERE id = '<group-id>';"
+echo '127.0.0.1 dex.default.svc.cluster.local' | sudo tee -a /etc/hosts
 ```
 
-**As admin, set the stage.** **Directory ▸ Groups ▸ New group**, name it `sso-ops`, then run the
-`UPDATE` above against its id (shown in the group detail pane). Grant the group something
-visible the same way every other chapter does: a folder-scoped role with a capability such as
-`ssh:login:demo` (**New role**), bound to `sso-ops` on an asset (**Bindings ▸ Bind a role**).
+A production IdP has a real public issuer, so this is a demo-only wrinkle.
 
 **Sign in with SSO.** Open a fresh incognito window at http://localhost:8080. Instead of the
 password form, click **Sign in with SSO**. You land straight back on the **Overview**
@@ -299,3 +303,4 @@ same continuous-enforcement path as any other capability loss.
 > **Keeping the two guides honest.** This is the UI twin of the CLI [`walkthrough.md`](./walkthrough.md)
 > and the automated `test/e2e` suite. When a flow changes, update all three. The one step with no UI —
 > the target's `AuthorizedPrincipalsFile` — is a host-side operation by design, not a jumpgate action.
+> Everything else, including the group's SSO **External key**, has a console affordance.
