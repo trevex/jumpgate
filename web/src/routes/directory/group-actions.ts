@@ -7,6 +7,7 @@
  *
  *   - Create: caller holds `identity:group:create`.
  *   - Delete: caller holds `identity:group:delete`.
+ *   - Set external key: caller holds `identity:group:set-external-key`.
  *
  * Group names mirror the catalog charset rule `^[a-z0-9_-]+$`.
  */
@@ -21,6 +22,11 @@ export function canCreateGroup(caps: string[]): boolean {
 /** True if the caller may delete a group. */
 export function canDeleteGroup(caps: string[]): boolean {
   return capsCover(caps, "identity:group:delete");
+}
+
+/** True if the caller may set (or clear) a group's external key. */
+export function canSetGroupExternalKey(caps: string[]): boolean {
+  return capsCover(caps, "identity:group:set-external-key");
 }
 
 // Client-side validation mirroring the server's protovalidate constraints.

@@ -52,6 +52,7 @@ export function GroupDetailSheet({
               groupId={group.id}
               groupName={group.name}
               folderPath={group.folderPath}
+              externalKey={group.externalKey}
             />
           </>
         )}

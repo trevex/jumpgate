@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   canCreateGroup,
   canDeleteGroup,
+  canSetGroupExternalKey,
   isValidGroupName,
 } from "./group-actions";
 
 const ADMIN = ["**"];
 const CREATE_ONLY = ["identity:group:create"];
 const DELETE_ONLY = ["identity:group:delete"];
+const SET_EXTERNAL_KEY_ONLY = ["identity:group:set-external-key"];
 const NONE: string[] = [];
 
 describe("canCreateGroup", () => {
@@ -29,6 +31,15 @@ describe("canDeleteGroup", () => {
 
   it("create cap does not confer delete (glob does not over-match)", () => {
     expect(canDeleteGroup(CREATE_ONLY)).toBe(false);
+  });
+});
+
+describe("canSetGroupExternalKey", () => {
+  it("gated on identity:group:set-external-key", () => {
+    expect(canSetGroupExternalKey(SET_EXTERNAL_KEY_ONLY)).toBe(true);
+    expect(canSetGroupExternalKey(ADMIN)).toBe(true);
+    expect(canSetGroupExternalKey(CREATE_ONLY)).toBe(false);
+    expect(canSetGroupExternalKey(NONE)).toBe(false);
   });
 });
 

@@ -65,6 +65,7 @@ export function NewGroupDialog({
 
   const [name, setName] = useState("");
   const [home, setHome] = useState<FolderHome | null>(null);
+  const [externalKey, setExternalKey] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -75,6 +76,7 @@ export function NewGroupDialog({
   function reset() {
     setName("");
     setHome(null);
+    setExternalKey("");
     setNameTouched(false);
   }
 
@@ -107,7 +109,11 @@ export function NewGroupDialog({
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!nameValid || isPending) return;
-    doCreate({ name: name.trim(), folderId: effectiveFolderId });
+    doCreate({
+      name: name.trim(),
+      folderId: effectiveFolderId,
+      externalKey: externalKey.trim(),
+    });
   }
 
   return (
@@ -222,6 +228,26 @@ export function NewGroupDialog({
             </p>
               </>
             )}
+          </div>
+
+          {/* External key (optional SSO group mapping) */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="new-group-external-key" className={FIELD_LABEL}>
+              External key
+            </label>
+            <Input
+              id="new-group-external-key"
+              type="text"
+              autoComplete="off"
+              value={externalKey}
+              onChange={(e) => setExternalKey(e.target.value)}
+              placeholder="idp-group-claim-value"
+              className="h-9 text-body"
+            />
+            <p className={FIELD_HINT}>
+              Optional. Maps this group to an IdP group-claim value for SSO
+              group sync.
+            </p>
           </div>
 
           <DialogFooter className="mt-1">
