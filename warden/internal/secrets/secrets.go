@@ -155,3 +155,7 @@ func AADAssetSecret(assetID uuid.UUID) []byte {
 
 // AADSessionSigningKey binds the session-token signing key blob.
 func AADSessionSigningKey() []byte { return []byte("jumpgate/session-signing-key") }
+
+// AADOIDCState binds the sealed OIDC login state cookie (state/nonce/PKCE
+// verifier) so it cannot be replayed as some other purpose's sealed blob.
+func AADOIDCState() []byte { return []byte("jumpgate/oidc-state") }
