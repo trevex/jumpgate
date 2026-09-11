@@ -27,11 +27,12 @@ type Handler struct {
 	audit        *audit.Logger
 	cookieSecure bool
 	sessionTTL   time.Duration
+	issuer       *SessionIssuer
 }
 
 // NewHandler constructs the AuthService implementation.
 func NewHandler(q *sqlc.Queries, tokens *TokenService, authorizer *authz.Authorizer, throttle *Throttle, auditLog *audit.Logger, cookieSecure bool, sessionTTL time.Duration) *Handler {
-	return &Handler{q: q, tokens: tokens, authorizer: authorizer, throttle: throttle, audit: auditLog, cookieSecure: cookieSecure, sessionTTL: sessionTTL}
+	return &Handler{q: q, tokens: tokens, authorizer: authorizer, throttle: throttle, audit: auditLog, cookieSecure: cookieSecure, sessionTTL: sessionTTL, issuer: NewSessionIssuer(tokens, cookieSecure, sessionTTL)}
 }
 
 // peerHost strips the port from a "host:port" peer address, falling back to
@@ -113,7 +114,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 	if req.Msg.CookieOnly {
 		label = "browser"
 	}
-	tok, err := s.tokens.Issue(ctx, u.ID, s.sessionTTL, TokenMeta{ClientIP: ip, UserAgent: ua, Label: label})
+	tok, cookie, err := s.issuer.Issue(ctx, u.ID, TokenMeta{ClientIP: ip, UserAgent: ua, Label: label})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -124,16 +125,7 @@ func (s *Handler) Login(ctx context.Context, req *connect.Request[authv1.LoginRe
 		// Secure is config-gated: true in production, off only for the plaintext
 		// dev/e2e env (which the browser would otherwise reject). HttpOnly and
 		// SameSite=Strict are always set, so the cookie is not insecure by design.
-		c := &http.Cookie{ //nolint:gosec // G124: HttpOnly + SameSite=Strict set; Secure is config-gated.
-			Name:     SessionCookie,
-			Value:    tok,
-			Path:     "/",
-			MaxAge:   int(s.sessionTTL / time.Second),
-			HttpOnly: true,
-			Secure:   s.cookieSecure,
-			SameSite: http.SameSiteStrictMode,
-		}
-		resp.Header().Set("Set-Cookie", c.String())
+		resp.Header().Set("Set-Cookie", cookie.String())
 	} else {
 		resp.Msg.Token = tok
 	}
