@@ -14,7 +14,7 @@ var distFS embed.FS
 
 // Handler serves the embedded SPA: real files from dist/, and any other GET that
 // isn't a backend route falls back to index.html so client-side routes deep-link.
-// Non-GET and known backend paths (RPC, /healthz) delegate to next.
+// Non-GET and known backend paths (RPC, /healthz, /api/, /auth/) delegate to next.
 func Handler(next http.Handler) http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -23,7 +23,9 @@ func Handler(next http.Handler) http.Handler {
 	files := http.FileServer(http.FS(sub))
 	index, _ := fs.ReadFile(sub, "index.html")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/jumpgate.") || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/") {
+		// /auth/ is safe to blanket-delegate: the SPA's login route is /login,
+		// nothing client-side lives under /auth/.
+		if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/jumpgate.") || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/") {
 			next.ServeHTTP(w, r)
 			return
 		}

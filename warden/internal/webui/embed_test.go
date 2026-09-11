@@ -58,4 +58,22 @@ func TestEmbed(t *testing.T) {
 			t.Fatal("expected delegation to next for non-GET")
 		}
 	})
+
+	t.Run("GET /auth/methods delegates to next", func(t *testing.T) {
+		nextCalled = false
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/auth/methods", nil))
+		if !nextCalled {
+			t.Fatal("expected delegation to next for /auth/methods")
+		}
+	})
+
+	t.Run("GET /auth/oidc/login delegates to next", func(t *testing.T) {
+		nextCalled = false
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/auth/oidc/login", nil))
+		if !nextCalled {
+			t.Fatal("expected delegation to next for /auth/oidc/login")
+		}
+	})
 }
