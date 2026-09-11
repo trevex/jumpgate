@@ -42,7 +42,13 @@ func NewProvisioner(pool *pgxpool.Pool) *Provisioner {
 //     DB's case-insensitive unique index; a collision with an existing local
 //     account returns ErrEmailCollision rather than silently taking over (or
 //     merging into) that account.
+//   - Redundant with Service.Exchange's check: Provisioner is independently
+//     exported, so it self-enforces email_verified rather than trusting every
+//     caller to have checked it first.
 func (p *Provisioner) ResolveOrProvision(ctx context.Context, issuer, subject string, c Claims) (uuid.UUID, error) {
+	if !c.EmailVerified {
+		return uuid.Nil, ErrUnverifiedEmail
+	}
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("oidc: begin tx: %w", err)

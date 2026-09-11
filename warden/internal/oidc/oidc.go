@@ -143,9 +143,8 @@ func (s *Service) Exchange(ctx context.Context, sealedState, gotState, code stri
 	if err := json.Unmarshal(pt, &sd); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStateMismatch, err)
 	}
-	// Constant-time-insensitive compare is fine here: state is single-use
-	// (bound to a fresh sealed cookie per attempt) and this is not a secret
-	// comparison against a static credential.
+	// A non-constant-time compare is fine here: state is not a secret, the
+	// sealed cookie is the integrity control.
 	if gotState == "" || gotState != sd.State {
 		return nil, ErrStateMismatch
 	}
@@ -200,23 +199,31 @@ func stringClaim(raw map[string]any, key string) string {
 	return v
 }
 
-// extractGroups reads the configured groups claim and coerces a []any of
-// strings to []string. Absent claim, wrong type, or empty list all yield nil
-// — a misconfigured/absent groups claim degrades to "no group sync", not an
+// extractGroups reads the configured groups claim and coerces it to
+// []string. Accepts either a JSON array (mixed/non-string elements are
+// dropped) or a bare string (some IdPs collapse a single-value claim to a
+// scalar). Absent claim, wrong type, or empty list all yield nil — a
+// misconfigured/absent groups claim degrades to "no group sync", not an
 // error, since not every IdP asserts group membership.
 func extractGroups(raw map[string]any, claim string) []string {
 	if claim == "" {
 		return nil
 	}
-	v, ok := raw[claim].([]any)
-	if !ok {
+	switch v := raw[claim].(type) {
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if str, ok := e.(string); ok && str != "" {
+				out = append(out, str)
+			}
+		}
+		return out
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	default:
 		return nil
 	}
-	out := make([]string, 0, len(v))
-	for _, e := range v {
-		if str, ok := e.(string); ok && str != "" {
-			out = append(out, str)
-		}
-	}
-	return out
 }
