@@ -6,7 +6,7 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN CI=true pnpm build
 
-FROM golang:1.26@sha256:9d2f36f06329b2a141b9db99ffa32765cf695ee57b813ca29e245e8670bcbfff AS build
+FROM golang:1.26.8@sha256:3c3e25a4da13fd0478eed2df1eb35a0e667094a7124d3993a6a1d30f71c17e79 AS build
 WORKDIR /src
 COPY warden/go.mod warden/go.sum ./warden/
 RUN cd warden && go mod download
