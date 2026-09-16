@@ -5,7 +5,8 @@ SHELL := bash
 # A user behind a VPN-only DNS resolver can pass DOCKER_BUILD_FLAGS=--network=host.
 DOCKER_BUILD_FLAGS ?=
 KIND_CLUSTER ?= jumpgate
-CERT_MANAGER_VERSION ?= v1.16.2
+CERT_MANAGER_VERSION ?= v1.21.2
+CILIUM_VERSION ?= 1.20.2
 KUBECTL_IMAGE ?= alpine/kubectl:1.34.1
 
 ZENSICAL_IMAGE ?= zensical/zensical:latest
@@ -140,7 +141,7 @@ kind-up: ## Create the kind cluster, install cert-manager + jumpgate, deploy the
 	# become Ready — cert-manager's rollout wait would otherwise hang on NotReady nodes.
 	helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1 || true
 	helm repo update >/dev/null
-	helm install cilium cilium/cilium --namespace kube-system \
+	helm install cilium cilium/cilium --namespace kube-system --version $(CILIUM_VERSION) \
 	  --set image.pullPolicy=IfNotPresent --set ipam.mode=kubernetes
 	kubectl -n kube-system rollout status ds/cilium --timeout=300s
 	kubectl wait --for=condition=Ready nodes --all --timeout=300s
